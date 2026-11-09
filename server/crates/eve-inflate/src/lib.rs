@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-NMSA-1.0 AND Zlib
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-plus-additions AND Zlib
 // Portions transcribed from zlib's contrib/puff (puff.c 2.3): Huffman
 // construction and decoding, and the block structure. Altered: translated to
 // Rust, with bounds checks, an output cap and the incomplete-code rule changed.

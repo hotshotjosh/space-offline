@@ -1,11 +1,12 @@
-# Contributor Terms 1.0
+# Contributor Terms 1.1
 
 These terms apply to every contribution you submit to this project: code,
 documentation, data, tests, or any other material, through a pull request, a
 patch, an issue, or any other channel. The project is maintained by
-thewhitekidney (the **maintainer**). The project licence is the No Money
-Share-Alike Licence 1.1 in `LICENSE.md`, or any later version of it published by
-the maintainer (the **project licence**). Every later version keeps the No Money
+thewhitekidney (the **maintainer**). The project licence is the PolyForm
+Noncommercial License 1.0.0 in `LICENSE.md` together with the additional terms in
+`LICENSE-additions.md`, or any later version of those additional terms published
+by the maintainer (the **project licence**). Every later version keeps the no-money
 rule and share-alike.
 
 You accept these terms by ticking the contributor-terms box in the pull request
@@ -28,8 +29,8 @@ to them. If you do not accept them, do not submit.
 3. **The limit on the maintainer.** Any relicensing by the maintainer stays
    strictly non-commercial. Any terms the maintainer licenses your contribution
    under, to anyone, including any later version of the project licence, must keep
-   a rule against receiving money or value that is at least as strict as section 3
-   of the project licence (with no wider exception than its 3.3.7). The maintainer
+   a rule against receiving money or value that is at least as strict as section 1
+   of `LICENSE-additions.md` (with no wider exception than its 1.5). The maintainer
    will not sell your contribution, license it for money or receive value for it,
    and may not license it under any terms that allow commercial use.
 4. **Patents.** You grant the maintainer and everyone who receives the project a
@@ -66,8 +67,8 @@ For each contribution, you confirm that:
    at which you can make such an agreement, a parent or guardian accepts them for
    you); and
 7. you have not received and will not receive money or value in connection with
-   the contribution (money a channel earns in general, as 3.3.7 of the project
-   licence allows for content you publish, does not count).
+   the contribution (money a channel earns in general, as 1.5 of
+   `LICENSE-additions.md` allows for media you publish, does not count).
 
 You will tell the maintainer promptly if you learn that any of these is not true.
 

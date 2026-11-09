@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-NMSA-1.0 AND MIT
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-plus-additions AND MIT
 // Portions transcribed from carbonengine/destiny (src/Ballpark.cpp),
 // Copyright (c) 2026 CCP Games, MIT License; see NOTICE.
 
