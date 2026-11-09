@@ -414,6 +414,7 @@ mod away {
         let before = market_volume(&mut f);
         assert!(before > 0, "the NPC asks at the market: {book:?}");
 
+        let t0 = eve_server::pyutil::filetime_now();
         let day = eve_bot::driver::DAY_SECS;
         let first = pi::run_with(&mut f, Some(&content), name, 0, trips, day).expect("a visit");
         assert_eq!(first.surveyed, Some(1), "{}", first.summary());
@@ -424,7 +425,17 @@ mod away {
         assert_eq!((planet, level), (w.planet(), 0), "{}", second.summary());
         assert!(heads >= 1);
         assert_eq!(f.session().station_id(), Some(w.station()), "home");
-        assert_eq!(market_volume(&mut f), before - 1, "one centre bought");
+        let after = market_volume(&mut f);
+        let t1 = eve_server::pyutil::filetime_now();
+        // The NPC ask refills on wall-clock-aligned TRICKLE_PERIOD boundaries
+        // (econ_exchange::periods); this world runs at scale 1. A boundary
+        // crossed between the take and this read refills the one unit.
+        let period = eve_server::econ_exchange::TRICKLE_PERIOD;
+        let crossed = t1.div_euclid(period) != t0.div_euclid(period);
+        assert!(
+            after == before - 1 || (crossed && after == before),
+            "one centre bought: {before} -> {after} (a refill boundary crossed: {crossed})"
+        );
         assert!(
             f.cargo()
                 .expect("the hold lists")
