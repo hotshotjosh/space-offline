@@ -186,23 +186,25 @@ pub fn set_coalesce_destiny(on: bool) {
 /// Whether mergeable Destiny pushes are posted as [`Part`]s.
 pub fn coalesce_destiny() -> bool {
     #[cfg(test)]
-    if FORCE.with(|f| f.get()) {
-        return true;
+    if let Some(on) = FORCE.with(|f| f.get()) {
+        return on;
     }
     COALESCE.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
 thread_local! {
-    /// Coalescing on for **this test thread only**: the real flag is
-    /// process-wide, and a test must not change what its neighbours run.
-    static FORCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Coalescing on or off for **this test thread only**: the real flag is
+    /// process-wide, a test that starts a server sets it, and a test must not
+    /// depend on what its neighbours run. `None`: the process-wide flag.
+    static FORCE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
-/// Test seam: coalescing on for the calling thread.
+/// Test seam: coalescing on or off for the calling thread, whatever the
+/// process-wide flag says.
 #[cfg(test)]
 pub(crate) fn force_coalesce_for_test(on: bool) {
-    FORCE.with(|f| f.set(on));
+    FORCE.with(|f| f.set(Some(on)));
 }
 
 /// What [`destiny_part`] takes from a push.
