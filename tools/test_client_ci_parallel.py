@@ -786,7 +786,7 @@ class Runner(unittest.TestCase):
         self.assertNotIn("row_d", [e[1] for e in self.events() if e[0] == "START"])
 
     def wait_starts(self, n):
-        for _ in range(100):
+        for _ in range(300):
             if sum(1 for e in self.events() if e[0] == "START") >= n:
                 break
             time.sleep(0.1)

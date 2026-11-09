@@ -143,14 +143,15 @@ class Credentials(unittest.TestCase):
         self.assertEqual(len(self.hits("c/e.evecap", b"HEAD" + bytes(z))), 1)
 
     def test_bad_headers_scale_linearly(self):
-        t = time.time()
+        # CPU time of this process, so load from other processes does not count.
+        t = time.process_time()
         self.assertEqual(self.hits("c/k.evecap", b"\x78\x9c\xff" * 200000), [])
-        self.assertLess(time.time() - t, 2)
+        self.assertLess(time.process_time() - t, 2)
 
     def test_many_bad_headers_finish_quickly(self):
-        t = time.time()
+        t = time.process_time()
         self.assertEqual(self.hits("c/j.evecap", b"\x78\x9c\xff" * 100000), [])
-        self.assertLess(time.time() - t, 2)
+        self.assertLess(time.process_time() - t, 2)
 
 
 OS = "open" + " source"  # split, so this file does not trip its own check
