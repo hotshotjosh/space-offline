@@ -183,6 +183,10 @@ class Policy(unittest.TestCase):
         os.remove(os.path.join(self.root, "LICENSE.md"))
         self.assertEqual(self.check(), ["LICENSE.md: missing from the export (the licence must ship)"])
 
+    def test_a_tree_without_the_licence_additions_fails(self):
+        os.remove(os.path.join(self.root, "LICENSE-additions.md"))
+        self.assertEqual(self.check(), ["LICENSE-additions.md: missing from the export (the licence must ship)"])
+
     def test_missing_contributor_terms_and_notice_fail(self):
         os.remove(os.path.join(self.root, "CONTRIBUTING-terms.md"))
         os.remove(os.path.join(self.root, "NOTICE"))

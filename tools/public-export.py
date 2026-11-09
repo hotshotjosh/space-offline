@@ -29,8 +29,8 @@ prose mention (`docs/...` in a `.md` file) of a private doc as `mention:` lines;
 do not change the exit code, because a mention is a dead link to fix, not a leak.
 
 The licence policy, also a failure (`policy()`):
-  - `LICENSE.md`, `CONTRIBUTING-terms.md` and `NOTICE` must be in the export;
-  - no `FUNDING.yml` may exist anywhere in the tree (no money, ever: LICENSE.md §3);
+  - `LICENSE.md`, `LICENSE-additions.md`, `CONTRIBUTING-terms.md` and `NOTICE` must be in the export;
+  - no `FUNDING.yml` may exist anywhere in the tree (no money, ever: LICENSE-additions.md section 1);
   - no exported text file may call this project "open source" or "OSI". A mention
     inside quotes or backticks (a third party's words, a GitHub topic name) and a
     negated one ("not open source") are fine.
@@ -205,7 +205,7 @@ def leaks(root: str, files: list[str]) -> list[str]:
     return hits
 
 
-REQUIRED = ("LICENSE.md", "CONTRIBUTING-terms.md", "NOTICE")
+REQUIRED = ("LICENSE.md", "LICENSE-additions.md", "CONTRIBUTING-terms.md", "NOTICE")
 OPEN_SOURCE = re.compile(r"(?i:\bopen[\s-]+source\b)|\bOSI\b")
 QUOTED = re.compile(r'"[^"\n]*"|\u201c[^\u201d\n]*\u201d|`[^`\n]*`')
 NEGATED = re.compile(r"(?i)\b(?:not|never|no|isn't|nor)\b[^.;:!?]{0,24}$")
@@ -229,7 +229,7 @@ def policy(root: str, files: list[str]) -> list[str]:
     hits = [f"{r}: missing from the export (the licence must ship)" for r in REQUIRED if r not in files]
     for rel in tracked(root):
         if os.path.basename(rel).lower() in ("funding.yml", "funding.yaml"):
-            hits.append(f"{rel}: a funding file (no money, ever: LICENSE.md section 3)")
+            hits.append(f"{rel}: a funding file (no money, ever: LICENSE-additions.md section 1)")
     for rel in files:
         text = read_text(os.path.join(root, rel))
         if text is None or "\0" in text:
