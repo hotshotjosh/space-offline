@@ -14,6 +14,10 @@
 # test_fci_scenarios and test_public_export (rule 17 of docs/lanes/README.md: a hand edit of the
 # generated status page fails the gate). Any other path in the range gets the
 # full gate.
+# **A tools-only push skips it too.** Markdown, private/ and tools/*.py or tools/*.sh
+# scripts (at least one) run the allowlist, build deltas, every tools test and bash -n;
+# gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh
+# and tools/hooks/ keep the full gate.
 #
 # **Each stage prints `   took Ns`** after its last line, so a slow gate can be
 # read off its log. The `== ` lines are what land.sh and pre-push grep; the
@@ -168,18 +172,58 @@ took
 
 if ((!dirty)) && base=$(default_base); then
     mapfile -t changed < <(git diff --name-only --no-renames "$base" HEAD)
+    # One classification for both light tiers. docs_only: every file is Markdown or
+    # private/. tools_only: also tools scripts (*.py, *.sh) that cannot affect a Rust
+    # build, at least one of them. Anything else keeps the full gate.
     docs_only=$((${#changed[@]} > 0))
+    tools_only=$docs_only
+    tool_scripts=0
     for f in "${changed[@]}"; do
         case $f in
             # schema.md is read by code: mutator_data.rs include_str!s it and the
             # tools/test_content_*.py tests parse it, so it gets the full gate.
-            tools/*|server/*|docs/content/schema.md) docs_only=0 ;;
+            docs/content/schema.md|server/*) docs_only=0; tools_only=0 ;;
+            # The gate's own scripts, the build wrappers, the allowlist check, the
+            # status guard and the hooks decide or run the build: full gate.
+            tools/gate.sh|tools/land.sh|tools/dev.sh|tools/analysis.sh|tools/check_deps.py|tools/status-guard.py|tools/test-parallel.sh|tools/hooks/*)
+                docs_only=0; tools_only=0 ;;
+            # Markdown under tools/ keeps the full gate, as before the tools tier.
+            tools/*.md) docs_only=0; tools_only=0 ;;
             # Markdown anywhere (content/*.md included: the content build reads only
             # its .tsv tables) and the maintainer folder, which is never built or exported.
             *.md|private/*) ;;
-            *) docs_only=0 ;;
+            # A tools script: no Rust build reads it.
+            tools/*.py|tools/*.sh) docs_only=0; tool_scripts=$((tool_scripts + 1)) ;;
+            *) docs_only=0; tools_only=0 ;;
         esac
     done
+    ((tool_scripts > 0)) || tools_only=0
+    if ((tools_only)); then
+        echo "== tools only (${#changed[@]} file(s)): no Rust build reads these; tools tests"
+        echo "== dependency allowlist"
+        python3 tools/check_deps.py
+        took
+        echo "== build deltas"
+        if [[ -x tools/new-build.sh ]]; then
+            tools/new-build.sh --gate-check
+        else
+            echo "   skipped: no tools/new-build.sh in this tree"
+        fi
+        took
+        tool_tests=()
+        for t in tools/test_*.py private/test_*.py; do
+            [[ -e $t ]] && tool_tests+=("$t")
+        done
+        run_python_tests "${tool_tests[@]}"
+        for s in tools/*.sh private/*.sh; do
+            [[ -e $s ]] || continue
+            bash -n "$s" || { echo "gate: $s fails bash -n" >&2; exit 1; }
+        done
+        took
+        status_checks
+        echo "== gate passed"
+        exit 0
+    fi
     if ((docs_only)); then
         echo "== docs only (${#changed[@]} file(s)): the docs tests"
         # A test the (public) tree does not hold is skipped here; a private doc is absent there.

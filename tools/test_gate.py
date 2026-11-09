@@ -232,6 +232,93 @@ class LandingTools(unittest.TestCase):
         self.assertIn("tools/test_status_page.py failed", r.stderr)
         self.assertNotIn("== gate passed", r.stdout)
 
+    # --- the tools-only tier (#280) ----------------------------------------------
+
+    def tier_commit(self, *rels: str) -> None:
+        """Base with a stub of each tools test pushed, then one commit touching `rels`."""
+        self.git("reset", "-q", "--hard", self.base)
+        self.write("tools/test_stub.py", "print('tools ok')\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "tools test")
+        self.git("push", "-q", "--no-verify", "--force", "origin", "master")
+        files = []
+        for r in rels:
+            path = os.path.join(self.repo, r)
+            old = open(path).read() if os.path.exists(path) else ""
+            files.append((r, old + "# probe\n"))  # a comment keeps a stub script working
+        if files:
+            self.commit("tier", *files)
+
+    def tier_gate(self, *rels: str, args: tuple[str, ...] = ()) -> subprocess.CompletedProcess:
+        # A red cargo run: a tier that reaches cargo shows as a non-zero exit.
+        self.cargo_test("test result: FAILED. 0 passed; 1 failed\n", 101)
+        self.tier_commit(*rels)
+        return self.run_tool("gate.sh", *args)
+
+    def test_tools_scripts_docs_and_private_files_are_the_tools_only_tier(self) -> None:
+        for rels in (("tools/foo.py",), ("tools/foo.sh",),
+                     ("tools/foo.py", "notes/x.md", "private/y.txt")):
+            with self.subTest(rels=rels):
+                g = self.tier_gate(*rels)
+                self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+                self.assertIn(f"== tools only ({len(rels)} file(s))", g.stdout)
+                self.assertIn("tools/test_stub.py", g.stdout)
+                self.assertIn("\n== gate passed\n", "\n" + g.stdout)
+                self.assertNotIn("== docs only", g.stdout)
+
+    def test_the_gate_scripts_and_the_allowlist_check_keep_the_full_gate(self) -> None:
+        for rel in ("tools/gate.sh", "tools/land.sh", "tools/dev.sh", "tools/analysis.sh",
+                    "tools/check_deps.py", "tools/status-guard.py", "tools/test-parallel.sh",
+                    "tools/hooks/pre-push"):
+            with self.subTest(rel=rel):
+                g = self.tier_gate(rel, "tools/foo.py")
+                self.assertEqual(g.returncode, 101, rel)
+                self.assertNotIn("== tools only", g.stdout)
+
+    def test_anything_else_beside_a_tools_script_keeps_the_full_gate(self) -> None:
+        for rel in ("tools/builds.tsv", "tools/patches/x.patch", "server/crates/a/src/lib.rs",
+                    "docs/content/schema.md", "deploy/x.yml", ".github/w.yml"):
+            with self.subTest(rel=rel):
+                g = self.tier_gate(rel, "tools/foo.py")
+                self.assertEqual(g.returncode, 101, rel)
+                self.assertNotIn("== tools only", g.stdout)
+
+    def test_markdown_alone_is_still_docs_only_not_tools_only(self) -> None:
+        self.docs_commit("notes.md")
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stderr)
+        self.assertIn("== docs only", g.stdout)
+        self.assertNotIn("== tools only", g.stdout)
+
+    def test_dirty_never_takes_a_light_tier(self) -> None:
+        for rels in (("tools/foo.py",), ("notes.md",)):
+            with self.subTest(rels=rels):
+                g = self.tier_gate(*rels, args=("--dirty",))
+                self.assertEqual(g.returncode, 101, rels)
+                self.assertNotIn("== tools only", g.stdout)
+                self.assertNotIn("== docs only", g.stdout)
+
+    def test_a_failing_tools_test_fails_the_tools_only_tier(self) -> None:
+        self.cargo_test("test result: FAILED. 0 passed; 1 failed\n", 101)
+        self.tier_commit("tools/foo.py")
+        self.write("tools/test_red.py", "raise SystemExit(1)\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "red")
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 1, g.stdout + g.stderr)
+        self.assertIn("== tools only", g.stdout)
+        self.assertIn("tools/test_red.py failed", g.stderr)
+        self.assertNotIn("== gate passed", g.stdout)
+
+    def test_a_syntax_error_in_a_tools_script_fails_the_tools_only_tier(self) -> None:
+        self.cargo_test("test result: FAILED. 0 passed; 1 failed\n", 101)
+        self.tier_commit()
+        self.commit("typo", ("tools/broken.sh", "if then fi (\n"))
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 1, g.stdout + g.stderr)
+        self.assertIn("== tools only", g.stdout)
+        self.assertIn("tools/broken.sh fails bash -n", g.stderr)
+
     def test_every_gate_stage_prints_its_time(self) -> None:
         g = self.run_tool("gate.sh")
         self.assertEqual(g.returncode, 0, g.stderr)

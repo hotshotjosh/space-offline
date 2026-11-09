@@ -157,7 +157,9 @@ Never: edit outside `Owns:`; put a client value in a test; copy EvEJS.
     tools/land.sh --no-push
 
 Success: exit 0 and a stamp line naming `out/landed/<sha>`. A change that is only
-Markdown skips the build and runs just the docs tests (`== docs only` in the log).
+Markdown skips the build and runs just the docs tests (`== docs only` in the log); one that
+changes only tools scripts (not the gate or build wrappers) or Markdown runs the tools tests
+(`== tools only`).
 Failure: read the log it names (grep `error\|FAILED\|panicked`), fix, run it again.
 Three reds on the same cause → step 7, stuck.
 Never: edit the gate, `#[ignore]` a test, delete a failing test, or report green from
