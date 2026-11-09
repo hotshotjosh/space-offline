@@ -1,0 +1,69 @@
+# Evermark prices of the ship emblem licences the Paragon store sells (#207, EM-2):
+# our numbers, not CCP's. Applied by tools/content_lp.py: one offer per
+# shipcosmeticlicenses row, qty 1, no ISK, no required items, priced by the
+# hull's inventory group (else the row of its category), into the heraldry
+# corporation's own offer table. The result is the bundle's agents/lp-offers.tsv.
+# The server never reads this file; edit it and tools/up.sh re-extracts (the
+# manifest records it as an `input`). A licence whose hull group (and category)
+# has no row is not sold, and the extractor names it.
+#
+# kind: `group` or `category`. id: the client's id; a group id is the key of the
+# client's groups table (staticdata/groups.fsdbinary, the inventorycommon const
+# group* values), a category id the key of its categories table. A group row
+# wins over its category's row.
+# lp_cost: Evermarks, above 0. why: the falsifier.
+#
+# [A] Every price below is an assumption: the owner has not set emblem prices.
+# They rise with hull size (shuttle/corvette < frigate < destroyer < cruiser <
+# battlecruiser < battleship < capital < supercapital) and sit at about one to
+# a dozen heraldry missions' pay (those pay 2,000 to 4,500 EM each). Falsifier:
+# the owner's price list; edit this one table to match it. The names after the
+# [A] are the groups at build 3670638, kept to read the table by; the id keys.
+kind	id	lp_cost	why
+group	31	1000	[A] Shuttle: shuttle/corvette tier; falsifier: the owner's price list
+group	237	1000	[A] Corvette: shuttle/corvette tier; falsifier: the owner's price list
+group	25	2500	[A] Frigate: frigate tier; falsifier: the owner's price list
+group	324	2500	[A] Assault Frigate: frigate tier; falsifier: the owner's price list
+group	830	2500	[A] Covert Ops: frigate tier; falsifier: the owner's price list
+group	831	2500	[A] Interceptor: frigate tier; falsifier: the owner's price list
+group	834	2500	[A] Stealth Bomber: frigate tier; falsifier: the owner's price list
+group	893	2500	[A] Electronic Attack Ship: frigate tier; falsifier: the owner's price list
+group	1022	2500	[A] Prototype Exploration Ship: frigate tier; falsifier: the owner's price list
+group	1283	2500	[A] Expedition Frigate: frigate tier; falsifier: the owner's price list
+group	1527	2500	[A] Logistics Frigate: frigate tier; falsifier: the owner's price list
+group	420	3500	[A] Destroyer: destroyer tier; falsifier: the owner's price list
+group	541	3500	[A] Interdictor: destroyer tier; falsifier: the owner's price list
+group	1305	3500	[A] Tactical Destroyer: destroyer tier; falsifier: the owner's price list
+group	1534	3500	[A] Command Destroyer: destroyer tier; falsifier: the owner's price list
+group	26	5000	[A] Cruiser: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	28	5000	[A] Hauler: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	358	5000	[A] Heavy Assault Cruiser: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	380	5000	[A] Deep Space Transport: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	463	5000	[A] Mining Barge: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	543	5000	[A] Exhumer: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	832	5000	[A] Logistics: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	833	5000	[A] Force Recon Ship: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	894	5000	[A] Heavy Interdiction Cruiser: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	906	5000	[A] Combat Recon Ship: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	963	5000	[A] Strategic Cruiser: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	1202	5000	[A] Blockade Runner: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	1972	5000	[A] Flag Cruiser: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	5087	5000	[A] Special Edition Yachts: cruiser / cruiser-sized industrial tier; falsifier: the owner's price list
+group	419	7500	[A] Combat Battlecruiser: battlecruiser tier; falsifier: the owner's price list
+group	540	7500	[A] Command Ship: battlecruiser tier; falsifier: the owner's price list
+group	941	7500	[A] Industrial Command Ship: battlecruiser tier; falsifier: the owner's price list
+group	1201	7500	[A] Attack Battlecruiser: battlecruiser tier; falsifier: the owner's price list
+group	4902	7500	[A] Expedition Command Ship: battlecruiser tier; falsifier: the owner's price list
+group	27	10000	[A] Battleship: battleship tier; falsifier: the owner's price list
+group	898	10000	[A] Black Ops: battleship tier; falsifier: the owner's price list
+group	900	10000	[A] Marauder: battleship tier; falsifier: the owner's price list
+group	485	20000	[A] Dreadnought: capital tier; falsifier: the owner's price list
+group	513	20000	[A] Freighter: capital tier; falsifier: the owner's price list
+group	547	20000	[A] Carrier: capital tier; falsifier: the owner's price list
+group	883	20000	[A] Capital Industrial Ship: capital tier; falsifier: the owner's price list
+group	902	20000	[A] Jump Freighter: capital tier; falsifier: the owner's price list
+group	1538	20000	[A] Force Auxiliary: capital tier; falsifier: the owner's price list
+group	4594	20000	[A] Lancer Dreadnought: capital tier; falsifier: the owner's price list
+group	30	40000	[A] Titan: supercapital tier; falsifier: the owner's price list
+group	659	40000	[A] Supercarrier: supercapital tier; falsifier: the owner's price list
+category	6	5000	[A] any ship group without its own row is priced as a cruiser; falsifier: the owner's price list

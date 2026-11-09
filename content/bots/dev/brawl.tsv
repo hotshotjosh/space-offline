@@ -1,0 +1,11 @@
+# DEV-MODE roster for a fleet-fight bench: tools/dev-world.sh brawl --brawl --home <a null-sec system with a station> --client
+# Two small fleets to start; grow both sides from the client console with /bots spawn (GM), e.g.
+#   /bots spawn rfb red hunter 50 role Rifter <system id>
+#   /bots spawn bmb blue hunter 50 role Merlin <system id>
+# Run a measured brawl in null sec, not Amamake: Amamake is low sec, where sentries by every station fire on
+# flagged pilots and add NPC load and kills to the measurement (sentry.rs). With a client on grid:
+# tools/client-ci.sh run fci_battle (docs/guides/bench-ramp.md, "A battle with a client").
+# Group names are letters only: a bot is <group><n>, so a digit in a group name can collide.
+# Every spawn into one system docks at its first station, so both sides undock onto one grid.
+rfa	red	hunter	10	role	Rifter
+bma	blue	hunter	10	role	Merlin

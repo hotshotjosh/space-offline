@@ -1,0 +1,19 @@
+# The system cost index (#157; industry::TABLE; header in docs/content/schema.md
+# §4). `industry.Job.cost` is the activity's raw job cost times the facility's
+# CostModifiers, and the SYSTEM one is this index (the client multiplies:
+# industry/job.py `_get_cost_for_modifiers`; the SCC surcharge and the tax stay
+# on the unmodified base). `solar_system_id` 0 is the default for every system
+# without its own row; a system's own row beats it. An activity with no row costs
+# the raw figure (index 1.0). `index` is a fraction in (0, 1]: 0.05 is 5%. Restart.
+#
+# Every row is policy, so [A]. The default below is an invented sink knob, not a
+# TQ reading: TQ high-sec manufacturing indices run low single digits. Falsified
+# by the client's industry window at an NPC station showing a job cost far from
+# the index times the estimated item value.
+solar_system_id	activity_id	index	why
+0	1	0.04	[A] default manufacturing index; falsified by a bot builder that cannot profit on any T1 hull at this fee, or by the job window disagreeing
+0	9	0.04	[A] default reaction index; falsified as the manufacturing row
+0	3	0.04	[A] default research (TE) index; the raw figure already carries the client's 2% COST_PERCENTAGE; falsified by research costs far from TQ's at a high-sec NPC station
+0	4	0.04	[A] default research (ME) index; falsified as the research TE row
+0	5	0.04	[A] default copying index; falsified as the research TE row
+0	8	0.04	[A] default invention index; falsified as the research TE row

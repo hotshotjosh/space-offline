@@ -1,0 +1,31 @@
+# Abyss weather (#6, AD-3): how strong a room's weather is. Authored, every
+# number [A]; read by abyss/weather.rs. Restart to reload.
+#
+# Two sections, each opened by its header line. In the first, a tier (the played
+# tier 0-6) lists the stages a room of that tier may draw, as stage:weight
+# pairs. In the second, a stage has its penalty and its bonus in percent: the
+# penalty is the weather's resistance, turret-range, resonance cost; the bonus
+# is its gift (see abyss::weather::WEATHERS for the pairs).
+#
+# Falsifier: the extracted dogma of the weather types (AD-0) carrying the
+# values, or TQ's info window showing other numbers.
+#tier	stage_weights
+0	1:50,2:50
+1	1:75,2:25
+2	1:50,2:50
+3	1:25,2:75
+4	2:75,3:25
+5	2:50,3:50
+6	2:25,3:75
+#stage	penalty_pct	bonus_pct
+1	30	50
+2	50	50
+3	70	50
+#cloud	family	chance_pct
+# Per AOE locator of a room, the chance in percent of a cloud of each family;
+# the rest is no cloud. Every number [A]; falsifier: TQ rooms showing other mixes.
+# The cloud's buffs are its type's own attributes, not this table's.
+bioluminescence	20
+caustic	20
+filament	20
+none	40

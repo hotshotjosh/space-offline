@@ -1,0 +1,34 @@
+# Sovereignty planet yields (SOV-RES, #78): what each planet TYPE gives a hub's
+# system. Authored by us: every number is [A]. The client has display bands for
+# these quantities (orbitalSkyhook/resourceRichness.py [V]); ours are scaled to
+# those bands [I], so a planet reads as modest, average or abundant, not as
+# zero. Upgrade costs (L6) must fit this scale. Read by the server
+# (`sov_resources::PLANETS`); edit and restart; no re-extract needed. An edit
+# changes the served definitions version (a hash of this table), so clients
+# ask again.
+#
+# planet_type_id: the catalogue's planet type id (an identifier, not a value).
+# A row gives exactly ONE kind: power, or workforce, or a reagent. Rows that
+# give none or two are dropped and logged.
+# reagent_type_id: `-` (or 0) for none, else the colony reagent's item type id
+# (an identifier, as the planet type ids are; the client's
+# typeColonyReagentIce / typeColonyReagentLava, inventorycommon/const.py [V]).
+# Each id is checked on first use against typedata group 4729; a miss is
+# logged and that planet gives no reagent.
+# amount_per_cycle, cycle_s (must be above 0: the client divides by it),
+# secured_pct (0-100), secured_cap, unsecured_cap: the reagent definition, and
+# 0 for a row that is not a reagent.
+# why: the [A] and its falsifier.
+#
+# Planet types: 11 temperate, 12 ice, 13 gas, 2014 oceanic, 2015 lava,
+# 2016 barren, 2017 storm, 2063 plasma. A type with no row (the two rare ones)
+# gives nothing.
+planet_type_id	power	workforce	reagent_type_id	amount_per_cycle	cycle_s	secured_pct	secured_cap	unsecured_cap	why
+13	250	0	-	0	0	0	0	0	[A] gas gives power, hundreds per planet; falsifier: owner balance ruling
+2063	400	0	-	0	0	0	0	0	[A] plasma gives more power than gas; falsifier: owner balance ruling
+11	0	3000	-	0	0	0	0	0	[A] temperate gives workforce, low thousands; falsifier: owner balance ruling
+2014	0	3000	-	0	0	0	0	0	[A] oceanic gives workforce; falsifier: owner balance ruling
+2016	0	2500	-	0	0	0	0	0	[A] barren gives workforce; falsifier: owner balance ruling
+2017	0	2500	-	0	0	0	0	0	[A] storm gives workforce; falsifier: owner balance ruling
+12	0	0	81144	30	3600	50	720	360	[A] ice gives the ice colony reagent, tens per hour; falsifier: owner balance ruling
+2015	0	0	81143	600	3600	50	14400	7200	[A] lava gives the lava colony reagent, hundreds per hour; falsifier: owner balance ruling

@@ -1,0 +1,43 @@
+# Abyss loot (#5, AD-2): what a Triglavian cache, node or subnode of an abyssal
+# room leaves in its wreck. Header in docs/content/schema.md. Authored, every
+# rate [A]: no type id, only a type group and a word of the type's name. Restart
+# to reload.
+#
+# tier: the played tier 0-6 (abyss::play_tier), or `*`. A row whose tier is `off`
+#   turns the whole table off (the world switch).
+# cache: the word in the cache type's name (case-insensitive): bioadaptive,
+#   node, subnode, nexus; or `*`.
+# group: a type group id (protocol numbers; never a type id).
+# name_has: `*`, a word the type's name must contain (case-insensitive), or a
+#   token: {tier} is the key word of the played tier (Calm, Fierce, ...: read
+#   from the bundle's abyssal keys), {grade} is the mutaplasmid grade of the
+#   tier ([A]: decayed 0-1, gravid 2-3, unstable 4-6).
+# chance_ppm: one independent draw per matching row, in parts per million; a hit
+#   picks one published type that matches, uniformly.
+# qty_min, qty_max: quantity uniform in the range (a copy's quantity is its runs).
+# copy: 1 gives one blueprint copy whose runs are the quantity, 0 a plain stack.
+#
+tier	cache	group	name_has	chance_ppm	qty_min	qty_max	copy	why
+0	bioadaptive	1995	*	1000000	1	2	0	[A] the Survey Database, every cache; tier 0; falsifier: a week of runs at that tier showing far more or far less
+1	bioadaptive	1995	*	1000000	2	3	0	[A] the Survey Database, every cache; tier 1; falsifier: a week of runs at that tier showing far more or far less
+2	bioadaptive	1995	*	1000000	3	5	0	[A] the Survey Database, every cache; tier 2; falsifier: a week of runs at that tier showing far more or far less
+3	bioadaptive	1995	*	1000000	5	8	0	[A] the Survey Database, every cache; tier 3; falsifier: a week of runs at that tier showing far more or far less
+4	bioadaptive	1995	*	1000000	8	12	0	[A] the Survey Database, every cache; tier 4; falsifier: a week of runs at that tier showing far more or far less
+5	bioadaptive	1995	*	1000000	12	18	0	[A] the Survey Database, every cache; tier 5; falsifier: a week of runs at that tier showing far more or far less
+6	bioadaptive	1995	*	1000000	18	25	0	[A] the Survey Database, every cache; tier 6; falsifier: a week of runs at that tier showing far more or far less
+*	bioadaptive	1996	Zero-Point	600000	2	6	0	[A] Triglavian hull material; falsifier: a week of runs at that tier showing far more or far less
+*	bioadaptive	1996	Isogen	500000	10	40	0	[A] the other one; falsifier: a week of runs at that tier showing far more or far less
+*	bioadaptive	1979	{tier}	330000	1	1	0	[A] a same-tier filament keeps the loop going; falsifier: a week of runs at that tier showing far more or far less
+*	bioadaptive	1964	{grade}	40000	1	1	0	[A] a mutaplasmid as a plain item; falsifier: a week of runs at that tier showing far more or far less
+*	bioadaptive	1990	*	20000	1	3	1	[A] an Entropic Disintegrator blueprint copy; falsifier: a week of runs at that tier showing far more or far less
+3	bioadaptive	105	Damavik	10000	1	1	1	[A] a Damavik blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+4	bioadaptive	105	Damavik	10000	1	1	1	[A] a Damavik blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+5	bioadaptive	105	Damavik	10000	1	1	1	[A] a Damavik blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+6	bioadaptive	105	Damavik	10000	1	1	1	[A] a Damavik blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+4	bioadaptive	106	Vedmak	10000	1	1	1	[A] a Vedmak blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+5	bioadaptive	106	Vedmak	10000	1	1	1	[A] a Vedmak blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+6	bioadaptive	106	Vedmak	10000	1	1	1	[A] a Vedmak blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+5	bioadaptive	107	Leshak	10000	1	1	1	[A] a Leshak blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+6	bioadaptive	107	Leshak	10000	1	1	1	[A] a Leshak blueprint copy, deeper tiers; falsifier: a week of runs at that tier showing far more or far less
+*	node	1995	*	500000	1	2	0	[A] a node pays a little; falsifier: a week of runs at that tier showing far more or far less
+*	subnode	1996	Isogen	300000	2	8	0	[A] a subnode pays a little Isogen; falsifier: a week of runs at that tier showing far more or far less

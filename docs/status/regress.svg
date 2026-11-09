@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="176" viewBox="0 0 480 176" role="img" aria-label="Client regression waves: passed, failed and no verdict per wave">
+<title>Client regression waves: passed, failed and no verdict per wave</title>
+<style>
+.bg{fill:#fcfcfb}.t{fill:#0b0b0b}.s{fill:#52514e}.rule{fill:#e1e0d9}
+.proved{fill:#184f95}.built{fill:#3987e5}.unknown{fill:#eb6834}
+.part-o{fill:none;stroke:#3987e5;stroke-width:1.5}.part-f{fill:#3987e5}
+.missing{fill:none;stroke:#8a8984;stroke-width:1.5}
+.pass{fill:#184f95}.fail{fill:#eb6834}.none{fill:none;stroke:#8a8984;stroke-width:1.5}
+@media (prefers-color-scheme:dark){
+.bg{fill:#1a1a19}.t{fill:#f0efec}.s{fill:#c3c2b7}.rule{fill:#383835}
+.proved{fill:#86b6ef}.built{fill:#3987e5}.unknown{fill:#d95926}
+.part-o{stroke:#3987e5}.part-f{fill:#3987e5}
+.missing{stroke:#8d8c85}
+.pass{fill:#86b6ef}.fail{fill:#d95926}.none{stroke:#8d8c85}
+}
+text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
+.big{font-size:26px;font-weight:600}.b{font-weight:600}.xs{font-size:11px}
+</style>
+<rect width="480" height="176" rx="6" class="bg"/>
+<rect x="42" y="106.0" width="422" height="1" class="rule"/>
+<text x="38.0" y="26.0" class="s xs" text-anchor="end">136</text>
+<text x="38.0" y="106.0" class="s xs" text-anchor="end">0</text>
+<rect x="42" y="22.0" width="422" height="1" class="rule"/>
+<rect x="52.1" y="94.9" width="25.8" height="10.1" class="pass"/>
+<rect x="52.1" y="90.6" width="25.8" height="3.3" class="fail"/>
+<rect x="52.6" y="55.2" width="24.8" height="34.3" fill="none" class="none"/>
+<text x="65.0" y="51.7" class="s xs" text-anchor="middle">18</text>
+<text x="65.0" y="120.0" class="t xs" text-anchor="middle">1</text>
+<text x="65.0" y="132.0" class="s xs" text-anchor="middle">p</text>
+<rect x="90.1" y="63.4" width="25.8" height="41.6" class="pass"/>
+<rect x="90.1" y="46.1" width="25.8" height="16.3" class="fail"/>
+<text x="103.0" y="43.1" class="s xs" text-anchor="middle">69</text>
+<text x="103.0" y="120.0" class="t xs" text-anchor="middle">2</text>
+<rect x="128.1" y="57.2" width="25.8" height="47.8" class="pass"/>
+<rect x="128.1" y="32.5" width="25.8" height="23.7" class="fail"/>
+<text x="141.0" y="29.5" class="s xs" text-anchor="middle">79</text>
+<text x="141.0" y="120.0" class="t xs" text-anchor="middle">3</text>
+<rect x="166.1" y="88.7" width="25.8" height="16.3" class="pass"/>
+<rect x="166.1" y="88.1" width="25.8" height="1.0" class="fail"/>
+<text x="179.0" y="85.1" class="s xs" text-anchor="middle">28</text>
+<text x="179.0" y="120.0" class="t xs" text-anchor="middle">4</text>
+<text x="179.0" y="132.0" class="s xs" text-anchor="middle">r</text>
+<rect x="204.1" y="49.2" width="25.8" height="55.8" class="pass"/>
+<rect x="204.1" y="30.0" width="25.8" height="18.1" class="fail"/>
+<text x="217.0" y="27.0" class="s xs" text-anchor="middle">92</text>
+<text x="217.0" y="120.0" class="t xs" text-anchor="middle">5</text>
+<rect x="242.1" y="46.7" width="25.8" height="58.3" class="pass"/>
+<rect x="242.1" y="28.2" width="25.8" height="17.5" class="fail"/>
+<text x="255.0" y="25.2" class="s xs" text-anchor="middle">96</text>
+<text x="255.0" y="120.0" class="t xs" text-anchor="middle">6</text>
+<rect x="280.1" y="97.4" width="25.8" height="7.6" class="pass"/>
+<rect x="280.1" y="86.2" width="25.8" height="10.1" class="fail"/>
+<text x="293.0" y="83.2" class="s xs" text-anchor="middle">14</text>
+<text x="293.0" y="120.0" class="t xs" text-anchor="middle">7</text>
+<text x="293.0" y="132.0" class="s xs" text-anchor="middle">r</text>
+<rect x="318.1" y="33.1" width="25.8" height="71.9" class="pass"/>
+<rect x="318.1" y="26.9" width="25.8" height="5.2" class="fail"/>
+<text x="331.0" y="23.9" class="s xs" text-anchor="middle">118</text>
+<text x="331.0" y="120.0" class="t xs" text-anchor="middle">8</text>
+<text x="331.0" y="132.0" class="s xs" text-anchor="middle">p</text>
+<rect x="356.1" y="32.5" width="25.8" height="72.5" class="pass"/>
+<rect x="356.1" y="22.0" width="25.8" height="9.5" class="fail"/>
+<text x="369.0" y="19.0" class="s xs" text-anchor="middle">119</text>
+<text x="369.0" y="120.0" class="t xs" text-anchor="middle">9</text>
+<rect x="394.1" y="25.7" width="25.8" height="79.3" class="pass"/>
+<rect x="394.1" y="22.0" width="25.8" height="2.7" class="fail"/>
+<text x="407.0" y="19.0" class="s xs" text-anchor="middle">130</text>
+<text x="407.0" y="120.0" class="t xs" text-anchor="middle">10</text>
+<rect x="432.1" y="22.6" width="25.8" height="82.4" class="pass"/>
+<rect x="432.1" y="22.0" width="25.8" height="1.0" class="fail"/>
+<text x="445.0" y="19.0" class="s xs" text-anchor="middle">135</text>
+<text x="445.0" y="120.0" class="t xs" text-anchor="middle">11</text>
+<text x="16.0" y="120.0" class="s xs">wave</text>
+<rect x="16.0" y="144.0" width="9" height="9" class="pass"/>
+<text x="30.0" y="152.0" class="s xs">Passed (number above)</text>
+<rect x="174.0" y="144.0" width="9" height="9" class="fail"/>
+<text x="188.0" y="152.0" class="s xs">Failed</text>
+<rect x="236.8" y="144.5" width="8" height="8" fill="none" class="none"/>
+<text x="250.3" y="152.0" class="s xs">No verdict</text>
+<text x="16.0" y="168.0" class="s xs">p partial run, r rerun of red rows only: compare full runs with full runs</text>
+</svg>

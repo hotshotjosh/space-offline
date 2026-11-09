@@ -1,0 +1,361 @@
+//! The notifications an Upwell structure sends its owner's managers (issue
+//! #47, lane L4; shared with the destruction lane, which adds `destroyed`
+//! for 188 beside these).
+//!
+//! The keys of each `data` dict are the client formatter's `MakeData` **[V]**
+//! (`notifications/common/formatters/structures.py`); the type numbers are
+//! `notificationconst.py:172-195` **[V]**. Times in the data are FILETIME
+//! ticks (100 ns), as the formatters subtract `blue.os.GetWallclockTime()`.
+//!
+//! **[A]** Who hears one: every member of the owner corporation who may
+//! manage structures ([`crate::service::sov_hub::may_launch`]: director,
+//! station manager, CEO), online or not (`notify_at` stores for the offline).
+//! Falsifier: a TQ corp member without those roles who receives them, or a
+//! manager who does not. The sender is the owner corporation. Falsifier: the
+//! notification window naming another sender.
+//!
+//! **[A]** `vulnerableTime` is the repair time of the state that follows
+//! ([`structure::State::repair_secs`]). Falsifier: a TQ notification whose
+//! "vulnerable for" text differs.
+
+use crate::notifications::{self as notif, Data, Value, data};
+use crate::service::Registry;
+use crate::structure::{Event, SECOND, State, Structure};
+
+pub const STRUCTURE_ANCHORING: i64 = 182;
+pub const STRUCTURE_UNANCHORING: i64 = 183;
+pub const STRUCTURE_UNDER_ATTACK: i64 = 184;
+pub const STRUCTURE_ONLINE: i64 = 185;
+pub const STRUCTURE_LOST_SHIELDS: i64 = 186;
+pub const STRUCTURE_LOST_ARMOR: i64 = 187;
+pub const STRUCTURE_DESTROYED: i64 = 188;
+pub const STRUCTURES_REINFORCEMENT_CHANGED: i64 = 209;
+
+/// `const.typeCorporation` **[V]** (`inventorycommon/const.py`).
+pub const TYPE_CORPORATION: i64 = 2;
+/// `const.typeAlliance` **[V]**.
+pub const TYPE_ALLIANCE: i64 = 16159;
+
+/// `('showinfo', typeID, id)`, the link tuple the formatters build.
+pub fn show_info(type_id: i64, id: i64) -> Value {
+    Value::Tuple(vec![
+        Value::Text("showinfo".to_owned()),
+        Value::Int(type_id),
+        Value::Int(id),
+    ])
+}
+
+/// `BaseStructureNotificationFormatter.GetBaseData` **[V]**: `structureID`,
+/// `structureShowInfoData`, `solarsystemID` (lower-case s, the file's own
+/// constant) and `structureTypeID`.
+pub fn base_data(s: &Structure) -> Data {
+    data([
+        ("structureID", Value::Int(s.id)),
+        ("structureShowInfoData", show_info(s.type_id, s.id)),
+        ("solarsystemID", Value::Int(s.system)),
+        ("structureTypeID", Value::Int(s.type_id)),
+    ])
+}
+
+/// `ownerCorpName` and `ownerCorpLinkData`, which 182 and 183 add **[V]**.
+fn owner_fields(reg: &Registry, corp: i64) -> Data {
+    let name = reg
+        .corporations()
+        .get(corp)
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
+    data([
+        ("ownerCorpName", Value::Text(name)),
+        ("ownerCorpLinkData", show_info(TYPE_CORPORATION, corp)),
+    ])
+}
+
+/// Who hears a structure notification of `corp` **[A]**, in id order.
+pub fn managers(reg: &Registry, corp: i64) -> Vec<i64> {
+    reg.corporations()
+        .members_of(corp)
+        .into_iter()
+        .filter(|c| crate::service::sov_hub::may_launch(reg, *c))
+        .collect()
+}
+
+/// One notification of `type_id` to every manager of `corp`, the corporation
+/// the sender **[A]**.
+pub fn tell_corp(reg: &mut Registry, corp: i64, type_id: i64, data: Data) {
+    for to in managers(reg, corp) {
+        notif::notify_from(reg, to, type_id, corp, data.clone());
+    }
+}
+
+/// [`tell_corp`] for the owner of `s`.
+pub fn tell(reg: &mut Registry, s: &Structure, type_id: i64, data: Data) {
+    tell_corp(reg, s.owner_corp, type_id, data);
+}
+
+/// `vulnerableTime`: the repair time of `next`, in ticks **[A]**.
+fn vulnerable_ticks(next: State) -> i64 {
+    next.repair_secs() * SECOND
+}
+
+/// `max(0, end - now)`, the formatters' `timeLeft`.
+fn left(end: Option<i64>, now: i64) -> i64 {
+    end.map_or(0, |e| (e - now).max(0))
+}
+
+/// 182 `StructureAnchoring.MakeData`: the structure has been anchored and
+/// its timer runs `timeLeft` more.
+pub fn anchoring(reg: &mut Registry, s: &Structure, now: i64) {
+    let mut d = base_data(s);
+    d.extend(owner_fields(reg, s.owner_corp));
+    d.extend(data([
+        ("timeLeft", Value::Int(left(s.timer.end, now))),
+        (
+            "vulnerableTime",
+            Value::Int(vulnerable_ticks(State::OnliningVulnerable)),
+        ),
+    ]));
+    tell(reg, s, STRUCTURE_ANCHORING, d);
+}
+
+/// 183 `StructureUnanchoring.MakeData`: the decommission countdown started.
+pub fn unanchoring(reg: &mut Registry, s: &Structure, now: i64) {
+    let mut d = base_data(s);
+    d.extend(owner_fields(reg, s.owner_corp));
+    d.push(("timeLeft".to_owned(), Value::Int(left(s.unanchoring, now))));
+    tell(reg, s, STRUCTURE_UNANCHORING, d);
+}
+
+/// 185 `StructureOnline.MakeData`: base data only (`requiresDeedTypeID` is
+/// set only when a deed is missing, which never happens today).
+pub fn online(reg: &mut Registry, s: &Structure) {
+    tell(reg, s, STRUCTURE_ONLINE, base_data(s));
+}
+
+/// 186 and 187 (`StructureLostShield`, `StructureLostArmor`): the timer the
+/// structure now sits in. `to` is the reinforce state it entered.
+pub fn lost_layer(reg: &mut Registry, s: &Structure, to: State, now: i64) {
+    let (type_id, next) = match to {
+        State::ArmorReinforce => (STRUCTURE_LOST_SHIELDS, State::ArmorVulnerable),
+        State::HullReinforce => (STRUCTURE_LOST_ARMOR, State::HullVulnerable),
+        _ => return,
+    };
+    let mut d = base_data(s);
+    d.extend(data([
+        ("timeLeft", Value::Int(left(s.timer.end, now))),
+        ("timestamp", Value::Int(s.timer.end.unwrap_or(now))),
+        ("vulnerableTime", Value::Int(vulnerable_ticks(next))),
+    ]));
+    tell(reg, s, type_id, d);
+}
+
+/// 184 `StructureUnderAttack.MakeData` **[V]** (`structures.py:152-171`): the
+/// bars as percentages (`100 * fraction`, Real), the aggressor's `charID`,
+/// `corpName`, `corpLinkData` ('showinfo', 2, corp), `allianceID` and, when
+/// it is set, `allianceName` and `allianceLinkData` ('showinfo', 16159, id).
+/// `shooter` is the roster key of the last volley
+/// ([`crate::structure_combat::Fire::take_last_shooter`]); damage nobody
+/// fired (a GM command) sends `charID` None and an empty corporation **[A]**
+/// (falsifier: a TQ 184 for damage from no pilot).
+pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) {
+    let (sh, ar, hu) = s.damage.unwrap_or((1.0, 1.0, 1.0));
+    let who = shooter.and_then(|k| reg.pilot(k));
+    let mut d = base_data(s);
+    d.extend(data([
+        ("shieldPercentage", Value::Real(100.0 * sh)),
+        ("armorPercentage", Value::Real(100.0 * ar)),
+        ("hullPercentage", Value::Real(100.0 * hu)),
+        (
+            "charID",
+            who.as_ref()
+                .and_then(|p| p.char_id)
+                .map_or(Value::None, Value::Int),
+        ),
+    ]));
+    let corp = who.as_ref().map(|p| p.corporation_id);
+    let corp_name = corp
+        .and_then(|c| reg.corporations().get(c).map(|c| c.name.clone()))
+        .unwrap_or_default();
+    d.extend(data([
+        ("corpName", Value::Text(corp_name)),
+        (
+            "corpLinkData",
+            corp.map_or(Value::None, |c| show_info(TYPE_CORPORATION, c)),
+        ),
+    ]));
+    let alliance = who.as_ref().and_then(|p| p.alliance_id);
+    d.push((
+        "allianceID".to_owned(),
+        alliance.map_or(Value::None, Value::Int),
+    ));
+    if let Some(a) = alliance {
+        let name = crate::alliance::name_of(reg.deltas(), a).unwrap_or_default();
+        d.extend(data([
+            ("allianceName", Value::Text(name)),
+            ("allianceLinkData", show_info(TYPE_ALLIANCE, a)),
+        ]));
+    }
+    tell(reg, s, STRUCTURE_UNDER_ATTACK, d);
+}
+
+/// 188 `StructureDestroyed.MakeData` **[V]** (`structures.py:294-300`): the
+/// base data and the owner corporation's name and link, and `isAbandoned`
+/// (an abandoned structure's own label).
+pub fn destroyed(reg: &Registry, s: &Structure) -> Data {
+    let mut d = base_data(s);
+    d.extend(owner_fields(reg, s.owner_corp));
+    d.push((
+        "isAbandoned".to_owned(),
+        Value::Bool(s.upkeep == Some(crate::structure::Upkeep::Abandoned)),
+    ));
+    d
+}
+
+/// What `structure_space::react` owes the managers for the events one
+/// structure raised: 184 on the first aggression of a window, 186/187 on
+/// entering a reinforce state, 185 when the onlining ends.
+pub fn on_events(reg: &mut Registry, s: &Structure, events: &[Event], now: i64) {
+    for ev in events {
+        if *ev == Event::FirstAggressed {
+            let shooter = reg
+                .ext_mut::<crate::structure_combat::Fire>()
+                .take_last_shooter(s.id);
+            under_attack(reg, s, shooter);
+        }
+        if let Event::StateChanged { from, to } = ev {
+            match to {
+                State::ArmorReinforce | State::HullReinforce => lost_layer(reg, s, *to, now),
+                State::ShieldVulnerable if *from == State::OnliningVulnerable => online(reg, s),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// 209 `StructuresReinforcementChanged.MakeData` **[V]**: no base data. `info`
+/// is `(itemID, name, typeID)` per structure; `timestamp` is when the change
+/// applies.
+pub fn reinforcement_changed(
+    reg: &mut Registry,
+    corp: i64,
+    info: &[(i64, String, i64)],
+    weekday: i64,
+    hour: i64,
+    timestamp: i64,
+) {
+    let list = info
+        .iter()
+        .map(|(id, name, type_id)| {
+            Value::Tuple(vec![
+                Value::Int(*id),
+                Value::Text(name.clone()),
+                Value::Int(*type_id),
+            ])
+        })
+        .collect();
+    let d = data([
+        ("numStructures", Value::Int(info.len() as i64)),
+        ("allStructureInfo", Value::List(list)),
+        ("weekday", Value::Int(weekday)),
+        ("hour", Value::Int(hour)),
+        ("timestamp", Value::Int(timestamp)),
+    ]);
+    tell_corp(reg, corp, STRUCTURES_REINFORCEMENT_CHANGED, d);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Character, SandboxConfig};
+    use crate::structure;
+
+    const DIRECTOR: i64 = 7;
+    const MEMBER: i64 = 8;
+    const MANAGER: i64 = 9;
+    const OTHER: i64 = 10;
+    const CORP: i64 = 11;
+    const OTHER_CORP: i64 = 12;
+    const T0: i64 = 134_000_000_000_000_000;
+
+    fn world() -> Registry {
+        let ch = |id: i64, corp: i64| Character {
+            character_id: id,
+            corporation_id: corp,
+            ship_id: 1_000 + id,
+            ..Character::default()
+        };
+        let mut reg = Registry::new(SandboxConfig {
+            characters: vec![
+                ch(DIRECTOR, CORP),
+                ch(MEMBER, CORP),
+                ch(MANAGER, CORP),
+                ch(OTHER, OTHER_CORP),
+            ],
+            ..SandboxConfig::default()
+        });
+        let c = reg.corporations_mut();
+        c.enrol_for_test(DIRECTOR, CORP, crate::corp_roles::CORP_ROLE_DIRECTOR);
+        c.enrol_for_test(MEMBER, CORP, 0);
+        c.enrol_for_test(MANAGER, CORP, crate::sov_hub::CORP_ROLE_STATION_MANAGER);
+        c.enrol_for_test(OTHER, OTHER_CORP, crate::corp_roles::CORP_ROLE_DIRECTOR);
+        reg
+    }
+
+    fn structure_at(state: State) -> Structure {
+        let e = structure::Env::new(T0);
+        let mut s = Structure::anchored(4_001, 35_832, CORP, 31, [0.0; 3], 0.0, "Invented", 1, &e);
+        s.set_state(state, &e);
+        s.take_events();
+        s
+    }
+
+    fn got(reg: &Registry, who: i64) -> Vec<notif::Notification> {
+        notif::of(reg.deltas(), who)
+    }
+
+    fn val<'a>(d: &'a Data, key: &str) -> &'a Value {
+        &d.iter()
+            .find(|(k, _)| k == key)
+            .unwrap_or_else(|| panic!("{key}"))
+            .1
+    }
+
+    #[test]
+    fn only_the_owner_corps_managers_hear_it() {
+        let mut reg = world();
+        assert_eq!(managers(&reg, CORP), vec![DIRECTOR, MANAGER]);
+        let s = structure_at(State::ShieldVulnerable);
+        tell(&mut reg, &s, STRUCTURE_ONLINE, base_data(&s));
+        assert_eq!(got(&reg, DIRECTOR).len(), 1);
+        assert_eq!(got(&reg, MANAGER).len(), 1);
+        assert!(got(&reg, MEMBER).is_empty(), "no role, no notification");
+        assert!(got(&reg, OTHER).is_empty(), "another corp's director");
+        let n = &got(&reg, DIRECTOR)[0];
+        assert_eq!(n.type_id, STRUCTURE_ONLINE);
+        assert_eq!(n.sender, CORP, "the sender is the owner corp");
+    }
+
+    #[test]
+    fn the_base_data_has_the_formatters_keys_and_a_showinfo_tuple() {
+        let s = structure_at(State::ShieldVulnerable);
+        let d = base_data(&s);
+        let keys: Vec<&str> = d.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "structureID",
+                "structureShowInfoData",
+                "solarsystemID",
+                "structureTypeID"
+            ]
+        );
+        assert_eq!(
+            val(&d, "structureShowInfoData"),
+            &Value::Tuple(vec![
+                Value::Text("showinfo".to_owned()),
+                Value::Int(s.type_id),
+                Value::Int(s.id)
+            ])
+        );
+        assert_eq!(val(&d, "solarsystemID"), &Value::Int(31));
+    }
+}

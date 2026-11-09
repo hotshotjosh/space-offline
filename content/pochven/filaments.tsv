@@ -1,0 +1,19 @@
+# Triglavian filament families: which landing set each key type draws from.
+# Read by the server (`pochven::filaments::TABLE`); header in docs/content/schema.md.
+# Edit and restart; no re-extract needed. Spec: parity-pochven.md PV-3.
+#
+# name_has: matched case-sensitively against the type's name; a group-4087 type
+#           that matches no row, or two, is logged and not served.
+# direction: in (k-space to Pochven) or out (Pochven to k-space) [V-data: market
+#            groups "Triglavian Space Inbound" / "Outbound"].
+# lands: krai:<word> (the Krai whose name contains the word) | class:home|internal|border
+#        | proximity (k-space within the type's lightYearDistanceMax) | devana.
+name_has	direction	lands	why
+'Devana'	out	devana	[V text] a k-space system the Triglavians care about; the set itself is [A] (falsified by the owner wanting the old border list)
+'Extraction'	out	proximity	[V text] near the system it is used in; the reach is the type's own attribute [V-data]
+'Krai Perun'	in	krai:Perun	[V text] lands in Krai Perun
+'Krai Svarog'	in	krai:Svarog	[V text] lands in Krai Svarog
+'Krai Veles'	in	krai:Veles	[V text] lands in Krai Veles
+Border-	in	class:border	[V text] a border system; the class is derived from the gate graph
+Internal-	in	class:internal	[V text] an internal system
+Home-	in	class:home	[V text] a home system; the home set is [A] (pochven::HOME_SYSTEMS)

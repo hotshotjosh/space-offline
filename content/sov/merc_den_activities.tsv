@@ -1,0 +1,32 @@
+# Mercenary den activities (MERC-2, #84): the templates a den draws its
+# "Mercenary Tactical Operations" (MTOs) from. Authored by us: every number
+# and every dungeon pick is [A]. The client carries the SHAPE of a template
+# (sovereignty/mercenaryden/client/data/activity.py: name and description
+# message ids, a dungeon, a development impact, an anarchy impact, an infomorph
+# bonus [V]) and no numbers; the server sends the client what is here. Read by
+# the server (`merc_den::activity::TABLE`); edit and restart.
+#
+# template: a number that names the row; the order of the numbers is the order
+#   a den's pick is made over.
+# name_msg, description_msg: client localization message ids
+#   (`localization.GetByMessageID`, jobboard/.../mercenary_tactical_operations/
+#   job.py:37-38 [V]); the client's own MTO texts, picked by reading its
+#   localization names UI/MercenaryDens/MTOText/MTOEncounter<N>Name and ...
+#   Description. Keys only, no text.
+# dungeon: the dungeon id the site runs, an archetype-31 dungeon of the bundle
+#   with a name (the site opens as an escalation-shaped personal site; the
+#   server drops a template whose dungeon is missing from the bundle or has no
+#   text). The client's own MTO dungeons are not in the bundle, so each pick is
+#   the nearest faction ladder rung [A].
+# dev_impact, anarchy_impact: levels added to the den's development level and
+#   to its anarchy level when the site is cleared (an anarchy impact is
+#   negative: the site lowers it; neither level goes below 0).
+# infomorph_bonus: infomorphs added to the den's hold on completion (up to its
+#   cargo cap).
+# duration_s: seconds a started activity stays open before it expires.
+# why: the [A] and its falsifier.
+template	name_msg	description_msg	dungeon	dev_impact	anarchy_impact	infomorph_bonus	duration_s	why
+1	872442	872443	1317	3	-2	10	7200	[A] numbers and dungeon (a difficulty-3 escalation dungeon picked for the mercenary meeting point); falsifier: owner balance ruling or a den window whose figures disagree
+2	872444	872445	1478	3	-2	10	7200	[A] numbers and dungeon (a difficulty-3 escalation dungeon picked for the rogue drone emergence); falsifier: as template 1
+3	872446	872447	1478	4	-3	15	7200	[A] numbers and dungeon (no Drifter dungeon found in the bundle, so the drone pick again); falsifier: a Drifter dungeon appearing in the bundle
+4	872448	872449	1320	3	-2	10	7200	[A] numbers and dungeon (a difficulty-3 escalation dungeon picked for the Sansha raiding party); falsifier: as template 1

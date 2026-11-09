@@ -1,0 +1,9 @@
+# Authored daily goals (#202, DG-1). Label paths, never message ids; every number is [A] unless its why says [V].
+# Columns and rules: tools/content_dailygoals.py, docs/content/schema.md.
+key	category	method	target	career	name	description	help	weight	isk	why
+kill25	daily	kill_npc	25	enforcer	UI/DailyGoals/Names/DestroyNoncapsuleers_name	UI/DailyGoals/Descriptions/DestroyNon-capsuleers_description	UI/DailyGoals/HelpTexts/DestroyNoncapsuleers_help	1	100000	target 25 from the label text [V]; isk and weight are [A], falsified by the owner's answer to Q1 or a soak whose pool never covers a day's completions
+mine2000	daily	mine_ore	2000	industrialist	UI/DailyGoals/Names/MineOre_name	UI/DailyGoals/Descriptions/Mine2000Ore_description	UI/DailyGoals/HelpTexts/MineOre_help	1	100000	target 2000 from the label text [V]; isk and weight [A], see kill25
+jump3	daily	space_jump	3	explorer	UI/DailyGoals/Names/JumpGoal_name	UI/DailyGoals/Descriptions/JumpGoal_description	UI/DailyGoals/HelpTexts/JumpGoal_help	1	100000	target 3 from the label text [V]; isk and weight [A], see kill25
+salvage5	daily	salvage_wreck	5	industrialist	UI/DailyGoals/Names/SalvageWrecks_name	UI/DailyGoals/Descriptions/SalvageWrecks_Industrialist_description	UI/DailyGoals/HelpTexts/SalvageWrecks_help	1	100000	target 5 from the label text [V]; isk and weight [A], see kill25
+lp50	daily	earn_lp	50	sof	UI/DailyGoals/Names/EarnLP_name	UI/DailyGoals/Descriptions/EarnLP_SoF_description	UI/DailyGoals/HelpTexts/EarnLP_SoF_help	1	100000	target 50 from the label text [V]; isk and weight [A], see kill25
+bonus	bonus	complete_daily	0	none	UI/DailyGoals/Names/DailyCompletionBonus_name	UI/DailyGoals/Descriptions/DailyCompletionBonus_description	UI/DailyGoals/HelpTexts/DailyCompletionBonus_help	1	500000	target 0 means the day's daily count (DG-2); isk [A], see kill25

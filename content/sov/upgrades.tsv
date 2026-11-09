@@ -1,0 +1,71 @@
+# Sov hub upgrades (SOV-UPG-1, #79): what each upgrade type costs and gives. Authored by
+# us, [A]: the client sends no numbers of its own, it reads these through
+# `hub.upgrade.api.GetDefinitions` (docs/re/sov-gateway.md section 2.1). Read by the
+# server (`sov_upgrade::UPGRADES`); edit and restart. The client reads the
+# definitions once per session, so a client restart picks an edit up.
+#
+# type_id: the upgrade item's type (an identifier, not a value), one of the four
+# upgrade groups. A type with no row here is not installable: `GetDefinitions`
+# omits it and the hub window refuses the drop ("type not valid").
+# power, workforce: what the upgrade uses while Online. Scaled to the planet
+# table (content/sov/planet_resources.tsv): a null-sec system gives hundreds of
+# power and thousands of workforce, so a few upgrades fit and a full set does not.
+# fuel_type: the colony reagent it burns (a type id, `-` for none), fuel_per_hour:
+# units an hour while Online, startup: units paid once when it goes from
+# Offline (or a new install) to Online. A burn or startup needs a fuel_type.
+# exclusive_group: two installed upgrades never share it. Never empty: the client
+# compares the strings, so two empty ones would exclude each other.
+# power_out, workforce_out: what an Online upgrade adds to the budget of the
+# upgrades listed after it.
+# enables (SOV-UPG-2, #80): what an Online upgrade switches on, `-` for none, else a
+# comma list of `jump_bridge` (the Ansiblex at this system's end), `cyno_beacon`,
+# `cyno_jammer` (a Tenebrex here is on) and `sites:<tier>` (the site rows of
+# population.tsv with band `sovupg:<exclusive_group>:<tier>` go live). [A] the
+# names and the tiers are ours; falsifier: a TQ system whose Ansiblex or Tenebrex
+# works without the upgrade, or the client naming its own service gate.
+# why: the [A] and its falsifier.
+type_id	power	workforce	fuel_type	fuel_per_hour	startup	exclusive_group	power_out	workforce_out	enables	why
+81615	120	1500	81143	6	60	cyno_navigation	0	0	cyno_beacon	[A] cynosural navigation: a service upgrade, heavy on workforce; falsifier: owner balance ruling
+81619	150	1800	81143	8	80	cyno_suppression	0	0	cyno_jammer	[A] cynosural suppression: a service upgrade, heavy on workforce; falsifier: owner balance ruling
+81621	110	1400	81143	6	60	logistics_network	0	0	jump_bridge	[A] advanced logistics network: a service upgrade, heavy on workforce; falsifier: owner balance ruling
+81623	200	2200	81143	10	120	supercap_facilities	0	0	-	[A] supercapital construction facilities: a service upgrade, heavy on workforce; falsifier: owner balance ruling
+82492	60	800	81143	4	25	threat	0	0	sites:3	[A] minor threat detection tier 3, one threat array at a time; falsifier: owner balance ruling
+82496	70	900	81143	4	30	threat	0	0	sites:4	[A] major threat detection tier 1, shares the threat group with the minor ones; falsifier: owner balance ruling
+82497	100	1300	81143	6	45	threat	0	0	sites:5	[A] major threat detection tier 2, shares the threat group with the minor ones; falsifier: owner balance ruling
+82498	140	1800	81143	8	70	threat	0	0	sites:6	[A] major threat detection tier 3, shares the threat group with the minor ones; falsifier: owner balance ruling
+82499	25	300	81143	2	10	threat	0	0	sites:1	[A] minor threat detection tier 1, one threat array at a time; falsifier: owner balance ruling
+82500	40	500	81143	3	15	threat	0	0	sites:2	[A] minor threat detection tier 2, one threat array at a time; falsifier: owner balance ruling
+82579	30	400	81144	2	10	ore_tritanium	0	0	-	[A] tritanium prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82580	45	600	81144	3	15	ore_isogen	0	0	-	[A] isogen prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82581	30	400	81144	2	10	ore_isogen	0	0	-	[A] isogen prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82582	45	600	81144	3	15	ore_nocxium	0	0	-	[A] nocxium prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82583	30	400	81144	2	10	ore_nocxium	0	0	-	[A] nocxium prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82584	45	600	81144	3	15	ore_zydrine	0	0	-	[A] zydrine prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82585	30	400	81144	2	10	ore_zydrine	0	0	-	[A] zydrine prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82586	45	600	81144	3	15	ore_megacyte	0	0	-	[A] megacyte prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82587	30	400	81144	2	10	ore_megacyte	0	0	-	[A] megacyte prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82588	45	600	81144	3	15	ore_pyerite	0	0	-	[A] pyerite prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82589	30	400	81144	2	10	ore_pyerite	0	0	-	[A] pyerite prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82590	45	600	81144	3	15	ore_mexallon	0	0	-	[A] mexallon prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+82591	30	400	81144	2	10	ore_mexallon	0	0	-	[A] mexallon prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
+82592	45	600	81144	3	15	ore_tritanium	0	0	-	[A] tritanium prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
+87702	65	900	81144	4	25	ore_tritanium	0	0	-	[A] tritanium prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87703	0	200	-	0	0	power_generation	100	0	-	[A] power monitoring tier 1 makes power, burns nothing; falsifier: owner balance ruling
+87704	65	900	81144	4	25	ore_pyerite	0	0	-	[A] pyerite prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87705	65	900	81144	4	25	ore_mexallon	0	0	-	[A] mexallon prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87706	65	900	81144	4	25	ore_isogen	0	0	-	[A] isogen prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87707	65	900	81144	4	25	ore_nocxium	0	0	-	[A] nocxium prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87708	65	900	81144	4	25	ore_zydrine	0	0	-	[A] zydrine prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87709	65	900	81144	4	25	ore_megacyte	0	0	-	[A] megacyte prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
+87710	20	0	-	0	0	workforce_generation	0	1500	-	[A] workforce mecha-tooling tier 1 makes workforce, burns nothing; falsifier: owner balance ruling
+87815	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87948	20	300	81144	1	5	exploration	0	0	-	[A] exploration detector tier 1; falsifier: owner balance ruling
+87949	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87950	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87951	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87953	35	500	81144	2	10	exploration	0	0	-	[A] exploration detector tier 2; falsifier: owner balance ruling
+87954	55	800	81144	3	20	exploration	0	0	-	[A] exploration detector tier 3; falsifier: owner balance ruling
+88221	0	300	-	0	0	power_generation	200	0	-	[A] power monitoring tier 2 makes power, burns nothing; falsifier: owner balance ruling
+88227	0	400	-	0	0	power_generation	300	0	-	[A] power monitoring tier 3 makes power, burns nothing; falsifier: owner balance ruling
+88228	30	0	-	0	0	workforce_generation	0	3000	-	[A] workforce mecha-tooling tier 2 makes workforce, burns nothing; falsifier: owner balance ruling
+88229	40	0	-	0	0	workforce_generation	0	4500	-	[A] workforce mecha-tooling tier 3 makes workforce, burns nothing; falsifier: owner balance ruling

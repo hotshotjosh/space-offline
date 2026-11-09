@@ -1,0 +1,12 @@
+# Sovereignty star power (SOV-RES, #78): what a system's star adds to its hub's
+# power budget. Authored by us, [A]: the client has a display band for it
+# (orbitalSkyhook/resourceRichness.py [V]); ours is scaled to that band [I].
+# Read by the server (`sov_resources::STARS`); edit and restart. The client
+# reads star power once per session and the definitions version does not cover
+# it, so a star edit needs a client restart.
+#
+# star_type_id: the catalogue's star type id, or 0 for every star type with no
+# row of its own. power: added to the system's maximum power.
+# why: the [A] and its falsifier.
+star_type_id	power	why
+0	300	[A] every star adds the same power, hundreds; falsifier: owner ruling that a star class matters

@@ -1,0 +1,21 @@
+# The recipe markup (C5 §3.2 step 1), read by tools/content_econ.py when it
+# writes out/content/econ/prices.tsv. The server never reads this file; edit it
+# and tools/up.sh re-extracts (the bundle's manifest records it as an `input`).
+#
+# A built item's P_ref is  markup x (sum of its materials' P_ref x quantity) /
+# productQuantity  for a `recipe` or `reaction` price, so building pays. Each
+# build tier compounds its own margin. `override` and `pi` prices are unmarked;
+# a `parent` price and a refine floor inherit the markup of the price they sit on.
+# Exactly one row. The value must be finite and within the extractor's sanity
+# range (content_econ.MIN_RECIPE_MARKUP .. MAX_RECIPE_MARKUP).
+#
+# This is NOT what bounds insurance: a payout is capped by the self-build cost
+# (service/insurance.rs, BUILD_COVER x build_min), at any markup.
+# At ME 0 the server's builder agents need markup >= 1 + BUILD_MARGIN (rules.rs)
+# to find a margin (build.rs values materials at the blueprint's ME, so a
+# researched blueprint passes at a lower markup, even at 1.0).
+#
+# [A] 1.15. Falsifier: a soak where builders still earn nothing, or where
+# building outearns every other career by far.
+markup	why
+1.15	[A] one tier of margin over materials; falsifier: a soak where builders earn nothing, or building outearns every other career

@@ -1,0 +1,18 @@
+# The planetary-processing markup (C5 §3.2 step 2), read by tools/content_econ.py
+# when it writes out/content/econ/prices.tsv. The server never reads this file;
+# edit it and tools/up.sh re-extracts (the bundle's manifest records it as an `input`).
+#
+# A `pi` price is  markup x (sum of its schematic inputs' P_ref x quantity) /
+# output quantity, so processing P1 into P2, P3 or P4 pays at P_ref. Each tier
+# compounds its own margin through its already-marked inputs. Raw P0 and P1
+# inputs priced by other rules are unchanged. Insurance does not cover PI
+# goods, and a hull's `build_min` reads a PI material at its (marked) P_ref,
+# which is still what a builder pays when buying it at the reference price.
+# Exactly one row. The value must be finite and within the extractor's sanity
+# range (content_econ.MIN_PI_MARKUP .. MAX_PI_MARKUP). 1.0 reproduces the
+# unmarked prices.
+#
+# [A] 1.15. Falsifier: a soak where PI bots running P2+ chains still earn
+# nothing, or where PI outearns every other career by far.
+markup	why
+1.15	[A] one tier of margin over inputs; falsifier: a soak where PI chains earn nothing, or PI outearns every other career

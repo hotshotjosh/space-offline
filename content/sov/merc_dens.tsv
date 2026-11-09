@@ -1,0 +1,29 @@
+# Mercenary dens (MERC-1, #83): how a den evolves and what it makes. Authored by
+# us: every number is [A]. The client carries the SHAPE (evolution: a level
+# that rises one per unit_increase_time_seconds, five stages by level band;
+# infomorphs: a count per generation tick within a band of the development
+# stage, capped; sovereignty/mercenaryden/client/repository.py:288-312 [V])
+# but no numbers; the server sends the client these definitions. Read by the
+# server (`merc_den::TABLE`); edit and restart; no re-extract needed.
+#
+# den_type_id: the den item type id this row is for, or 0 for every den type
+# with no row of its own (a type id is an identifier, not a value).
+# dens_per_skill_level: how many dens one trained level of the den-management
+# skill allows (the maximum is level * this; the absolute maximum, level 5 *
+# this).
+# dev_unit_s, anarchy_unit_s: seconds per +1 level of development / anarchy
+# (0 = the level never rises).
+# dev_bands, anarchy_bands: 10 numbers, lower,upper for stage 1 then stage 2
+# ... stage 5. The stage of a level is the highest stage whose lower bound it
+# has reached.
+# anarchy_workforce: 5 numbers, the workforce a den consumes in each anarchy
+# stage (shown as a share of the planet's workforce).
+# gen_tick_s: seconds between infomorph generation ticks.
+# gen_bands: 10 numbers, lower,upper infomorphs per tick for development
+# stage 1 ... 5. A tick makes a count in the band, fixed by (den, tick).
+# cargo_cap: the most infomorphs a den holds.
+# infomorph_type: the item type id of the infomorph (the client's
+# typeEncryptedInfomorph, inventorycommon/const.py [V]).
+# why: the [A] and its falsifier.
+den_type_id	dens_per_skill_level	dev_unit_s	anarchy_unit_s	dev_bands	anarchy_bands	anarchy_workforce	gen_tick_s	gen_bands	cargo_cap	infomorph_type	why
+0	1	3600	7200	0,9,10,19,20,29,30,39,40,99	0,9,10,19,20,29,30,39,40,99	0,100,250,500,1000	3600	0,1,1,2,2,4,4,6,6,10	1000	85746	[A] a level an hour, stages of ten levels, tens of infomorphs an hour at the top; falsifier: owner balance ruling or a den window whose figures disagree with these

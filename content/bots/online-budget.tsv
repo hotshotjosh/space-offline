@@ -1,0 +1,30 @@
+# ONLINE-BUDGET (#257): the share of --max-online allowed at each hour (UTC; with --day-secs the compressed day spread over 24).
+# Use with: eve-bots --max-online N --online-profile content/bots/online-budget.tsv
+# Format: hour<TAB>fraction, all 24 hours 0-23 once, fraction 0 to 1; '#' starts a comment.
+# Limit at an hour = floor(N x fraction). An invented shape, not extracted data.
+# Every row is [A]: an evening peak and a night trough like a player population's.
+# Falsifier: the owner reading the [soc] online series against the hours he plays.
+0	0.35
+1	0.3
+2	0.25
+3	0.22
+4	0.22
+5	0.25
+6	0.35
+7	0.45
+8	0.55
+9	0.6
+10	0.65
+11	0.7
+12	0.75
+13	0.75
+14	0.8
+15	0.85
+16	0.9
+17	0.95
+18	1.0
+19	1.0
+20	0.95
+21	0.8
+22	0.6
+23	0.45
