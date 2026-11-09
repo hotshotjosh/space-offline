@@ -1973,24 +1973,48 @@ longest write {:.2} ms",
         #[test]
         fn the_method_row_says_where_a_call_was_served() {
             let _serial = PROF_TESTS.lock().unwrap_or_else(|e| e.into_inner());
-            let d = Duration::from_millis(1);
-            payload_turn(Some("invented.GetRead"), d, d, TurnKind::Read);
-            payload_turn(Some("invented.GetFell"), d, d, TurnKind::Fallback);
-            payload_turn(Some("invented.Mutate"), d, d, TurnKind::Write);
-            let lines = report_lines(10, Duration::from_secs(1));
-            let m = &lines[2];
-            assert!(m.contains("invented.GetRead:1:1.0ms:1.0ms:ro"), "{m}");
-            assert!(m.contains("invented.GetFell:1:1.0ms:1.0ms:ro?"), "{m}");
-            assert!(m.contains("invented.Mutate:1:1.0ms:1.0ms:rw"), "{m}");
-            assert!(m.contains("ro-served turns"), "{m}");
-            // Process statics: other tests' read turns may land in the same
-            // window, so at least ours is counted (it was a flake at "1").
-            let reads = lines[1]
-                .split("read turns ")
-                .nth(1)
-                .and_then(|r| r.split(' ').next())
-                .and_then(|n| n.parse::<u64>().ok());
-            assert!(reads.is_some_and(|n| n >= 1), "{}", lines[1]);
+            // Every lib-test server's push ticker also reports (and zeroes)
+            // these process statics, so a reset can land between our writes
+            // and our report. Retry the whole write-report-check; a real
+            // defect fails every attempt.
+            let attempt = || -> Result<(), String> {
+                let d = Duration::from_millis(1);
+                payload_turn(Some("invented.GetRead"), d, d, TurnKind::Read);
+                payload_turn(Some("invented.GetFell"), d, d, TurnKind::Fallback);
+                payload_turn(Some("invented.Mutate"), d, d, TurnKind::Write);
+                let lines = report_lines(10, Duration::from_secs(1));
+                let m = &lines[2];
+                for want in [
+                    "invented.GetRead:1:1.0ms:1.0ms:ro",
+                    "invented.GetFell:1:1.0ms:1.0ms:ro?",
+                    "invented.Mutate:1:1.0ms:1.0ms:rw",
+                    "ro-served turns",
+                ] {
+                    if !m.contains(want) {
+                        return Err(format!("missing `{want}`: {m}"));
+                    }
+                }
+                // Other tests' read turns may land in the same window, so at
+                // least ours is counted.
+                let reads = lines[1]
+                    .split("read turns ")
+                    .nth(1)
+                    .and_then(|r| r.split(' ').next())
+                    .and_then(|n| n.parse::<u64>().ok());
+                if reads.is_some_and(|n| n >= 1) {
+                    Ok(())
+                } else {
+                    Err(lines[1].clone())
+                }
+            };
+            let mut last = Ok(());
+            for _ in 0..3 {
+                last = attempt();
+                if last.is_ok() {
+                    break;
+                }
+            }
+            assert!(last.is_ok(), "{last:?}");
         }
 
         fn one(table: &mut BTreeMap<String, Method>, label: &str) {

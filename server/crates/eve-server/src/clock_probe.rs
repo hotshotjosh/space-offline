@@ -316,12 +316,21 @@ mod tests {
     #[test]
     fn the_slice_wait_keeps_the_longest_and_its_slice() {
         let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = take_lock_suffix();
-        // Seconds, so no real tick another test runs can outdo them.
-        note_slice_wait(2, Duration::from_millis(4000));
-        note_slice_wait(5, Duration::from_millis(9000));
-        note_slice_wait(6, Duration::from_millis(1000));
-        let line = take_lock_suffix();
+        // A push ticker in another test can zero the statics between our
+        // writes and our read; retry the whole write-read-check. A real
+        // defect fails every attempt.
+        let mut line = String::new();
+        for _ in 0..3 {
+            let _ = take_lock_suffix();
+            // Seconds, so no real tick another test runs can outdo them.
+            note_slice_wait(2, Duration::from_millis(4000));
+            note_slice_wait(5, Duration::from_millis(9000));
+            note_slice_wait(6, Duration::from_millis(1000));
+            line = take_lock_suffix();
+            if line.contains("clock slice wait max 9000.0 ms (slice 5)") {
+                break;
+            }
+        }
         assert!(
             line.contains("clock slice wait max 9000.0 ms (slice 5)"),
             "{line}"
