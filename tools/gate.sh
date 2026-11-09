@@ -475,10 +475,24 @@ took
 # if every planned name prints `test <name> ... ok` and nothing prints FAILED. Then
 # `== flaky rerun passed` is in the log and the red log records the first attempt's
 # failures as `rescued`. Anything else fails with the FIRST run's exit status.
-if ((status != 0)) && [[ -e tools/gate_reds.py && -e tools/flaky.tsv ]]; then
+#
+# **The list comes from the base, never from the change under test**: a PR that adds its own
+# failing test to tools/flaky.tsv would otherwise rescue itself. The gate reads
+# `git show <base>:tools/flaky.tsv`; with no base (--dirty, --only) or when the range touches
+# the file, nothing reruns.
+if ((status != 0)) && [[ -e tools/gate_reds.py ]]; then
     printf '%s\n' "$out" >"$bg_dir/test-first.out"
     plan_status=0
-    plan=$(python3 -I tools/gate_reds.py rerun-plan --log "$bg_dir/test-first.out" --flaky tools/flaky.tsv) || plan_status=$?
+    plan=""
+    if [[ -z ${base:-} ]]; then
+        plan="no-rerun: no base to read the flake list from"; plan_status=1
+    elif ! git diff --quiet "$base" HEAD -- tools/flaky.tsv; then
+        plan="no-rerun: the list changed in this range"; plan_status=1
+    elif ! git show "$base:tools/flaky.tsv" >"$bg_dir/flaky-base.tsv" 2>/dev/null; then
+        plan="no-rerun: no flake list at the base"; plan_status=1
+    else
+        plan=$(python3 -I tools/gate_reds.py rerun-plan --log "$bg_dir/test-first.out" --flaky "$bg_dir/flaky-base.tsv") || plan_status=$?
+    fi
     if ((plan_status == 0)); then
         rerun_jobs=()
         rerun_names=()
@@ -496,6 +510,7 @@ if ((status != 0)) && [[ -e tools/gate_reds.py && -e tools/flaky.tsv ]]; then
         echo "$rerun_out"
         rerun_ok=1
         ((rerun_status == 0)) || rerun_ok=0
+        ((${#rerun_names[@]} > 0)) || rerun_ok=0
         [[ $rerun_out != *"... FAILED"* ]] || rerun_ok=0
         for n in "${rerun_names[@]}"; do
             [[ $'\n'$rerun_out$'\n' == *$'\n'"test $n ... ok"$'\n'* ]] || rerun_ok=0

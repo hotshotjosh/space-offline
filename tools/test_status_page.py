@@ -487,6 +487,55 @@ class Tables(unittest.TestCase):
         fail, notes = sp.split_findings(items, set())
         self.assertEqual(fail, [])
         self.assertEqual(len(notes), 1)
+        # ... unless a row cited it at the base, or its file changed in the range
+        fail, _ = sp.split_findings(items, sp.Changed(set(), {"fci_gamma"}, set()))
+        self.assertEqual(len(fail), 1)
+        fail, _ = sp.split_findings(items, sp.Changed(set(), set(), {"fci_gamma"}))
+        self.assertEqual(len(fail), 1)
+
+    UNCITED = "Space\tOne\tmissing\tnothing\t\t3.1\t\n"
+
+    def uncite(self, d, base_tsv):
+        """Base: `base_tsv`, no regress.list row, a verdict for fci_alpha. Then a commit that
+        rewrites the row to cite nothing."""
+        self.git_root(d, base_tsv)
+        with open(os.path.join(d, "tools/client-ci/regress.list"), "w", encoding="utf-8") as f:
+            f.write("# none\n")
+        self.git(d, "commit", "-qam", "no regress row")
+        self.first = self.git(d, "rev-parse", "HEAD").strip()
+
+    def rewrite_row(self, d, tsv):
+        path = os.path.join(d, "docs/status/progress.tsv")
+        with open(path, encoding="utf-8") as f:
+            head = f.read().split(sp.COLUMNS[0] + "\t")[0]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(head + "\t".join(sp.COLUMNS) + "\n" + tsv)
+        self.git(d, "commit", "-qam", "rewrite the row")
+
+    def test_a_scenario_a_commit_stopped_citing_fails_the_landing_audit(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.uncite(d, self.GOOD)
+            self.rewrite_row(d, self.UNCITED)
+            rc, out = self.audit_since(d, self.first)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("fci_alpha: a scenario with a verdict (w1) no feature cites", out)
+            self.assertNotIn("note:", out)
+
+    def test_a_scenario_nobody_cited_at_the_base_is_only_a_note(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.uncite(d, self.UNCITED)
+            rc, out = self.audit_since(d, self.first)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("status-page: note: fci_alpha: a scenario with a verdict", out)
+
+    def test_a_scenario_whose_file_changed_in_the_range_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.uncite(d, self.UNCITED)
+            with open(os.path.join(d, "tools/client-ci/scenarios/fci_alpha.py"), "w", encoding="utf-8") as f:
+                f.write("# edited\n")
+            self.git(d, "commit", "-qam", "edit the scenario")
+            rc, out = self.audit_since(d, self.first)
+            self.assertEqual(rc, 1, out)
 
     def test_without_a_base_every_finding_fails(self):
         items = sp.audit_items([row()], KNOWN, {"fci_alpha": ("3", False)}, [])

@@ -273,7 +273,7 @@ class RerunPlan(Base):
         self.assertTrue(r.stdout.startswith("no-rerun: a red that is not a failing test"), r.stdout)
 
     def test_no_rerun_arguments_in_the_log_means_no_rerun(self) -> None:
-        self.no_rerun(self.plan(red("a::b", tail=""), "a::b"), "no 'to rerun pass' arguments in the log")
+        self.no_rerun(self.plan(red("a::b", tail=""), "a::b"), f"no 'to rerun pass' arguments for {LIB}")
 
     def test_the_switch_and_an_empty_list(self) -> None:
         self.no_rerun(self.plan(red("a::b"), "a::b", env={"EVE_GATE_NO_RERUN": "1"}), "EVE_GATE_NO_RERUN is set")
@@ -300,6 +300,75 @@ class RerunPlan(Base):
         r = self.run_tool("rerun-plan", "--log", self.log(red("a::b")), "--flaky", os.path.join(self.tmp, "none"))
         self.assertEqual(r.returncode, 1)
         self.assertIn("no-rerun: cannot read", r.stdout)
+
+    # --- fail closed on anything the plan cannot account for (review F1, F3) ----------------
+
+    BOTS = ("   Running tests/bots/main.rs (target/debug/deps/bots-99aa77ff)\n")
+
+    def test_a_second_binary_that_dies_with_no_failure_or_result_line_blocks_the_rerun(self) -> None:
+        text = red("a::b") + self.BOTS + "error: test failed, to rerun pass `-p eve_bot --test bots`\n"
+        r = self.plan(text, "a::b")
+        self.no_rerun(r, "bots:tests/bots/main.rs failed with no failing test named (it crashed or stopped)")
+
+    def test_a_segfault_after_the_flake_failed_in_the_same_binary_blocks_the_rerun(self) -> None:
+        text = red("a::b", extra="error: test failed, to rerun pass `-p eve_invented --lib`\n"
+                   "Caused by:\n  process didn't exit successfully: `deps/x` (signal: 11, SIGSEGV)\n")
+        r = self.plan(text, "a::b")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("a crash marker", r.stdout)
+        for marker in ("fatal runtime error: stack overflow", "thread 'x' has overflowed its stack"):
+            self.assertIn("crash marker", self.plan(red("a::b", extra=marker + "\n"), "a::b").stdout)
+
+    def job_log(self, *jobs: tuple[str, str]) -> str:
+        out = ""
+        for job, body in jobs:
+            out += f"   -- cargo test --locked --no-fail-fast {job}\n{body}"
+        for job, body in jobs:
+            if "FAILED" in body or "error:" in body:
+                out += f"test-parallel: cargo test --locked --no-fail-fast {job} FAILED\n"
+        return out
+
+    def test_a_second_job_that_fails_without_a_test_blocks_the_rerun(self) -> None:
+        body = red("a::b").replace("== test\n", "")
+        text = self.job_log(("-p eve_invented --lib", body),
+                            ("-p eve_nowhere --doc", "error: no test target named `x` in default-run packages\n"))
+        self.assertEqual(self.plan(text, "a::b").returncode, 1)
+        text = self.job_log(("-p eve_invented --lib", body), ("-p eve_other --lib", "test result: ok. 1 passed\n"))
+        self.assertEqual(self.plan(text, "a::b").returncode, 0)
+
+    def test_a_failed_job_with_no_planned_binary_is_named(self) -> None:
+        body = red("a::b").replace("== test\n", "")
+        text = self.job_log(("-p eve_invented --lib", body), ("-p eve_other --lib", "test result: ok. 1 passed\n"))
+        text += "test-parallel: cargo test --locked --no-fail-fast -p eve_other --lib FAILED\n"
+        r = self.plan(text, "a::b")
+        self.no_rerun(r, "the job '-p eve_other --lib' failed with no failing test of its own")
+
+    def test_a_failure_closed_by_another_binarys_rerun_line_blocks_the_rerun(self) -> None:
+        text = ("== test\n   Running unittests src/lib.rs (target/debug/deps/eve_invented-0123abcd)\n"
+                "test a::b ... FAILED\n" + self.BOTS
+                + "error: test failed, to rerun pass `-p eve_bot --test bots`\n"
+                "test result: FAILED. 0 passed; 1 failed\n")
+        r = self.plan(text, "a::b")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no-rerun: ", r.stdout)
+
+    def test_a_result_line_that_counts_other_failures_blocks_the_rerun(self) -> None:
+        text = red("a::b").replace("1 passed; 1 failed", "1 passed; 2 failed")
+        self.no_rerun(self.plan(text, "a::b"), f"{LIB}: 2 failed but 1 named")
+
+    def test_the_summary_count_must_match_the_failing_binaries(self) -> None:
+        text = red("a::b", tail="error: 2 targets failed:\n    `-p eve_invented --lib`\n    `-p eve_x --lib`\n")
+        self.no_rerun(self.plan(text, "a::b"), "cargo counts 2 failed target(s), the log holds 1")
+
+    def test_rerun_arguments_must_be_of_the_plain_form(self) -> None:
+        for bad in ("-p eve_invented --lib --config build.rustflags=['x']", "--config x=1 -p a --lib",
+                    "-p eve_invented --lib; rm -rf /nonexistent/probe", "--workspace", "-p a --test"):
+            r = self.plan(red("a::b", tail=f"error: test failed, to rerun pass `{bad}`\n"), "a::b")
+            self.assertEqual(r.returncode, 1, bad)
+            self.assertIn("not of the plain form", r.stdout)
+        for ok in ("-p eve-bot --test bots", "-p eve_invented --bin tool", "-p eve_invented --lib"):
+            r = self.plan(red("a::b", tail=f"error: test failed, to rerun pass `{ok}`\n"), "a::b")
+            self.assertEqual(r.returncode, 0, ok)
 
     def test_the_shipped_list_is_valid(self) -> None:
         r = self.run_tool("rerun-plan", "--log", self.log(red("a::b")), "--flaky", os.path.join(HERE, "flaky.tsv"))

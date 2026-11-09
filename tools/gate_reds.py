@@ -62,6 +62,11 @@ RE_FORMAT = re.compile(r"^Diff in /repo/(.+?):\d+")
 RE_RESULT = re.compile(r"^test result: ")
 RE_RERUN_ARGS = re.compile(r"to rerun pass `([^`]+)`")
 RE_TARGET_LINE = re.compile(r"^\s+`(-p [^`]+|--[^`]+)`\s*$")
+RE_RESULT_FAILED = re.compile(r"^test result: FAILED\. (\d+) passed; (\d+) failed")
+RE_JOB_HEADER = re.compile(r"^\s+-- cargo test --locked --no-fail-fast (.*)$")
+RE_JOB_FAILED = re.compile(r"^test-parallel: cargo test --locked --no-fail-fast (.*) FAILED$")
+RE_SAFE_ARGS = re.compile(r"^-p [A-Za-z0-9_-]+ (--lib|--test [A-Za-z0-9_-]+|--bin [A-Za-z0-9_-]+)$")
+CRASH_MARKERS = ("process didn't exit successfully", "fatal runtime error", "has overflowed its stack", "(signal:")
 RE_NAME = re.compile(r"^[A-Za-z0-9_:]+$")
 RE_ISSUE = re.compile(r"^#[0-9]+$")
 FLAKY_MAGIC = "#flaky 1"
@@ -315,7 +320,12 @@ def plan_rerun(text: str, flaky: list[tuple[str, str, str, str]], disabled: bool
     A rerun is planned only when every failure is a listed test (on target and name),
     there are at most MAX_RERUN_FAILURES, no other kind of red row exists (a panic
     outside the test threads, a compile error, a non-test stage), the run printed its
-    `test result:` lines, and the rerun is not switched off.
+    `test result:` lines, and the rerun is not switched off. It also fails closed on
+    anything it cannot account for: every failing test binary must have its own FAILED
+    names, its own `test result: FAILED ... F failed` line with F equal to the names, and
+    rerun arguments of the plain form `-p <pkg> (--lib|--test <t>|--bin <b>)`; the log must
+    hold no crash marker; every failed `test-parallel` job and every
+    `error: N targets failed` count must be matched by a planned binary.
     """
     if disabled:
         raise NoRerun("EVE_GATE_NO_RERUN is set")
@@ -324,13 +334,17 @@ def plan_rerun(text: str, flaky: list[tuple[str, str, str, str]], disabled: bool
     _tier, rows = parse(text)
     if any(kind == "compile" for _s, kind, _t, _n in rows):
         raise NoRerun("a compile error")
-    if not any(RE_RESULT.match(ln) for ln in text.splitlines()):
+    lines = text.splitlines()
+    if not any(RE_RESULT.match(ln) for ln in lines):
         raise NoRerun("the run printed no 'test result:' lines")
     for stage, kind, target, test in rows:
         if kind == "panic":
             raise NoRerun(f"a panic outside the test threads ({test})")
         if kind != "test" or stage != "test":
             raise NoRerun(f"a red that is not a failing test ({kind} in {stage})")
+    for marker in CRASH_MARKERS:
+        if marker in text:
+            raise NoRerun(f"the log holds a crash marker ({marker.strip()})")
     tests = [(t, n) for _s, _k, t, n in rows]
     if len(tests) > MAX_RERUN_FAILURES:
         raise NoRerun(f"{len(tests)} failures (at most {MAX_RERUN_FAILURES} are rerun)")
@@ -338,51 +352,89 @@ def plan_rerun(text: str, flaky: list[tuple[str, str, str, str]], disabled: bool
     for t, n in tests:
         if (t, n) not in listed:
             raise NoRerun(f"{n} on {t} is not on the flake list")
-    # cargo's own rerun arguments: the inline "to rerun pass" line closes each failing
-    # binary, so the failures printed since the previous one belong to it; the summary
-    # block `error: N targets failed:` lists the same arguments one per line.
-    groups: list[tuple[str, list[str]]] = []
-    pending: list[str] = []
+
+    # One record per test binary (a `Running` or `Doc-tests` line starts it) and the
+    # test-parallel job it ran under (a `-- cargo test ...` header starts that).
+    groups: list[dict] = []
+    cur: dict | None = None
+    job = ""
     summary: list[str] = []
+    summary_n: int | None = None
     in_summary = False
-    for line in text.splitlines():
-        m = RE_FAILED.match(line)
+    failed_jobs: list[str] = []
+    for line in lines:
+        m = RE_JOB_HEADER.match(line)
         if m:
-            pending.append(m.group(1))
+            job = m.group(1)
+            cur = None
+            continue
+        m = RE_JOB_FAILED.match(line)
+        if m:
+            failed_jobs.append(m.group(1))
+            continue
+        m = RE_RUNNING.match(line)
+        m2 = None if m else RE_DOCTEST.match(line)
+        if m or m2:
+            tgt = f"{m.group(2)}:{m.group(1)}" if m else f"{m2.group(1)}:doctest"
+            cur = {"target": tgt, "job": job, "names": [], "f": None, "args": None}
+            groups.append(cur)
+            continue
+        m = RE_FAILED.match(line)
+        if m and cur is not None:
+            cur["names"].append(m.group(1))
+            continue
+        m = RE_RESULT_FAILED.match(line)
+        if m and cur is not None:
+            cur["f"] = int(m.group(2))
             continue
         m = RE_RERUN_ARGS.search(line)
-        if m:
-            groups.append((m.group(1), pending))
-            pending = []
+        if m and cur is not None:
+            cur["args"] = m.group(1)
             continue
-        if re.match(r"^error: \d+ targets? failed:", line):
+        m = re.match(r"^error: (\d+) targets? failed:", line)
+        if m:
+            summary_n = int(m.group(1))
             in_summary = True
             continue
         if in_summary:
             m = RE_TARGET_LINE.match(line)
             if m:
                 summary.append(m.group(1))
-            else:
-                in_summary = False
-    argsets = [a for a, _n in groups] or summary
-    if not argsets:
-        raise NoRerun("no 'to rerun pass' arguments in the log")
-    names = [n for _t, n in tests]
+                continue
+            in_summary = False
+        if re.match(r"^error(\[|:)", line) and not RE_RERUN_ARGS.search(line):
+            raise NoRerun(f"an error line the rerun cannot account for ({line.strip()[:60]})")
+    failing = [g for g in groups if g["names"] or g["args"] or g["f"] is not None]
+    if not failing:
+        raise NoRerun("no failing test binary in the log")
+    for g in failing:
+        if not g["names"]:
+            raise NoRerun(f"{g['target']} failed with no failing test named (it crashed or stopped)")
+        if g["f"] is None:
+            raise NoRerun(f"{g['target']} has failures but no 'test result: FAILED' line of its own")
+        if g["f"] != len(g["names"]):
+            raise NoRerun(f"{g['target']}: {g['f']} failed but {len(g['names'])} named")
+    if summary_n is not None and summary_n != len(failing):
+        raise NoRerun(f"cargo counts {summary_n} failed target(s), the log holds {len(failing)}")
+    if summary and len(summary) != len(failing):
+        raise NoRerun("cargo's failed-target list does not match the failing binaries")
+    for g, s in zip(failing, summary if len(summary) == len(failing) else []):
+        g["args"] = g["args"] or s
+    for g in failing:
+        if not g["args"]:
+            raise NoRerun(f"no 'to rerun pass' arguments for {g['target']}")
+        if not RE_SAFE_ARGS.match(g["args"]):
+            raise NoRerun(f"rerun arguments not of the plain form ({g['args'][:60]})")
+    for fj in failed_jobs:
+        if not any(g["job"] == fj for g in failing):
+            raise NoRerun(f"the job '{fj[:60]}' failed with no failing test of its own")
+    got_names = sorted(n for g in failing for n in g["names"])
+    if got_names != sorted(n for _t, n in tests):
+        raise NoRerun("the failures of the log do not match its test binaries")
     by_args: dict[str, list[str]] = {}
-    for args, got in groups:
-        by_args.setdefault(args, []).extend(got)
-    leftover = [n for n in names if not any(n in v for v in by_args.values())]
-    if leftover:
-        for args in argsets:
-            by_args.setdefault(args, []).extend(leftover)
-    lines = []
-    for args in dict.fromkeys(argsets):
-        got = list(dict.fromkeys(by_args.get(args, [])))
-        if got:
-            lines.append(f"rerun {args} -- --exact {' '.join(got)}")
-    if not lines:
-        raise NoRerun("no rerun arguments for the failing tests")
-    return lines
+    for g in failing:
+        by_args.setdefault(g["args"], []).extend(g["names"])
+    return [f"rerun {args} -- --exact {' '.join(dict.fromkeys(names))}" for args, names in by_args.items()]
 
 
 def cmd_rerun_plan(a: argparse.Namespace) -> int:

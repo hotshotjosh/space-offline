@@ -24,6 +24,7 @@ GUARDED_EXACT = {
     "docs/guides/public-export.md", "docs/guides/jail.md",
     "docs/lanes/README.md",
     "tools/land.sh", "tools/gate.sh", "tools/dev.sh",
+    "tools/flaky.tsv", "tools/gate_reds.py", "tools/test-parallel.sh",
     "tools/public-export.py", "tools/mirror-github.sh", "tools/import-pr.sh",
     "tools/pr_guard.py", "tools/test_mirror.py",
     "server/deps.allow", "server/Cargo.lock", "Cargo.lock",

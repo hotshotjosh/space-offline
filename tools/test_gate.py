@@ -770,10 +770,15 @@ class LandingTools(unittest.TestCase):
                 + "test result: FAILED. 1 passed; %d failed\n" % len(failed)
                 + "error: test failed, to rerun pass `-p eve_invented --lib`\n")
 
-    def flaky_tree(self, *listed: str, rerun: str = "", rerun_exit: int = 0) -> None:
+    def flaky_tree(self, *listed: str, rerun: str = "", rerun_exit: int = 0, in_range: bool = False) -> None:
+        """The list and the recorder are pushed as the base (the gate reads the list from the
+        base); `in_range` leaves the list in the range under test instead."""
         rows = "".join(f"{self.FLAKY_TARGET}\t{n}\t#999\t2026-11-09\n" for n in listed)
         self.write("tools/flaky.tsv", self.FLAKY_HEAD + rows)
         self.with_reds()
+        if not in_range:
+            self.git("push", "-q", "--no-verify", "--force", "origin", "master")
+            self.commit("change under test", ("change2.txt", "y\n"))
         self.rerun_out = os.path.join(self.tmp, "rerun.out")
         self.rerun_count = os.path.join(self.tmp, "rerun.count")
         with open(self.rerun_out, "w") as f:
@@ -855,6 +860,30 @@ class LandingTools(unittest.TestCase):
         self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
         self.assertIn("== flaky rerun: 3 test(s)", g.stdout)
         self.assertEqual(self.reruns(), 1)
+
+    def test_a_list_that_is_part_of_the_change_under_test_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n", in_range=True)
+        self.assert_no_rerun("the list changed in this range")
+
+    def test_a_list_edited_in_the_range_is_not_trusted_even_if_the_base_lists_the_test(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        self.commit("edit the list", ("tools/flaky.tsv", self.FLAKY_HEAD
+                                      + f"{self.FLAKY_TARGET}\tflaky::one\t#999\t2026-11-10\n"))
+        self.assert_no_rerun("the list changed in this range")
+
+    def test_a_run_with_no_base_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        g = self.run_tool("gate.sh", "--dirty")
+        self.assertEqual(g.returncode, 101, g.stdout + g.stderr)
+        self.assertEqual(self.reruns(), 0)
+        self.assertIn("no flaky rerun: no base to read the flake list from", g.stdout)
+
+    def test_a_rerun_that_names_no_test_is_not_a_pass(self) -> None:
+        gate = open(os.path.join(HERE, "gate.sh")).read()
+        self.assertIn("((${#rerun_names[@]} > 0)) || rerun_ok=0", gate)
 
     def test_the_switch_turns_the_rerun_off(self) -> None:
         self.cargo_test(self.red_run("flaky::one"), 101)

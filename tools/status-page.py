@@ -48,6 +48,7 @@ import os
 import re
 import subprocess
 import tempfile
+from typing import NamedTuple
 import sys
 from html import escape
 
@@ -677,14 +678,15 @@ def newest_verdicts(paths: list[tuple[str, str]]) -> dict[str, tuple[str, bool]]
 
 
 def audit_items(rows: list[dict], known: set[str], latest: dict[str, tuple[str, bool]],
-                listed: list[str]) -> list[tuple[str | None, str, bool]]:
-    """Where the table and the regression results disagree, as (feature, text, from_verdicts).
+                listed: list[str]) -> list[tuple[str | None, str, bool, str]]:
+    """Where the table and the regression results disagree, as (feature, text, from_verdicts, scenario).
 
-    `feature` is the row the finding is about (None for a scenario no row cites);
+    `feature` is the row the finding is about (None for a scenario no row cites, which names
+    that scenario in `scenario`);
     `from_verdicts` is True when the finding rests on the verdicts in `var/`, which only
     some machines hold, and False when the committed tree alone decides it.
     """
-    out: list[tuple[str | None, str, bool]] = []
+    out: list[tuple[str | None, str, bool, str]] = []
     claimed = set()
     for r in rows:
         cited = scenarios_in(r["evidence"], known)
@@ -694,34 +696,45 @@ def audit_items(rows: list[dict], known: set[str], latest: dict[str, tuple[str, 
         f = r["feature"]
         if r["state"] in FINISHED and red:
             out.append((f, f"{f}: {r['state']}, but the newest verdict is red: "
-                        + ", ".join(f"{c} ({latest[c][0]})" for c in red), True))
+                        + ", ".join(f"{c} ({latest[c][0]})" for c in red), True, ""))
         elif r["state"] in ("built-unproved", "missing", "unknown") and seen and not red:
             out.append((f, f"{f}: {r['state']}, but the newest verdict is green: "
-                        + ", ".join(f"{c} ({latest[c][0]})" for c in cited if c in latest), True))
+                        + ", ".join(f"{c} ({latest[c][0]})" for c in cited if c in latest), True, ""))
         if r["state"] == "client-proved" and cited and not seen:
-            out.append((f, f"{f}: no verdict for {', '.join(cited)}", True))
+            out.append((f, f"{f}: no verdict for {', '.join(cited)}", True, ""))
     bare = {c.split("@")[0] for c in claimed}
     for name in list(listed) + sorted(n for n in latest if n not in listed):
         if name in NOT_FEATURES or name.split("@")[0] in NOT_FEATURES:
             continue
         if name not in claimed and name.split("@")[0] not in bare:
             if name in listed:
-                out.append((None, f"{name}: a regression row no feature cites", False))
+                out.append((None, f"{name}: a regression row no feature cites", False, name))
             else:
-                out.append((None, f"{name}: a scenario with a verdict ({latest[name][0]}) no feature cites", True))
+                out.append((None, f"{name}: a scenario with a verdict ({latest[name][0]}) no feature cites", True, name))
     return out
 
 
 def audit(rows: list[dict], known: set[str], latest: dict[str, tuple[str, bool]], listed: list[str]) -> list[str]:
     """Where the table and the regression results disagree."""
-    return [text for _f, text, _v in audit_items(rows, known, latest, listed)]
+    return [text for _f, text, _v, _s in audit_items(rows, known, latest, listed)]
 
 
-def changed_features(root: str, base: str) -> set[str] | None:
-    """The features whose row is new or different since `base`; None if `base` cannot be read."""
+class Changed(NamedTuple):
+    """What a range changed: rows (new or different), the scenarios the base's rows cited, and
+    the scenarios whose file changed."""
+    rows: set[str]
+    cited: set[str]
+    scenarios: set[str]
+
+
+def changed_features(root: str, base: str) -> Changed | None:
+    """What changed since `base`; None if `base` cannot be read."""
     try:
         old = subprocess.run(["git", "-C", root, "show", f"{base}:{STATUS_DIR}/progress.tsv"],
                              capture_output=True, text=True, check=True, timeout=60).stdout
+        files = subprocess.run(["git", "-C", root, "diff", "--name-only", "--no-renames", base, "HEAD", "--",
+                                "tools/client-ci/scenarios"],
+                               capture_output=True, text=True, check=True, timeout=60).stdout.split()
     except (OSError, subprocess.SubprocessError):
         return None
     with tempfile.TemporaryDirectory(prefix="eve-status-base-") as d:
@@ -734,18 +747,30 @@ def changed_features(root: str, base: str) -> set[str] | None:
             return None
     was = {r["feature"]: [r[c] for c in COLUMNS] for r in before}
     now, _ = read_table(os.path.join(root, STATUS_DIR, "progress.tsv"), COLUMNS)
-    return {r["feature"] for r in now if was.get(r["feature"]) != [r[c] for c in COLUMNS]}
+    known = scenario_names(root)
+    cited = {c.split("@")[0] for r in before for c in scenarios_in(r["evidence"], known)}
+    scenarios = {os.path.basename(f)[:-3] for f in files if f.endswith(".py")}
+    return Changed({r["feature"] for r in now if was.get(r["feature"]) != [r[c] for c in COLUMNS]}, cited, scenarios)
 
 
-def split_findings(items: list[tuple[str | None, str, bool]], changed: set[str] | None) -> tuple[list[str], list[str]]:
+def split_findings(items: list[tuple[str | None, str, bool, str]],
+                   changed: "Changed | set[str] | None") -> tuple[list[str], list[str]]:
     """(failures, notes). Without `changed` every finding fails; with it, a finding that rests on
-    verdicts fails only for a row in `changed`."""
+    verdicts fails only for a row in `changed`, or, for a scenario no row cites, one that a row
+    cited at the base or whose file changed in the range (an un-cited or edited scenario)."""
+    if isinstance(changed, set):
+        changed = Changed(changed, set(), set())
     fail, notes = [], []
-    for feature, text, from_verdicts in items:
-        if changed is not None and from_verdicts and feature not in changed:
-            notes.append(text)
-        else:
+    for feature, text, from_verdicts, scenario in items:
+        if changed is None or not from_verdicts:
             fail.append(text)
+            continue
+        bare = scenario.split("@")[0]
+        if feature is None:
+            hit = bare in changed.cited or bare in changed.scenarios
+        else:
+            hit = feature in changed.rows
+        (fail if hit else notes).append(text)
     return fail, notes
 
 

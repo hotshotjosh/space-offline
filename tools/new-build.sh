@@ -25,7 +25,7 @@
 # A step that needs a human decision prints exactly what to do and the
 # script exits 10. Exit: 0 all done, 1 a step failed, 2 usage, 10 stopped.
 #
-# `--gate-check` is what tools/gate.sh runs: for every committed
+# `--gate-check` is what `tools/gate.sh --env-checks` runs (not the landing gate): for every committed
 # findings/build-delta-<old>-<new>.tsv whose two installs both exist on
 # this machine it runs build-delta.py --check; it skips with a note when
 # they do not. Every delta is checked, not only those against the pinned

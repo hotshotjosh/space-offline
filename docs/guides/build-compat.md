@@ -103,7 +103,8 @@ an existing line needs only the row.
 
 ## The gate
 
-`tools/gate.sh` runs `tools/new-build.sh --gate-check`: for each committed
+`tools/gate.sh --env-checks` (not the landing gate: it depends on this machine's
+installs) runs `tools/new-build.sh --gate-check`: for each committed
 `findings/build-delta-<old>-<new>.tsv` whose two installs exist on this
 machine it runs `build-delta.py --check` in the analysis container (exit 0 or
 3 means the committed rows reproduce; anything else fails the gate, meaning
