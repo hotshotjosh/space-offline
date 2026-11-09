@@ -14,6 +14,7 @@ no language model is ever in the sync path.
 |---|---|---|
 | every GitHub issue, with its comments | GitHub -> tracker (a mirror labelled `from-github`) | GitHub |
 | `needs-owner`, `parked`, open/closed | GitHub -> tracker | GitHub |
+| an open pull request with no update for over 30 days | the sync adds the label `stale` on GitHub; it never removes it | - |
 | a tracker issue labelled `public` | tracker -> GitHub, after the public export's leak scan; a hit refuses it | the tracker for title, text, priority and milestone |
 
 Comments are appended to the mirror, never edited. Possible duplicates get a comment
