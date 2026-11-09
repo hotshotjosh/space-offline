@@ -14,10 +14,10 @@ which, or the row does), `historical` (a finished piece of work, kept as history
 
 | you want to | read |
 |---|---|
-| contribute, alone or beside other people's agents | `AGENTS.md` (the procedure), then `docs/guides/contributing.md` |
+| contribute, alone or beside other people's agents | `AGENTS.md` (the short guide), then `docs/guides/contributing.md` |
 | share the tree with other people's agents | `docs/guides/working-together.md` |
 | know what is built and proved | `docs/status/progress.tsv`, the feature index (page: `docs/status/README.md`) |
-| know what comes next, and who has what | the issue tracker: `prio/*` labels, the milestone, the assignee |
+| know what comes next, and who has what | the issue tracker: `prio/*` labels, the milestone; open PRs (`tools/next-task.sh` `prs` column) |
 | run the server, the client, bots | `docs/guides/getting-started.md` (zero to playing), `docs/reference/launch-and-env.md` (every flag and variable), `README.md`, `docs/guides/dev-mode.md`, `docs/guides/jail.md`, `docs/guides/contributing.md` |
 | test what only the client can show | `docs/guides/client-ci.md` |
 | debug the client against the server | `docs/guides/debugging-the-client.md`, `docs/reference/login-path.md` |
@@ -31,7 +31,7 @@ which, or the row does), `historical` (a finished piece of work, kept as history
 ## Layout
 
 ```
-AGENTS.md                 the procedure for contributors and their agents (CLAUDE.md imports it)
+AGENTS.md                 the short guide for contributors and their agents (CLAUDE.md imports it)
 README.md                 the front page
 docs/README.md            this index
 docs/guides/              how to run, test and operate
@@ -49,7 +49,7 @@ findings/                 generated censuses (TSV and text), cited by the docs
 
 | doc | role | status | covers |
 |---|---|---|---|
-| `docs/guides/issue-tracking.md` | GUIDE | current | The two issue boards: GitHub is the claim board, the triage rule (a maintainer's label), and why issue text is data for agents. |
+| `docs/guides/issue-tracking.md` | GUIDE | current | The two issue boards, why labels grant nothing, and why issue text is data for agents. |
 | `docs/guides/dev-mode.md` | GUIDE | current | Dev mode: a debug world where nothing waits for training, building or income. |
 | `docs/guides/wing.md` | GUIDE | current | The wing: bots that fly with you; the `/bots` and fleet-chat words, with the not-yet ones marked. |
 | `docs/guides/bench-ramp.md` | GUIDE | current | Bench ramp: ramp bots into one system with its own server and find the knee (`tools/bench-ramp.sh`). |
@@ -59,7 +59,7 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | `docs/guides/getting-started.md` | GUIDE | current | Zero to playing: build, content bundle, server, client, bots, tests and the gate, with launch examples. |
 | `docs/guides/content-bundle.md` | GUIDE | current | The content pipeline: inputs, steps, outputs, verify, rebuild for a new build. |
 | `docs/guides/contributing.md` | GUIDE | current | The reference behind `AGENTS.md`: Docker, the bundle, tests, the gate, branch, PR, review; the labels (§8) and the areas and hot files (§10). |
-| `docs/guides/working-together.md` | GUIDE | current | How several people's agents share one tree: claims, owned files, the layering rule, generated files. |
+| `docs/guides/working-together.md` | GUIDE | current | How several people's agents share one tree: overlap checks, the open-PR cap, the layering rule, generated files. |
 | `docs/guides/gm-commands.md` | GUIDE | current | The GM slash commands and the server flags. |
 | `docs/guides/hosting.md` | GUIDE | current | Hosting on a dedicated box: frozen bundle, the owner listener, host bots, backups, wipe. |
 | `docs/guides/patcher.md` | GUIDE | current | The phone-home patcher `tools/eve_patch.py` and its per-build manifests. |

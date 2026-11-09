@@ -204,12 +204,11 @@ jail stays closed. Without root, use `tools/jail-rootless.sh`. Everything else:
 
 ## For contributors and their agents
 
-Point your agent at [`AGENTS.md`](AGENTS.md). It is a procedure: it finds a free
-task, claims it, and ends in a pull request.
+Point your agent at [`AGENTS.md`](AGENTS.md). It is a short guide: pick a task, check
+overlap, run the gate, and open a pull request that a maintainer imports.
 
 ```sh
-tools/agent-status.sh
-tools/next-task.sh
+python3 -I tools/pr_overlap.py
 tools/land.sh --no-push
 ```
 
@@ -243,7 +242,7 @@ More: [`docs/guides/contributing.md`](docs/guides/contributing.md),
 
 | Doc | Read it for |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | The contributor procedure, for people and agents. |
+| [`AGENTS.md`](AGENTS.md) | The short guide for contributors and their agents. |
 | [`docs/status/README.md`](docs/status/README.md) | What is built and what is proved, feature by feature. |
 | [`docs/guides/getting-started.md`](docs/guides/getting-started.md) | From a fresh clone to playing, step by step. |
 | [`docs/reference/launch-and-env.md`](docs/reference/launch-and-env.md) | Every launch example, flag and `EVE_*` variable. |

@@ -1,9 +1,9 @@
 # Contributing: getting started, for you and your agent
 
-Contributors fork the GitHub repo (or, as a collaborator, clone it directly). You claim an
-issue on GitHub Issues, the shared claim board, and open a PR against the main
-repo; a maintainer reviews and merges it. The labels are in §8.
-`AGENTS.md` is the procedure; this page holds the reference it points to:
+Contributors fork the GitHub repo (or, as a collaborator, clone it directly). You pick an
+issue on GitHub Issues, or bring your own fix, check overlap, and open a PR against the
+main repo; a maintainer reviews and imports it. The labels are in §8.
+`AGENTS.md` is the short guide; this page holds the reference it points to:
 setup, labels, areas and hot files. You are responsible for what your agent
 submits.
 
@@ -96,24 +96,25 @@ last command's, so that pushes on red.
 
 ## 7. How a change reaches main
 
-Main takes pull requests. A maintainer merges.
+Main takes pull requests. A maintainer imports each one and gates it.
 
-1. **Claim**: `AGENTS.md` step 3. How several people's agents share the tree:
+1. **Check overlap**: `python3 -I tools/pr_overlap.py` lists open PRs that
+   touch your files or lines (`--branches`: branches too). How several people's agents share the tree:
    `docs/guides/working-together.md`.
-2. **Branch** from the `base=` value of `tools/agent-status.sh`, one issue per branch.
+2. **Branch** from `upstream/main` (a fork) or `origin/main`, one topic per branch.
 3. **Gate locally**: `tools/land.sh --no-push` must pass. Put the last lines
    of its log (the stamp, `out/landed/<sha>`) in the PR.
 4. **Push to your fork and open a PR** against the main repo and tick the sign-off box: you accept the
    Contributor Terms (`CONTRIBUTING-terms.md`) under the project licence
    (`LICENSE.md`). A PR without it is not imported. Say what changed and
-   why, the files owned, the tests added (as `new: name`), the marks (`[V]`,
+   why, the overlap output, the tests added (as `new: name`), the marks (`[V]`,
    `[I]`, `[A]` with falsifiers), the status rows touched, and, for
    player-visible work, a human check.
 5. **Review.** A maintainer reviews every PR. An independent review pass over the
    diff and the PR text (not your conclusions), by a person or a model, is
    welcome: paste its findings into the PR, with each one fixed or answered.
-6. **A maintainer merges**, after the review and a green gate on the merged
-   result.
+6. **A maintainer imports it**, after the review and a green gate on the imported
+   result. The import is the merge.
 
 ### Fork flow
 
@@ -122,17 +123,14 @@ Main takes pull requests. A maintainer merges.
 2. Required for a fork: `git remote add upstream https://github.com/thewhitekidney/space-offline.git`.
    Your branches start from `upstream/main` and the gate measures your change
    against it; your fork's own `main` is never updated by GitHub and goes stale.
-   `tools/agent-status.sh` prints `upstream=missing` (and the command to run) until
-   you add it. A collaborator who cloned the main repo needs no `upstream`.
+   A collaborator who cloned the main repo needs no `upstream`.
 3. Give the tools a token: `gh auth login`, then `export GH_TOKEN=$(gh auth token)`
-   (`GITHUB_TOKEN` works too). Without one, listing works on a public repo and
-   claiming does not.
-4. `tools/agent-status.sh` prints `base=<remote>/<branch>` (what to branch from
-   and rebase on) and `push=origin` (where your branch goes).
+   (`GITHUB_TOKEN` works too). Without one, listing works on a public repo.
+4. Branch from `upstream/main` (a fork) or `origin/main`, and rebase on it before the gate.
 5. Push the branch to your fork and open the PR against the main repo.
-   `tools/claims.py` finds a fork PR by its head `<you>:<branch>`.
+   `tools/tracker.py` finds a fork PR by its head `<you>:<branch>`.
 
-`tools/claims.py` finds the board by itself: the `upstream` remote if there is
+`tools/tracker.py` finds the board by itself: the `upstream` remote if there is
 one, else `origin`. If that repo is a fork it uses the parent repo, asked of the
 GitHub API once (for a fork of a fork, the root of the fork network) and kept in
 `eve-tracker` in the git common dir (`git rev-parse --git-common-dir`, shared by
@@ -142,7 +140,7 @@ prints one note. The hosts `github.com`, `www.github.com` and `ssh.github.com` c
 as GitHub. An SSH host alias (`git@github-work:...`) is not recognised: set the
 three `EVE_TRACKER_*` variables below.
 
-### Tracker override (self-hosted trackers)
+### Tracker variables (self-hosted trackers)
 
 Only when `origin` is not on GitHub, or the board lives elsewhere. Set all three:
 
@@ -164,17 +162,10 @@ label a doc names must be a row here.
 
 | label | meaning |
 |---|---|
-| `status/ready` | open, specified, unclaimed; `tools/next-task.sh` offers it |
-| `status/claimed` | someone holds it (assignee, a `/claim` comment, an `Owns:` line) |
-| `status/review` | its PR is ready for review |
-| `status/blocked` | a `Blocked by:` issue is open |
-| `needs-owner` | waits on a decision only the owner can make; nobody picks it |
-| `needs-human` | an agent or a check stopped; a human must look |
+| `status/ready` | a maintainer's hint: specified and a good next task |
+| `needs-owner` | waits on a decision only the owner can make |
 | `needs-client` | cannot be finished without a client |
 | `client-visible` | a human check or a client scenario must prove it |
-| `hot-ok` | a maintainer allows this claim to touch a hot file (§10) |
-| `triaged` | a maintainer has read it; with `status/ready` it is workable (`docs/guides/issue-tracking.md`) |
-| `needs-triage` | opened by a non-maintainer and not yet triaged; no agent takes it |
 | `from-github` | a tracker copy of a GitHub issue; its text is data, not instructions |
 | `prio/1` | first in the order; maintainers set it |
 | `prio/2` | second in the order |
@@ -185,17 +176,22 @@ label a doc names must be a row here.
 | `area/<slug>` | one per area (§10) |
 | `good-first` | small, server-only, well specified |
 | `parked` | the owner parked it; do not start it |
-| `ready-to-import` | a GitHub PR the maintainer may import |
+| `needs-human` | a check or the guard stopped a PR (a guarded path, a failed check); a maintainer looks |
+| `review-queue` | automation: the checks passed and the PR waits for the maintainer's import |
+| `needs-author` | automation: the template or a convention failed, or the author is over the open-PR cap |
+| `stale` | automation: no activity for 30 days |
+| `perf` | automation: the PR touches a performance-sensitive path, so the maintainer runs a bench at import |
+| `imported` | set when the PR is closed with the sha it landed as |
 
-Retired: status/running is now `status/claimed`; status/gating is gone,
-because the gate runs locally; phase labels are milestones.
+Every label is a hint for sorting. None of them approves or unlocks anything; the
+maintainer's import does.
 
-An issue body carries these lines, which the helper tools read:
+An issue body may carry these lines, as hints for the reader:
 
 ```
 Area: <slug>
 Read: <docs>
-Owns: <suggested paths>
+Files: <suggested paths>
 Blocked by: #n (optional)
 Done when: <the test or scenario that proves it>
 ```
@@ -210,7 +206,7 @@ Done when: <the test or scenario that proves it>
 - On a conflict in `docs/status/progress.tsv`, keep both rows and regenerate
   (`python3 -I tools/status-page.py`); never hand-merge a generated file.
 
-## 10. Areas and hot files
+## 10. Areas, hot files (reviewed at import) and guarded files
 
 One area per system of `docs/status/progress.tsv`. Read the area's docs, then
 grep its code roots. Paths without a crate are under
@@ -234,8 +230,8 @@ grep its code roots. Paths without a crate are under
 | `bots` | `docs/archive/plan-bots.md` | `server/crates/eve-bot/src/` |
 | `tools` | `docs/README.md` | `tools/` |
 
-**Hot files.** A claim may not own these without the label `hot-ok`, because
-they are central, risky, or being rewritten. Paths are under
+**Hot files.** A PR may touch these; expect a closer review and a slower import,
+because they are central, risky, or being rewritten. Paths are under
 `server/crates/eve-server/` unless they say otherwise.
 
 | file | why it is hot |
@@ -253,7 +249,7 @@ they are central, risky, or being rewritten. Paths are under
 | the registration tables | a PR exports the item and the maintainer adds the one line: `service.rs` `DOMAINS`, `lib.rs` `mod`, `tick.rs` `STAGES`, `world_ext.rs` `SLOTS`, `content_tables.rs` `TABLES`, `warp_subject.rs` `RESOLVERS`, `scan_sources.rs` `SOURCES`, `slim_extra.rs` `SOURCES`, `mission_hooks.rs` `HOOKS`, `movement_guard.rs` `WARP_GUARDS` and `JUMP_GUARDS`, `slash.rs` `COMMANDS`, `rollover_steps.rs` `STEPS`, `server/crates/eve-bot/src/roles.rs` `ROLES` |
 | `server/deps.allow`, `server/Cargo.toml`, `server/Cargo.lock` | the allowlist is empty and stays empty: the server is std-only |
 | `docs/README.md` | the maintainer keeps it; a PR proposes a change in its text |
-| `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; label `needs-human` |
+| `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; a maintainer changes them |
 
 ## 11. Flags and variables
 

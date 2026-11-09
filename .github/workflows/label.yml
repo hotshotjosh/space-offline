@@ -59,8 +59,8 @@ jobs:
           python3 -I - "$RUNNER_TEMP/body.txt" <<'PY' || reasons+=("PR template not filled in")
           import re, sys
           body = open(sys.argv[1], encoding="utf-8").read().replace("\r", "")
-          ok = "space-offline-pr-template" in body and "- [ ]" not in body and body.count("- [x]") + body.count("- [X]") >= 6
-          for h in ("What changed, and why", "Issue", "Owned files", "Tests added", "[A] values", "Agent and model"):
+          ok = "space-offline-pr-template" in body and "- [ ]" not in body and body.count("- [x]") + body.count("- [X]") >= 5
+          for h in ("What changed, and why", "Overlap", "Tests", "[A] values", "Agent and model"):
               m = re.search(r"^## " + re.escape(h) + r"[^\n]*\n(.*?)(?=^## |\Z)", body, re.S | re.M)
               text = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S).strip() if m else ""
               # the template's own prompt lines do not count as an answer

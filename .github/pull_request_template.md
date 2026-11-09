@@ -1,13 +1,15 @@
 <!-- space-offline-pr-template: keep this line; label.yml looks for it -->
-Fill in every section and tick every box. A PR with an empty section or an
-unticked box is labelled `needs-human` and waits. The procedure is `AGENTS.md`.
+Fill in every section and tick every box. The procedure is `AGENTS.md`. Labels sort
+work; a maintainer reviews and imports the PR.
 
 Closes #
 
+Depends on: (another PR that must land first, as `#N`, or "none")
+
 ## What changed, and why
 
-## Owned files
-The files or globs the issue's `Owns:` line gave you (your `/claim` comment):
+## Overlap
+The output of `python3 -I tools/pr_overlap.py`:
 
 ## Tests
 new: …   existing: …   (or "none, because ...")
@@ -35,7 +37,6 @@ Any review you ran (a person or a model), and its findings: each answered (fixed
 The coding agent and model you used, or "none, written by hand":
 
 ## Checklist
-- [ ] The PR is linked to an issue that was claimed before the work started.
 - [ ] Status rows updated in `docs/status/progress.tsv` and the page regenerated, or a `Status: none (<why>)` line above.
 - [ ] No extracted client data, in tests or anywhere else (tests use invented ids and rows).
 - [ ] No new dependency (`server/deps.allow` stays empty) and no `unsafe`.
