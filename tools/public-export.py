@@ -47,6 +47,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -55,7 +56,24 @@ BUILT_IN = [
     r"/home/(?!(?:alice|user|you|example)/)[a-z_][a-z0-9_-]*/",
     r"\b192\.168\.(?!122\.1\b)\d{1,3}\.\d{1,3}\b",
     r"\.claude" + r"/secrets",
+    # Credential shapes. A real one in the tree is a leak whoever owns it.
+    r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})",
+    r"https://(?:\w+\.)?disc" r"ord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+",
+    r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----",
+    r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
+    r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*",
+    r"(?i)\bx-api-key\s*:",
+    r"\b(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp\d+) AAAA[0-9A-Za-z+/]{20,}",
+    r"\bsk-ant-[A-Za-z0-9_-]{20,}",
+    r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
+    r"\bAIza[0-9A-Za-z_-]{35}",
+    r"\bptr_[A-Za-z0-9+/=]{40,}",
 ]
+# A fixture that must hold a credential-shaped string, per file: the patterns it may match.
+ALLOWED = {
+    "tools/test_tunnel_config.py": [r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----"],
+}
+INFLATE_MAX = 64 << 20   # bytes inflated per capture file; more is not scanned, and is a hit
 SKIP_DIRS = {".git", "out", "var", "logs", "tmp", "target", "__pycache__"}
 
 
@@ -101,9 +119,66 @@ def read_text(path: str) -> str | None:
     except (IsADirectoryError, FileNotFoundError):
         return None
     try:
-        return data.decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return data.decode("latin-1")
+        text = data.decode("latin-1")
+    if path.endswith(".evecap"):
+        streams = inflated(data)
+        if streams:
+            text += "\n" + "\n".join(streams)
+    return text
+
+
+class TooBig(Exception):
+    """A capture inflates past INFLATE_MAX."""
+
+
+CHUNK = 1 << 16   # the decompressor is fed this much at a time
+ZLIB_HEAD = re.compile(b"\x78[\x01\x5e\x9c\xda]")
+
+
+def _feed(d, view, start: int, total: int):
+    """Run decompressor d over view from start in CHUNK windows: (parts, next offset, failed).
+    The bytes decoded before a zlib error are kept. TooBig past INFLATE_MAX in all."""
+    parts, at, used = [], start, 0
+    try:
+        while not d.eof and at < len(view):
+            chunk = view[at:at + CHUNK]
+            at += len(chunk)
+            limit = INFLATE_MAX - total - used + 1
+            raw = d.decompress(chunk, limit)
+            if len(raw) >= limit:
+                raise TooBig()
+            parts.append(raw)
+            used += len(raw)
+    except zlib.error:
+        return parts, at, True
+    return parts, at, False
+
+
+def inflated(data: bytes) -> list[str]:
+    """Every zlib stream inside a capture, as latin-1 text, so the scan reads them. Bounded:
+    at most INFLATE_MAX bytes in all (TooBig past that), no copy of the rest of the file per
+    stream, and a consumed stream is skipped. A truncated stream gives what it holds; a stream
+    that fails partway keeps what was decoded before the error, and one whose checksum is
+    corrupt is read again without the checksum, so its text is still scanned."""
+    view, out, pos, total = memoryview(data), [], 0, 0
+    while True:
+        m = ZLIB_HEAD.search(data, pos)
+        if not m:
+            return out
+        d = zlib.decompressobj()
+        parts, at, failed = _feed(d, view, m.start(), total)
+        if failed and not parts:   # a bad checksum fails after the text was produced
+            d = zlib.decompressobj(-zlib.MAX_WBITS)
+            parts, at, _ = _feed(d, view, m.start() + 2, total)
+        raw = b"".join(parts)
+        if not raw:
+            pos = m.start() + 1
+            continue
+        total += len(raw)
+        out.append(raw.decode("latin-1"))
+        pos = m.start() + 1 if failed else (at - len(d.unused_data) if d.eof else len(data))
 
 
 def leaks(root: str, files: list[str]) -> list[str]:
@@ -114,12 +189,17 @@ def leaks(root: str, files: list[str]) -> list[str]:
             if p.search(rel):
                 hits.append(f"{rel}: path matches /{p.pattern}/")
                 break
-        text = read_text(os.path.join(root, rel))
+        try:
+            text = read_text(os.path.join(root, rel))
+        except TooBig:
+            hits.append(f"{rel}: a zlib stream inflates past INFLATE_MAX bytes; not scanned")
+            continue
         if text is None:
             continue
+        allowed = ALLOWED.get(rel, [])
         for n, line in enumerate(text.split("\n"), 1):
             for p in pats:
-                if p.search(line):
+                if p.pattern not in allowed and p.search(line):
                     hits.append(f"{rel}:{n}: matches /{p.pattern}/")
                     break
     return hits

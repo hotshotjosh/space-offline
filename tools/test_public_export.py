@@ -10,8 +10,12 @@ import importlib.util
 import io
 import os
 import shutil
+import re
 import tempfile
+import time
 import unittest
+import zlib
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("public_export", os.path.join(HERE, "public-export.py"))
@@ -50,14 +54,103 @@ class Scan(unittest.TestCase):
         self.assertEqual(self.scan(r"zzquux"), [])
 
     def test_case_insensitive_and_spelling_variants(self):
-        self.put("a.md", "Host ZZHOST\nname Fjoelzzz\n")
-        hits = self.scan(r"(?i)\bzzhost\b", r"(?i)fj(ø|o|oe)lzzz")
+        self.put("a.md", "Host ZZHOST\nname Zqaenzzz\n")
+        hits = self.scan(r"(?i)\bzzhost\b", r"(?i)zq(ä|a|ae)nzzz")
         self.assertEqual(len(hits), 2, hits)
 
     def test_built_in_home_path_still_matches_but_invented_users_do_not(self):
         home = "/" + "home/"
         self.put("a.md", home + "zed/x\n" + home + "alice/x\n")
         self.assertEqual(self.scan(r"zzquux"), ["a.md:1: matches /" + pe.BUILT_IN[0] + "/"])
+
+
+class Credentials(unittest.TestCase):
+    """The built-in credential shapes. Every sample is built at runtime and invented."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="test_public_export-")
+        self.addCleanup(shutil.rmtree, self.root)
+
+    def hits(self, name, data):
+        p = os.path.join(self.root, name)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data if isinstance(data, bytes) else data.encode("utf-8"))
+        return [h for h in pe.leaks(self.root, [name]) if h.startswith(name)]
+
+    def test_each_shape_is_refused(self):
+        samples = {
+            "github": "t = " + "ghp" + "_" + "a1" * 18,
+            "github-fine": "t = " + "github" + "_pat_" + "Ab1" * 8,
+            "webhook": "u = https://" + "disc" + "ord.com/api/web" + "hooks/123456/abc-DEF_9",
+            "webhook-v": "u = https://" + "disc" + "ord.com/api/v10/web" + "hooks/123456/abc-DEF_9",
+            "key": "-----" + "BEGIN OPENSSH PRIVATE" + " KEY-----",
+            "key-block": "-----" + "BEGIN PGP PRIVATE KEY" + " BLOCK-----",
+            "aws": "id " + "AK" + "IA" + "ABCDEFGHIJKLMNOP",
+            "jwt": "ey" + "Jabcdefgh.ey" + "Jabcdefgh.sig",
+            "header": "X-Api" + "-Key: abc",
+            "ssh": "ssh-" + "ed25519 " + "AAAA" + "C3NzaC1lZDI1NTE5AAAAIabcdef",
+            "ssh-ecdsa": "ecdsa-sha2-" + "nistp256 " + "AAAA" + "E2VjZHNhLXNoYTItabcdefgh",
+            "anthropic": "k = " + "sk-" + "ant-" + "a1b2c3d4e5f6g7h8i9j0",
+            "slack": "k = " + "xox" + "b-" + "1234567890-abc",
+            "google": "k = " + "AI" + "za" + "A" * 35,
+            "ptr-shape": "k = " + "ptr" + "_" + "A" * 44,
+        }
+        for k, v in samples.items():
+            self.assertEqual(len(self.hits(f"{k}.txt", v + "\n")), 1, k)
+
+    def test_clean_prose_is_not_a_shape(self):
+        self.assertEqual(self.hits("a.md", "send the x-api-key to nobody; ghp is a prefix\n"), [])
+
+    def test_the_tunnel_fixture_may_hold_a_private_key_header_and_nothing_else(self):
+        key = "-----" + "BEGIN OPENSSH PRIVATE" + " KEY-----\n"
+        self.assertEqual(self.hits("tools/test_tunnel_config.py", key), [])
+        self.assertEqual(len(self.hits("tools/other.py", key)), 1)
+        self.assertEqual(len(self.hits("tools/test_tunnel_config.py", "AK" + "IA" + "ABCDEFGHIJKLMNOP\n")), 1)
+
+    def test_the_real_tunnel_fixture_holds_exactly_one_header_line(self):
+        head = re.compile("-----" + "BEGIN [A-Z ]*PRIVATE" + " KEY(?: BLOCK)?-----")
+        with open(os.path.join(HERE, "test_tunnel_config.py"), encoding="utf-8") as f:
+            self.assertEqual(sum(1 for line in f if head.search(line)), 1)
+
+    def test_an_evecap_stream_is_inflated_before_the_scan(self):
+        secret = "id " + "AK" + "IA" + "ABCDEFGHIJKLMNOP"
+        blob = b"EVEOFFLINECAP\n\x01" + zlib.compress(b"junk " + secret.encode()) + b"\x00tail"
+        self.assertEqual(len(self.hits("c/a.evecap", blob)), 1)
+        self.assertEqual(self.hits("c/b.evecap", b"EVEOFFLINECAP\n" + zlib.compress(b"clean")), [])
+        self.assertEqual(self.hits("c/c.bin", b"EVEOFFLINECAP\n" + zlib.compress(secret.encode())), [])
+
+    def test_two_streams_in_one_capture_are_both_read(self):
+        a = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
+        blob = zlib.compress(b"x " + a.encode()) + b"\x00" + zlib.compress(b"y " + a.encode())
+        self.assertEqual(len(self.hits("c/d.evecap", b"HEAD" + blob)), 2)
+
+    def test_a_huge_stream_is_one_fail_closed_hit(self):
+        blob = b"HEAD" + zlib.compress(bytes(4 << 20))
+        with mock.patch.object(pe, "INFLATE_MAX", 1 << 20):
+            self.assertEqual(self.hits("c/big.evecap", blob),
+                             ["c/big.evecap: a zlib stream inflates past INFLATE_MAX bytes; not scanned"])
+
+    def test_a_truncated_stream_and_a_lone_header_do_not_raise(self):
+        full = zlib.compress(b"some text " * 50)
+        self.assertEqual(self.hits("c/t.evecap", b"HEAD" + full[:-6]), [])
+        self.assertEqual(self.hits("c/h.evecap", b"HEAD\x78\x9c"), [])
+
+    def test_a_stream_with_a_corrupt_checksum_still_reports_its_secret(self):
+        secret = "id " + "AK" + "IA" + "ABCDEFGHIJKLMNOP"
+        z = bytearray(zlib.compress(b"junk " + secret.encode()))
+        z[-1] ^= 0xFF
+        self.assertEqual(len(self.hits("c/e.evecap", b"HEAD" + bytes(z))), 1)
+
+    def test_bad_headers_scale_linearly(self):
+        t = time.time()
+        self.assertEqual(self.hits("c/k.evecap", b"\x78\x9c\xff" * 200000), [])
+        self.assertLess(time.time() - t, 2)
+
+    def test_many_bad_headers_finish_quickly(self):
+        t = time.time()
+        self.assertEqual(self.hits("c/j.evecap", b"\x78\x9c\xff" * 100000), [])
+        self.assertLess(time.time() - t, 2)
 
 
 OS = "open" + " source"  # split, so this file does not trip its own check

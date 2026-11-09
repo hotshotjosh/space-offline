@@ -30,7 +30,9 @@ is the claim.
 
 Exit codes: 0 ok; 1 nothing (no task, not claimed, not mine); 2 tracker error
 or no token; 3 path overlap; 4 someone else holds it (or it is closed,
-assigned or needs-owner); 5 a hot file without the `hot-ok` label.
+assigned or needs-owner); 5 a hot file without the `hot-ok` label; 6 a body to post
+matches the scan (the built-in patterns plus the optional private scan lists): refused, with
+the line and pattern but never the matched text, and nothing is posted.
 """
 
 # Move `tools/` to the end of `sys.path` so the standard library wins; see
@@ -44,6 +46,7 @@ if __name__ == "__main__":
 import argparse
 import datetime as dt
 import fnmatch
+import importlib.util
 import json
 import os
 import re
@@ -82,6 +85,63 @@ class TrackerError(Exception):
 
 class NoToken(Exception):
     pass
+
+
+class LeakRefused(Exception):
+    """A body to post matches the public export's scan. Holds line numbers and patterns only."""
+
+    def __init__(self, hits):
+        super().__init__("; ".join(hits))
+        self.hits = hits
+
+
+def scan_lines(path):
+    """(line number, regex text) of each pattern line of a scan file; none when it is missing."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return [(n, t.strip()) for n, t in enumerate(f, 1)
+                    if t.strip() and not t.lstrip().startswith("#")]
+    except OSError:
+        return []
+
+
+def export_patterns(root=None, post=False):
+    """The scan, as (compiled, label) pairs: the export's BUILT_IN patterns plus
+    private/export-scan.txt (optional), and with post=True an optional extra list. A
+    BUILT_IN pattern's label is its text; a private pattern's label is
+    `private pattern <file>#<line>`, never its text. A malformed pattern refuses
+    everything (LeakRefused): a scan that cannot run must not pass."""
+    root = root or ROOT
+    spec = importlib.util.spec_from_file_location(
+        "public_export", os.path.join(os.path.dirname(os.path.abspath(__file__)), "public-export.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    items = [(t, t, f"BUILT_IN#{k}") for k, t in enumerate(mod.BUILT_IN, 1)]
+    names = ["export-scan.txt"] + (["post-scan.txt"] if post else [])
+    for name in names:
+        for n, t in scan_lines(os.path.join(root, mod.PRIVATE_DIR, name)):
+            items.append((t, f"private pattern {name}#{n}", f"{name}#{n}"))
+    out = []
+    for t, label, where in items:
+        try:
+            out.append((re.compile(t), label))
+        except re.error:
+            raise LeakRefused([f"scan pattern {where} is malformed; nothing scanned"]) from None
+    return out
+
+
+def leak_lines(text, pats):
+    """One entry per line that matches, never the matched text. pats: (compiled, label)
+    pairs, or bare compiled patterns (labelled with their text)."""
+    hits = []
+    for n, line in enumerate((text or "").split("\n"), 1):
+        for p in pats:
+            pat, label = p if isinstance(p, tuple) else (p, p.pattern)
+            if pat.search(line):
+                hits.append(f"line {n}: matches /{label}/" if not label.startswith("private ")
+                            else f"line {n}: matches {label}")
+                break
+    return hits
 
 
 # ---------------------------------------------------------------- config
@@ -282,6 +342,14 @@ class Tracker:
         self.r = f"/repos/{cfg['repo']}"
         self._label_ids = None
         self._me = None
+        self.scan = None   # compiled export patterns; loaded on the first post
+
+    def check_body(self, body):
+        if self.scan is None:
+            self.scan = export_patterns(post=True)
+        hits = leak_lines(body, self.scan)
+        if hits:
+            raise LeakRefused(hits)
 
     def get(self, path):
         return self.t.request("GET", path)
@@ -325,6 +393,7 @@ class Tracker:
 
     # writes
     def comment(self, n, body):
+        self.check_body(body)
         self.t.request("POST", f"{self.r}/issues/{n}/comments", {"body": body})
 
     def assign(self, n, add):
@@ -658,6 +727,8 @@ def cmd_release(tr, a, out):
 
 
 def cmd_status(tr, a, out):
+    if a.why:
+        tr.check_body(f"{a.state}: {a.why}")   # before any label write
     labels = labels_of(tr.issue(a.n))
     if a.state == "needs-human":
         soft(tr, out, "label needs-human", tr.add_label, a.n, "needs-human")
@@ -755,6 +826,11 @@ def main(argv=None, tracker=None, out=None, err=None):
     except TrackerError as e:
         print(str(e), file=err)
         return 2
+    except LeakRefused as e:
+        for h in e.hits:
+            print(f"refused: the text to post {h} (public-export scan); nothing was posted",
+                  file=err)
+        return 6
 
 
 if __name__ == "__main__":

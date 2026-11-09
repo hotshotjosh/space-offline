@@ -678,5 +678,105 @@ class HotFiles(unittest.TestCase):
         self.assertNotIn("tools", hot)
 
 
+class ScanBeforePosting(unittest.TestCase):
+    # An invented pattern; the real scan list is private and never used here.
+    PAT = r"zzleak-[a-z]+"
+
+    def tr(self):
+        import re
+        tr, fake = tracker()
+        tr.scan = [re.compile(self.PAT)]
+        return tr, fake
+
+    def test_a_clean_claim_posts(self):
+        tr, fake = self.tr()
+        code, out, err = run(["claim", "1", "--owns", "server/x.rs"], tr)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(any(w[1].endswith("/comments") for w in fake.writes))
+
+    def test_a_claim_path_that_matches_is_refused_and_nothing_is_sent(self):
+        tr, fake = self.tr()
+        code, out, err = run(["claim", "1", "--owns", "server/zzleak-abc.rs"], tr)
+        self.assertEqual(code, 6)
+        self.assertEqual(fake.writes, [])
+        self.assertIn("line 2", err)
+        self.assertIn(self.PAT, err)
+        self.assertNotIn("zzleak-abc", err + out)
+
+    def test_a_status_why_that_matches_is_refused_before_any_label(self):
+        tr, fake = self.tr()
+        code, out, err = run(["status", "1", "needs-human", "--why", "ok\nsee zzleak-xyz"], tr)
+        self.assertEqual(code, 6)
+        self.assertEqual(fake.writes, [])
+        self.assertIn("line 2", err)
+        self.assertNotIn("zzleak-xyz", err + out)
+
+    def test_a_clean_status_why_posts(self):
+        tr, fake = self.tr()
+        code, out, err = run(["status", "1", "needs-human", "--why", "stuck on a decision"], tr)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(any(w[1].endswith("/comments") for w in fake.writes))
+
+    def with_root(self, files):
+        import tempfile
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        for rel, text in files.items():
+            os.makedirs(os.path.join(d.name, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(d.name, rel), "w", encoding="utf-8") as f:
+                f.write(text)
+        return mock.patch.object(claims, "ROOT", d.name)
+
+    def test_a_malformed_scan_pattern_refuses_everything(self):
+        tr, fake = tracker()
+        with self.with_root({"private/export-scan.txt": "# c\nfine\n(unclosed\n"}):
+            code, out, err = run(["claim", "1", "--owns", "server/x.rs"], tr)
+        self.assertEqual(code, 6)
+        self.assertEqual(fake.writes, [])
+        self.assertIn("scan pattern export-scan.txt#3 is malformed", err)
+        self.assertNotIn("(unclosed", err)
+
+    def test_a_missing_scan_file_still_lets_a_clean_claim_post(self):
+        tr, fake = tracker()
+        with self.with_root({}):
+            code, out, err = run(["claim", "1", "--owns", "server/x.rs"], tr)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(fake.writes)
+
+    def test_a_private_pattern_is_named_by_file_and_line_never_by_text(self):
+        tr, fake = tracker()
+        with self.with_root({"private/export-scan.txt": "# c\n\nzzsecretword\n"}):
+            code, out, err = run(["status", "1", "needs-human", "--why", "see zzsecretword"], tr)
+        self.assertEqual(code, 6)
+        self.assertEqual(fake.writes, [])
+        self.assertIn("private pattern export-scan.txt#3", err)
+        self.assertNotIn("zzsecretword", err + out)
+
+    def test_the_post_scan_applies_to_posts_and_to_the_owns_line(self):
+        files = {"private/post-scan.txt": "(?i)\\bzzhidden/\n(?i)\\bzzword\\b\n"}
+        tr, fake = tracker()
+        with self.with_root(files):
+            code, out, err = run(["claim", "1", "--owns", "zzhidden/x.rs"], tr)
+            self.assertEqual(code, 6)
+            self.assertIn("private pattern post-scan.txt#1", err)
+            code, out, err = run(["status", "1", "needs-human", "--why", "zzword done"], tr)
+            self.assertEqual(code, 6)
+            self.assertIn("private pattern post-scan.txt#2", err)
+            self.assertNotIn("zzword", err + out)
+            self.assertEqual(fake.writes, [])
+            code, out, err = run(["claim", "1", "--owns", "server/x.rs"], tr)
+            self.assertEqual(code, 0, out + err)
+
+    def test_the_export_scan_alone_does_not_carry_the_post_words(self):
+        with self.with_root({"private/post-scan.txt": "zzword\n"}):
+            self.assertEqual(claims.leak_lines("zzword", claims.export_patterns()), [])
+            self.assertTrue(claims.leak_lines("zzword", claims.export_patterns(post=True)))
+
+    def test_the_built_in_patterns_are_loaded(self):
+        pats = claims.export_patterns()
+        self.assertTrue(claims.leak_lines("path /" + "home/zed/x", pats))
+        self.assertEqual(claims.leak_lines("server/x.rs", pats), [])
+
+
 if __name__ == "__main__":
     unittest.main()
