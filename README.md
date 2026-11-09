@@ -261,18 +261,22 @@ We thank EvEJS, an independent EVE server project.
 
 ## Licence
 
-This project is source available, not open source. You may use, study, change
-and share it for free, under the No Money Share-Alike Licence 1.1 or any later
-version published by the maintainer.
+This project is source available, not open source. You may use, study, change,
+share and run it for free, under the PolyForm Noncommercial License 1.0.0
+(`LICENSE.md`) with the additional terms in `LICENSE-additions.md`.
 
 - **No money, ever.** Nobody may receive money, or anything worth money, in
   connection with it: no sales, donations, tips, ads, sponsorship, paid access or
   shared running costs.
 - Videos, streams and articles about it are free to make and publish anywhere,
   including on channels that earn money, as long as they sell nothing connected
-  with it (`LICENSE.md` 3.6).
-- The licence: [`LICENSE.md`](LICENSE.md). The terms for contributions:
+  with it (`LICENSE-additions.md` 1.5).
+- If you share a changed version, or run one that other people connect to, you
+  share its source under the same terms.
+- The licence: [`LICENSE.md`](LICENSE.md) and
+  [`LICENSE-additions.md`](LICENSE-additions.md). The terms for contributions:
   [`CONTRIBUTING-terms.md`](CONTRIBUTING-terms.md).
 - Some files carry third-party portions under MIT or zlib terms; see
   [`NOTICE`](NOTICE).
 - This project is not affiliated with, endorsed by or sponsored by CCP.
+- Releases before this change are under the No Money Share-Alike Licence 1.1.
