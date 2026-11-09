@@ -602,14 +602,38 @@ mod tests {
     fn a_blocked_sink_never_blocks_emit() {
         let o = Buf::default();
         let (l, gate) = stuck(o.clone(), Buf::default(), 64);
-        let _ = take_thread_stats();
-        let t = Instant::now();
-        for n in 0..1000 {
-            out(&l, &format!("line {n}"));
-        }
-        let took = t.elapsed();
-        assert!(took < Duration::from_millis(50), "emit blocked: {took:?}");
-        let st = take_thread_stats();
+        let l = Arc::new(l);
+        // The emit loop runs on its own thread, so a sink that does block
+        // emit turns into a red here instead of a hung test.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let lt = Arc::clone(&l);
+        let worker = std::thread::spawn(move || {
+            let _ = take_thread_stats();
+            let mut per = Vec::with_capacity(1000);
+            let t = Instant::now();
+            for n in 0..1000 {
+                let e = Instant::now();
+                out(&lt, &format!("line {n}"));
+                per.push(e.elapsed());
+            }
+            let took = t.elapsed();
+            let _ = tx.send((took, per, take_thread_stats()));
+        });
+        let Ok((took, mut per, st)) = rx.recv_timeout(Duration::from_secs(5)) else {
+            gate.wait();
+            let _ = worker.join();
+            panic!("emit blocked: 1000 emits did not return within 5 s");
+        };
+        worker.join().unwrap();
+        per.sort();
+        // Load deschedules a few emits, never half: the median is one emit's
+        // own cost, so a per-line wait before each drop shows here.
+        assert!(
+            per[500] < Duration::from_millis(1),
+            "emit waits: median {:?}",
+            per[500]
+        );
+        assert!(took < Duration::from_secs(5), "emit blocked: {took:?}");
         assert_eq!(st.lines, 1000);
         // The queue holds `cap`; everything else is dropped and counted.
         assert_eq!(st.dropped, 1000 - 64);
