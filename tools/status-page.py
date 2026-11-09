@@ -10,11 +10,15 @@ same bytes and `--check` can run in the gate.
     python3 -I tools/status-page.py           # write the page
     python3 -I tools/status-page.py --check   # fail if it is stale or a row is bad
     python3 -I tools/status-page.py --audit   # compare rows with var/regress-*; clean: stamp checked-at
+    python3 -I tools/status-page.py --audit --since BASE   # only rows changed since BASE fail
     python3 -I tools/status-page.py --waves   # add var/regress-wave* counts to waves.tsv
 
 `--audit` and `--waves` read the gitignored `var/`, so only a machine with the
 regression results can run them. `--audit` reports and never edits a row: a
-person decides what a red means. A clean audit stamps `# checked-at <HEAD>`
+person decides what a red means. `--audit --since BASE` is the landing gate's form: a
+finding that rests on `var/` verdicts fails only for a row that changed since BASE; for any
+other row it prints a `status-page: note:` line and passes (verdict drift is for
+`tools/gate.sh --env-checks`). A clean audit stamps `# checked-at <HEAD>`
 unless `--no-stamp` is given (the gate passes it). It also fails on a scenario
 with a verdict, or a regress.list row, that no row cites; without `var/` it skips.
 
@@ -43,6 +47,7 @@ import math
 import os
 import re
 import subprocess
+import tempfile
 import sys
 from html import escape
 
@@ -671,30 +676,77 @@ def newest_verdicts(paths: list[tuple[str, str]]) -> dict[str, tuple[str, bool]]
     return latest
 
 
-def audit(rows: list[dict], known: set[str], latest: dict[str, tuple[str, bool]], listed: list[str]) -> list[str]:
-    """Where the table and the regression results disagree."""
-    out, claimed = [], set()
+def audit_items(rows: list[dict], known: set[str], latest: dict[str, tuple[str, bool]],
+                listed: list[str]) -> list[tuple[str | None, str, bool]]:
+    """Where the table and the regression results disagree, as (feature, text, from_verdicts).
+
+    `feature` is the row the finding is about (None for a scenario no row cites);
+    `from_verdicts` is True when the finding rests on the verdicts in `var/`, which only
+    some machines hold, and False when the committed tree alone decides it.
+    """
+    out: list[tuple[str | None, str, bool]] = []
+    claimed = set()
     for r in rows:
         cited = scenarios_in(r["evidence"], known)
         claimed.update(cited)
         seen = [latest[c] for c in cited if c in latest]
         red = [c for c in cited if c in latest and not latest[c][1]]
+        f = r["feature"]
         if r["state"] in FINISHED and red:
-            out.append(f"{r['feature']}: {r['state']}, but the newest verdict is red: "
-                       + ", ".join(f"{c} ({latest[c][0]})" for c in red))
+            out.append((f, f"{f}: {r['state']}, but the newest verdict is red: "
+                        + ", ".join(f"{c} ({latest[c][0]})" for c in red), True))
         elif r["state"] in ("built-unproved", "missing", "unknown") and seen and not red:
-            out.append(f"{r['feature']}: {r['state']}, but the newest verdict is green: "
-                       + ", ".join(f"{c} ({latest[c][0]})" for c in cited if c in latest))
+            out.append((f, f"{f}: {r['state']}, but the newest verdict is green: "
+                        + ", ".join(f"{c} ({latest[c][0]})" for c in cited if c in latest), True))
         if r["state"] == "client-proved" and cited and not seen:
-            out.append(f"{r['feature']}: no verdict for {', '.join(cited)}")
+            out.append((f, f"{f}: no verdict for {', '.join(cited)}", True))
     bare = {c.split("@")[0] for c in claimed}
     for name in list(listed) + sorted(n for n in latest if n not in listed):
         if name in NOT_FEATURES or name.split("@")[0] in NOT_FEATURES:
             continue
         if name not in claimed and name.split("@")[0] not in bare:
-            where = "a regression row" if name in listed else f"a scenario with a verdict ({latest[name][0]})"
-            out.append(f"{name}: {where} no feature cites")
+            if name in listed:
+                out.append((None, f"{name}: a regression row no feature cites", False))
+            else:
+                out.append((None, f"{name}: a scenario with a verdict ({latest[name][0]}) no feature cites", True))
     return out
+
+
+def audit(rows: list[dict], known: set[str], latest: dict[str, tuple[str, bool]], listed: list[str]) -> list[str]:
+    """Where the table and the regression results disagree."""
+    return [text for _f, text, _v in audit_items(rows, known, latest, listed)]
+
+
+def changed_features(root: str, base: str) -> set[str] | None:
+    """The features whose row is new or different since `base`; None if `base` cannot be read."""
+    try:
+        old = subprocess.run(["git", "-C", root, "show", f"{base}:{STATUS_DIR}/progress.tsv"],
+                             capture_output=True, text=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    with tempfile.TemporaryDirectory(prefix="eve-status-base-") as d:
+        path = os.path.join(d, "progress.tsv")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(old)
+        try:
+            before, _ = read_table(path, COLUMNS)
+        except Bad:
+            return None
+    was = {r["feature"]: [r[c] for c in COLUMNS] for r in before}
+    now, _ = read_table(os.path.join(root, STATUS_DIR, "progress.tsv"), COLUMNS)
+    return {r["feature"] for r in now if was.get(r["feature"]) != [r[c] for c in COLUMNS]}
+
+
+def split_findings(items: list[tuple[str | None, str, bool]], changed: set[str] | None) -> tuple[list[str], list[str]]:
+    """(failures, notes). Without `changed` every finding fails; with it, a finding that rests on
+    verdicts fails only for a row in `changed`."""
+    fail, notes = [], []
+    for feature, text, from_verdicts in items:
+        if changed is not None and from_verdicts and feature not in changed:
+            notes.append(text)
+        else:
+            fail.append(text)
+    return fail, notes
 
 
 def listed_rows(root: str) -> list[str]:
@@ -764,6 +816,8 @@ def main(argv: list[str] | None = None, root: str = ROOT) -> int:
     p.add_argument("--audit", action="store_true", help="compare rows with var/regress-*")
     p.add_argument("--waves", action="store_true", help="refresh waves.tsv from var/regress-wave*")
     p.add_argument("--var", default=os.path.join(root, "var"), help="where the wave results are (default: var/)")
+    p.add_argument("--since", metavar="BASE",
+                   help="with --audit: a finding from var/ verdicts fails only for a row changed since BASE")
     p.add_argument("--no-stamp", action="store_true", help="with --audit: report only, never rewrite a file")
     args = p.parse_args(argv)
     try:
@@ -778,11 +832,22 @@ def main(argv: list[str] | None = None, root: str = ROOT) -> int:
             print(f"status-page: audit skipped, no regress-*/regress.tsv under {args.var}")
             return 0
         rows, _ = read_table(os.path.join(root, STATUS_DIR, "progress.tsv"), COLUMNS)
-        found = audit(rows, scenario_names(root), newest_verdicts(regress_dirs(args.var)), listed_rows(root))
+        items = audit_items(rows, scenario_names(root), newest_verdicts(regress_dirs(args.var)), listed_rows(root))
+        changed = None
+        if args.since:
+            changed = changed_features(root, args.since)
+            if changed is None:
+                print(f"status-page: cannot read the table at {args.since}; every finding fails")
+        found, notes = split_findings(items, changed)
         for line in found:
             print(line)
+        for line in notes:
+            print(f"status-page: note: {line}")
         print(f"status-page: {len(found)} to look at")
-        if not found and not args.no_stamp:
+        if notes:
+            print(f"status-page: {len(notes)} note(s) on rows this range did not change; "
+                  "tools/gate.sh --env-checks fails on them")
+        if not found and not notes and not args.no_stamp:
             stamp_checked_at(root)
             for rel, content in build(root).items():
                 with open(os.path.join(root, rel), "w", encoding="utf-8") as f:

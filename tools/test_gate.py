@@ -661,20 +661,100 @@ class LandingTools(unittest.TestCase):
         self.assertNotIn("== python unit tests", g.stdout)
         self.assertFalse(os.path.exists(flag))
 
-    def test_both_background_reports_print_in_a_fixed_order(self) -> None:
-        self.commit("slow py", ("tools/test_a_slow.py", "import time\ntime.sleep(2)\nprint('slow done')\n"),
-                    ("tools/test_b_fast.py", "print('fast done')\n"),
-                    ("tools/new-build.sh", "#!/usr/bin/env bash\necho '   deltas fast'\n"))
-        os.chmod(os.path.join(self.repo, "tools", "new-build.sh"), 0o755)
-        self.git("update-index", "--chmod=+x", "tools/new-build.sh")
-        self.git("commit", "-q", "-m", "exec bit")
+    def test_the_python_report_prints_before_the_test_run(self) -> None:
+        self.commit("slow py", ("tools/test_a_slow.py", "import time\ntime.sleep(1)\nprint('slow done')\n"),
+                    ("tools/test_b_fast.py", "print('fast done')\n"))
         g = self.run_tool("gate.sh")
         self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
         out = g.stdout
         idx = [out.index(m) for m in ("== python unit tests", "tools/test_a_slow.py", "tools/test_b_fast.py",
-                                      "== build deltas", "deltas fast", "== test\n")]
+                                      "== test\n")]
         self.assertEqual(idx, sorted(idx), out)
-        self.assertEqual(out.count("(overlapped)"), 2)
+        self.assertEqual(out.count("(overlapped)"), 1)
+
+    # --- the machine-dependent checks (gate-analysis step 7) ----------------------------
+    # Stubs record their calls in $STUB_ENV_CALLS; their exit codes come from $STUB_DELTAS_EXIT
+    # and $STUB_AUDIT_EXIT.
+
+    def env_stubs(self) -> None:
+        self.env_calls = os.path.join(self.tmp, "env-calls")
+        self.env.update(STUB_ENV_CALLS=self.env_calls, STUB_DELTAS_EXIT="0", STUB_AUDIT_EXIT="0")
+        self.write("tools/new-build.sh", "#!/usr/bin/env bash\n"
+                   "echo \"deltas $*\" >>\"$STUB_ENV_CALLS\"\necho '   deltas ran'\nexit \"$STUB_DELTAS_EXIT\"\n", exe=True)
+        self.write("tools/status-page.py", "import os, sys\n"
+                   "open(os.environ['STUB_ENV_CALLS'], 'a').write('audit ' + ' '.join(sys.argv[1:]) + '\\n')\n"
+                   "print('audit ran')\nsys.exit(int(os.environ['STUB_AUDIT_EXIT']))\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "env stubs")
+
+    def env_calls_seen(self) -> list[str]:
+        try:
+            with open(self.env_calls) as f:
+                return f.read().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def test_the_full_gate_no_longer_runs_the_build_deltas(self) -> None:
+        self.env_stubs()
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertNotIn("== build deltas", g.stdout)
+        self.assertEqual([c for c in self.env_calls_seen() if c.startswith("deltas")], [])
+        self.assertIn("== gate passed", g.stdout)
+
+    def test_the_tools_only_tier_no_longer_runs_the_build_deltas(self) -> None:
+        self.cargo_test("test result: FAILED. 0 passed; 1 failed\n", 101)
+        self.tier_commit("tools/foo.py")
+        self.env_stubs()
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("== tools only", g.stdout)
+        self.assertNotIn("== build deltas", g.stdout)
+        self.assertEqual([c for c in self.env_calls_seen() if c.startswith("deltas")], [])
+
+    def test_the_landing_audit_is_measured_from_the_base(self) -> None:
+        self.env_stubs()
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertEqual(self.env_calls_seen(), [f"audit --audit --no-stamp --since {self.base}"])
+
+    def test_env_checks_run_both_checks_and_never_print_the_gate_pass_line(self) -> None:
+        self.env_stubs()
+        g = self.run_tool("gate.sh", "--env-checks")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("== env checks passed", g.stdout)
+        self.assertNotIn("== gate passed", g.stdout)
+        self.assertNotIn("partial gate passed", g.stdout)
+        self.assertEqual(self.env_calls_seen(), ["deltas --gate-check", "audit --audit --no-stamp"])
+
+    def test_env_checks_fail_when_either_check_fails_and_still_run_the_other(self) -> None:
+        for var, want in (("STUB_DELTAS_EXIT", 3), ("STUB_AUDIT_EXIT", 1)):
+            with self.subTest(var=var):
+                self.env_stubs()
+                self.env[var] = str(want)
+                g = self.run_tool("gate.sh", "--env-checks")
+                self.assertEqual(g.returncode, want, g.stdout + g.stderr)
+                self.assertNotIn("== env checks passed", g.stdout)
+                self.assertNotIn("== gate passed", g.stdout)
+                self.assertEqual(len(self.env_calls_seen()), 2)
+                os.remove(self.env_calls)
+                self.git("reset", "-q", "--hard", "HEAD^")
+
+    def test_env_checks_need_neither_a_clean_tree_nor_the_build(self) -> None:
+        self.env_stubs()
+        self.write("scratch.txt", "dirty\n")
+        self.cargo_test(self.MARK, 101)
+        g = self.run_tool("gate.sh", "--env-checks")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertNotIn(self.MARK, g.stdout)
+
+    def test_land_refuses_an_env_checks_log_as_a_pass(self) -> None:
+        # land.sh greps for "== gate passed"; --env-checks never prints it.
+        with open(os.path.join(HERE, "gate.sh")) as f:
+            text = f.read()
+        self.assertEqual(text.count('echo "== gate passed"'), 3)
+        env_block = text[text.index("if ((env_checks)); then"):text.index("# `--without` re-execs")]
+        self.assertNotIn("gate passed\"", env_block)
 
     # --- the flaky rerun (gate-analysis step 5) ----------------------------------------
     # Invented names only. The first test run answers from STUB_TEST_OUT; the rerun is the

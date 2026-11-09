@@ -7,6 +7,7 @@
 #   tools/gate.sh --dirty             # gate what is on disk, tree as it is
 #   tools/gate.sh --only CRATE        # scope fmt/clippy/test to one package
 #   tools/gate.sh --without C1,C2     # run in a COPY with those crates removed
+#   tools/gate.sh --env-checks        # the machine-dependent checks, NOT part of landing
 #
 # **A docs-only push skips the build.** When everything since the base branch is
 # Markdown outside tools/ and server/, or under private/, only the docs tests run:
@@ -15,14 +16,21 @@
 # generated status page fails the gate). Any other path in the range gets the
 # full gate.
 # **A tools-only push skips it too.** Markdown, private/ and tools/*.py or tools/*.sh
-# scripts (at least one) run the allowlist, build deltas, every tools test and bash -n;
+# scripts (at least one) run the allowlist, every tools test and bash -n;
 # gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh,
 # gate_reds.py, bots-shards.txt and tools/hooks/ keep the full gate.
 #
 # **The full gate's order** (#282): hygiene, status, deps, shell syntax, format; then the
-# python tests and the build deltas start in the background on the host while toolchain,
-# lint and the test build run in the container; they are joined (and reported, with
+# python tests start in the background on the host while toolchain, lint and the test
+# build run in the container; they are joined (and reported, with
 # `took Ns (overlapped)`) before the test run.
+#
+# **The checks that depend on this machine are not in the landing path** (gate-analysis
+# step 7). `tools/gate.sh --env-checks` runs them: the committed build deltas against every
+# client install on this machine (`tools/new-build.sh --gate-check`) and the whole status
+# `--audit`, and prints `== env checks passed`, never `== gate passed`. Run it by hand or
+# nightly. The landing gate's status `--audit` fails only on rows the range changed; other
+# rows the `var/` verdicts contradict print as `status-page: note:` lines.
 #
 # **Each stage prints `   took Ns`** after its last line, so a slow gate can be
 # read off its log. The `== ` lines are what land.sh and pre-push grep; the
@@ -48,17 +56,45 @@ dirty=0
 only=""
 without=""
 print_jobs=0
+env_checks=0
 while (($#)); do
     case "$1" in
         --dirty) dirty=1 ;;
         --only) only=$2; dirty=1; shift ;;
         --without) without=$2; dirty=1; shift ;;
         --print-test-jobs) print_jobs=1 ;;
+        --env-checks) env_checks=1 ;;
         -h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//'; exit 0 ;;
         *) echo "gate: unknown argument $1" >&2; exit 2 ;;
     esac
     shift
 done
+
+# **The machine-dependent checks** (see the header). They read installs and `var/`, which a
+# landing build copy or a fresh clone does not hold, so a verdict or install that drifted
+# with no commit behind it must not stop a landing. Both always run; the exit is the first
+# failure. This is not a gate: it never prints `== gate passed`.
+if ((env_checks)); then
+    env_status=0
+    echo "== build deltas (against every install on this machine)"
+    if [[ -x tools/new-build.sh ]]; then
+        tools/new-build.sh --gate-check || env_status=$?
+    else
+        echo "   skipped: no tools/new-build.sh in this tree"
+    fi
+    echo "== status audit (every row against the newest verdicts in var/)"
+    if [[ -e tools/status-page.py ]]; then
+        python3 -I tools/status-page.py --audit --no-stamp || { s=$?; ((env_status != 0)) || env_status=$s; }
+    else
+        echo "   skipped: no tools/status-page.py in this tree"
+    fi
+    if ((env_status != 0)); then
+        echo "gate: env checks failed (exit $env_status)" >&2
+        exit "$env_status"
+    fi
+    echo "== env checks passed"
+    exit 0
+fi
 
 # `--without` re-execs the copy's own gate, so everything below runs once, in
 # the tree it is actually checking. `tools/dev.sh` derives the mount from its
@@ -156,7 +192,13 @@ status_checks() {
             echo "   status-guard skipped: no upstream or origin HEAD, main or master to measure from"
         fi
     fi
-    [[ -e tools/status-page.py ]] && python3 -I tools/status-page.py --audit --no-stamp
+    # The audit fails only on rows this range changed (`--since`); a row the `var/` verdicts
+    # contradict that the range left alone is a note, for `tools/gate.sh --env-checks`.
+    if [[ -e tools/status-page.py ]]; then
+        audit_args=(--audit --no-stamp)
+        [[ -z ${base:-} ]] || audit_args+=(--since "$base")
+        python3 -I tools/status-page.py "${audit_args[@]}"
+    fi
     # every flag and EVE_* variable has its row in docs/reference/launch-and-env.md
     [[ -e tools/env-ref.py ]] && python3 -I tools/env-ref.py --check
     took
@@ -281,13 +323,6 @@ if ((!dirty)) && base=$(default_base); then
         echo "== dependency allowlist"
         python3 tools/check_deps.py
         took
-        echo "== build deltas"
-        if [[ -x tools/new-build.sh ]]; then
-            tools/new-build.sh --gate-check
-        else
-            echo "   skipped: no tools/new-build.sh in this tree"
-        fi
-        took
         tool_tests=()
         for t in tools/test_*.py private/test_*.py; do
             [[ -e $t ]] && tool_tests+=("$t")
@@ -347,10 +382,10 @@ echo "== format"
 tools/dev.sh cargo fmt --all --check
 took
 
-# **The python tests and the build deltas run in the background** from here, on the
+# **The python tests run in the background** from here, on the
 # host, next to the container stages (toolchain, lint, test build), and are joined
-# before the test run. Each writes `<name>.out`, `.err`, `.rc` and `.t` into
-# $bg_dir; the join prints them in a fixed order whichever finished first. The
+# before the test run. The job writes `python.out`, `.err`, `.rc` and `.t` into
+# $bg_dir; the join prints them. The
 # background pids are waited for, never killed, on every exit path, so a red in a
 # foreground stage leaves no job running behind it (and no output printed).
 #
@@ -359,11 +394,9 @@ took
 # the gate has no client -- so a broken extractor fails here instead of on
 # the owner's next launch. Stdlib unittest, isolated interpreter.
 #
-# **The committed build deltas still reproduce** (R-NEWBUILD NB-1). For each
-# findings/build-delta-<old>-<new>.tsv whose two installs exist on this
-# machine, build-delta.py --check re-measures them (read-only, no network, the
-# client never launched), so a changed install is caught. No install: skipped
-# with a note. The logic lives in tools/new-build.sh --gate-check.
+# **The committed build deltas** (R-NEWBUILD NB-1) are re-measured against the installs on
+# this machine by `tools/new-build.sh --gate-check`. That depends on the machine, so it runs
+# under `tools/gate.sh --env-checks`, not here.
 pytests=()
 for t in tools/test_*.py; do
     [[ -e $t ]] && pytests+=("$t")
@@ -377,19 +410,6 @@ trap 'wait "${bg_pids[@]}" 2>/dev/null; rm -rf "$bg_dir"' EXIT
     (run_python_tests "${pytests[@]}") >"$bg_dir/python.out" 2>"$bg_dir/python.err" || s=$?
     echo "$s" >"$bg_dir/python.rc"
     echo "$((SECONDS - t0))" >"$bg_dir/python.t"
-) &
-bg_pids+=($!)
-(
-    t0=$SECONDS
-    s=0
-    if [[ -x tools/new-build.sh ]]; then
-        tools/new-build.sh --gate-check >"$bg_dir/deltas.out" 2>"$bg_dir/deltas.err" || s=$?
-    else
-        echo "   skipped: no tools/new-build.sh in this tree" >"$bg_dir/deltas.out"
-        : >"$bg_dir/deltas.err"
-    fi
-    echo "$s" >"$bg_dir/deltas.rc"
-    echo "$((SECONDS - t0))" >"$bg_dir/deltas.t"
 ) &
 bg_pids+=($!)
 
@@ -411,12 +431,12 @@ echo "== test build"
 tools/dev.sh cargo test --locked "${scope[@]}" --no-run
 took
 
-# Join: wait for both background jobs, print their reports in a fixed order, and
-# fail as the serial gate did if either is red. Their `took` is their own time.
+# Join: wait for the background job, print its report, and fail as the serial gate did
+# if it is red. Its `took` is its own time.
 for pid in "${bg_pids[@]}"; do wait "$pid" || true; done
 bg_failed=0
-for name in python deltas; do
-    if [[ $name == python ]]; then echo "== python unit tests"; else echo "== build deltas"; fi
+for name in python; do
+    echo "== python unit tests"
     cat "$bg_dir/$name.out" 2>/dev/null || true
     if [[ -e $bg_dir/$name.err ]]; then cat "$bg_dir/$name.err" >&2 || true; fi
     echo "   took $(cat "$bg_dir/$name.t" 2>/dev/null || echo 0)s (overlapped)"

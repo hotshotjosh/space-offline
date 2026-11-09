@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import subprocess
 import tempfile
 import unittest
 import xml.dom.minidom
@@ -405,6 +406,102 @@ class Tables(unittest.TestCase):
             with open(os.path.join(d, "var/regress-w1/regress.tsv"), "a", encoding="utf-8") as f:
                 f.write("fci_orphan\t0\n")
             self.assertEqual(sp.main(["--audit", "--no-stamp", "--var", os.path.join(d, "var")], d), 1)
+
+    # --- the landing form: --audit --since BASE (gate-analysis step 7) ----------------------
+
+    def git_root(self, d, tsv):
+        """A root that is a git repo with one commit, a red verdict for fci_alpha in var/."""
+        self.make_root(d, tsv)
+        with open(os.path.join(d, "tools/client-ci/regress.list"), "w", encoding="utf-8") as f:
+            f.write("fci_alpha\n")
+        os.makedirs(os.path.join(d, "var/regress-w1"))
+        with open(os.path.join(d, "var/regress-w1/regress.tsv"), "w", encoding="utf-8") as f:
+            f.write("fci_alpha\t1\n")
+        self.env = dict(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="t",
+                        GIT_AUTHOR_EMAIL="t@test.invalid", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
+        self.git(d, "init", "-q", "-b", "master")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "base")
+
+    def git(self, d, *args):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(self.env)
+        return subprocess.run(["git", "-C", d, *args], env=env, check=True, capture_output=True, text=True).stdout
+
+    def audit_since(self, d, since="HEAD"):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        keep = {k: os.environ.get(k) for k in self.env}
+        os.environ.update(self.env)
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc = sp.main(["--audit", "--no-stamp", "--since", since, "--var", os.path.join(d, "var")], d)
+        finally:
+            for k, v in keep.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        return rc, buf.getvalue()
+
+    def test_a_contradicted_row_the_range_did_not_touch_is_a_note_and_passes(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.git_root(d, self.GOOD)
+            rc, out = self.audit_since(d)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("status-page: note: One: client-proved, but the newest verdict is red: fci_alpha (w1)", out)
+            self.assertIn("status-page: 0 to look at", out)
+
+    def test_a_contradicted_row_the_range_changed_still_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.git_root(d, self.GOOD)
+            path = os.path.join(d, "docs/status/progress.tsv")
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text.replace("fci_alpha W1", "fci_alpha W2"))
+            self.git(d, "commit", "-qam", "touch the row")
+            # the range is base..HEAD: measure from the first commit
+            first = self.git(d, "rev-list", "--max-parents=0", "HEAD").strip()
+            rc, out = self.audit_since(d, first)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("One: client-proved, but the newest verdict is red", out)
+            self.assertNotIn("note:", out)
+
+    def test_a_new_row_counts_as_changed(self):
+        rows = [row("Old"), row("New", state="client-proved", evidence="fci_alpha W2")]
+        items = sp.audit_items(rows, KNOWN, {"fci_alpha": ("3", False)}, [])
+        fail, notes = sp.split_findings(items, {"New"})
+        self.assertEqual([t.split(":")[0] for t in fail], ["New"])
+        self.assertEqual([t.split(":")[0] for t in notes], ["Old"])
+
+    def test_a_regression_row_no_feature_cites_fails_whichever_rows_changed(self):
+        items = sp.audit_items([row()], KNOWN, {"fci_alpha": ("2", True)}, ["fci_gamma"])
+        fail, notes = sp.split_findings(items, set())
+        self.assertEqual(fail, ["fci_gamma: a regression row no feature cites"])
+        self.assertEqual(notes, [])
+
+    def test_a_scenario_with_a_verdict_no_row_cites_is_a_note_in_the_landing_form(self):
+        items = sp.audit_items([row()], KNOWN, {"fci_alpha": ("2", True), "fci_gamma": ("2", True)}, [])
+        fail, notes = sp.split_findings(items, set())
+        self.assertEqual(fail, [])
+        self.assertEqual(len(notes), 1)
+
+    def test_without_a_base_every_finding_fails(self):
+        items = sp.audit_items([row()], KNOWN, {"fci_alpha": ("3", False)}, [])
+        fail, notes = sp.split_findings(items, None)
+        self.assertEqual((len(fail), notes), (1, []))
+
+    def test_an_unreadable_base_makes_every_finding_fail(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.git_root(d, self.GOOD)
+            os.environ.update(self.env)
+            try:
+                self.assertIsNone(sp.changed_features(d, "no-such-ref"))
+            finally:
+                for k in self.env:
+                    os.environ.pop(k, None)
 
     def test_a_short_row_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
