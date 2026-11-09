@@ -616,11 +616,22 @@ pub fn move_eject_time(
 /// (FILETIME ticks), so one stuck wrap does not log on every cadence.
 const RETRY: i64 = 60 * SECOND;
 
+/// When a wrap whose delivery failed may be tried again, by `(world birth,
+/// wrap id)`: wrap ids are minted from the same base in every world, so a
+/// process that hosts several worlds must not let one's failure delay
+/// another's wrap.
+static NEXT_TRY: std::sync::Mutex<BTreeMap<(i64, i64), i64>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+/// The retry key of wrap `id` in `reg`'s world.
+fn try_key(reg: &Registry, id: i64) -> (i64, i64) {
+    (reg.deltas().world().map_or(0, |w| w.birth), id)
+}
+
 /// The tick: every wrap whose long wait has run out moves to the nearest NPC
 /// station. With no NPC station known it stays, and is tried again; so is one
 /// whose move failed, after [`RETRY`]. `ft` is the stage's FILETIME.
 pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTime) {
-    static NEXT_TRY: std::sync::Mutex<BTreeMap<i64, i64>> = std::sync::Mutex::new(BTreeMap::new());
     if reg.deltas().of(KIND).is_empty() {
         return;
     }
@@ -630,10 +641,11 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
         if now < w.auto_at(&rules) {
             continue;
         }
+        let key = try_key(reg, w.id);
         if NEXT_TRY
             .lock()
             .ok()
-            .and_then(|m| m.get(&w.id).copied())
+            .and_then(|m| m.get(&key).copied())
             .is_some_and(|t| now < t)
         {
             continue;
@@ -644,12 +656,12 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
         let d = deliver(reg, &w, to.station_id, now);
         if get(reg.deltas(), w.id).is_some() {
             if let Ok(mut m) = NEXT_TRY.lock() {
-                m.insert(w.id, now.saturating_add(RETRY));
+                m.insert(key, now.saturating_add(RETRY));
             }
             continue;
         }
         if let Ok(mut m) = NEXT_TRY.lock() {
-            m.remove(&w.id);
+            m.remove(&key);
         }
         crate::errln!(
             "[safety] wrap {} of {} moved itself to {} ({} items, fee {})",

@@ -607,3 +607,39 @@ fn the_tick_runs_on_the_time_the_stage_gives_it() {
     tick(&mut reg, std::time::Instant::now(), now);
     assert!(of_owner(reg.deltas(), BOSS).is_empty());
 }
+
+#[test]
+fn a_failed_delivery_in_one_world_does_not_delay_the_same_wrap_id_in_another() {
+    let (mut a, id, corp) = world();
+    let _ = unanchor(&mut a, id, corp);
+    let (mut b, id_b, corp_b) = world();
+    let _ = unanchor(&mut b, id_b, corp_b);
+    // Two worlds in one process, born at invented, different instants.
+    for (reg, birth) in [(&mut a, 1_000_001), (&mut b, 1_000_002)] {
+        let mut w = *reg.deltas().world().expect("a world");
+        w.birth = birth;
+        reg.deltas_mut().set_world(w);
+    }
+    let wa = wrap_of(&a, BOSS);
+    let wb = wrap_of(&b, BOSS);
+    assert_eq!(wa.id, wb.id, "the same wrap id in both worlds");
+    move_eject_time(&mut a, BOSS, wa.id, 1).unwrap();
+    move_eject_time(&mut b, BOSS, wb.id, 1).unwrap();
+    let now = crate::pyutil::filetime_now();
+    // World A's delivery of that id failed a moment ago and is held back.
+    NEXT_TRY
+        .lock()
+        .unwrap()
+        .insert(try_key(&a, wa.id), now.saturating_add(RETRY));
+    tick(&mut b, std::time::Instant::now(), now);
+    assert!(of_owner(b.deltas(), BOSS).is_empty(), "B delivered");
+    tick(&mut a, std::time::Instant::now(), now);
+    assert_eq!(of_owner(a.deltas(), BOSS).len(), 1, "A still waits");
+    // After its own retry time, A delivers too.
+    tick(
+        &mut a,
+        std::time::Instant::now(),
+        now.saturating_add(2 * RETRY),
+    );
+    assert!(of_owner(a.deltas(), BOSS).is_empty());
+}
