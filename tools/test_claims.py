@@ -514,8 +514,8 @@ class Resolve(unittest.TestCase):
     def test_repo_subcommand(self):
         self.remotes["upstream"] = "https://github.com/acme/game.git"
         out = io.StringIO()
-        with mock.patch.object(claims, "git", self.run_git), \
-                mock.patch.object(claims, "github_get", self.fetcher({"fork": False})), \
+        with mock.patch.object(claims.tracker, "git", self.run_git), \
+                mock.patch.object(claims.tracker, "github_get", self.fetcher({"fork": False})), \
                 mock.patch.dict(os.environ, {}, clear=True):
             code = claims.main(["repo"], out=out, err=io.StringIO())
         self.assertEqual(code, 0)
@@ -524,8 +524,8 @@ class Resolve(unittest.TestCase):
 
     def repo_out(self, info, env=None):
         out = io.StringIO()
-        with mock.patch.object(claims, "git", self.run_git), \
-                mock.patch.object(claims, "github_get", self.fetcher(info)), \
+        with mock.patch.object(claims.tracker, "git", self.run_git), \
+                mock.patch.object(claims.tracker, "github_get", self.fetcher(info)), \
                 mock.patch.dict(os.environ, env or {}, clear=True):
             self.assertEqual(claims.main(["repo"], out=out, err=io.StringIO()), 0)
         return dict(ln.split("=", 1) for ln in out.getvalue().splitlines())
@@ -581,7 +581,7 @@ class ForkPull(unittest.TestCase):
 
     def find(self, tr, origin):
         out = io.StringIO()
-        with mock.patch.object(claims, "git", lambda *a: origin if a[:2] == ("remote", "get-url") else ""):
+        with mock.patch.object(claims.tracker, "git", lambda *a: origin if a[:2] == ("remote", "get-url") else ""):
             code = claims.main(["pr-for-branch", "--branch", "zed/7-fix"], tracker=tr, out=out,
                                err=io.StringIO())
         return code, out.getvalue().strip()
@@ -598,7 +598,7 @@ class ForkPull(unittest.TestCase):
         tr, _ = tracker()
         self.assertEqual(self.find(tr, "git@github.com:zed/game.git"), (1, "none"))
         out = io.StringIO()
-        with mock.patch.object(claims, "git", lambda *a: ""):
+        with mock.patch.object(claims.tracker, "git", lambda *a: ""):
             code = claims.main(["pr-for-branch", "--branch", "bob/3-thing"], tracker=tr, out=out,
                                err=io.StringIO())
         self.assertEqual((code, out.getvalue().strip()), (0, "50"))
@@ -725,7 +725,7 @@ class ScanBeforePosting(unittest.TestCase):
             os.makedirs(os.path.join(d.name, os.path.dirname(rel)), exist_ok=True)
             with open(os.path.join(d.name, rel), "w", encoding="utf-8") as f:
                 f.write(text)
-        return mock.patch.object(claims, "ROOT", d.name)
+        return mock.patch.object(claims.tracker, "ROOT", d.name)
 
     def test_a_malformed_scan_pattern_refuses_everything(self):
         tr, fake = tracker()

@@ -556,11 +556,11 @@ rows as optional.
 
 | Name | Read by | Default | Meaning | Example |
 |---|---|---|---|---|
-| `EVE_TRACKER` | `tools/claims.py` | from the `upstream` remote, else `origin` | tracker kind: `github` or `gitea` | `EVE_TRACKER=github` |
-| `EVE_TRACKER_API` | `tools/claims.py` | from the same remote's host | tracker REST base | `https://api.github.com` |
-| `EVE_TRACKER_REPO` | `tools/claims.py` | from the same remote's path; a GitHub fork resolves to its source repo (cached in the git common dir as `eve-tracker`) | `owner/name` of the board | `EVE_TRACKER_REPO=someone/space-offline` |
-| `EVE_TRACKER_TOKEN` | `tools/claims.py`, `tools/agent-status.sh` | unset (read-only on a public repo) | API token, set by the human in the environment; never pasted to an agent | |
-| `EVE_TRACKER_TOKEN_FILE` | `tools/claims.py`, `tools/agent-status.sh` | unset | file holding that token, instead of the variable | `$HOME/.config/tracker-token` |
-| `GH_TOKEN` | `tools/claims.py`, `tools/agent-status.sh` | unset | GitHub token, read after `EVE_TRACKER_TOKEN` and its file, and only when the API is `https://api.github.com`; set by the human, e.g. `export GH_TOKEN=$(gh auth token)`; never pasted to an agent | |
-| `GITHUB_TOKEN` | `tools/claims.py`, `tools/agent-status.sh` | unset | the same, read after `GH_TOKEN` | |
+| `EVE_TRACKER` | `tools/claims.py`, `tools/tracker.py` | from the `upstream` remote, else `origin` | tracker kind: `github` or `gitea` | `EVE_TRACKER=github` |
+| `EVE_TRACKER_API` | `tools/claims.py`, `tools/tracker.py` | from the same remote's host | tracker REST base | `https://api.github.com` |
+| `EVE_TRACKER_REPO` | `tools/claims.py`, `tools/tracker.py` | from the same remote's path; a GitHub fork resolves to its source repo (cached in the git common dir as `eve-tracker`) | `owner/name` of the board | `EVE_TRACKER_REPO=someone/space-offline` |
+| `EVE_TRACKER_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset (read-only on a public repo) | API token, set by the human in the environment; never pasted to an agent | |
+| `EVE_TRACKER_TOKEN_FILE` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | file holding that token, instead of the variable | `$HOME/.config/tracker-token` |
+| `GH_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | GitHub token, read after `EVE_TRACKER_TOKEN` and its file, and only when the API is `https://api.github.com`; set by the human, e.g. `export GH_TOKEN=$(gh auth token)`; never pasted to an agent | |
+| `GITHUB_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | the same, read after `GH_TOKEN` | |
 | `EVE_ISSUES_URL` | `tools/status-page.py` | unset: no issue column | issue URL prefix; set, the status page links issue numbers | `https://github.com/someone/space-offline/issues/` |

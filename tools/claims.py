@@ -43,305 +43,66 @@ import sys as _sys
 if __name__ == "__main__":
     _sys.path.append(_sys.path.pop(0))
 
+
 import argparse
 import datetime as dt
 import fnmatch
 import importlib.util
-import json
 import os
 import re
-import subprocess
 import sys
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE = os.path.join(ROOT, "out", "tracker-cache.json")
-CACHE_TTL = 60
-CONTRIBUTING = os.path.join(ROOT, "docs", "guides", "contributing.md")
+HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Append-only files: two claims may both name them.
-EXEMPT = [
-    "docs/status/progress.tsv",
-    "docs/status/*.svg",
-    "docs/status/README.md",
-    "docs/status/waves.tsv",
-    "tools/client-ci/regress.list",
-    "docs/packets.tsv",
-]
+
+def _sibling(name):
+    """A module of tools/ loaded by path (tools/ holds a dis.py that shadows the stdlib),
+    shared through sys.modules so tests and other tools see one copy."""
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, name + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# The read-only code lives in tools/tracker.py and the path overlap code in
+# tools/pr_overlap.py; the names below stay importable from here.
+tracker = _sibling("tracker")
+pr_overlap = _sibling("pr_overlap")
+
+ROOT, CACHE, CACHE_TTL = tracker.ROOT, tracker.CACHE, tracker.CACHE_TTL
+CONTRIBUTING = pr_overlap.CONTRIBUTING
+EXEMPT = pr_overlap.EXEMPT
+TrackerError, NoToken, LeakRefused = tracker.TrackerError, tracker.NoToken, tracker.LeakRefused
+scan_lines, export_patterns, leak_lines = (tracker.scan_lines, tracker.export_patterns,
+                                           tracker.leak_lines)
+git, parse_remote, cache_file, github_get = (tracker.git, tracker.parse_remote,
+                                             tracker.cache_file, tracker.github_get)
+resolve_repo, config, read_token = tracker.resolve_repo, tracker.config, tracker.read_token
+labels_of, parse_time, pr_issue_refs = tracker.labels_of, tracker.parse_time, tracker.pr_issue_refs
+hot_files = pr_overlap.hot_table   # fails closed: None when the table cannot be read
+SERVER_SRC = pr_overlap.SERVER_SRC
+
 DROP_LABELS = {"status/claimed", "needs-owner", "needs-human", "parked", "status/blocked"}
 STALE_DAYS = 7
 
 
-class TrackerError(Exception):
-    """A tracker call failed. Carries the HTTP status, method and path only."""
+class Http(tracker.Http):
+    """The tracker transport with writes: claims are comments, labels and assignees."""
 
-    def __init__(self, status, method, path):
-        super().__init__(f"tracker error: {status} {method} {path}")
-        self.status = status
-
-
-class NoToken(Exception):
-    pass
-
-
-class LeakRefused(Exception):
-    """A body to post matches the public export's scan. Holds line numbers and patterns only."""
-
-    def __init__(self, hits):
-        super().__init__("; ".join(hits))
-        self.hits = hits
-
-
-def scan_lines(path):
-    """(line number, regex text) of each pattern line of a scan file; none when it is missing."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            return [(n, t.strip()) for n, t in enumerate(f, 1)
-                    if t.strip() and not t.lstrip().startswith("#")]
-    except OSError:
-        return []
-
-
-def export_patterns(root=None, post=False):
-    """The scan, as (compiled, label) pairs: the export's BUILT_IN patterns plus
-    private/export-scan.txt (optional), and with post=True an optional extra list. A
-    BUILT_IN pattern's label is its text; a private pattern's label is
-    `private pattern <file>#<line>`, never its text. A malformed pattern refuses
-    everything (LeakRefused): a scan that cannot run must not pass."""
-    root = root or ROOT
-    spec = importlib.util.spec_from_file_location(
-        "public_export", os.path.join(os.path.dirname(os.path.abspath(__file__)), "public-export.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    items = [(t, t, f"BUILT_IN#{k}") for k, t in enumerate(mod.BUILT_IN, 1)]
-    names = ["export-scan.txt"] + (["post-scan.txt"] if post else [])
-    for name in names:
-        for n, t in scan_lines(os.path.join(root, mod.PRIVATE_DIR, name)):
-            items.append((t, f"private pattern {name}#{n}", f"{name}#{n}"))
-    out = []
-    for t, label, where in items:
-        try:
-            out.append((re.compile(t), label))
-        except re.error:
-            raise LeakRefused([f"scan pattern {where} is malformed; nothing scanned"]) from None
-    return out
-
-
-def leak_lines(text, pats):
-    """One entry per line that matches, never the matched text. pats: (compiled, label)
-    pairs, or bare compiled patterns (labelled with their text)."""
-    hits = []
-    for n, line in enumerate((text or "").split("\n"), 1):
-        for p in pats:
-            pat, label = p if isinstance(p, tuple) else (p, p.pattern)
-            if pat.search(line):
-                hits.append(f"line {n}: matches /{label}/" if not label.startswith("private ")
-                            else f"line {n}: matches {label}")
-                break
-    return hits
-
-
-# ---------------------------------------------------------------- config
-
-
-def git(*args):
-    try:
-        return subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True,
-                              timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
-GITHUB_API = "https://api.github.com"
-GITHUB_HOSTS = ("github.com", "www.github.com", "ssh.github.com")
-
-
-def parse_remote(url):
-    """(host, 'owner/name') from a git remote URL (https, ssh or scp form), or None."""
-    m = re.match(r"(?:\w+://)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/](.+?)(?:\.git)?/?$", url or "")
-    if not m:
-        return None
-    host = m.group(1).lower()
-    if host in GITHUB_HOSTS:
-        host = "github.com"
-    return host, "/".join(m.group(2).split("/")[-2:])
-
-
-def cache_file(run=None):
-    """`eve-tracker` in the common git dir (`git rev-parse --git-common-dir`), so every
-    worktree of a clone shares one cache."""
-    d = (run or git)("rev-parse", "--git-common-dir")
-    if not d:
-        return None
-    return os.path.join(ROOT, d, "eve-tracker")
-
-
-def github_get(url, token):
-    """One anonymous-or-token GET of a GitHub API URL, parsed. Raises on any failure."""
-    headers = {"Accept": "application/json", "User-Agent": "eve-offline-claims"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=10) as r:
-        return json.loads(r.read())
-
-
-def resolve_repo(run, env, fetch, err, key, repo):
-    """The repo the board lives on: the parent when `repo` is a GitHub fork.
-
-    The answer is cached in `eve-tracker` in the git common dir, keyed by host and
-    repo (never the URL, which may hold credentials). A failed lookup (offline, rate
-    limit) falls back to `repo` with a note and is not cached.
-    """
-    path = cache_file(run)
-    try:
-        with open(path, encoding="utf-8") as f:
-            c = json.load(f)
-        if c.get("key") == key and c.get("repo"):
-            return c["repo"]
-    except (OSError, TypeError, ValueError, AttributeError):
-        pass
-    try:
-        info = fetch(f"https://api.github.com/repos/{repo}", read_token(env, GITHUB_API))
-        root = None
-        if info.get("fork"):
-            # `source` is the root of the fork network; `parent` is only the next one up.
-            root = ((info.get("source") or {}).get("full_name")
-                    or (info.get("parent") or {}).get("full_name"))
-        answer = root or repo
-    except (OSError, ValueError, TypeError, AttributeError, TrackerError):
-        print(f"note: could not ask GitHub whether {repo} is a fork; using {repo} "
-              "(set EVE_TRACKER_REPO to choose another)", file=err)
-        return repo
-    if path:
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({"key": key, "repo": answer}, f)
-        except OSError:
-            pass
-    return answer
-
-
-def config(env=None, run=None, fetch=None, err=None):
-    """Where the claim board is. In order: all of EVE_TRACKER, EVE_TRACKER_API and
-    EVE_TRACKER_REPO; else the `upstream` remote; else `origin`. A GitHub remote that
-    is a fork resolves to its parent."""
-    env = os.environ if env is None else env
-    run = run or git
-    origin = "remote"
-    kind, api, repo = env.get("EVE_TRACKER"), env.get("EVE_TRACKER_API"), env.get("EVE_TRACKER_REPO")
-    if not (kind and api and repo):
-        url = run("remote", "get-url", "upstream") or run("remote", "get-url", "origin")
-        parsed = parse_remote(url)
-        if parsed:
-            host, own = parsed
-            gh = host == "github.com"
-            if gh and not api and not repo:
-                repo = resolve_repo(run, env, fetch or github_get, err or sys.stderr, f"{host}/{own}", own)
-                if repo != own:
-                    origin = "fork"
-            kind = kind or ("github" if gh else "gitea")
-            api = api or ("https://api.github.com" if gh else f"https://{host}/api/v1")
-            repo = repo or own
-    if kind not in ("github", "gitea") or not api or not repo:
-        raise TrackerError("config", "-", "set EVE_TRACKER, EVE_TRACKER_API and EVE_TRACKER_REPO")
-    if env.get("EVE_TRACKER_REPO") and origin == "remote":
-        origin = "override"
-    return {"kind": kind, "api": api.rstrip("/"), "repo": repo, "from": origin}
-
-
-def read_token(env=None, api=GITHUB_API):
-    """EVE_TRACKER_TOKEN, else EVE_TRACKER_TOKEN_FILE, else GH_TOKEN, else
-    GITHUB_TOKEN; those two only when `api` is https://api.github.com, so a github.com
-    token never goes to another host."""
-    env = os.environ if env is None else env
-    tok = env.get("EVE_TRACKER_TOKEN", "").strip()
-    if not tok and env.get("EVE_TRACKER_TOKEN_FILE"):
-        try:
-            with open(env["EVE_TRACKER_TOKEN_FILE"], encoding="utf-8") as f:
-                tok = f.read().strip()
-        except OSError:
-            tok = ""
-    if not tok and (api or "").rstrip("/") == GITHUB_API:
-        tok = env.get("GH_TOKEN", "").strip() or env.get("GITHUB_TOKEN", "").strip()
-    return tok or None
-
-
-# ---------------------------------------------------------------- transport
-
-
-class Http:
-    """urllib transport. The token lives only in this object and the header."""
-
-    def __init__(self, cfg, token, cache_path=CACHE):
-        self.cfg = cfg
-        self._token = token
-        self.cache_path = cache_path
-        self.has_token = bool(token)
-
-    def _cache(self):
-        try:
-            with open(self.cache_path, encoding="utf-8") as f:
-                return json.load(f)
-        except (OSError, ValueError):
-            return {}
-
-    def _store(self, data):
-        try:
-            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-            with open(self.cache_path, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-        except OSError:
-            pass
+    writable = True
 
     def request(self, method, path, body=None):
-        url = self.cfg["api"] + path
-        key = ("auth " if self._token else "anon ") + url
-        if method == "GET":
-            c = self._cache().get(key)
-            if c and time.time() - c["t"] < CACHE_TTL:
-                return c["v"]
-        headers = {"Accept": "application/json", "User-Agent": "eve-offline-claims"}
-        if self._token:
-            scheme = "Bearer" if self.cfg["kind"] == "github" else "token"
-            headers["Authorization"] = f"{scheme} {self._token}"
-        data = None
-        if body is not None:
-            data = json.dumps(body).encode()
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        status = None
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                raw = r.read()
-        except urllib.error.HTTPError as e:
-            status = e.code
-        except (urllib.error.URLError, OSError, ValueError):
-            status = "unreachable"
-        if status is not None:
-            raise TrackerError(status, method, path) from None
-        val = json.loads(raw) if raw.strip() else None
-        cache = self._cache() if method == "GET" else {}
-        if method == "GET":
-            cache[key] = {"t": time.time(), "v": val}
-        self._store(cache)  # a write empties the cache
-        return val
+        return self._send(method, path, body)
 
 
-# ---------------------------------------------------------------- tracker
-
-
-class Tracker:
+class Tracker(tracker.Tracker):
     def __init__(self, cfg, transport):
-        self.cfg = cfg
-        self.t = transport
-        self.gh = cfg["kind"] == "github"
-        self.r = f"/repos/{cfg['repo']}"
+        super().__init__(cfg, transport)
         self._label_ids = None
-        self._me = None
         self.scan = None   # compiled export patterns; loaded on the first post
 
     def check_body(self, body):
@@ -351,45 +112,8 @@ class Tracker:
         if hits:
             raise LeakRefused(hits)
 
-    def get(self, path):
-        return self.t.request("GET", path)
-
-    def me(self):
-        if self._me is None:
-            if not getattr(self.t, "has_token", True):
-                raise NoToken()
-            self._me = self.get("/user")["login"]
-        return self._me
-
-    def paged(self, path):
-        out, page = [], 1
-        sep = "&" if "?" in path else "?"
-        size = "per_page=100" if self.gh else "limit=50"
-        while True:
-            items = self.get(f"{path}{sep}page={page}&{size}") or []
-            out.extend(items)
-            if len(items) < (100 if self.gh else 50):
-                return out
-            page += 1
-
-    def open_issues(self, labels=()):
-        q = "state=open" + ("" if self.gh else "&type=issues")
-        if labels:
-            q += "&labels=" + urllib.parse.quote(",".join(labels))
-        return [i for i in self.paged(f"{self.r}/issues?{q}") if "pull_request" not in i
-                or i.get("pull_request") is None]
-
-    def issue(self, n):
-        return self.get(f"{self.r}/issues/{n}")
-
     def comments(self, n):
         return self.paged(f"{self.r}/issues/{n}/comments")
-
-    def open_pulls(self):
-        return self.paged(f"{self.r}/pulls?state=open")
-
-    def pull_files(self, n):
-        return [f.get("filename", "") for f in self.paged(f"{self.r}/pulls/{n}/files")]
 
     # writes
     def comment(self, n, body):
@@ -422,11 +146,9 @@ class Tracker:
         self.t.request("DELETE", f"{self.r}/issues/{n}/labels/{val}")
 
 
+
+
 # ---------------------------------------------------------------- parsing
-
-
-def labels_of(issue):
-    return {lb["name"] if isinstance(lb, dict) else lb for lb in issue.get("labels") or []}
 
 
 def assignees_of(issue):
@@ -440,14 +162,6 @@ def body_field(issue, name):
 
 def split_paths(s):
     return [p.strip().strip("`") for p in re.split(r"[,\s]+", s or "") if p.strip().strip("`")]
-
-
-def parse_time(s):
-    try:
-        return dt.datetime.fromisoformat((s or "").replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
 
 def live_claim(comments):
     """The live claim: {holder, owns, at} or None.
@@ -487,49 +201,6 @@ def overlaps(a, b):
     return b2.startswith(a2 + "/") or a2.startswith(b2 + "/")
 
 
-SERVER_SRC = "server/crates/eve-server/"
-
-
-def hot_files(path=CONTRIBUTING):
-    """Every backticked path in the first cell of the hot-files table of `## 10.`.
-
-    The table follows a `### ...hot...` heading or a `**Hot files.**` paragraph; the area
-    table before it is not read, and reading stops where the table ends. Its `src/...`
-    paths are under `server/crates/eve-server/` (the doc says so), so they are returned as
-    repo paths, the form claims use. The "registration tables" row names no path in its
-    first cell on purpose: only one line of those files is maintainer-only, not the file.
-    None when the doc or the table cannot be found, so a claim fails closed.
-    """
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return None
-    m = re.search(r"^## 10\.[^\n]*$(.*?)(?=^## |\Z)", text, re.M | re.S)
-    if not m:
-        return None
-    h = re.search(r"^(?:#{3,}[^\n]*\bhot\b|\*\*hot files)[^\n]*$(.*?)(?=^#{2,} |\Z)",
-                  m.group(1), re.M | re.S | re.I)
-    if not h:
-        return None
-    out, started = [], False
-    for line in h.group(1).split("\n"):
-        if not line.startswith("|"):
-            if started:
-                break
-            continue
-        started = True
-        first = line.strip("|").split("|", 1)[0]
-        for t in re.findall(r"`([^`]+)`", first):
-            out.append(SERVER_SRC + t if t.startswith("src/") else t)
-    return out if started else None
-
-
-def pr_issue_refs(pr):
-    return {int(x) for x in re.findall(
-        r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", pr.get("body") or "", re.I)}
-
-
 def now():
     return dt.datetime.now(dt.timezone.utc)
 
@@ -549,10 +220,6 @@ def all_claims(tr):
             out[i["number"]] = c
     return out
 
-
-def cmd_whoami(tr, a, out):
-    print(tr.me(), file=out)
-    return 0
 
 
 def cmd_list(tr, a, out):
@@ -745,29 +412,8 @@ def cmd_status(tr, a, out):
     return 0
 
 
-def cmd_repo(tr, a, out):
-    """board=, kind=, origin= and from= (override, remote or fork: where board came from)."""
-    print(f"board={tr.cfg['repo']}\nkind={tr.cfg['kind']}", file=out)
-    parsed = parse_remote(git("remote", "get-url", "origin"))
-    print(f"origin={parsed[1] if parsed else ''}\nfrom={tr.cfg.get('from', 'remote')}", file=out)
-    return 0
-
-
-def cmd_pr_for_branch(tr, a, out):
-    branch = a.branch or git("rev-parse", "--abbrev-ref", "HEAD")
-    parsed = parse_remote(git("remote", "get-url", "origin"))
-    mine = parsed[1].split("/")[0] if parsed else None
-    for p in tr.open_pulls():
-        head = p.get("head") or {}
-        label = head.get("label") or ""
-        # A fork's PR sits on the parent repo with head `<them>:<branch>`; another
-        # person's branch of the same name is not mine.
-        if head.get("ref") == branch and (":" not in label or mine is None
-                                          or label.split(":", 1)[0] == mine):
-            print(p["number"], file=out)
-            return 0
-    print("none", file=out)
-    return 1
+cmd_whoami, cmd_repo, cmd_pr_for_branch = (tracker.cmd_whoami, tracker.cmd_repo,
+                                            tracker.cmd_pr_for_branch)
 
 
 def parser():
@@ -835,3 +481,4 @@ def main(argv=None, tracker=None, out=None, err=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+
