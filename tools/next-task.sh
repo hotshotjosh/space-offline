@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# List open, unclaimed, unblocked tasks, best first (AGENTS.md step 2). Read-only.
-# Flags: --no-client, --area SLUG, --first, --limit N. See tools/claims.py.
-exec python3 -I "$(dirname "$0")/claims.py" next "$@"
+# Open issues, `status/ready` first: a read-only sorting hint. Nothing it prints grants anything.
+# Flags: --no-client, --area SLUG, --limit N. See tools/tracker.py issues --help.
+exec python3 -I "$(dirname "$0")/tracker.py" issues "$@"

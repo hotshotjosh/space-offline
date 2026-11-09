@@ -552,15 +552,15 @@ rows as optional.
 | `EVE_SMOKE_PREFIX_ID` | `tools/client-headless.sh` | `8501` | smoke test prefix | |
 | `EVE_SMOKE_SECONDS` | `tools/client-headless.sh` | 75 | smoke test length | |
 
-### Issue tracker and status page (`tools/claims.py`, `tools/agent-status.sh`, `tools/status-page.py`)
+### Issue tracker and status page (`tools/tracker.py`, `tools/pr_overlap.py`, `tools/next-task.sh`, `tools/status-page.py`)
 
 | Name | Read by | Default | Meaning | Example |
 |---|---|---|---|---|
-| `EVE_TRACKER` | `tools/claims.py`, `tools/tracker.py` | from the `upstream` remote, else `origin` | tracker kind: `github` or `gitea` | `EVE_TRACKER=github` |
-| `EVE_TRACKER_API` | `tools/claims.py`, `tools/tracker.py` | from the same remote's host | tracker REST base | `https://api.github.com` |
-| `EVE_TRACKER_REPO` | `tools/claims.py`, `tools/tracker.py` | from the same remote's path; a GitHub fork resolves to its source repo (cached in the git common dir as `eve-tracker`) | `owner/name` of the board | `EVE_TRACKER_REPO=someone/space-offline` |
-| `EVE_TRACKER_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset (read-only on a public repo) | API token, set by the human in the environment; never pasted to an agent | |
-| `EVE_TRACKER_TOKEN_FILE` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | file holding that token, instead of the variable | `$HOME/.config/tracker-token` |
-| `GH_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | GitHub token, read after `EVE_TRACKER_TOKEN` and its file, and only when the API is `https://api.github.com`; set by the human, e.g. `export GH_TOKEN=$(gh auth token)`; never pasted to an agent | |
-| `GITHUB_TOKEN` | `tools/claims.py`, `tools/tracker.py`, `tools/agent-status.sh` | unset | the same, read after `GH_TOKEN` | |
+| `EVE_TRACKER` | `tools/tracker.py`, `tools/pr_overlap.py` | from the `upstream` remote, else `origin` | tracker kind: `github` or `gitea` | `EVE_TRACKER=github` |
+| `EVE_TRACKER_API` | `tools/tracker.py`, `tools/pr_overlap.py` | from the same remote's host | tracker REST base | `https://api.github.com` |
+| `EVE_TRACKER_REPO` | `tools/tracker.py`, `tools/pr_overlap.py` | from the same remote's path; a GitHub fork resolves to its source repo (cached in the git common dir as `eve-tracker`) | `owner/name` of the board | `EVE_TRACKER_REPO=someone/space-offline` |
+| `EVE_TRACKER_TOKEN` | `tools/tracker.py`, `tools/pr_overlap.py` | unset (read-only on a public repo) | API token, set by the human in the environment; never pasted to an agent | |
+| `EVE_TRACKER_TOKEN_FILE` | `tools/tracker.py`, `tools/pr_overlap.py` | unset | file holding that token, instead of the variable | `$HOME/.config/tracker-token` |
+| `GH_TOKEN` | `tools/tracker.py`, `tools/pr_overlap.py` | unset | GitHub token, read after `EVE_TRACKER_TOKEN` and its file, and only when the API is `https://api.github.com`; set by the human, e.g. `export GH_TOKEN=$(gh auth token)`; never pasted to an agent | |
+| `GITHUB_TOKEN` | `tools/tracker.py`, `tools/pr_overlap.py` | unset | the same, read after `GH_TOKEN` | |
 | `EVE_ISSUES_URL` | `tools/status-page.py` | unset: no issue column | issue URL prefix; set, the status page links issue numbers | `https://github.com/someone/space-offline/issues/` |

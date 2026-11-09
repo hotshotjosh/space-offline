@@ -65,7 +65,7 @@ def git(*args: str) -> str:
 
 def default_base() -> str | None:
     """The remote's default branch: HEAD, else main, else master of `upstream` if that
-    remote exists, then of `origin` (the same base tools/agent-status.sh prints; a fork's
+    remote exists, then of `origin` (the base a fork's branch starts from; a fork's
     own origin/main is usually stale). Full ref names, so a local branch called
     `origin/main` can't shadow them."""
     for ref in [f"refs/remotes/{r}/{b}" for r in ("upstream", "origin")

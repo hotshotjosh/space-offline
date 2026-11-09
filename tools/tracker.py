@@ -261,7 +261,7 @@ class Http:
     """urllib transport, GET only. The token lives only in this object and the header.
 
     `request` and `_send` refuse every other method. A subclass that must write
-    (tools/claims.py, private/tracker-post.py) sets `writable` and overrides `request`.
+    (private/tracker-post.py) sets `writable` and overrides `request`.
     """
 
     writable = False

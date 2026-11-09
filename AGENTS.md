@@ -41,8 +41,8 @@ only way a change gets in.
 
 ## Picking work
 
-`python3 -I tools/tracker.py issues` lists open issues, `status/ready` first, with any open
-PRs that already close them. Pick one nobody has a PR for, or bring your own fix. `needs-owner` and `parked`
+`tools/next-task.sh` lists open issues, `status/ready` first, with any open PRs that
+already close them. Pick one nobody has a PR for, or bring your own fix. `needs-owner` and `parked`
 issues wait on the owner. There are no claims.
 
 ## Before you push
