@@ -507,17 +507,18 @@ class LandingTools(unittest.TestCase):
         r = subprocess.run([os.path.join(HERE, "gate.sh"), "--print-test-jobs"], cwd=root,
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("test jobs: split (4)", r.stdout)
+        self.assertIn("test jobs: split (5)", r.stdout)
         tests = os.path.join(root, self.BOT, "tests")
         names = [n[:-3] for n in os.listdir(tests) if n.endswith(".rs")]
         names += [n for n in os.listdir(tests) if os.path.exists(os.path.join(tests, n, "main.rs"))]
         self.assertIn("bots", names)
         jobs = [ln for ln in r.stdout.splitlines() if ln.startswith("   job:")]
-        self.assertEqual(len(jobs), 4, r.stdout)
+        self.assertEqual(len(jobs), 5, r.stdout)
         self.assertIn("-p eve-bot --test bots", jobs[0])
+        self.assertIn("-p eve-bot --test bots", jobs[1])
         for n in names:
             if n != "bots":
-                self.assertIn(f"--test {n}", jobs[1], r.stdout)
+                self.assertIn(f"--test {n}", jobs[2], r.stdout)
 
     def test_the_jobs_name_every_bot_test_target(self) -> None:
         self.split_tree()
@@ -528,6 +529,70 @@ class LandingTools(unittest.TestCase):
         self.assertIn("job: -p eve-bot --lib --bins --test extra\n", r.stdout)
         self.assertIn("job: -p eve-bot --doc\n", r.stdout)
         self.assertIn("job: --workspace --exclude eve-bot\n", r.stdout)
+
+    SHARDS = "tools/bots-shards.txt"
+
+    def shard_jobs(self, text: str | None, **env: str) -> subprocess.CompletedProcess:
+        files = [(self.SHARDS, text)] if text is not None else []
+        self.split_tree(*files)
+        self.env.update(env)
+        return self.run_tool("gate.sh", "--print-test-jobs")
+
+    def test_a_shard_file_splits_the_socket_tests_into_complementary_jobs(self) -> None:
+        r = self.shard_jobs("# why\nalpha::\n\n  beta_gang::  # tail\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("test jobs: split (5)", r.stdout)
+        self.assertIn("job: -p eve-bot --test bots -- alpha:: beta_gang::\n", r.stdout)
+        self.assertIn("job: -p eve-bot --test bots -- --skip alpha:: --skip beta_gang::\n", r.stdout)
+        jobs = [ln for ln in r.stdout.splitlines() if ln.startswith("   job:")]
+        self.assertEqual(len(jobs), 5)
+        for prefix in ("alpha::", "beta_gang::"):
+            self.assertEqual(sum(f" {prefix}" in j and "--skip" not in j for j in jobs), 1)
+            self.assertEqual(sum(f"--skip {prefix}" in j for j in jobs), 1)
+
+    def test_the_socket_thread_count_goes_to_both_shards(self) -> None:
+        r = self.shard_jobs("alpha::\n", EVE_BOT_TEST_THREADS="7")
+        self.assertIn("job: -p eve-bot --test bots -- --test-threads=7 alpha::\n", r.stdout)
+        self.assertIn("job: -p eve-bot --test bots -- --test-threads=7 --skip alpha::\n", r.stdout)
+
+    def test_a_missing_empty_or_comments_only_shard_file_gives_one_bots_job(self) -> None:
+        for text in (None, "", "\n  \n", "# nothing yet\n  # alpha::\n"):
+            with self.subTest(text=text):
+                r = self.shard_jobs(text)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("test jobs: split (4)", r.stdout)
+                self.assertIn("job: -p eve-bot --test bots\n", r.stdout)
+                self.assertNotIn("--skip", r.stdout)
+
+    def test_a_shard_prefix_without_its_double_colon_is_refused(self) -> None:
+        for bad in ("alpha\n", "alpha:\n", "::\n", "al pha::x\n", "alpha::beta\n", "alpha::\nbeta\n"):
+            with self.subTest(bad=bad):
+                r = self.shard_jobs(bad)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                self.assertIn("must be a module prefix ending in '::'", r.stderr)
+                self.assertNotIn("job:", r.stdout)
+
+    def test_the_real_shard_prefixes_name_one_bots_module_each(self) -> None:
+        root = os.path.dirname(HERE)
+        bots = os.path.join(root, self.BOT, "tests", "bots")
+        stems = {n[:-3] for n in os.listdir(bots) if n.endswith(".rs") and n != "main.rs"}
+        stems |= {n for n in os.listdir(bots) if os.path.exists(os.path.join(bots, n, "mod.rs"))}
+        with open(os.path.join(root, self.SHARDS)) as f:
+            prefixes = [ln.split("#")[0].strip() for ln in f]
+        prefixes = [p for p in prefixes if p]
+        self.assertTrue(prefixes)
+        for p in prefixes:
+            with self.subTest(prefix=p):
+                self.assertTrue(p.endswith("::"))
+                self.assertIn(p[:-2], stems, "stale prefix: no such module")
+                for m in stems - {p[:-2]}:
+                    self.assertFalse(f"{m}::".endswith(p) or p in f"{m}::",
+                                     f"{p} also matches module {m}")
+
+    def test_the_shard_file_keeps_the_full_gate(self) -> None:
+        g = self.tier_gate(self.SHARDS, "tools/foo.py")
+        self.assertEqual(g.returncode, 101)
+        self.assertNotIn("== tools only", g.stdout)
 
     def test_examples_or_a_forced_serial_run_print_why(self) -> None:
         self.split_tree((f"{self.BOT}/examples/e.rs", "\n"))

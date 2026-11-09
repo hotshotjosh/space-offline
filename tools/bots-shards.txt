@@ -1,0 +1,22 @@
+# Shard A of the eve-bot socket tests (tests/bots), read by tools/gate.sh (#285).
+# One module prefix per line, each ending in `::` so it cannot match a module whose
+# name merely starts the same. The gate runs shard A as `bots -- <these>` and shard B
+# as `bots -- --skip <these>`: the two are exact complements, and a new module lands
+# in shard B by itself. An empty or comments-only file means one bots job.
+#
+# Chosen 2026-11-09 from one `--report-time --format json` run of the whole binary
+# (253 tests, 5055 summed test-seconds, 415 s wall): modules by summed seconds, taken
+# greedily until about half (2507 s) was in shard A, with the long single tests split
+# (hunt 220 s here; travel 208 s and upwell_home 193 s in shard B).
+# Re-balance when the two shards' `finished in` differ by more than about 60 s, or after
+# a module of more than ~150 summed seconds is added: re-measure and move whole modules.
+hacker::
+pi::
+hunt::
+abyss_run::
+prog_mine::
+wh_raid::
+fwlp::
+roam_gang::
+y_escal::
+mining::

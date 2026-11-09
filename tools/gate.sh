@@ -17,7 +17,7 @@
 # **A tools-only push skips it too.** Markdown, private/ and tools/*.py or tools/*.sh
 # scripts (at least one) run the allowlist, build deltas, every tools test and bash -n;
 # gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh,
-# gate_reds.py and tools/hooks/ keep the full gate.
+# gate_reds.py, bots-shards.txt and tools/hooks/ keep the full gate.
 #
 # **The full gate's order** (#282): hygiene, status, deps, shell syntax, format; then the
 # python tests and the build deltas start in the background on the host while toolchain,
@@ -165,15 +165,15 @@ status_checks() {
 scope=(--workspace)
 [[ -n $only ]] && scope=(-p "$only")
 
-# **The workspace's tests run as four concurrent jobs** (gate-speed lane): eve-bot's
-# socket tests, its other targets, its doctests, and every other package. The split
-# is decided here, from the tree: eve-bot's integration targets are `tests/*.rs`
+# **The workspace's tests run as five concurrent jobs** (four when tools/bots-shards.txt
+# is absent or empty; gate-speed lane, #285): eve-bot's socket tests in two shards, its
+# other targets, its doctests, and every other package. The split is decided here, from the tree: eve-bot's integration targets are `tests/*.rs`
 # (the file's name) and `tests/*/main.rs` (the directory's name), so a new target
 # lands in the second job by itself and is never skipped (a hard-coded "only
 # tests/bots" check once fell back to the serial run unnoticed, a24bbb06). Anything
 # the enumeration cannot cover (examples, benches, a scoped run) runs serially and
 # says why. EVE_GATE_SERIAL_TESTS=1 forces the serial run; EVE_BOT_TEST_THREADS sets
-# the socket job's --test-threads. Sets `jobs_mode` (split|serial), `jobs_why`, `jobs`.
+# --test-threads for the socket job (both shards when split). Sets `jobs_mode` (split|serial), `jobs_why`, `jobs`.
 jobs_mode=serial
 jobs_why=""
 jobs=()
@@ -198,9 +198,34 @@ test_jobs() {
         if [[ $t == */main.rs ]]; then n=$(basename "$(dirname "$t")"); else n=$(basename "$t" .rs); fi
         [[ $n == bots ]] || others+=" --test $n"
     done
-    bots_job="-p eve-bot --test bots"
-    [[ -n ${EVE_BOT_TEST_THREADS:-} ]] && bots_job+=" -- --test-threads=$EVE_BOT_TEST_THREADS"
-    jobs=("$bots_job" "-p eve-bot --lib --bins$others" "-p eve-bot --doc" "--workspace --exclude eve-bot")
+    # tools/bots-shards.txt lists shard A's module prefixes (one per line, `#` comments).
+    # Shard A runs `bots -- <prefix...>`, shard B `bots -- --skip <prefix> ...`: libtest's
+    # filter and --skip are the same substring test, so they are exact complements. No
+    # prefixes (file missing, empty or comments only): one bots job. A prefix that also
+    # matches another module only shifts the balance, never the coverage (the shards stay
+    # complements), so do not "fix" it with --exact; tools/test_gate.py catches it anyway.
+    local threads="" p a="" b="" prefixes=()
+    [[ -n ${EVE_BOT_TEST_THREADS:-} ]] && threads=" --test-threads=$EVE_BOT_TEST_THREADS"
+    if [[ -f tools/bots-shards.txt ]]; then
+        while IFS= read -r p || [[ -n $p ]]; do
+            p=${p%%#*}; p=${p//[[:space:]]/}
+            [[ -n $p ]] || continue
+            if [[ $p != *:: || $p == ::* || $p == *[!A-Za-z0-9_:]* ]]; then
+                echo "gate: tools/bots-shards.txt: '$p' must be a module prefix ending in '::' (so it cannot match a module whose name merely starts the same)" >&2
+                exit 2
+            fi
+            prefixes+=("$p")
+        done <tools/bots-shards.txt
+    fi
+    if ((${#prefixes[@]})); then
+        for p in "${prefixes[@]}"; do a+=" $p"; b+=" --skip $p"; done
+        jobs=("-p eve-bot --test bots --$threads$a" "-p eve-bot --test bots --$threads$b")
+    else
+        bots_job="-p eve-bot --test bots"
+        [[ -n $threads ]] && bots_job+=" --$threads"
+        jobs=("$bots_job")
+    fi
+    jobs+=("-p eve-bot --lib --bins$others" "-p eve-bot --doc" "--workspace --exclude eve-bot")
     jobs_mode=split
     jobs_why=${#jobs[@]}
 }
@@ -238,7 +263,7 @@ if ((!dirty)) && base=$(default_base); then
             docs/content/schema.md|server/*) docs_only=0; tools_only=0 ;;
             # The gate's own scripts, the build wrappers, the allowlist check, the
             # status guard and the hooks decide or run the build: full gate.
-            tools/gate.sh|tools/land.sh|tools/dev.sh|tools/analysis.sh|tools/check_deps.py|tools/status-guard.py|tools/test-parallel.sh|tools/gate_reds.py|tools/hooks/*)
+            tools/gate.sh|tools/land.sh|tools/dev.sh|tools/analysis.sh|tools/check_deps.py|tools/status-guard.py|tools/test-parallel.sh|tools/gate_reds.py|tools/bots-shards.txt|tools/hooks/*)
                 docs_only=0; tools_only=0 ;;
             # Markdown under tools/ keeps the full gate, as before the tools tier.
             tools/*.md) docs_only=0; tools_only=0 ;;
