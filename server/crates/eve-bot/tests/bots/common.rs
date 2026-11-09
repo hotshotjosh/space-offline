@@ -7,6 +7,7 @@
 
 use eve_bot::Conn;
 use eve_bot::brain::ActKind;
+use eve_bot::doctrine_sense::parse_damage;
 use eve_bot::driver::{Entry, Handle, Verdict};
 use eve_marshal::PyValue;
 use eve_server::server::{Config, Server};
@@ -163,6 +164,27 @@ pub fn gm_only_in_setup(h: &Handle) {
             dump(h)
         );
     }
+}
+
+/// Wait until `victim` has been hit by the ship `by_ship`: one incoming
+/// `OnDamageMessage` that landed (`doctrine_sense::parse_damage`), read from
+/// the victim's own connection (`keep_pushes` must be on). The shooter's
+/// volley is booked once this holds.
+pub fn wait_hit(victim: &mut Conn, by_ship: i64) {
+    let mut lines: Vec<Vec<PyValue>> = Vec::new();
+    let got = until(Duration::from_secs(60), || {
+        let _ = victim.collect_pushes(Duration::from_millis(100));
+        for (name, args) in victim.take_pushes() {
+            if name == "OnDamageMessage" {
+                lines.push(args);
+            }
+        }
+        lines.iter().any(|a| {
+            parse_damage(a)
+                .is_some_and(|h| h.incoming && h.quality > 0 && h.attacker == Some(by_ship))
+        })
+    });
+    assert!(got, "ship {by_ship}'s volley lands on the victim");
 }
 
 #[cfg(test)]

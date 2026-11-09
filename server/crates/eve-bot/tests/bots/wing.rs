@@ -13,7 +13,9 @@
 //! lists it in the fleet finder (public, no approval); the bots apply and the
 //! pilot's invite is accepted by `AcceptFleet::Fc`.
 
-use super::common::{SYSTEM, config, dump, login, ok, pilot, pump_until, serve, until, warp_and_arrive};
+use super::common::{
+    SYSTEM, config, dump, login, ok, pilot, pump_until, serve, until, warp_and_arrive,
+};
 use eve_bot::brain::{AcceptFleet, ActKind};
 use eve_bot::driver::{self, BotConfig, Handle, Pace};
 use eve_bot::travel::Map;

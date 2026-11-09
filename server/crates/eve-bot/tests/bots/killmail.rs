@@ -11,7 +11,7 @@
 //! frigate in one volley. Alice and Bob are plain connections; nothing here
 //! is an `[A]` value.
 
-use super::common::{SYSTEM, config, gm, login, pilot, serve, until};
+use super::common::{SYSTEM, config, gm, login, pilot, serve, until, wait_hit};
 use eve_bot::Conn;
 use eve_marshal::PyValue;
 use std::net::SocketAddr;
@@ -167,6 +167,7 @@ fn fight_with(first_hit: bool) -> (Conn, Conn, i64) {
     let bob_ship = board_frigate(&mut bob);
     bob.undock().expect("Bob undocks");
     bob.enter_space(SYSTEM).expect("Bob's state");
+    bob.keep_pushes();
 
     let _carol = first_hit.then(|| {
         let mut c = login(addr, "Carol");
@@ -179,8 +180,9 @@ fn fight_with(first_hit: bool) -> (Conn, Conn, i64) {
         );
         c.fire(gun.item_id, AUTOCANNON, Some(&content), bob_ship)
             .expect("Carol fires");
-        // One cycle later her volley is booked and Alice's will kill.
-        std::thread::sleep(Duration::from_secs(5));
+        // Her volley is booked once Bob has been hit; Alice's will kill.
+        let carol_ship = c.session().ship_id().expect("Carol's hull");
+        wait_hit(&mut bob, carol_ship);
         c
     });
     let mut alice = login(addr, "Alice");

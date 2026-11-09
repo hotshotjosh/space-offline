@@ -7,7 +7,7 @@
 //! invented rounds and goods, invented corp ids. No `[A]` value is an expected
 //! value: the assertions are about signs, ids and counts.
 
-use super::common::{SYSTEM, config, gm, login, pilot, serve, until};
+use super::common::{SYSTEM, config, gm, login, pilot, serve, until, wait_hit};
 use eve_bot::Conn;
 use eve_bot::career::{Band, CAREERS, Signals};
 use eve_bot::contracts::{self, Offer};
@@ -205,6 +205,7 @@ fn fight() -> (Conn, Conn) {
     let bob_ship = board_frigate(&mut bob);
     bob.undock().expect("Bob undocks");
     bob.enter_space(SYSTEM).expect("Bob's state");
+    bob.keep_pushes();
 
     let _carol = {
         let mut c = login(addr, "Carol");
@@ -217,8 +218,9 @@ fn fight() -> (Conn, Conn) {
         );
         c.fire(gun.item_id, AUTOCANNON, Some(&content), bob_ship)
             .expect("Carol fires");
-        // One cycle later her volley is booked and Alice's will kill.
-        std::thread::sleep(Duration::from_secs(5));
+        // Her volley is booked once Bob has been hit; Alice's will kill.
+        let carol_ship = c.session().ship_id().expect("Carol's hull");
+        wait_hit(&mut bob, carol_ship);
         c
     };
     let mut alice = login(addr, "Alice");

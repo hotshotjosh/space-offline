@@ -277,6 +277,16 @@ fn pause_parks_a_docked_bot_and_resume_and_stop_all_release_it() {
     );
     assert!(slash(&mut gm, "/bots list").contains("[paused]"));
     // While parked the bot adds no acts of its own beyond the park line.
+    // An act in flight when the flag was set may still log its end entry:
+    // sample once the log has been still for a quarter second.
+    assert!(
+        until(Duration::from_secs(5), || {
+            let n = bot.log().len();
+            std::thread::sleep(Duration::from_millis(250));
+            bot.log().len() == n
+        }),
+        "the parked bot's log never settled"
+    );
     let rows = bot.log().len();
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(bot.log().len(), rows, "a parked bot acted");
