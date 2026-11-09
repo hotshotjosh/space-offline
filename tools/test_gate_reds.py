@@ -195,6 +195,149 @@ class Report(Base):
         self.assertEqual(r.returncode, 0)
 
 
+FLAKY_HEAD = "#flaky 1\n# a comment\ntarget\ttest\tissue\tadded\n"
+LIB = "eve_invented:src/lib.rs"
+RERUN_LINE = "error: test failed, to rerun pass `-p eve_invented --lib`\n"
+
+
+def red(*names: str, extra: str = "", tail: str = RERUN_LINE) -> str:
+    return ("== test\n   Running unittests src/lib.rs (target/debug/deps/eve_invented-0123abcd)\n"
+            + "".join(f"test {n} ... FAILED\n" for n in names) + extra
+            + f"test result: FAILED. 1 passed; {len(names)} failed\n" + tail)
+
+
+class RerunPlan(Base):
+    def plan(self, text: str, *listed: str, head: str = FLAKY_HEAD, env: dict | None = None):
+        flaky = os.path.join(self.tmp, "flaky.tsv")
+        with open(flaky, "w") as f:
+            f.write(head + "".join(f"{LIB}\t{n}\t#999\t2026-11-09\n" for n in listed))
+        e = {k: v for k, v in os.environ.items() if k != "EVE_GATE_NO_RERUN"}
+        e.update(env or {})
+        return subprocess.run([sys.executable, "-I", TOOL, "rerun-plan", "--log", self.log(text), "--flaky", flaky],
+                              capture_output=True, text=True, timeout=60, env=e)
+
+    def test_a_listed_failure_is_planned_with_cargos_own_arguments(self) -> None:
+        r = self.plan(red("a::b"), "a::b")
+        self.assertEqual((r.returncode, r.stdout), (0, "rerun -p eve_invented --lib -- --exact a::b\n"), r.stderr)
+
+    def test_each_failure_goes_to_the_binary_that_printed_it(self) -> None:
+        text = ("== test\n   Running unittests src/lib.rs (target/debug/deps/eve_invented-0123abcd)\ntest lib::x ... FAILED\n"
+                "test result: FAILED. 0 passed; 1 failed\nerror: test failed, to rerun pass `-p eve_invented --lib`\n"
+                "   Running tests/bots/main.rs (target/debug/deps/bots-99aa77ff)\ntest sock::y ... FAILED\n"
+                "test result: FAILED. 0 passed; 1 failed\nerror: test failed, to rerun pass `-p eve_bot --test bots`\n")
+        flaky = os.path.join(self.tmp, "f2.tsv")
+        with open(flaky, "w") as f:
+            f.write(FLAKY_HEAD + f"{LIB}\tlib::x\t#1\t2026-11-09\nbots:tests/bots/main.rs\tsock::y\t#2\t2026-11-09\n")
+        r = subprocess.run([sys.executable, "-I", TOOL, "rerun-plan", "--log", self.log(text), "--flaky", flaky],
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.stdout.splitlines(), ["rerun -p eve_invented --lib -- --exact lib::x",
+                                                 "rerun -p eve_bot --test bots -- --exact sock::y"], r.stdout)
+
+    def test_the_summary_block_supplies_the_arguments_when_there_is_no_inline_line(self) -> None:
+        text = red("a::b", tail="error: 1 target failed:\n    `-p eve_invented --lib`\n")
+        r = self.plan(text, "a::b")
+        self.assertEqual(r.stdout, "rerun -p eve_invented --lib -- --exact a::b\n")
+
+    def no_rerun(self, r, why: str) -> None:
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertEqual(r.stdout, f"no-rerun: {why}\n")
+
+    def test_an_unlisted_test_is_a_new_red_and_never_reruns(self) -> None:
+        self.no_rerun(self.plan(red("a::b", "c::d"), "a::b"), f"c::d on {LIB} is not on the flake list")
+
+    def test_the_target_must_match_too(self) -> None:
+        text = red("a::b").replace("eve_invented-0123abcd", "eve_other-0123abcd")
+        self.no_rerun(self.plan(text, "a::b"), "a::b on eve_other:src/lib.rs is not on the flake list")
+
+    def test_a_panic_outside_the_test_threads_never_reruns(self) -> None:
+        text = red("a::b", extra="thread 'world-ticker' panicked at src/lib.rs:1:1:\n")
+        self.no_rerun(self.plan(text, "a::b"), "a panic outside the test threads (world-ticker)")
+
+    def test_four_failures_never_rerun_and_three_do(self) -> None:
+        names = ["t::a", "t::b", "t::c", "t::d"]
+        self.no_rerun(self.plan(red(*names), *names), "4 failures (at most 3 are rerun)")
+        self.assertEqual(self.plan(red(*names[:3]), *names[:3]).returncode, 0)
+
+    def test_a_compile_error_never_reruns(self) -> None:
+        text = "== test\nerror[E0308]: mismatched types\nerror: could not compile `eve_invented`\n"
+        self.no_rerun(self.plan(text, "a::b"), "a compile error")
+
+    def test_a_run_without_test_result_lines_never_reruns(self) -> None:
+        text = red("a::b").replace("test result: FAILED. 1 passed; 1 failed\n", "")
+        self.no_rerun(self.plan(text, "a::b"), "the run printed no 'test result:' lines")
+
+    def test_a_failure_that_is_not_a_test_never_reruns(self) -> None:
+        text = "== python unit tests\ngate: tools/test_x.py failed\ntest result: ok. 1 passed\n"
+        r = self.plan(text, "a::b")
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(r.stdout.startswith("no-rerun: a red that is not a failing test"), r.stdout)
+
+    def test_no_rerun_arguments_in_the_log_means_no_rerun(self) -> None:
+        self.no_rerun(self.plan(red("a::b", tail=""), "a::b"), "no 'to rerun pass' arguments in the log")
+
+    def test_the_switch_and_an_empty_list(self) -> None:
+        self.no_rerun(self.plan(red("a::b"), "a::b", env={"EVE_GATE_NO_RERUN": "1"}), "EVE_GATE_NO_RERUN is set")
+        self.no_rerun(self.plan(red("a::b")), "the flake list has no rows")
+
+    def test_a_bad_flake_list_is_refused(self) -> None:
+        for head, why in (
+            ("target\ttest\tissue\tadded\n", "does not start with '#flaky 1'"),
+            ("#flaky 1\ntarget\ttest\n", "the column header must be"),
+        ):
+            r = self.plan(red("a::b"), "a::b", head=head)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn(why, r.stdout)
+        flaky = os.path.join(self.tmp, "bad.tsv")
+        for row, why in ((f"{LIB}\ta::b\t999\t2026-11-09\n", "must cite an issue as #N"),
+                         (f"{LIB}\ta::b\t#9\tyesterday\n", "must be a date"),
+                         (f"{LIB}\ta::b\t#9\n", "4 tab-separated fields")):
+            with open(flaky, "w") as f:
+                f.write(FLAKY_HEAD + row)
+            r = subprocess.run([sys.executable, "-I", TOOL, "rerun-plan", "--log", self.log(red("a::b")),
+                                "--flaky", flaky], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn(why, r.stdout)
+        r = self.run_tool("rerun-plan", "--log", self.log(red("a::b")), "--flaky", os.path.join(self.tmp, "none"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no-rerun: cannot read", r.stdout)
+
+    def test_the_shipped_list_is_valid(self) -> None:
+        r = self.run_tool("rerun-plan", "--log", self.log(red("a::b")), "--flaky", os.path.join(HERE, "flaky.tsv"))
+        self.no_rerun(r, "the flake list has no rows")
+
+
+class Rescued(Base):
+    PASS_LOG = red("t::a", "t::b") + "== flaky rerun: 2 test(s) on the flake list (once)\n== flaky rerun passed\n== gate passed\n"
+
+    def test_a_rescued_pass_records_the_first_failures_and_a_pass_row(self) -> None:
+        r = self.record(self.PASS_LOG, result="pass", code=0)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = [(row[3], row[7], row[9]) for row in self.rows()]
+        self.assertEqual(got, [("rescued", "test", "t::a"), ("rescued", "test", "t::b"), ("pass", "-", "-")])
+
+    def test_a_plain_pass_has_no_rescued_row(self) -> None:
+        self.record("== gate passed\n", result="pass", code=0)
+        self.assertEqual([row[3] for row in self.rows()], ["pass"])
+
+    def test_rescues_count_as_flaky_in_the_report(self) -> None:
+        self.record(self.PASS_LOG, result="pass", code=0)
+        out = self.run_tool("report", "--file", self.file, "--flaky", os.path.join(self.tmp, "none")).stdout
+        line = [ln for ln in out.splitlines() if "t::a" in ln][0]
+        self.assertEqual(line.split()[:3], ["1", "1", "1"], out)
+
+    def test_a_row_with_five_rescues_or_older_than_two_weeks_is_fix_or_drop(self) -> None:
+        for i in range(5):
+            self.record(self.PASS_LOG.replace("t::b", "t::z"), result="pass", code=0, tree=str(i) * 40)
+        flaky = os.path.join(self.tmp, "flaky.tsv")
+        today = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).date().isoformat()
+        with open(flaky, "w") as f:
+            f.write(FLAKY_HEAD + f"{LIB}\tt::a\t#1\t{today}\n{LIB}\tt::z\t#2\t2020-01-01\n{LIB}\tt::q\t#3\t{today}\n")
+        out = self.run_tool("report", "--file", self.file, "--flaky", flaky).stdout
+        self.assertIn(f"FIX-OR-DROP {LIB} t::a #1 (5 rescues)", out)
+        self.assertIn("t::z #2 (5 rescues, listed ", out)
+        self.assertNotIn("t::q", out)
+
+
 class KeepLog(Base):
     def test_the_newest_fifty_logs_stay(self) -> None:
         d = os.path.join(self.tmp, "logs")

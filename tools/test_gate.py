@@ -40,7 +40,14 @@ case "${1:-} ${2:-}" in
     "cargo test") cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     "cargo fmt") exit "${STUB_FMT_EXIT:-0}" ;;
     "cargo "*) exit 0 ;;
-    "bash "*) printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"; cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
+    "bash "*)
+        printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"
+        if [[ " $* " == *" --exact "* ]]; then
+            # the flaky rerun (step 5): one call, answered from the rerun file
+            printf 'rerun\n' >>"${STUB_RERUN_COUNT:-/dev/null}"
+            cat "${STUB_RERUN_OUT:-/dev/null}"; exit "${STUB_RERUN_EXIT:-0}"
+        fi
+        cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     *) exec "$@" ;;
 esac
 """
@@ -668,6 +675,139 @@ class LandingTools(unittest.TestCase):
                                       "== build deltas", "deltas fast", "== test\n")]
         self.assertEqual(idx, sorted(idx), out)
         self.assertEqual(out.count("(overlapped)"), 2)
+
+    # --- the flaky rerun (gate-analysis step 5) ----------------------------------------
+    # Invented names only. The first test run answers from STUB_TEST_OUT; the rerun is the
+    # one stub call with `--exact`, answered from STUB_RERUN_OUT.
+
+    FLAKY_TARGET = "eve_invented:src/lib.rs"
+    FLAKY_HEAD = "#flaky 1\ntarget\ttest\tissue\tadded\n"
+
+    @staticmethod
+    def red_run(*failed: str, extra: str = "") -> str:
+        return ("   Running unittests src/lib.rs (target/debug/deps/eve_invented-0123abcd)\n"
+                + "".join(f"test {n} ... FAILED\n" for n in failed) + extra
+                + "test result: FAILED. 1 passed; %d failed\n" % len(failed)
+                + "error: test failed, to rerun pass `-p eve_invented --lib`\n")
+
+    def flaky_tree(self, *listed: str, rerun: str = "", rerun_exit: int = 0) -> None:
+        rows = "".join(f"{self.FLAKY_TARGET}\t{n}\t#999\t2026-11-09\n" for n in listed)
+        self.write("tools/flaky.tsv", self.FLAKY_HEAD + rows)
+        self.with_reds()
+        self.rerun_out = os.path.join(self.tmp, "rerun.out")
+        self.rerun_count = os.path.join(self.tmp, "rerun.count")
+        with open(self.rerun_out, "w") as f:
+            f.write(rerun)
+        self.env.update(STUB_RERUN_OUT=self.rerun_out, STUB_RERUN_EXIT=str(rerun_exit),
+                        STUB_RERUN_COUNT=self.rerun_count)
+
+    def reruns(self) -> int:
+        try:
+            with open(self.rerun_count) as f:
+                return len(f.read().splitlines())
+        except FileNotFoundError:
+            return 0
+
+    def test_a_listed_failure_is_rerun_and_passes(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\ntest result: ok. 1 passed; 0 failed\n")
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("== flaky rerun: 1 test(s) on the flake list (once)", g.stdout)
+        self.assertIn("-p eve_invented --lib -- --exact flaky::one", g.stdout)
+        self.assertIn("test flaky::one ... FAILED", g.stdout)
+        self.assertIn("test flaky::one ... ok", g.stdout)
+        self.assertIn("== flaky rerun passed", g.stdout)
+        self.assertTrue(g.stdout.rstrip().endswith("== gate passed"), g.stdout)
+        self.assertEqual(self.reruns(), 1)
+
+    def test_a_listed_failure_that_fails_again_fails_the_gate_with_the_first_exit(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... FAILED\n", rerun_exit=7)
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 101, g.stdout + g.stderr)
+        self.assertIn("== flaky rerun: 1 test(s)", g.stdout)
+        self.assertNotIn("== flaky rerun passed", g.stdout)
+        self.assertNotIn("== gate passed", g.stdout)
+        self.assertEqual(self.reruns(), 1)
+
+    def test_a_rerun_that_never_prints_the_test_ok_is_not_a_pass(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="running 0 tests\ntest result: ok. 0 passed; 0 failed\n")
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 101, g.stdout + g.stderr)
+        self.assertNotIn("== flaky rerun passed", g.stdout)
+
+    def assert_no_rerun(self, why: str, code: int = 101) -> None:
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, code, g.stdout + g.stderr)
+        self.assertEqual(self.reruns(), 0, g.stdout)
+        self.assertNotIn("== flaky rerun", g.stdout)
+        self.assertIn("no flaky rerun: " + why, g.stdout)
+        self.assertNotIn("== gate passed", g.stdout)
+
+    def test_a_new_red_beside_a_listed_one_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("flaky::one", "fresh::two"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        self.assert_no_rerun("fresh::two on eve_invented:src/lib.rs is not on the flake list")
+
+    def test_an_unlisted_failure_alone_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("fresh::two"), 101)
+        self.flaky_tree("flaky::one", rerun="test fresh::two ... ok\n")
+        self.assert_no_rerun("fresh::two on eve_invented:src/lib.rs is not on the flake list")
+
+    def test_a_listed_failure_with_a_world_ticker_panic_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("flaky::one", extra="thread 'world-ticker' panicked at src/lib.rs:1:1:\n"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        self.assert_no_rerun("a panic outside the test threads (world-ticker)")
+
+    def test_four_listed_failures_never_rerun(self) -> None:
+        names = ["flaky::a", "flaky::b", "flaky::c", "flaky::d"]
+        self.cargo_test(self.red_run(*names), 101)
+        self.flaky_tree(*names, rerun="".join(f"test {n} ... ok\n" for n in names))
+        self.assert_no_rerun("4 failures (at most 3 are rerun)")
+
+    def test_three_listed_failures_are_rerun_in_one_call(self) -> None:
+        names = ["flaky::a", "flaky::b", "flaky::c"]
+        self.cargo_test(self.red_run(*names), 101)
+        self.flaky_tree(*names, rerun="".join(f"test {n} ... ok\n" for n in names) + PASS)
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("== flaky rerun: 3 test(s)", g.stdout)
+        self.assertEqual(self.reruns(), 1)
+
+    def test_the_switch_turns_the_rerun_off(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        self.env["EVE_GATE_NO_RERUN"] = "1"
+        self.assert_no_rerun("EVE_GATE_NO_RERUN is set")
+
+    def test_a_compile_error_never_reruns(self) -> None:
+        self.cargo_test("error[E0308]: mismatched types\nerror: could not compile `eve_invented`\n", 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n")
+        self.assert_no_rerun("a compile error")
+
+    def test_an_empty_flake_list_never_reruns(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree(rerun="test flaky::one ... ok\n")
+        self.assert_no_rerun("the flake list has no rows")
+
+    def test_the_real_flake_list_is_valid_and_empty(self) -> None:
+        with open(os.path.join(HERE, "flaky.tsv")) as f:
+            lines = f.read().splitlines()
+        self.assertEqual(lines[0], "#flaky 1")
+        rows = [ln for ln in lines[1:] if ln and not ln.startswith("#")]
+        self.assertEqual(rows, ["target\ttest\tissue\tadded"])
+
+    def test_land_records_the_rescued_failures_beside_the_pass(self) -> None:
+        self.cargo_test(self.red_run("flaky::one"), 101)
+        self.flaky_tree("flaky::one", rerun="test flaky::one ... ok\n" + PASS)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.remote_master(), self.rev("HEAD"))
+        results = [(row[3], row[9]) for row in self.reds_rows()]
+        self.assertIn(("rescued", "flaky::one"), results)
+        self.assertIn(("pass", "-"), results)
 
     # --- G3 --------------------------------------------------------------------
 

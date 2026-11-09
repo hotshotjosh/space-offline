@@ -369,6 +369,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_ARENA_TIMEOUT` | `tools/arena.sh` | 7200 | arena container timeout | `EVE_ARENA_TIMEOUT=600` |
 | `EVE_BOT_TEST_THREADS` | `tools/gate.sh` | unset | `--test-threads` for the bot socket tests | `EVE_BOT_TEST_THREADS=2` |
 | `EVE_GATE_SERIAL_TESTS` | `tools/gate.sh` | unset | `1` forces serial test jobs | `EVE_GATE_SERIAL_TESTS=1` |
+| `EVE_GATE_NO_RERUN` | `tools/gate.sh` | unset | set: a failed test run is never rerun, even for a test on `tools/flaky.tsv` | `EVE_GATE_NO_RERUN=1` |
 | `EVE_LAND_DIR` | `tools/land.sh` | `$HOME/code/eve-offline-lanes/land` | the landing build copy (a name for a scratch copy; any directory works) | `EVE_LAND_DIR=$HOME/land` |
 | `EVE_NO_POST_LAND` | `tools/land.sh` | unset | set: skip the maintainer's after-push hook for this landing (a contributor has none) | `EVE_NO_POST_LAND=1` |
 | `EVE_LANES_DIR` | `tools/lanes-gc.sh` | `$HOME/code/eve-offline-lanes` | build copies ("lanes" is only a name for them) | `EVE_LANES_DIR=$HOME/lanes` |

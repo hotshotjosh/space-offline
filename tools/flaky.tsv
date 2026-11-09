@@ -1,0 +1,10 @@
+#flaky 1
+# The tests tools/gate.sh may rerun once after a red test run (tools/gate_reds.py rerun-plan).
+# This list starts EMPTY on purpose: the flake sweep fixed every known flake (#279, #281,
+# #283, #284), and a test goes on it only after the red log shows it flaky
+# (python3 -I tools/gate_reds.py report), with an open issue to fix it. A row is a reviewed commit.
+# Columns, tab-separated: target is the test binary as the red log names it
+# (<binary>:<source path>, for example eve_invented:src/lib.rs), test is the full test path,
+# issue is the open issue (#N), added is the date (YYYY-MM-DD). `report` flags a row with
+# 5 or more rescues, or older than 14 days, as FIX-OR-DROP.
+target	test	issue	added

@@ -447,6 +447,49 @@ else
 fi
 echo "$out"
 took
+# **A failed test run is rerun once, and only for a listed flake** (gate-analysis step 5).
+# `gate_reds.py rerun-plan` reads the run's output and tools/flaky.tsv and plans a rerun only
+# when every failure is a listed test (at most 3, no panic outside the test threads, no
+# compile error, EVE_GATE_NO_RERUN unset). A test that is not on the list never reruns, so
+# a new red fails the gate as before. The rerun is one container call, once; it passes only
+# if every planned name prints `test <name> ... ok` and nothing prints FAILED. Then
+# `== flaky rerun passed` is in the log and the red log records the first attempt's
+# failures as `rescued`. Anything else fails with the FIRST run's exit status.
+if ((status != 0)) && [[ -e tools/gate_reds.py && -e tools/flaky.tsv ]]; then
+    printf '%s\n' "$out" >"$bg_dir/test-first.out"
+    plan_status=0
+    plan=$(python3 -I tools/gate_reds.py rerun-plan --log "$bg_dir/test-first.out" --flaky tools/flaky.tsv) || plan_status=$?
+    if ((plan_status == 0)); then
+        rerun_jobs=()
+        rerun_names=()
+        while IFS= read -r line; do
+            [[ $line == "rerun "* ]] || continue
+            line=${line#rerun }
+            rerun_jobs+=("$line")
+            read -ra words <<<"${line#* -- --exact }"
+            rerun_names+=("${words[@]}")
+        done <<<"$plan"
+        echo "== flaky rerun: ${#rerun_names[@]} test(s) on the flake list (once)"
+        printf '   %s\n' "${rerun_jobs[@]}"
+        rerun_status=0
+        rerun_out="$(tools/dev.sh bash /repo/tools/test-parallel.sh "${rerun_jobs[@]}" 2>&1)" || rerun_status=$?
+        echo "$rerun_out"
+        rerun_ok=1
+        ((rerun_status == 0)) || rerun_ok=0
+        [[ $rerun_out != *"... FAILED"* ]] || rerun_ok=0
+        for n in "${rerun_names[@]}"; do
+            [[ $'\n'$rerun_out$'\n' == *$'\n'"test $n ... ok"$'\n'* ]] || rerun_ok=0
+        done
+        took
+        if ((rerun_ok)); then
+            echo "== flaky rerun passed"
+            out+=$'\n'"$rerun_out"
+            status=0
+        fi
+    else
+        echo "   no flaky rerun: ${plan#no-rerun: }"
+    fi
+fi
 if ((status != 0)); then
     echo "gate: tests failed (exit $status)" >&2
     exit "$status"
