@@ -19,7 +19,7 @@
 //! percent and range here is this file's own. The GM lines are a non-bot's
 //! setup, named at the call site.
 
-use super::common::{SYSTEM, config, gm, login, pilot, serve, until};
+use super::common::{SYSTEM, config, gm, login, pilot, pump_until, serve, until};
 use eve_bot::acquire::{self, Lacking};
 use eve_bot::brain::{Memory, Policy};
 use eve_bot::builder::SellLine;
@@ -383,18 +383,16 @@ fn scene(ore_units: i64) -> Scene {
     }
 }
 
-/// Read `c` until `done` holds or twenty seconds.
-fn pump_until(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> bool {
-    until(Duration::from_secs(20), || {
-        let _ = c.collect_pushes(Duration::from_millis(200));
-        done(c)
-    })
-}
+/// How long a scene step waits for what it reads.
+const PUMP: Duration = Duration::from_secs(20);
 
 /// The foreman makes a fleet of the miner on the grid; the miner accepts.
 fn fleet_up(s: &mut Scene) {
     assert!(
-        pump_until(&mut s.foreman, |c| c.world_now().ship_of(MINER).is_some()),
+        pump_until(&mut s.foreman, PUMP, |c| c
+            .world_now()
+            .ship_of(MINER)
+            .is_some()),
         "the foreman sees the miner's ship"
     );
     let fleet = s.foreman.create_fleet(ORCA).expect("the fleet");
@@ -402,7 +400,7 @@ fn fleet_up(s: &mut Scene) {
     assert!(note.contains(&MINER.to_string()), "{note}");
     assert!(!note.contains(&FOREMAN.to_string()), "not himself: {note}");
     let mut invite = None;
-    assert!(pump_until(&mut s.miner, |c| {
+    assert!(pump_until(&mut s.miner, PUMP, |c| {
         invite = c
             .take_pushes()
             .iter()
@@ -440,7 +438,7 @@ fn a_foreman_outfits_makes_a_fleet_and_its_burst_shortens_the_miners_laser_cycle
     let boosted = plain * (100.0 + BURST_PCT) / 100.0;
     let laser = s.laser;
     assert!(
-        pump_until(&mut s.miner, |c| {
+        pump_until(&mut s.miner, PUMP, |c| {
             (duration_ms(c, laser) - boosted).abs() < 1e-6
         }),
         "the laser cycle went {plain} -> {boosted}, reads {}",

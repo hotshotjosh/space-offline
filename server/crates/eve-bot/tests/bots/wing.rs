@@ -13,7 +13,7 @@
 //! lists it in the fleet finder (public, no approval); the bots apply and the
 //! pilot's invite is accepted by `AcceptFleet::Fc`.
 
-use super::common::{SYSTEM, config, dump, login, ok, pilot, serve, until};
+use super::common::{SYSTEM, config, dump, login, ok, pilot, pump_until, serve, until, warp_and_arrive};
 use eve_bot::brain::{AcceptFleet, ActKind};
 use eve_bot::driver::{self, BotConfig, Handle, Pace};
 use eve_bot::travel::Map;
@@ -71,18 +71,6 @@ fn wing_bot(addr: SocketAddr, i: usize, hall: &Arc<WingHall>, map: &Arc<Map>) ->
     (driver::spawn(config).0, started)
 }
 
-/// Read the pilot's pushes until `done` holds or `within` runs out.
-fn pump_until(c: &mut Conn, within: Duration, mut done: impl FnMut(&mut Conn) -> bool) -> bool {
-    let deadline = Instant::now() + within;
-    while Instant::now() < deadline {
-        let _ = c.pump(Duration::from_millis(100));
-        if done(c) {
-            return true;
-        }
-    }
-    done(c)
-}
-
 /// The surface distance from the pilot to a character's ship, if both are in
 /// the pilot's park.
 fn gap_to(c: &mut Conn, who: i64) -> Option<f64> {
@@ -105,15 +93,7 @@ fn composition_all_docked_at(c: &mut Conn, station: i64) -> bool {
 
 /// Warp to `item`, then close in until `reach` of its surface.
 fn go_to(c: &mut Conn, item: i64, reach: f64) {
-    c.warp_to_item(item, 0.0).expect("warps");
-    let near = pump_until(c, Duration::from_secs(120), |c| {
-        let w = c.world_now();
-        let warping = w.ego_ball().is_some_and(|b| b.warp_commanded());
-        !warping
-            && w.ego
-                .and_then(|e| w.surface_distance(e, item))
-                .is_some_and(|g| g < reach)
-    });
+    let near = warp_and_arrive(c, item, reach, Duration::from_secs(120));
     if !near {
         c.follow(item, 0.0).expect("approaches");
         assert!(

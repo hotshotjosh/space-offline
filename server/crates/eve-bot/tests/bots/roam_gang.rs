@@ -13,7 +13,7 @@
 //! knob that makes the FC commit every ship, and the assertions are about
 //! order, kinds, ids and a skew bounded by a named test constant.
 
-use super::common::{SYSTEM, config, dump, login, ok, pilot, serve, until};
+use super::common::{SYSTEM, config, dump, login, ok, pilot, serve, until, warp_and_arrive};
 use eve_bot::brain::ActKind;
 use eve_bot::driver::{self, BotConfig, Handle, Pace};
 use eve_bot::hostile::Class;
@@ -192,7 +192,20 @@ fn a_gang_finds_a_pilot_two_jumps_away_gathers_lands_together_and_shoots_one_tar
                 .any(|e| ok(e, ActKind::Fire) && e.ids.get(1) == Some(&BOB_SHIP))
         })
     });
-    let dumps: Vec<String> = bots.iter().map(|b| dump(&b.0)).collect();
+    let mut dumps: Vec<String> = bots
+        .iter()
+        .map(|b| {
+            let seen =
+                b.0.observation()
+                    .map(|o| format!("{:?} {:?}", o.place, o.ship));
+            format!("{} sees {seen:?}\n{}", b.0.name, dump(&b.0))
+        })
+        .collect();
+    dumps.push(format!(
+        "Bob's session: ship {:?} station {:?}",
+        bob.session().ship_id(),
+        bob.session().station_id()
+    ));
     let plan = hall
         .snapshot("gang")
         .map(|g| format!("{:?} scouts {:?} routes {:?}", g.plan, g.scouts, g.routes));
@@ -315,9 +328,12 @@ fn a_gang_with_a_quarry_warps_to_him_and_all_shoot_his_ship() {
     let mut quentin = login(addr, "Quentin");
     quentin.undock().expect("undocks");
     quentin.enter_space(SYSTEM).expect("the state");
-    quentin
-        .warp_to_item(BELT_A, 0.0)
-        .expect("warps to the belt");
+    // Landed, not merely commanded: the gang undocks onto his grid at once
+    // and must find him at the belt, not still at the station.
+    assert!(
+        warp_and_arrive(&mut quentin, BELT_A, 30_000.0, Duration::from_secs(120)),
+        "Quentin lands at the belt"
+    );
 
     let hall = Arc::new(GangHall::new());
     let bots: Vec<(Handle, Instant)> = (0..SUMMONED.len())

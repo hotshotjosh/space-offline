@@ -91,6 +91,33 @@ pub fn until(within: Duration, mut done: impl FnMut() -> bool) -> bool {
     done()
 }
 
+/// Read `c`'s pushes until `done` holds or `within` runs out.
+pub fn pump_until(c: &mut Conn, within: Duration, mut done: impl FnMut(&mut Conn) -> bool) -> bool {
+    let deadline = Instant::now() + within;
+    while Instant::now() < deadline {
+        let _ = c.pump(Duration::from_millis(100));
+        if done(c) {
+            return true;
+        }
+    }
+    done(c)
+}
+
+/// **Warp to `item` and wait until the pilot has landed**, not merely until
+/// the warp was commanded: no warp in flight and within `reach` of the
+/// item's surface. `false` on the timeout.
+pub fn warp_and_arrive(c: &mut Conn, item: i64, reach: f64, within: Duration) -> bool {
+    c.warp_to_item(item, 0.0).expect("warps");
+    pump_until(c, within, |c| {
+        let w = c.world_now();
+        let warping = w.ego_ball().is_some_and(|b| b.warp_commanded());
+        !warping
+            && w.ego
+                .and_then(|e| w.surface_distance(e, item))
+                .is_some_and(|g| g < reach)
+    })
+}
+
 pub fn ok(e: &Entry, kind: ActKind) -> bool {
     e.kind == kind && e.verdict == Verdict::Ok
 }
@@ -135,5 +162,58 @@ pub fn gm_only_in_setup(h: &Handle) {
             "a slash after the first undock:\n{}",
             dump(h)
         );
+    }
+}
+
+#[cfg(test)]
+mod scan {
+    //! **Process-global switches stay off in this binary.** eve-server is
+    //! built without `cfg(test)` here, so its test seams do not exist, and a
+    //! test that turned one of these on would change every other test in the
+    //! process. A source scan, like the one in `gateway_out.rs`.
+
+    /// What no test file may contain, as split pairs so that this file
+    /// never holds a pattern in full, with each one's reason.
+    const FORBIDDEN: [(&str, &str, &str); 11] = [
+        ("coalesce_destiny", " = true", "push::set_coalesce_destiny"),
+        ("coalesce_destiny", ": true", "push::set_coalesce_destiny"),
+        ("set_coalesce_", "destiny(", "push::set_coalesce_destiny"),
+        (".gateway", " = Some", "gateway_out::install_hub"),
+        ("gateway", ": Some(", "gateway_out::install_hub"),
+        ("gateway_out::", "install_hub(", "gateway_out::install_hub"),
+        ("--tick", "-threads", "par::set_threads"),
+        ("par::", "set_threads(", "par::set_threads"),
+        ("--turn", "-sched", "sched_stat::set_enabled"),
+        ("sched_stat::", "set_enabled(", "sched_stat::set_enabled"),
+        ("sched_stat::", "set_enabled (", "sched_stat::set_enabled"),
+    ];
+
+    #[test]
+    fn no_test_turns_on_a_process_global_switch() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+        let mut files = Vec::new();
+        let mut todo = vec![dir];
+        while let Some(d) = todo.pop() {
+            for e in std::fs::read_dir(&d).expect("the tests dir reads") {
+                let p = e.expect("an entry").path();
+                if p.is_dir() {
+                    todo.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push(p);
+                }
+            }
+        }
+        assert!(files.len() > 10, "the scan sees the test files");
+        let mut hits = Vec::new();
+        for f in files {
+            let text = std::fs::read_to_string(&f).expect("reads");
+            for (a, b, why) in FORBIDDEN {
+                let pat = format!("{a}{b}");
+                if text.contains(&pat) {
+                    hits.push(format!("{}: `{pat}` ({why} is process-wide)", f.display()));
+                }
+            }
+        }
+        assert!(hits.is_empty(), "{}", hits.join("\n"));
     }
 }

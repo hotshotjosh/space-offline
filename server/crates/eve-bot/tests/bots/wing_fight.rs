@@ -15,7 +15,7 @@
 //! "Anyone shooting the FC is shot" needs a second armed human and is covered
 //! by the pure tests (`wing_fight::tests`), not here.
 
-use super::common::{SYSTEM, config, dump, gm, login, ok, pilot, serve, until};
+use super::common::{SYSTEM, config, dump, gm, login, ok, pilot, pump_until, serve, until};
 use eve_bot::Conn;
 use eve_bot::brain::{AcceptFleet, ActKind};
 use eve_bot::driver::{self, BotConfig, Handle, Pace};
@@ -24,7 +24,7 @@ use eve_bot::wing::{ROLE, Seat};
 use eve_bot::wing_hall::WingHall;
 use eve_marshal::PyValue;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const PILOT: i64 = 90_000_811;
 const PILOT_SHIP: i64 = 100_000_811;
@@ -35,17 +35,6 @@ const RAT: i64 = eve_server::npc::FIXTURE_RAT.type_id;
 const RIFTER: i64 = 587;
 /// `fleet_finder::INVITE_PUBLIC`.
 const PUBLIC: i64 = 8;
-
-fn pump_until(c: &mut Conn, within: Duration, mut done: impl FnMut(&mut Conn) -> bool) -> bool {
-    let deadline = Instant::now() + within;
-    while Instant::now() < deadline {
-        let _ = c.pump(Duration::from_millis(100));
-        if done(c) {
-            return true;
-        }
-    }
-    done(c)
-}
 
 fn rats(c: &Conn) -> Vec<(i64, f64)> {
     let w = c.world();
