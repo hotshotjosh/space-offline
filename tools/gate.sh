@@ -16,8 +16,8 @@
 # full gate.
 # **A tools-only push skips it too.** Markdown, private/ and tools/*.py or tools/*.sh
 # scripts (at least one) run the allowlist, build deltas, every tools test and bash -n;
-# gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh
-# and tools/hooks/ keep the full gate.
+# gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh,
+# gate_reds.py and tools/hooks/ keep the full gate.
 #
 # **Each stage prints `   took Ns`** after its last line, so a slow gate can be
 # read off its log. The `== ` lines are what land.sh and pre-push grep; the
@@ -185,7 +185,7 @@ if ((!dirty)) && base=$(default_base); then
             docs/content/schema.md|server/*) docs_only=0; tools_only=0 ;;
             # The gate's own scripts, the build wrappers, the allowlist check, the
             # status guard and the hooks decide or run the build: full gate.
-            tools/gate.sh|tools/land.sh|tools/dev.sh|tools/analysis.sh|tools/check_deps.py|tools/status-guard.py|tools/test-parallel.sh|tools/hooks/*)
+            tools/gate.sh|tools/land.sh|tools/dev.sh|tools/analysis.sh|tools/check_deps.py|tools/status-guard.py|tools/test-parallel.sh|tools/gate_reds.py|tools/hooks/*)
                 docs_only=0; tools_only=0 ;;
             # Markdown under tools/ keeps the full gate, as before the tools tier.
             tools/*.md) docs_only=0; tools_only=0 ;;

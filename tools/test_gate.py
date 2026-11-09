@@ -89,7 +89,7 @@ class LandingTools(unittest.TestCase):
         self.write("tools/dev.sh", STUB_DEV, exe=True)
         self.write("tools/check_deps.py", "pass\n")
         self.write("server/crates/invented/Cargo.toml", "")
-        self.write(".gitignore", "out/\n")
+        self.write(".gitignore", "out/\nvar/\n")
         self.git("init", "-q", "-b", "master")
         self.git("remote", "add", "origin", self.remote)
         self.commit("base")
@@ -269,7 +269,7 @@ class LandingTools(unittest.TestCase):
     def test_the_gate_scripts_and_the_allowlist_check_keep_the_full_gate(self) -> None:
         for rel in ("tools/gate.sh", "tools/land.sh", "tools/dev.sh", "tools/analysis.sh",
                     "tools/check_deps.py", "tools/status-guard.py", "tools/test-parallel.sh",
-                    "tools/hooks/pre-push"):
+                    "tools/gate_reds.py", "tools/hooks/pre-push"):
             with self.subTest(rel=rel):
                 g = self.tier_gate(rel, "tools/foo.py")
                 self.assertEqual(g.returncode, 101, rel)
@@ -416,6 +416,79 @@ class LandingTools(unittest.TestCase):
                            env=self.env, capture_output=True, text=True, timeout=120)
         self.assertNotEqual(p.returncode, 0)
         self.assertEqual(self.remote_master(), self.base)
+
+    # --- the red log (#282) -------------------------------------------------------
+
+    def with_reds(self, stub: str | None = None) -> None:
+        """Commit tools/gate_reds.py (the real one, or `stub`) into the fixture."""
+        if stub is None:
+            shutil.copy2(os.path.join(HERE, "gate_reds.py"), os.path.join(self.repo, "tools", "gate_reds.py"))
+        else:
+            self.write("tools/gate_reds.py", stub)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "reds")
+
+    def reds_rows(self) -> list[list[str]]:
+        with open(os.path.join(self.repo, "var", "gate-reds.tsv")) as f:
+            lines = f.read().splitlines()
+        return [ln.split("\t") for ln in lines[2:]]
+
+    def test_a_red_land_run_records_rows_with_the_heads_tree(self) -> None:
+        self.cargo_test("compiling\n" + FAIL_MARK + "test result: FAILED. 2 passed; 1 failed\n", 101)
+        self.with_reds()
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 101, r.stderr)
+        self.assertIn("land: red recorded", r.stderr)
+        rows = self.reds_rows()
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual((row[3], row[6], row[2]), ("red", "101", self.rev("HEAD^{tree}")))
+        self.assertEqual(self.remote_master(), self.base)
+        self.assertEqual(len(os.listdir(os.path.join(self.repo, "var", "gate-logs"))), 1)
+
+    def test_a_pass_land_run_records_a_pass_row_and_pushes(self) -> None:
+        self.with_reds()
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = self.reds_rows()
+        self.assertEqual([(x[3], x[7]) for x in rows], [("pass", "-")])
+        self.assertEqual(self.remote_master(), self.rev("HEAD"))
+
+    def test_a_failing_recorder_changes_neither_exit_code(self) -> None:
+        self.with_reds("import sys\nsys.exit(3)\n")
+        self.cargo_test(FAIL_MARK, 101)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 101, r.stderr)
+        self.cargo_test(PASS)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.remote_master(), self.rev("HEAD"))
+
+    def test_a_hanging_recorder_is_cut_off_and_changes_no_exit_code(self) -> None:
+        import time
+        self.env["GATE_REDS_TIMEOUT"] = "1"
+        self.with_reds("import time\ntime.sleep(60)\n")
+        self.cargo_test(FAIL_MARK, 101)
+        t0 = time.monotonic()
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 101, r.stderr)
+        self.cargo_test(PASS)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.remote_master(), self.rev("HEAD"))
+        self.assertLess(time.monotonic() - t0, 40)
+
+    def test_without_the_recorder_land_behaves_as_before(self) -> None:
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "tools", "gate_reds.py")))
+        self.cargo_test(FAIL_MARK, 101)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 101, r.stderr)
+        self.assertNotIn("recorded", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "var")))
+        self.cargo_test(PASS)
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "var")))
 
     # --- G3 --------------------------------------------------------------------
 

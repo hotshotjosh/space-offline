@@ -71,6 +71,10 @@ status=0
 # Read before the gate starts: the bare gate refuses a dirty tree, so this
 # commit's tree is the one it checks, and a commit made meanwhile is not.
 sha=$(git rev-parse HEAD)
+tree=$(git rev-parse "$sha^{tree}")
+# The recorder is a convenience and must never hold up or change a landing: every call
+# is time-limited (an internal variable, so a test can shorten it).
+reds_timeout=${GATE_REDS_TIMEOUT:-60}
 if ((head)); then
     # **On disk, never in /tmp**: /tmp is RAM on the dev box, and a gate's
     # build tree there held ~7 GB of it until the box ran out (2026-10-29).
@@ -97,6 +101,13 @@ if ((status != 0)); then
     echo "land: last 20 lines of $log" >&2
     tail -20 "$log" >&2
     echo "land: full log kept at $log" >&2
+    # The red log (var/gate-reds.tsv). Nothing here may change the exit status.
+    if [[ -f tools/gate_reds.py ]]; then
+        kept=$(timeout "$reds_timeout" python3 -I tools/gate_reds.py keep-log --log "$log" --sha "$sha" 2>/dev/null) || kept=$log
+        timeout "$reds_timeout" python3 -I tools/gate_reds.py record --log "$kept" --sha "$sha" --tree "$tree" \
+            --exit "$status" --result red || echo "land: could not record the red in var/gate-reds.tsv" >&2
+        echo "land: red recorded; python3 -I tools/gate_reds.py report" >&2
+    fi
     exit "$status"
 fi
 
@@ -122,6 +133,11 @@ read -r digest _ < <(sha256sum "out/landed/$sha.log")
 printf 'tree %s\nlog-sha256 %s\n' "$(git rev-parse "$sha^{tree}")" "$digest" >"out/landed/$sha.tmp"
 mv "out/landed/$sha.tmp" "out/landed/$sha"
 echo "land: stamped out/landed/$sha"
+if [[ -f tools/gate_reds.py ]]; then
+    timeout "$reds_timeout" python3 -I tools/gate_reds.py record --log "out/landed/$sha.log" --sha "$sha" --tree "$tree" \
+        --exit 0 --result pass || echo "land: could not record the pass" >&2
+    timeout "$reds_timeout" python3 -I tools/gate_reds.py report --tree "$tree" --brief || true
+fi
 mapfile -t old < <(ls -1t out/landed/*.log 2>/dev/null | tail -n +$((STAMPS_KEPT + 1)))
 for f in "${old[@]}"; do rm -f "$f" "${f%.log}"; done
 
