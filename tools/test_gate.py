@@ -38,6 +38,7 @@ STUB_DEV = """#!/usr/bin/env bash
 case "${1:-} ${2:-}" in
     "cargo test") cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     "cargo "*) exit 0 ;;
+    "bash -c") printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"; cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     *) exec "$@" ;;
 esac
 """
@@ -77,6 +78,7 @@ class LandingTools(unittest.TestCase):
             TMPDIR=tmpdir,
             STUB_TEST_OUT=self.test_out,
             STUB_TEST_EXIT="0",
+            STUB_ARGS=os.path.join(self.tmp, "stub-args"),
         )
         self.env = env
         self.cargo_test(PASS)
@@ -489,6 +491,77 @@ class LandingTools(unittest.TestCase):
         r = self.run_tool("land.sh")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "var")))
+
+    # --- the parallel test split (#282) ------------------------------------------
+
+    BOT = "server/crates/eve-bot"
+
+    def split_tree(self, *extra: tuple[str, str]) -> None:
+        self.commit("bot tests", (f"{self.BOT}/tests/bots/main.rs", "\n"),
+                    (f"{self.BOT}/tests/extra.rs", "\n"), *extra)
+
+    def test_the_real_tree_runs_the_parallel_split(self) -> None:
+        root = os.path.dirname(HERE)
+        r = subprocess.run([os.path.join(HERE, "gate.sh"), "--print-test-jobs"], cwd=root,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("test jobs: split (4)", r.stdout)
+        tests = os.path.join(root, self.BOT, "tests")
+        names = [n[:-3] for n in os.listdir(tests) if n.endswith(".rs")]
+        names += [n for n in os.listdir(tests) if os.path.exists(os.path.join(tests, n, "main.rs"))]
+        self.assertIn("bots", names)
+        jobs = [ln for ln in r.stdout.splitlines() if ln.startswith("   job:")]
+        self.assertEqual(len(jobs), 4, r.stdout)
+        self.assertIn("-p eve-bot --test bots", jobs[0])
+        for n in names:
+            if n != "bots":
+                self.assertIn(f"--test {n}", jobs[1], r.stdout)
+
+    def test_the_jobs_name_every_bot_test_target(self) -> None:
+        self.split_tree()
+        r = self.run_tool("gate.sh", "--print-test-jobs")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("test jobs: split (4)", r.stdout)
+        self.assertIn("job: -p eve-bot --test bots\n", r.stdout)
+        self.assertIn("job: -p eve-bot --lib --bins --test extra\n", r.stdout)
+        self.assertIn("job: -p eve-bot --doc\n", r.stdout)
+        self.assertIn("job: --workspace --exclude eve-bot\n", r.stdout)
+
+    def test_examples_or_a_forced_serial_run_print_why(self) -> None:
+        self.split_tree((f"{self.BOT}/examples/e.rs", "\n"))
+        r = self.run_tool("gate.sh", "--print-test-jobs")
+        self.assertIn("test jobs: serial (eve-bot has examples)", r.stdout)
+        self.assertNotIn("job:", r.stdout)
+        self.env["EVE_GATE_SERIAL_TESTS"] = "1"
+        r = self.run_tool("gate.sh", "--print-test-jobs")
+        self.assertIn("serial (EVE_GATE_SERIAL_TESTS set)", r.stdout)
+
+    def test_declared_targets_in_the_bot_manifest_run_serially(self) -> None:
+        for decl in ("[[test]]\nname = \"x\"\npath = \"t/x.rs\"\n", "[lib]\npath = \"src/l.rs\"\n", "autotests = false\n"):
+            with self.subTest(decl=decl):
+                self.split_tree((f"{self.BOT}/Cargo.toml", "[package]\nname = \"eve-bot\"\n" + decl))
+                r = self.run_tool("gate.sh", "--print-test-jobs")
+                self.assertIn("test jobs: serial (eve-bot declares targets in Cargo.toml)", r.stdout)
+                self.assertNotIn("job:", r.stdout)
+        self.split_tree((f"{self.BOT}/Cargo.toml", "[package]\nname = \"eve-bot\"\n"))
+        self.assertIn("split (4)", self.run_tool("gate.sh", "--print-test-jobs").stdout)
+
+    def test_the_split_path_runs_and_the_serial_path_is_no_fail_fast(self) -> None:
+        self.split_tree()
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("   test jobs: split (4)", g.stdout)
+        with open(self.env["STUB_ARGS"]) as f:
+            args = f.read()
+        self.assertIn("test-parallel.sh -p eve-bot --test bots -p eve-bot --lib --bins --test extra", args)
+        os.remove(self.env["STUB_ARGS"])
+        g = self.run_tool("gate.sh", "--only", "invented")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("test jobs: serial (scoped run)", g.stdout)
+
+    def test_parallel_script_runs_every_job_with_no_fail_fast(self) -> None:
+        with open(os.path.join(HERE, "test-parallel.sh")) as f:
+            self.assertIn("cargo test --locked --no-fail-fast", f.read())
 
     # --- G3 --------------------------------------------------------------------
 

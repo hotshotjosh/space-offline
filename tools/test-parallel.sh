@@ -13,7 +13,8 @@
 # side by side. The caller chooses jobs whose union is exactly the targets one
 # `cargo test --workspace` runs.
 #
-# Every job runs to the end. Outputs print in the order given, each under a
+# Every job runs to the end, and every failing test binary in it too (`--no-fail-fast`,
+# so a red names all its failures). Outputs print in the order given, each under a
 # `   -- cargo test <args>` line, so a log reads like a serial run; the exit
 # code is the first failing job's, and every failing job is named.
 set -uo pipefail
@@ -27,7 +28,7 @@ for job in "$@"; do
     (
         read -ra args <<<"$job"
         s=0
-        cargo test --locked "${args[@]}" >"$dir/$i.out" 2>&1 || s=$?
+        cargo test --locked --no-fail-fast "${args[@]}" >"$dir/$i.out" 2>&1 || s=$?
         echo "$s" >"$dir/$i.rc"
     ) &
     i=$((i + 1))
@@ -38,7 +39,7 @@ status=0
 failed=()
 i=0
 for job in "$@"; do
-    echo "   -- cargo test --locked $job"
+    echo "   -- cargo test --locked --no-fail-fast $job"
     cat "$dir/$i.out" 2>/dev/null || true
     s=$(cat "$dir/$i.rc" 2>/dev/null || echo 1)
     if ((s != 0)); then
@@ -48,6 +49,6 @@ for job in "$@"; do
     i=$((i + 1))
 done
 for job in "${failed[@]}"; do
-    echo "test-parallel: cargo test --locked $job FAILED" >&2
+    echo "test-parallel: cargo test --locked --no-fail-fast $job FAILED" >&2
 done
 exit "$status"

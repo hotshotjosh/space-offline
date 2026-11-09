@@ -42,11 +42,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 dirty=0
 only=""
 without=""
+print_jobs=0
 while (($#)); do
     case "$1" in
         --dirty) dirty=1 ;;
         --only) only=$2; dirty=1; shift ;;
         --without) without=$2; dirty=1; shift ;;
+        --print-test-jobs) print_jobs=1 ;;
         -h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d;s/^# \{0,1\}//'; exit 0 ;;
         *) echo "gate: unknown argument $1" >&2; exit 2 ;;
     esac
@@ -157,6 +159,52 @@ status_checks() {
 
 scope=(--workspace)
 [[ -n $only ]] && scope=(-p "$only")
+
+# **The workspace's tests run as four concurrent jobs** (gate-speed lane): eve-bot's
+# socket tests, its other targets, its doctests, and every other package. The split
+# is decided here, from the tree: eve-bot's integration targets are `tests/*.rs`
+# (the file's name) and `tests/*/main.rs` (the directory's name), so a new target
+# lands in the second job by itself and is never skipped (a hard-coded "only
+# tests/bots" check once fell back to the serial run unnoticed, a24bbb06). Anything
+# the enumeration cannot cover (examples, benches, a scoped run) runs serially and
+# says why. EVE_GATE_SERIAL_TESTS=1 forces the serial run; EVE_BOT_TEST_THREADS sets
+# the socket job's --test-threads. Sets `jobs_mode` (split|serial), `jobs_why`, `jobs`.
+jobs_mode=serial
+jobs_why=""
+jobs=()
+test_jobs() {
+    local bot=server/crates/eve-bot t n others="" bots_job
+    jobs=()
+    if [[ ${scope[*]} != --workspace ]]; then
+        jobs_why="scoped run"; return 0
+    elif [[ -n ${EVE_GATE_SERIAL_TESTS:-} ]]; then
+        jobs_why="EVE_GATE_SERIAL_TESTS set"; return 0
+    elif [[ ! -d $bot/tests/bots ]]; then
+        jobs_why="no eve-bot tests/bots"; return 0
+    elif [[ -e $bot/examples ]]; then
+        jobs_why="eve-bot has examples"; return 0
+    elif [[ -e $bot/benches ]]; then
+        jobs_why="eve-bot has benches"; return 0
+    elif grep -qE '^\s*(\[\[(test|bench|example)\]\]|\[lib\]|autotests|autobenches|autoexamples)' "$bot/Cargo.toml" 2>/dev/null; then
+        jobs_why="eve-bot declares targets in Cargo.toml"; return 0
+    fi
+    for t in "$bot"/tests/*.rs "$bot"/tests/*/main.rs; do
+        [[ -e $t ]] || continue
+        if [[ $t == */main.rs ]]; then n=$(basename "$(dirname "$t")"); else n=$(basename "$t" .rs); fi
+        [[ $n == bots ]] || others+=" --test $n"
+    done
+    bots_job="-p eve-bot --test bots"
+    [[ -n ${EVE_BOT_TEST_THREADS:-} ]] && bots_job+=" -- --test-threads=$EVE_BOT_TEST_THREADS"
+    jobs=("$bots_job" "-p eve-bot --lib --bins$others" "-p eve-bot --doc" "--workspace --exclude eve-bot")
+    jobs_mode=split
+    jobs_why=${#jobs[@]}
+}
+test_jobs
+if ((print_jobs)); then
+    echo "   test jobs: $jobs_mode ($jobs_why)"
+    for t in "${jobs[@]}"; do echo "   job: $t"; done
+    exit 0
+fi
 
 if ((dirty)); then
     echo "== tree hygiene SKIPPED (scoped run; cannot authorise a push)"
@@ -312,29 +360,15 @@ echo "== test"
 # and `land.sh` reported a bare `exit 101`. That hid a disk-full and then a
 # real failing test (`docs/port-tracker.md` §64, §65).
 #
-# **The workspace's tests run as four concurrent jobs** (gate-speed lane):
-# eve-bot's socket tests, its lib and bins, its doctests, and every other
-# package. Their union is exactly `cargo test --workspace`'s targets while
-# eve-bot has no test target but `tests/bots` and no examples or benches;
-# anything else there falls back to the one serial run, so a new target is
-# never skipped. Built once first, in the same container (one memory limit),
-# so a compile error prints once. EVE_GATE_SERIAL_TESTS=1 forces the serial
-# run; EVE_BOT_TEST_THREADS sets the socket job's --test-threads.
 status=0
-bot=server/crates/eve-bot
-split=0
-if [[ ${scope[*]} == --workspace && -z ${EVE_GATE_SERIAL_TESTS:-} && -d $bot/tests/bots ]] \
-    && [[ $(ls -A "$bot/tests") == bots && ! -e $bot/examples && ! -e $bot/benches ]]; then
-    split=1
-fi
-if ((split)); then
-    bots_job="-p eve-bot --test bots"
-    [[ -n ${EVE_BOT_TEST_THREADS:-} ]] && bots_job+=" -- --test-threads=$EVE_BOT_TEST_THREADS"
+echo "   test jobs: $jobs_mode ($jobs_why)"
+if [[ $jobs_mode == split ]]; then
+    # Built once first, in the same container (one memory limit), so a compile
+    # error prints once.
     out="$(tools/dev.sh bash -c 'cargo test --locked --workspace --no-run && exec "$@"' sh \
-        /repo/tools/test-parallel.sh "$bots_job" "-p eve-bot --lib --bins" "-p eve-bot --doc" \
-        "--workspace --exclude eve-bot" 2>&1)" || status=$?
+        /repo/tools/test-parallel.sh "${jobs[@]}" 2>&1)" || status=$?
 else
-    out="$(tools/dev.sh cargo test --locked "${scope[@]}" 2>&1)" || status=$?
+    out="$(tools/dev.sh cargo test --locked --no-fail-fast "${scope[@]}" 2>&1)" || status=$?
 fi
 echo "$out"
 took
