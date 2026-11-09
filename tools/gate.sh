@@ -19,6 +19,11 @@
 # gate.sh, land.sh, dev.sh, analysis.sh, check_deps.py, status-guard.py, test-parallel.sh,
 # gate_reds.py and tools/hooks/ keep the full gate.
 #
+# **The full gate's order** (#282): hygiene, status, deps, shell syntax, format; then the
+# python tests and the build deltas start in the background on the host while toolchain,
+# lint and the test build run in the container; they are joined (and reported, with
+# `took Ns (overlapped)`) before the test run.
+#
 # **Each stage prints `   took Ns`** after its last line, so a slow gate can be
 # read off its log. The `== ` lines are what land.sh and pre-push grep; the
 # timing lines are indented and never change them.
@@ -301,31 +306,6 @@ echo "== dependency allowlist"
 python3 tools/check_deps.py
 took
 
-# **The extractors' unit tests** (2026-10-25, content-plan review R1 #1).
-# Every `tools/test_*.py` runs on synthetic bytes only, never the client --
-# the gate has no client -- so a broken extractor fails here instead of on
-# the owner's next launch. Stdlib unittest, isolated interpreter.
-echo "== python unit tests"
-pytests=()
-for t in tools/test_*.py; do
-    [[ -e $t ]] && pytests+=("$t")
-done
-run_python_tests "${pytests[@]}"
-took
-
-# **The committed build deltas still reproduce** (R-NEWBUILD NB-1). For each
-# findings/build-delta-<old>-<new>.tsv whose two installs exist on this
-# machine, build-delta.py --check re-measures them (read-only, no network, the
-# client never launched), so a changed install is caught. No install: skipped
-# with a note. The logic lives in tools/new-build.sh --gate-check.
-echo "== build deltas"
-if [[ -x tools/new-build.sh ]]; then
-    tools/new-build.sh --gate-check
-else
-    echo "   skipped: no tools/new-build.sh in this tree"
-fi
-took
-
 # **Every shell script parses** (review V4 G3). A typo in `client-ci.sh` or
 # `up.sh` used to surface at the next unattended run, minutes in. `bash -n`
 # only, not shellcheck: shellcheck is a new image dependency.
@@ -336,6 +316,58 @@ for s in tools/*.sh tools/hooks/*; do
 done
 took
 
+# **Format first of the container stages**: 4 s, and the stage that goes red most
+# often after status, so a format red costs seconds, not the python tests.
+echo "== format"
+tools/dev.sh cargo fmt --all --check
+took
+
+# **The python tests and the build deltas run in the background** from here, on the
+# host, next to the container stages (toolchain, lint, test build), and are joined
+# before the test run. Each writes `<name>.out`, `.err`, `.rc` and `.t` into
+# $bg_dir; the join prints them in a fixed order whichever finished first. The
+# background pids are waited for, never killed, on every exit path, so a red in a
+# foreground stage leaves no job running behind it (and no output printed).
+#
+# **The extractors' unit tests** (2026-10-25, content-plan review R1 #1).
+# Every `tools/test_*.py` runs on synthetic bytes only, never the client --
+# the gate has no client -- so a broken extractor fails here instead of on
+# the owner's next launch. Stdlib unittest, isolated interpreter.
+#
+# **The committed build deltas still reproduce** (R-NEWBUILD NB-1). For each
+# findings/build-delta-<old>-<new>.tsv whose two installs exist on this
+# machine, build-delta.py --check re-measures them (read-only, no network, the
+# client never launched), so a changed install is caught. No install: skipped
+# with a note. The logic lives in tools/new-build.sh --gate-check.
+pytests=()
+for t in tools/test_*.py; do
+    [[ -e $t ]] && pytests+=("$t")
+done
+bg_dir=$(mktemp -d -t eve-gate-bg-XXXXXX)
+bg_pids=()
+trap 'wait "${bg_pids[@]}" 2>/dev/null; rm -rf "$bg_dir"' EXIT
+(
+    t0=$SECONDS
+    s=0
+    (run_python_tests "${pytests[@]}") >"$bg_dir/python.out" 2>"$bg_dir/python.err" || s=$?
+    echo "$s" >"$bg_dir/python.rc"
+    echo "$((SECONDS - t0))" >"$bg_dir/python.t"
+) &
+bg_pids+=($!)
+(
+    t0=$SECONDS
+    s=0
+    if [[ -x tools/new-build.sh ]]; then
+        tools/new-build.sh --gate-check >"$bg_dir/deltas.out" 2>"$bg_dir/deltas.err" || s=$?
+    else
+        echo "   skipped: no tools/new-build.sh in this tree" >"$bg_dir/deltas.out"
+        : >"$bg_dir/deltas.err"
+    fi
+    echo "$s" >"$bg_dir/deltas.rc"
+    echo "$((SECONDS - t0))" >"$bg_dir/deltas.t"
+) &
+bg_pids+=($!)
+
 # **Which compiler gated this** (review V6 F12). The build image's apt step is
 # not pinned, so a rebuild can move rustc; the image records `rustc -V` in
 # this file, and the gate log carries it. Informational: an image without the
@@ -345,13 +377,33 @@ tools/dev.sh sh -c 'cat /etc/eve-offline-toolchain.txt 2>/dev/null || echo "(the
     || echo "(could not read the build image's toolchain record)"
 took
 
-echo "== format"
-tools/dev.sh cargo fmt --all --check
-took
-
 echo "== lint"
 tools/dev.sh cargo clippy --locked "${scope[@]}" --all-targets -- -D warnings
 took
+
+# The test build is its own container call, so a compile error stops here, once.
+echo "== test build"
+tools/dev.sh cargo test --locked "${scope[@]}" --no-run
+took
+
+# Join: wait for both background jobs, print their reports in a fixed order, and
+# fail as the serial gate did if either is red. Their `took` is their own time.
+for pid in "${bg_pids[@]}"; do wait "$pid" || true; done
+bg_failed=0
+for name in python deltas; do
+    if [[ $name == python ]]; then echo "== python unit tests"; else echo "== build deltas"; fi
+    cat "$bg_dir/$name.out" 2>/dev/null || true
+    if [[ -e $bg_dir/$name.err ]]; then cat "$bg_dir/$name.err" >&2 || true; fi
+    echo "   took $(cat "$bg_dir/$name.t" 2>/dev/null || echo 0)s (overlapped)"
+    rc=$(cat "$bg_dir/$name.rc" 2>/dev/null || echo 1)
+    if ((rc != 0)); then
+        ((bg_failed != 0)) || bg_failed=$rc
+        echo "gate: $name stage failed (exit $rc)" >&2
+    fi
+done
+echo "   join waited $((SECONDS - stage_t0))s"
+((bg_failed == 0)) || exit "$bg_failed"
+stage_t0=$SECONDS
 
 echo "== test"
 # **Captured with `|| status=$?`, never bare.** Under `set -e` a failing
@@ -363,10 +415,8 @@ echo "== test"
 status=0
 echo "   test jobs: $jobs_mode ($jobs_why)"
 if [[ $jobs_mode == split ]]; then
-    # Built once first, in the same container (one memory limit), so a compile
-    # error prints once.
-    out="$(tools/dev.sh bash -c 'cargo test --locked --workspace --no-run && exec "$@"' sh \
-        /repo/tools/test-parallel.sh "${jobs[@]}" 2>&1)" || status=$?
+    # Already built by the test build stage above; the jobs only run.
+    out="$(tools/dev.sh bash /repo/tools/test-parallel.sh "${jobs[@]}" 2>&1)" || status=$?
 else
     out="$(tools/dev.sh cargo test --locked --no-fail-fast "${scope[@]}" 2>&1)" || status=$?
 fi

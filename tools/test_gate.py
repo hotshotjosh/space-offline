@@ -35,10 +35,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 STUB_DEV = """#!/usr/bin/env bash
 # Stub of tools/dev.sh for tools/test_gate.py: no container.
+for a in "$@"; do [[ $a == --no-run ]] && exit 0; done
 case "${1:-} ${2:-}" in
     "cargo test") cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
+    "cargo fmt") exit "${STUB_FMT_EXIT:-0}" ;;
     "cargo "*) exit 0 ;;
-    "bash -c") printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"; cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
+    "bash "*) printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"; cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     *) exec "$@" ;;
 esac
 """
@@ -341,7 +343,7 @@ class LandingTools(unittest.TestCase):
         self.assertIn("red b", g.stdout)
         self.assertIn("red c", g.stdout)
         self.assertNotIn("== gate passed", g.stdout)
-        self.assertNotIn("== test", g.stdout)
+        self.assertNotIn("\n== test\n", g.stdout)
 
     def test_markdown_under_tools_or_any_other_file_runs_the_full_gate(self) -> None:
         self.cargo_test("test result: FAILED. 0 passed; 1 failed\n", 101)
@@ -562,6 +564,45 @@ class LandingTools(unittest.TestCase):
     def test_parallel_script_runs_every_job_with_no_fail_fast(self) -> None:
         with open(os.path.join(HERE, "test-parallel.sh")) as f:
             self.assertIn("cargo test --locked --no-fail-fast", f.read())
+
+    # --- the overlapped host stages (#282) ----------------------------------------
+
+    MARK = "CARGO-TEST-RAN-3c9e\n"
+
+    def test_a_failing_python_test_fails_after_lint_and_before_the_test_run(self) -> None:
+        self.cargo_test(PASS + self.MARK)
+        self.commit("red py", ("tools/test_red.py", "print('red')\nraise SystemExit(1)\n"))
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 1, g.stdout + g.stderr)
+        self.assertIn("gate: tools/test_red.py failed", g.stderr)
+        self.assertNotIn(self.MARK, g.stdout)
+        self.assertNotIn("\n== test\n", g.stdout)
+        order = [g.stdout.index(m) for m in ("== lint", "== test build", "== python unit tests")]
+        self.assertEqual(order, sorted(order), g.stdout)
+
+    def test_a_format_red_stops_before_any_python_output(self) -> None:
+        flag = os.path.join(self.tmp, "py-ran")
+        self.commit("py", ("tools/test_flag.py", f"open({flag!r}, 'w').close()\n"))
+        self.env["STUB_FMT_EXIT"] = "1"
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 1, g.stdout + g.stderr)
+        self.assertNotIn("== python unit tests", g.stdout)
+        self.assertFalse(os.path.exists(flag))
+
+    def test_both_background_reports_print_in_a_fixed_order(self) -> None:
+        self.commit("slow py", ("tools/test_a_slow.py", "import time\ntime.sleep(2)\nprint('slow done')\n"),
+                    ("tools/test_b_fast.py", "print('fast done')\n"),
+                    ("tools/new-build.sh", "#!/usr/bin/env bash\necho '   deltas fast'\n"))
+        os.chmod(os.path.join(self.repo, "tools", "new-build.sh"), 0o755)
+        self.git("update-index", "--chmod=+x", "tools/new-build.sh")
+        self.git("commit", "-q", "-m", "exec bit")
+        g = self.run_tool("gate.sh")
+        self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
+        out = g.stdout
+        idx = [out.index(m) for m in ("== python unit tests", "tools/test_a_slow.py", "tools/test_b_fast.py",
+                                      "== build deltas", "deltas fast", "== test\n")]
+        self.assertEqual(idx, sorted(idx), out)
+        self.assertEqual(out.count("(overlapped)"), 2)
 
     # --- G3 --------------------------------------------------------------------
 
