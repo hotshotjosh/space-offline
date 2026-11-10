@@ -1495,6 +1495,33 @@ fn gm_spawn_activate_and_age_make_the_harvest_visible() {
     assert_eq!(by_id(reg.deltas(), sk.id).unwrap().state, 212);
 }
 
+#[test]
+fn age_after_activate_leaves_a_snapshot_with_the_credited_stock_last() {
+    let (mut reg, ..) = world();
+    at_spot(&mut reg, ALICE, P_REAGENT, 1_000.0);
+    slash_cmd::run(&mut reg, Some(ALICE), &["spawn", "nearest"], NOW);
+    let id = all(reg.deltas())[0].id;
+    slash_cmd::run(&mut reg, Some(ALICE), &["activate", &id.to_string()], NOW);
+    slash_cmd::run(&mut reg, Some(ALICE), &["age", &id.to_string(), "5"], NOW);
+    let aged = by_id(reg.deltas(), id).unwrap();
+    assert!(aged.sim().unsecured > 0);
+    let want = record(Msg::AllInSystem, &view(&reg, &aged, NOW));
+    let q = crate::gateway_out::take(&mut reg);
+    let last = q
+        .iter()
+        .rev()
+        .find(|(ty, ..)| ty.ends_with("AllInSolarSystemNotice"))
+        .expect("a whole-system snapshot");
+    // The snapshot holds the aged skyhook's record, byte for byte.
+    assert!(
+        last.1.windows(want.len()).any(|w| w == &want[..]),
+        "the last snapshot carries the credited stock"
+    );
+    // Nothing whole-system comes after the stocks notice that would undo it.
+    let pos = |name: &str| q.iter().rposition(|(ty, ..)| ty.ends_with(name)).unwrap();
+    assert!(pos("AllInSolarSystemNotice") < pos("ReagentSimulationsNotice"));
+}
+
 // ---------------------------------------------------------------------------
 // Round 2: a dispossessed owner, the frozen stock on the wire, the room in
 // the hold, and the cleanup's money

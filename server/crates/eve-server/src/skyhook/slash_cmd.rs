@@ -177,6 +177,13 @@ fn age(reg: &mut Registry, id: i64, cycles: u64, now: u64) -> String {
         sk.last_cycle = s.last_cycle;
     }
     put(reg.deltas_mut(), &sk);
+    // The whole-system notice goes first and the stocks notice last: an
+    // `AllInSolarSystemNotice` re-primes the client's cache wholesale, and
+    // an `activate` just before queued one built with stock 0, so the flush
+    // must end with a snapshot that carries the aged stock **[I]**
+    // (ci-1111 fci_skyhook_raid, "unsecured 0"; falsified if the raid's
+    // precondition still reads 0).
+    crate::skyhook::announce_all(reg, sk.system, now);
     announce_stocks(reg, &sk, now);
     format!(
         "skyhook {id} credited {cycles} cycles of {} s{}",
