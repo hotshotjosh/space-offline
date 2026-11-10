@@ -1607,8 +1607,13 @@ def eoci_main(EOCI_NAME):
         check('EngageTarget (the menu\'s own function) took', ok, text(v)[:200])
         lower, waited = wait_for(
             lambda: (lambda b: b is not None and before is not None
-                     and b[0] < before[0] - 0.0001)(bars_of(park2, sid)),
+                     and b[0] < before[0] - 0.00001)(bars_of(park2, sid)),
             timeout_ms=FIRE_BOUND_MS, step_ms=1000)
+        # Any fall is drone damage: no gun runs and the Tristan fits none.  One
+        # Hobgoblin took the shield 0.5 -> 0.499944 in 120 s (ci-1111, 5.6e-5):
+        # slot 2 client.log shows one drone hit every 4 s at about 1.87e-6 of the
+        # shield, ~30 hits in 120 s, so the old 1e-4 bound asked for more than
+        # one drone does.
         check('the shield is lower with the drones engaged and no gun running',
               bool(lower), 'was %s, now %s after %s ms' % (
                   text(before), text(bars_of(park2, sid)), text(waited)))
