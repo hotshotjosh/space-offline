@@ -1629,7 +1629,7 @@ mod tests {
                         operation_id: 99,
                         solar_system_id: 39_000_001,
                         constellation_id: 29_000_001,
-                        region_id: 19_000_001,
+                        region_id: 19_990_001,
                     }),
                     identity: Some(IdentityRecord {
                         race_id: 91,
@@ -1659,7 +1659,7 @@ mod tests {
                 item_id: 100_000_000,
                 type_id: 587,
                 owner_id: 90_000_001,
-                location_id: 60_012_526,
+                location_id: 60_712_526,
                 flag_id: 4,
                 quantity: 1,
                 group_id: 25,
@@ -1690,7 +1690,7 @@ mod tests {
             )],
             logoff_dates: vec![(90_000_001, 133_000_000_000_000_000)],
             character_description: vec![(90_000_001, "hello".to_owned())],
-            standings: vec![(90_000_001, 500_001, 2.5), (90_000_001, 1_000_125, -0.1)],
+            standings: vec![(90_000_001, 589_001, 2.5), (90_000_001, 1_980_125, -0.1)],
             // A running job, with **every `Option` populated** so that the
             // round trip exercises the `-1` sentinel in both directions
             // rather than only the `None` one.
@@ -1699,16 +1699,16 @@ mod tests {
                 activity_id: 1,
                 blueprint_id: 100_000_002,
                 blueprint_type_id: 21_858,
-                blueprint_location_id: 60_012_526,
+                blueprint_location_id: 60_712_526,
                 blueprint_location_flag_id: 4,
                 blueprint_copy: false,
-                facility_id: 60_012_526,
+                facility_id: 60_712_526,
                 owner_id: 90_000_001,
                 status: crate::industry::Status::Installed,
                 installer_id: 90_000_001,
                 completed_character_id: None,
-                solar_system_id: 30_000_001,
-                station_id: 60_012_526,
+                solar_system_id: 30_990_001,
+                station_id: 60_712_526,
                 start_date: 133_000_000_000_000_000,
                 end_date: 133_000_003_000_000_000,
                 pause_date: None,
@@ -1721,7 +1721,7 @@ mod tests {
                 product_type_id: 21_857,
                 optional_type_id: None,
                 optional_type_id2: None,
-                output_location_id: 60_012_526,
+                output_location_id: 60_712_526,
                 output_flag_id: 4,
             }],
             next_job_id: 2,
@@ -2001,7 +2001,7 @@ mod tests {
         let mut d = sample_deltas();
         d.put(
             "site",
-            v(&["30000001", "a\tb", ""]),
+            v(&["30990001", "a\tb", ""]),
             v(&["x\ny", "%25", ""]),
         );
         d.put("arc", v(&["90000001", "5"]), Vec::new());
@@ -2022,7 +2022,7 @@ mod tests {
     /// written back byte for byte. Unknown *record types* are still skipped.
     #[test]
     fn an_unknown_kind_is_preserved_verbatim() {
-        let line = "delta\tnot-a-kind-yet\t2\t30000001\tk%09\t1.25\t\tlast";
+        let line = "delta\tnot-a-kind-yet\t2\t30990001\tk%09\t1.25\t\tlast";
         let text = format!("{MAGIC} {SCHEMA}\n{line}\nfuturething\tx\n");
         let s = parse(&text).expect("parses");
         let mut reg = crate::service::Registry::new(crate::model::SandboxConfig::default());
@@ -2768,9 +2768,9 @@ mod tests {
     /// Invented ids (no client data in tests). Alice is seeded at the
     /// `Character` default's station; Bob at a second station in her
     /// system, which is how this server knows it exists.
-    const FX3_ALICE: i64 = 1_000_001;
+    const FX3_ALICE: i64 = 1_980_001;
     const FX3_ALICE_SHIP: i64 = 100_000_001;
-    const FX3_BOB: i64 = 1_000_002;
+    const FX3_BOB: i64 = 1_980_002;
     const FX3_SECOND: i64 = 69_000_002;
 
     fn fx3_config() -> crate::model::SandboxConfig {

@@ -404,7 +404,7 @@ fn destiny_stamp(push: &dyn crate::notify::Push) -> u32 {
 #[test]
 fn tp_puts_the_ship_past_the_clients_minimum_warp_distance() {
     const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const MIN_WARP: f64 = 150_000.0;
     let alice = Character {
         character_id: ALICE,
@@ -3547,14 +3547,14 @@ fn the_price_history_set_argument_is_unwrapped_and_every_id_answered() {
             PyValue::Global(b"__builtin__.set".to_vec()),
             PyValue::Tuple(vec![PyValue::List(vec![
                 PyValue::Int(16_272),
-                PyValue::Int(33_681),
+                PyValue::Int(990_993_681),
                 PyValue::Int(34),
             ])]),
         ])),
         list: Vec::new(),
         dict: Vec::new(),
     };
-    assert_eq!(type_ids_of(Some(&wrapped)), vec![16_272, 33_681, 34]);
+    assert_eq!(type_ids_of(Some(&wrapped)), vec![16_272, 990_993_681, 34]);
 
     let mut r = registry();
     let answer = r

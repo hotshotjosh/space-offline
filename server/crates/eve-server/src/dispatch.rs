@@ -3000,7 +3000,7 @@ mod tests {
         let pilot = |id: i64, ship: i64| Character {
             character_id: id,
             ship_id: ship,
-            station_id: Some(60_000_811),
+            station_id: Some(60_700_811),
             ..Character::default()
         };
         let mut reg = Registry::new(crate::model::SandboxConfig {
@@ -3605,8 +3605,8 @@ mod tests {
 
     // ---- read turns (PA-12a) ----
 
-    const PILOT: i64 = 1_000_001;
-    const SYSTEM: i64 = 30_000_001;
+    const PILOT: i64 = 1_980_001;
+    const SYSTEM: i64 = 30_990_001;
 
     thread_local! {
         static SERIAL: std::cell::Cell<i64> = const { std::cell::Cell::new(1) };

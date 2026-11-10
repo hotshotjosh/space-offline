@@ -3456,7 +3456,7 @@ pub(crate) mod tests {
     use std::time::Instant;
 
     pub(crate) const ALICE: i64 = 1_000_001;
-    pub(crate) const BOB: i64 = 1_000_002;
+    pub(crate) const BOB: i64 = 1_980_002;
     pub(crate) const ALICE_SHIP: i64 = 100_000_001;
     pub(crate) const BOB_SHIP: i64 = 100_000_002;
     const BLASTER: i64 = 100_000_050;
@@ -3563,7 +3563,7 @@ pub(crate) mod tests {
     /// never added to her park, then or at the next reconcile.
     #[test]
     fn an_off_grid_fight_reaches_no_one_off_grid() {
-        const CAROL: i64 = 1_000_003;
+        const CAROL: i64 = 1_980_003;
         const CAROL_SHIP: i64 = 100_000_003;
         let mut reg = locked_with(&[(CAROL, CAROL_SHIP)]);
         let far = [1.0e12, 0.0, 0.0];
@@ -4256,7 +4256,7 @@ pub(crate) mod tests {
         assert!(reg.locks().targeters_of(BOB_POD).is_empty());
     }
 
-    const CAROL: i64 = 1_000_003;
+    const CAROL: i64 = 1_980_003;
     const CAROL_SHIP: i64 = 100_000_003;
 
     /// Alice has Bob locked and a third ship, Carol's, in her park; a
@@ -4978,7 +4978,7 @@ pub(crate) mod tests {
                 row(39_000_202, "", "0.2", ""),
                 row(39_000_203, "", "0.9", ""),
                 row(39_000_204, "", "-0.9", "990001"),
-                row(31_000_207, "", "-1.0", "990002"),
+                row(31_990_207, "", "-1.0", "990002"),
                 row(39_000_205, &FACTION_TRIGLAVIAN.to_string(), "-0.4", ""),
                 row(
                     39_000_206,
@@ -5003,9 +5003,9 @@ pub(crate) mod tests {
         assert_eq!(drop_area(&u, 39_000_203), DropArea::Other);
         // A class on a known-space row is not a wormhole: the id range is.
         assert_eq!(drop_area(&u, 39_000_204), DropArea::NullSec);
-        assert_eq!(drop_area(&u, 31_000_207), DropArea::Wormhole);
+        assert_eq!(drop_area(&u, 31_990_207), DropArea::Wormhole);
         assert_eq!(
-            drop_area(&u, 31_000_208),
+            drop_area(&u, 31_990_208),
             DropArea::Wormhole,
             "not in the table"
         );
@@ -5258,12 +5258,12 @@ pub(crate) mod tests {
     fn loot_rights_follow_the_clients_rule() {
         let mut reg = alice_has_bob_locked();
         let wr = bob_wrecked(&mut reg);
-        let npc_corp = 1_000_009;
+        let npc_corp = 1_980_009;
         let player_corp = 98_000_001;
         let corp_of = |reg: &mut Registry, id: i64, corp: i64| {
             reg.character_mut(id).expect("a pilot").corporation_id = corp;
         };
-        // A player's id: this fixture's 1_000_002 is in `IsNPC`'s range, and
+        // A player's id: this fixture's 1_980_002 is in `IsNPC`'s range, and
         // the client would call any wreck of his an NPC's -- free to all.
         let wr_in = |corp: i64| Wreck {
             owner_id: 90_000_002,

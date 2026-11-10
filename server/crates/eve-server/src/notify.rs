@@ -574,7 +574,7 @@ mod tests {
                 balance: 1.0,
             }),
             Box::new(InvalidateLocations {
-                location_ids: vec![60_012_526],
+                location_ids: vec![60_712_526],
             }),
             Box::new(crate::skill::ForcedRefresh),
         ];
@@ -616,7 +616,7 @@ mod tests {
         );
         assert_eq!(
             InvalidateLocations {
-                location_ids: vec![60_012_526],
+                location_ids: vec![60_712_526],
             }
             .audience(),
             None
