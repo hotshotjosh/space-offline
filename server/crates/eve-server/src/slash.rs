@@ -796,10 +796,33 @@ fn create_in_hold(reg: &mut Registry, owner: i64, ship: i64, name: &str, quantit
         quantity,
         to: crate::item::Slot::new(owner, ship, crate::fitting::FLAG_CARGO),
     }];
-    let changes = match reg.apply_items(&plan) {
+    // **No location invalidation for the ship [V].** `apply_items` would queue
+    // `OnInvalidateCacheForLocations` for the active ship, which sets the
+    // client's cargo container `moniker = None` (`invCache.py:582-589`) while
+    // the hold tracker, run from the `OnItemChange` of the same batch, still
+    // holds it and calls `None.List` (`invCache.py:1100-1101`, `:1284-1286`).
+    // `spawned` sends `{ixLocationID: 0}` (`notify.rs:272-277`), so the
+    // broker's keyWas/keyIs differ and a held ship container gets the
+    // `OnItemChange` (`invCache.py:265-275`); `_ProcessItemChange` caches a
+    // newly arrived item (`invCache.py:1294-1301`, `:1369-1373`). One the
+    // client does not hold lists fresh from the server. The quiet path skips
+    // `industry::refresh_monitors` on purpose: a GM create needs no industry
+    // refresh.
+    let changes = match reg.apply_items_quiet(&plan) {
         Ok(c) => c,
         Err(e) => return format!("{e}"),
     };
+    for c in &changes {
+        if let crate::item::Change::Created { item_id, .. } = c
+            && let Some(item) = reg.item(*item_id).cloned()
+        {
+            let row = reg.item_row_value(&item);
+            reg.push(crate::notify::Addressed {
+                to: Some(vec![owner]),
+                inner: Box::new(crate::notify::ItemChange::spawned(row)),
+            });
+        }
+    }
     let ids: Vec<String> = changes
         .iter()
         .filter_map(|c| match c {
@@ -868,27 +891,74 @@ mod tests {
         }
     }
 
+    /// A world on the fixture content and the name of a stackable typedata type
+    /// (invented rows; no client data).
+    fn space_world() -> (Registry, i64, i64, String) {
+        let c = std::sync::Arc::new(crate::content::Content::fixture());
+        let td = {
+            crate::typedata::installed_in(&c)
+                .table()
+                .types()
+                .filter(|r| r.published)
+                .filter_map(|r| crate::typedata::item_in(&c, r.type_id))
+                .find(|t| !t.singleton)
+                .map(|t| t.name.to_string())
+        };
+        let mut reg = Registry::new(crate::model::SandboxConfig::default()).with_content(c);
+        let ch = reg.config().characters[0].clone();
+        crate::destiny::on_ballpark_bind(&mut reg, Some(ch.character_id));
+        assert_eq!(reg.docked_station(ch.character_id), None);
+        (
+            reg,
+            ch.character_id,
+            ch.ship_id,
+            td.expect("a stackable typedata type"),
+        )
+    }
+
     /// In space `/createitem` puts the stack in the ship's cargo hold, not at
     /// location 0.
     #[test]
     fn createitem_in_space_goes_to_the_ship_hold() {
-        let mut reg = Registry::new(crate::model::SandboxConfig::default());
-        let c = reg.config().characters[0].clone();
-        crate::destiny::on_ballpark_bind(&mut reg, Some(c.character_id));
-        assert_eq!(reg.docked_station(c.character_id), None);
-        let name = crate::item::SPAWNABLE
-            .iter()
-            .find(|t| !t.singleton)
-            .expect("a stackable spawnable type")
-            .name;
+        let (mut reg, char_id, ship, name) = space_world();
         let before = reg.store().items().len();
-        createitem(&mut reg, Some(c.character_id), &[name, "3"]).unwrap();
+        createitem(&mut reg, Some(char_id), &[&name, "3"]).unwrap();
         let new: Vec<_> = reg.store().items().iter().skip(before).collect();
         assert_eq!(new.len(), 1);
         assert_eq!(
             (new[0].location_id, new[0].flag_id, new[0].quantity),
-            (c.ship_id, crate::fitting::FLAG_CARGO, 3)
+            (ship, crate::fitting::FLAG_CARGO, 3)
         );
         assert!(reg.store().items().iter().all(|i| i.location_id != 0));
+    }
+
+    /// The in-space create tells the owner by one `OnItemChange` and does not
+    /// invalidate the ship's inventory (the client's hold tracker then lists a
+    /// dropped container).
+    #[test]
+    fn createitem_in_space_pushes_an_item_change_and_no_invalidation() {
+        let (mut reg, char_id, ship, name) = space_world();
+        reg.take_pending_raw();
+        createitem(&mut reg, Some(char_id), &[&name, "2"]).unwrap();
+        let held = reg.store().items().iter().any(|i| {
+            (i.location_id, i.flag_id, i.quantity) == (ship, crate::fitting::FLAG_CARGO, 2)
+        });
+        assert!(held, "the stack sits at (ship, FLAG_CARGO)");
+        let pushes = reg.take_pending_raw();
+        let names: Vec<&str> = pushes.iter().map(|(_, p)| p.to_push().0).collect();
+        assert_eq!(
+            names.iter().filter(|n| **n == "OnItemChange").count(),
+            1,
+            "{names:?}"
+        );
+        assert!(
+            !names.contains(&"OnInvalidateCacheForLocations"),
+            "{names:?}"
+        );
+        let to_char = pushes.iter().any(|(_, p)| {
+            p.to_push().0 == "OnItemChange"
+                && format!("{p:?}").contains(&format!("to: Some([{char_id}])"))
+        });
+        assert!(to_char, "the item change goes to the char: {pushes:?}");
     }
 }
