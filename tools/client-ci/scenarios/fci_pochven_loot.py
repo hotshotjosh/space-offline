@@ -15,12 +15,18 @@ then five times `/entity deploy 1 <the Triglavian battleship read by name>` and 
 Checks:
 
 a. A wreck is left where each battleship died, its loot list opens, and its slim's
-   `ownerID` is an NPC owner (not 0, not the pilot).
-b. Over the five kills at least one wreck holds a Survey Database (type found by
-   name, group 1995 **[V-data]**: `Triglavian Survey Database` in
-   the content bundle's `types/typedata.tsv`, the only type of that name).  The `[A]` rate of 0.9
-   gives a 99.999 % chance over five kills, so a failure means the path is missing,
-   not bad luck.
+   `ownerID` is the pilot, the loot-right holder **[I]**: the client treats an NPC-owned
+   wreck as lootable by anyone (`Park.HaveLootRight`, michelle.py:1418-1423), so the server
+   gives a loot-restricted NPC wreck the holder as owner (`combat::npc_wreck_owner`, itself [A]: from EvEJS, combat.rs:2915-2919).
+   Falsifier: a TQ capture of an NPC wreck slim whose `ownerID` is the NPC corporation.
+b. Over the five kills at least one wreck holds a Triglavian data item of group 1995
+   (the Pochven table's battleship row draws any type of that group, five in the installed
+   type data, not only the Survey Database).  The `[A]` rate of 0.9 per kill gives a
+   99.999 % chance of at least one group-1995 stack over five kills, so a failure means the
+   path is missing, not bad luck.  Whether PV-9 means the Survey Database itself is the
+   owner's call (a content row change, not this scenario).
+Before each kill the pilot is healed (`/heal me`): the battleship shoots back for the whole
+fight and a dead Tempest ends the run.
 c. No new client traceback.
 
 No type id is written in this file; every type is read from the client by name.
@@ -1386,7 +1392,6 @@ def eoci_main(EOCI_NAME):
     AMMO = 'emp l'
     GUNS = 6
     TRIG_BATTLESHIP = 'raznaborg leshak'
-    SURVEY = 'survey database'
     SURVEY_GROUP = 1995     # [V-data] group of 'Triglavian Survey Database' (out/content/types/typedata.tsv)
     KILLS = 5
     KILL_WAIT_MS = 480000
@@ -1453,9 +1458,10 @@ def eoci_main(EOCI_NAME):
         gun = type_ids_named(GUN, exact=True)
         ammo = type_ids_named(AMMO, exact=True)
         raz = type_ids_named(TRIG_BATTLESHIP, exact=True)
-        survey = [t for t in type_ids_named(SURVEY, limit=40) if group_of(t) == SURVEY_GROUP]
+        ok_s, ids_s = safe(lambda: list(__import__('evetypes').GetTypeIDsByGroup(SURVEY_GROUP)))
+        survey = ids_s if ok_s and ids_s else []
         precondition('the client knows the Tempest, the gun, the ammo, a Triglavian battleship '
-                     'and a Survey Database',
+                     'and a type of group 1995',
                      bool(hull and gun and ammo and raz and survey),
                      'hull=%s gun=%s ammo=%s raz=%s survey=%s'
                      % (text(hull), text(gun), text(ammo), text(raz), text(survey)))
@@ -1521,8 +1527,16 @@ def eoci_main(EOCI_NAME):
             return
         park = get_michelle().GetBallpark()
         me = getattr_safe(sess, 'charid')
+        hull_ship = getattr_safe(sess, 'shipid')
         held = []           # per kill: (wreck ball, owner, [(type, qty)])
         for n in range(KILLS):
+            gm_check('GM: /heal me (kill %d)' % (n + 1), '/heal me', expect=['healed'])
+            still = getattr_safe(sess, 'shipid') == hull_ship
+            precondition('kill %d: still in the Tempest' % (n + 1), still,
+                         'session.shipid %s, the Tempest %s' % (
+                             text(getattr_safe(sess, 'shipid')), text(hull_ship)))
+            if not still:
+                break
             before = set([b for b, _s in wreck_balls(park)])
             gm_check('GM: deploy one Triglavian battleship (kill %d)' % (n + 1),
                      '/entity deploy 1 %s' % text(raz[0]))
@@ -1550,6 +1564,7 @@ def eoci_main(EOCI_NAME):
                                     timeout_ms=KILL_WAIT_MS, step_ms=1000)
             for m in guns:
                 deactivate_module(m.itemID)
+            gm_check('GM: /heal me after kill %d' % (n + 1), '/heal me', expect=['healed'])
             check('kill %d: the battleship is destroyed (it leaves the park)' % (n + 1),
                   bool(dead), 'after %s ms; approach: %s' % (text(waited), detail))
             if not dead:
@@ -1572,23 +1587,27 @@ def eoci_main(EOCI_NAME):
                     rows.append((getattr_safe(r, 'typeID'), getattr_safe(r, 'stacksize') or 1))
             held.append((wreck, getattr_safe(park.slimItems.get(wreck), 'ownerID'), ok, rows))
 
-        # a. a wreck with an owner that is neither 0 nor the pilot, and a loot window that opens
+        # a. a wreck whose slim ownerID is the pilot (the loot-right holder), and a loot window
+        # that opens
         check('a: at least one wreck was left and its loot list opened without raising',
               any(h[2] for h in held), '%d wreck(s) over %d kill(s)' % (len(held), KILLS))
         for h in held:
-            check('a: the wreck %s has an NPC owner (not 0, not the pilot)' % text(h[0]),
-                  bool(h[1]) and h[1] != me, 'ownerID %s, pilot %s' % (text(h[1]), text(me)))
-        # b. over five kills at least one wreck holds a Survey Database.  The [A] chance of
-        # 0.9 per kill makes none in five a one in a hundred thousand: a failure means the
-        # path is missing (the wreck_extras line, the table, or the type pool), not luck.
+            # [I] michelle.py:1418-1423 HaveLootRight: an NPC-owned slim is lootable by anyone,
+            # so a restricted wreck carries the right holder as ownerID (combat.rs
+            # npc_wreck_owner; that server rule is [A] too, from EvEJS).  Falsifier: a TQ NPC wreck slim with the NPC corp as ownerID.
+            check("a: the wreck %s's ownerID is the pilot (the loot-right holder)" % text(h[0]),
+                  bool(h[1]) and h[1] == me, 'ownerID %s, pilot %s' % (text(h[1]), text(me)))
+        # b. over five kills at least one wreck holds a data item of group 1995.  The [A]
+        # chance of 0.9 per kill makes none in five a one in a hundred thousand: a failure
+        # means the path is missing (the wreck_extras line, the table, or the type pool).
         got = []
         for h in held:
             for t, q in h[3]:
                 if t in survey:
                     got.append((h[0], t, q))
-        check('b: a wreck holds a Survey Database among %d kill(s) (a failure means the path '
-              'is missing, not bad luck)' % len(held),
-              len(got) > 0, 'survey stacks %s; wreck contents %s'
+        check('b: a wreck holds a Triglavian data item of group 1995 (the Pochven table\'s row) '
+              'among %d kill(s)' % len(held),
+              len(got) > 0, 'group-1995 stacks %s; wreck contents %s'
               % (text(got), text([(h[0], h[3]) for h in held])))
         # c. no traceback
         no_new_tracebacks('pochven loot', mark)
