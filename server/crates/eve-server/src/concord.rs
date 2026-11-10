@@ -2008,7 +2008,7 @@ mod tests {
     const SHIP: [i64; 2] = [100_000_001, 100_000_002];
     /// An invented hull: the typedata fixture's frigate.
     const HULL: i64 = 990_000_001;
-    const SYS: i64 = 30_000_003;
+    const SYS: i64 = 30_990_003;
     /// An invented station and gate ball in `SYS`.
     const STATION: i64 = 990_000_101;
     const GATE: i64 = 990_000_102;
@@ -2031,7 +2031,7 @@ mod tests {
     fn universe_of(security: f64, faction: &str) -> crate::celestial::Universe {
         crate::celestial::Universe::parse(
             &[format!(
-                "{SYS}\t19000001\t29000001\t\t{faction}\t{security}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
+                "{SYS}\t19990001\t29000001\t\t{faction}\t{security}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
             )],
             &[],
             &[],
@@ -2943,7 +2943,7 @@ mod tests {
         let mut text = String::new();
         for (id, x) in GATES {
             text += &format!(
-                "gate\t{id}\t990001\t{GATE_RADIUS}\t{x}\t0\t0\t{SYS}\t{}\t30000099\n",
+                "gate\t{id}\t990001\t{GATE_RADIUS}\t{x}\t0\t0\t{SYS}\t{}\t30990099\n",
                 id + 1000
             );
         }

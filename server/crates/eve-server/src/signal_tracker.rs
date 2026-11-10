@@ -872,8 +872,8 @@ mod tests {
     use crate::pyutil::dict_get;
     use crate::space_state::{Motion, Presence};
 
-    const PILOT: i64 = 1_000_001;
-    const SYSTEM: i64 = 30_000_001;
+    const PILOT: i64 = 1_980_001;
+    const SYSTEM: i64 = 30_990_001;
 
     fn world() -> Registry {
         let mut reg = Registry::new(SandboxConfig {

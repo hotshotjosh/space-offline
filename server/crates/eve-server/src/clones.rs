@@ -1333,13 +1333,13 @@ mod clones_tests {
 
     fn elsewhere() -> StationRef {
         StationRef {
-            station_id: 60_000_004,
-            owner_id: 1_000_002,
-            type_id: 1_529,
+            station_id: 60_700_004,
+            owner_id: 1_980_002,
+            type_id: 990961529,
             operation_id: 26,
-            solar_system_id: 30_002_780,
-            constellation_id: 20_000_406,
-            region_id: 10_000_033,
+            solar_system_id: 30_992_780,
+            constellation_id: 20_990_406,
+            region_id: 10_990_033,
         }
     }
 

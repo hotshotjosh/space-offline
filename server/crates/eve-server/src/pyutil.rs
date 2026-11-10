@@ -385,20 +385,20 @@ mod tests {
     #[test]
     fn a_dict_key_is_the_second_element_of_each_pair() {
         // `{"dstID": 60012526}` exactly as the wire carries it.
-        let entries = vec![(PyValue::Int(60_012_526), bstr("dstID"))];
+        let entries = vec![(PyValue::Int(60_712_526), bstr("dstID"))];
         assert_eq!(
             pairs_get(&entries, b"dstID"),
-            Some(&PyValue::Int(60_012_526)),
+            Some(&PyValue::Int(60_712_526)),
             "the key is the second element and the value is the first"
         );
         assert_eq!(
-            pairs_get(&entries, b"60012526"),
+            pairs_get(&entries, b"60712526"),
             None,
             "and the value is not a key: a reader that matched the first slot              would be the §39 defect"
         );
         // The same through `dict_get`, since they must not drift apart again.
         let d = PyValue::Dict(entries);
-        assert_eq!(dict_get(&d, b"dstID"), Some(&PyValue::Int(60_012_526)));
+        assert_eq!(dict_get(&d, b"dstID"), Some(&PyValue::Int(60_712_526)));
         // And `pypairs` builds what these read: one inversion, stated once.
         assert_eq!(
             pairs_get(

@@ -310,8 +310,8 @@ mod tests {
     use crate::space_state::{Motion, Presence};
     use std::sync::Arc;
 
-    const SYSTEM: i64 = 30_000_001;
-    const OTHER_SYSTEM: i64 = 30_000_002;
+    const SYSTEM: i64 = 30_990_001;
+    const OTHER_SYSTEM: i64 = 30_990_002;
     /// A character the default sandbox config knows.
     const ALICE: i64 = 90_000_001;
     const ALICE_SHIP: i64 = 100_000_001;

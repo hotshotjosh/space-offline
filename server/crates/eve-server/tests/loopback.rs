@@ -2310,7 +2310,7 @@ fn the_owner_and_location_primes_are_answered_in_the_tuple_form() {
         ),
         (
             "GetMultiLocationsEx",
-            ids(vec![60_000_004, 30_000_001]),
+            ids(vec![60_700_004, 30_000_001]),
             "locationID",
         ),
     ] {

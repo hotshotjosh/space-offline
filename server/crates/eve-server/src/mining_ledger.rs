@@ -155,8 +155,8 @@ mod tests {
     use super::*;
 
     const T0: i64 = 133_000_000_000_000_000;
-    const CHAR: i64 = 1_000_001;
-    const SYS: i64 = 30_000_001;
+    const CHAR: i64 = 1_980_001;
+    const SYS: i64 = 30_990_001;
     const VELD: i64 = 1230;
     const SCORD: i64 = 1228;
 

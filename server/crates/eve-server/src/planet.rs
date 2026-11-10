@@ -7602,27 +7602,27 @@ mod tests {
     #[test]
     fn every_planet_has_one_office_and_nothing_else_does() {
         let catalogue = crate::celestial::Catalogue::parse(
-            "#system\t30000001\t20000001\t10000001\n\
-             #system\t30000003\t20000001\t10000001\n\
-             planet\t40000002\t11\t5060000.0\t161891117336.0\t21288951986.0\t-73529712226.0\t30000001\t0\t0\n\
-             moon\t40000003\t14\t1000000.0\t161891117336.0\t21288951986.0\t-73500000000.0\t30000001\t0\t0\n\
-             belt\t40000004\t15\t0.0\t161000000000.0\t21000000000.0\t-73000000000.0\t30000001\t0\t0\n\
-             planet\t40000041\t2016\t5130000.0\t-100000000000.0\t0.0\t50000000000.0\t30000003\t0\t0\n",
+            "#system\t30990001\t20990001\t10990001\n\
+             #system\t30990003\t20990001\t10990001\n\
+             planet\t40000002\t11\t5060000.0\t161891117336.0\t21288951986.0\t-73529712226.0\t30990001\t0\t0\n\
+             moon\t40000003\t14\t1000000.0\t161891117336.0\t21288951986.0\t-73500000000.0\t30990001\t0\t0\n\
+             belt\t40000004\t15\t0.0\t161000000000.0\t21000000000.0\t-73000000000.0\t30990001\t0\t0\n\
+             planet\t40000041\t2016\t5130000.0\t-100000000000.0\t0.0\t50000000000.0\t30990003\t0\t0\n",
         );
         let s = customs_statics();
-        let here = customs_offices_in(&catalogue, &s, 30_000_001);
+        let here = customs_offices_in(&catalogue, &s, 30_990_001);
         assert_eq!(here.len(), 1);
         let o = here[0];
         assert_eq!(o.planet_id, 40_000_002);
-        assert_eq!(o.solar_system_id, 30_000_001);
+        assert_eq!(o.solar_system_id, 30_990_001);
         assert_eq!(o.type_id, TYPE_OFFICE);
         assert_eq!(customs_office(&catalogue, &s, o.item_id), Some(o));
-        assert_eq!(customs_offices_in(&catalogue, &s, 30_000_003).len(), 1);
+        assert_eq!(customs_offices_in(&catalogue, &s, 30_990_003).len(), 1);
         assert_eq!(
             customs_office(&catalogue, &s, customs_office_id(40_000_003)),
             None
         );
-        assert!(customs_offices_in(&catalogue, &Statics::new(), 30_000_001).is_empty());
+        assert!(customs_offices_in(&catalogue, &Statics::new(), 30_990_001).is_empty());
         // Clear of the planet: a ship that reaches it is not inside the body.
         let d = (0..3)
             .map(|i| (o.position[i] - [161891117336.0, 21288951986.0, -73529712226.0][i]).powi(2))
@@ -7636,10 +7636,10 @@ mod tests {
     #[test]
     fn an_offices_slim_carries_what_the_client_reads_off_it() {
         let catalogue = crate::celestial::Catalogue::parse(
-            "#system\t30000001\t20000001\t10000001\n\
-             planet\t40000002\t11\t5060000.0\t1.0e11\t0.0\t-7.0e10\t30000001\t0\t0\n",
+            "#system\t30990001\t20990001\t10990001\n\
+             planet\t40000002\t11\t5060000.0\t1.0e11\t0.0\t-7.0e10\t30990001\t0\t0\n",
         );
-        let o = customs_offices_in(&catalogue, &customs_statics(), 30_000_001)[0];
+        let o = customs_offices_in(&catalogue, &customs_statics(), 30_990_001)[0];
         let eve_marshal::PyValue::Instance { state, .. } = o.slim() else {
             panic!("a foo.SlimItem instance")
         };

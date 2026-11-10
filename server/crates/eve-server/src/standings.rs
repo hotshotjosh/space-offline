@@ -503,11 +503,11 @@ mod standings_tests {
     #[test]
     fn a_set_standing_is_served_back_as_a_row() {
         let (mut reg, me) = registry();
-        let answer = set_standing_slash(&mut reg, Some(me), &["500001", "me", "5.5"]);
+        let answer = set_standing_slash(&mut reg, Some(me), &["589001", "me", "5.5"]);
         assert!(said(&answer).contains("5.50"), "{}", said(&answer));
         assert_eq!(
             rows_of(&get_char_standings(&mut reg, Some(me))),
-            vec![(500_001, 5.5)]
+            vec![(589_001, 5.5)]
         );
     }
 
@@ -516,8 +516,8 @@ mod standings_tests {
     #[test]
     fn setting_zero_removes_the_row() {
         let (mut reg, me) = registry();
-        set_standing_slash(&mut reg, Some(me), &["1000125", "me", "3"]);
-        set_standing_slash(&mut reg, Some(me), &["1000125", "me", "0.0"]);
+        set_standing_slash(&mut reg, Some(me), &["1980125", "me", "3"]);
+        set_standing_slash(&mut reg, Some(me), &["1980125", "me", "0.0"]);
         assert!(rows_of(&get_char_standings(&mut reg, Some(me))).is_empty());
         assert!(reg.standings.entries().is_empty());
     }
@@ -527,15 +527,15 @@ mod standings_tests {
     fn both_client_grammars_parse() {
         let (mut reg, me) = registry();
         // `qa_tools.py:156`, which sends no leading slash.
-        set_standing_slash(&mut reg, Some(me), &["3010110", "me", "10.0"]);
-        assert_eq!(reg.standings.get(me, 3_010_110), 10.0);
+        set_standing_slash(&mut reg, Some(me), &["3980110", "me", "10.0"]);
+        assert_eq!(reg.standings.get(me, 3_980_110), 10.0);
         // `svc_slash.py:1397`, split on whitespace by `Registry::slash`:
         // a quoted from-id, a numeric character id, and a quoted reason
         // that the split has broken into words.
-        let line = format!("\"500002\" {me} -2.5 \"Mass standing change by GM Person\"");
+        let line = format!("\"589002\" {me} -2.5 \"Mass standing change by GM Person\"");
         let words: Vec<&str> = line.split_whitespace().collect();
         set_standing_slash(&mut reg, Some(me), &words);
-        assert_eq!(reg.standings.get(me, 500_002), -2.5);
+        assert_eq!(reg.standings.get(me, 589_002), -2.5);
     }
 
     /// `GetStanding` reads `npccharstandings` only for an `IsNPC` from-id,
@@ -544,9 +544,9 @@ mod standings_tests {
     fn the_npc_test_is_the_clients() {
         assert!(!is_npc_owner(9_999));
         assert!(is_npc_owner(10_000));
-        assert!(is_npc_owner(500_001));
-        assert!(is_npc_owner(1_000_125));
-        assert!(is_npc_owner(3_010_110));
+        assert!(is_npc_owner(589_001));
+        assert!(is_npc_owner(1_980_125));
+        assert!(is_npc_owner(3_980_110));
         assert!(is_npc_owner(89_999_999));
         assert!(!is_npc_owner(90_000_000));
         let (mut reg, me) = registry();
@@ -591,7 +591,7 @@ mod standings_tests {
     fn a_set_pushes_the_modification_then_the_exact_value_to_the_target() {
         let (mut reg, me) = registry();
         reg.take_pending();
-        set_standing_slash(&mut reg, Some(me), &["500001", "me", "4"]);
+        set_standing_slash(&mut reg, Some(me), &["589001", "me", "4"]);
         let pushes: Vec<_> = reg
             .take_pending()
             .into_iter()
@@ -610,7 +610,7 @@ mod standings_tests {
             panic!("{mods:?}")
         };
         assert_eq!(m.len(), 5, "unpacked into exactly five");
-        assert_eq!(m[0], PyValue::Int(500_001));
+        assert_eq!(m[0], PyValue::Int(589_001));
         assert_eq!(m[1], PyValue::Int(me));
         let PyValue::Real(r) = m[2] else {
             panic!("{m:?}")
@@ -623,16 +623,16 @@ mod standings_tests {
         // `OnStandingSet(self, fromID, toID, standing)`.
         assert_eq!(
             args,
-            &vec![PyValue::Int(500_001), PyValue::Int(me), PyValue::Real(4.0)]
+            &vec![PyValue::Int(589_001), PyValue::Int(me), PyValue::Real(4.0)]
         );
     }
 
     #[test]
     fn standings_round_trip_through_entries() {
         let mut s = Standings::default();
-        s.set(1, 500_001, 2.0);
-        s.set(1, 1_000_125, -1.5);
-        s.set(2, 500_001, 9.0);
+        s.set(1, 589_001, 2.0);
+        s.set(1, 1_980_125, -1.5);
+        s.set(2, 589_001, 9.0);
         assert_eq!(Standings::restore(s.entries()), s);
     }
 
@@ -642,7 +642,7 @@ mod standings_tests {
     fn a_set_standing_survives_the_world_file() {
         let (mut reg, me) = registry();
         reg.take_dirty();
-        set_standing_slash(&mut reg, Some(me), &["500001", "me", "-7.25"]);
+        set_standing_slash(&mut reg, Some(me), &["589001", "me", "-7.25"]);
         assert!(reg.take_dirty(), "a set must mark the world dirty");
         let dir = std::env::temp_dir().join(format!(
             "eve-standings-{}-{:?}",
@@ -658,15 +658,15 @@ mod standings_tests {
         let _ = std::fs::remove_dir_all(&dir);
         let (mut fresh, _) = registry();
         assert_eq!(
-            fresh.standings.get(me, 500_001),
+            fresh.standings.get(me, 589_001),
             0.0,
             "or this proves nothing"
         );
         fresh.apply_snapshot(snap);
-        assert_eq!(fresh.standings.get(me, 500_001), -7.25);
+        assert_eq!(fresh.standings.get(me, 589_001), -7.25);
         assert_eq!(
             rows_of(&get_char_standings(&mut fresh, Some(me))),
-            vec![(500_001, -7.25)]
+            vec![(589_001, -7.25)]
         );
     }
 }

@@ -2083,7 +2083,7 @@ mod tests {
             type_id: 587,
             owner_id: 90_000_001,
             char_id: Some(90_000_001),
-            corp_id: Some(1_000_009),
+            corp_id: Some(1_980_009),
             response_thresholds: None,
         };
         let keys = |v: PyValue| -> Vec<(PyValue, PyValue)> {
@@ -3597,7 +3597,7 @@ mod tests {
     fn a_crowd_far_from_the_station_does_not_push_an_undock_off_the_mouth() {
         const ALICE: i64 = 1_000_001;
         let chars: Vec<crate::model::Character> = std::iter::once(ALICE)
-            .chain(1_000_002..1_000_032)
+            .chain(1_980_002..1_980_032)
             .map(|id| crate::model::Character {
                 character_id: id,
                 name: format!("P{id}"),
@@ -3614,7 +3614,7 @@ mod tests {
             .character(ALICE)
             .and_then(|c| c.solar_system_id)
             .expect("home");
-        for id in 1_000_002..1_000_032_i64 {
+        for id in 1_980_002..1_980_032_i64 {
             let far = crate::space_state::Motion::arrived([9.0e9, 0.0, 0.0], [0.0; 3]);
             reg.roster_mut()
                 .arrive(crate::space_state::Presence::arriving(
@@ -3633,8 +3633,8 @@ mod tests {
         let squatter = crate::space_state::Motion::arrived(alone.position, [0.0; 3]);
         reg.roster_mut()
             .arrive(crate::space_state::Presence::arriving(
-                1_000_002,
-                100_000_000 + 1_000_002,
+                1_980_002,
+                100_000_000 + 1_980_002,
                 home,
                 squatter,
             ));
@@ -3702,7 +3702,7 @@ mod tests {
     #[test]
     fn two_pilots_leaving_one_station_get_a_berth_each() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let alice = crate::model::Character {
             character_id: ALICE,
             name: "Alice".to_owned(),
@@ -3774,7 +3774,7 @@ mod tests {
     #[test]
     fn a_pilot_joining_mid_flight_is_told_where_the_other_ship_actually_is() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let alice = crate::model::Character {
             character_id: ALICE,
             name: "Alice".to_owned(),
@@ -4155,7 +4155,7 @@ mod tests {
         let counts = crate::asteroid::Counts::parse(
             "40000003\t0\t1228\t2\t30000001\t0.5\t90.0\t16255.0\n\
              40000003\t0\t1230\t3\t30000001\t0.5\t90.0\t16255.0\n\
-             40000020\t5\t1230\t4\t30000002\t0.5\t90.0\t16255.0\n",
+             40000020\t5\t1230\t4\t30990002\t0.5\t90.0\t16255.0\n",
         );
         let rocks = crate::asteroid::Field::generate(
             &counts,
@@ -4300,7 +4300,7 @@ mod tests {
     // ---- a ship's fitted modules, for the pilots who see it (P2.5) ----
 
     const P25_ALICE: i64 = 1_000_001;
-    const P25_BOB: i64 = 1_000_002;
+    const P25_BOB: i64 = 1_980_002;
     const P25_ALICE_SHIP: i64 = 100_000_001;
     const P25_BOB_SHIP: i64 = 100_000_002;
     const P25_GUN: i64 = 100_000_050;

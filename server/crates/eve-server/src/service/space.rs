@@ -1458,13 +1458,13 @@ mod tests {
     /// (the client retries once on a mismatch), not the first character's.
     #[test]
     fn the_campaign_snapshot_names_the_callers_system() {
-        const FIRST: i64 = 1_000_011;
-        const SECOND: i64 = 1_000_012;
+        const FIRST: i64 = 1_980_011;
+        const SECOND: i64 = 1_980_012;
         let ch = |id, home| crate::model::Character {
             character_id: id,
             name: format!("P{id}"),
             ship_id: id + 100_000_000,
-            station_id: Some(60_007_000),
+            station_id: Some(60_707_000),
             solar_system_id: Some(home),
             ..crate::model::Character::default()
         };
@@ -1508,7 +1508,7 @@ mod tests {
     #[test]
     fn stop_in_warp_is_refused_but_cancels_an_align() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let ch = |id, name: &str, ship| crate::model::Character {
             character_id: id,
             name: name.to_owned(),
@@ -1913,7 +1913,7 @@ mod tests {
     #[test]
     fn a_warp_clears_the_target_and_the_autopilot_brings_its_own_range() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         const BOB_SHIP: i64 = 100_000_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
@@ -2023,7 +2023,7 @@ mod tests {
     #[test]
     fn a_warp_inside_the_minimum_distance_is_refused() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
                 crate::model::Character {
@@ -2076,7 +2076,7 @@ mod tests {
     #[test]
     fn warping_to_a_flying_ship_goes_to_where_it_is_now() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         const BOB_SHIP: i64 = 100_000_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
@@ -2151,7 +2151,7 @@ mod tests {
     #[test]
     fn warping_to_a_fleet_member_takes_a_character_id() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         const BOB_SHIP: i64 = 100_000_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
@@ -2261,7 +2261,7 @@ mod tests {
     fn a_warp_sends_the_tunnel_effect_to_everyone_watching() {
         const ALICE: i64 = 1_000_001;
         const ALICE_SHIP: i64 = 100_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
                 crate::model::Character {
@@ -2516,7 +2516,7 @@ mod tests {
     fn a_warp_schedules_its_own_arrival() {
         const ALICE: i64 = 1_000_001;
         const ALICE_SHIP: i64 = 100_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![
                 crate::model::Character {
@@ -3270,7 +3270,7 @@ mod tests {
     #[test]
     fn a_cone_scan_is_routed_and_a_scan_result_is_warpable() {
         const ALICE: i64 = 1_000_001;
-        const BOB: i64 = 1_000_002;
+        const BOB: i64 = 1_980_002;
         let ch = |id: i64, ship: i64, name: &str| crate::model::Character {
             character_id: id,
             name: name.to_owned(),
@@ -3462,8 +3462,8 @@ mod dock_tests {
     /// Bob was seeded at it; a third in another system, Carol's.
     const DOCK_ALICE: i64 = 1_000_001;
     const DOCK_ALICE_SHIP: i64 = 100_000_001;
-    const DOCK_BOB: i64 = 1_000_002;
-    const DOCK_CAROL: i64 = 1_000_003;
+    const DOCK_BOB: i64 = 1_980_002;
+    const DOCK_CAROL: i64 = 1_980_003;
     const SECOND: i64 = 69_000_002;
     const ELSEWHERE: i64 = 69_000_003;
     const FAR_SYSTEM: i64 = 39_000_009;

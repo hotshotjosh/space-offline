@@ -1368,7 +1368,7 @@ mod tests {
     use super::*;
 
     const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOB_SHIP: i64 = 100_000_002;
 
@@ -2008,7 +2008,7 @@ mod tests {
         );
         let counts = crate::asteroid::Counts::parse(
             "40000003\t0\t1230\t5\t30000001\t0.5\t90.0\t16255.0\n\
-             40000020\t5\t1230\t4\t30000002\t0.5\t90.0\t16255.0\n",
+             40000020\t5\t1230\t4\t30990002\t0.5\t90.0\t16255.0\n",
         );
         let rocks = crate::asteroid::Field::generate(
             &counts,
@@ -2089,7 +2089,7 @@ mod tests {
     #[test]
     fn a_rock_elsewhere_or_no_rock_is_not_lockable() {
         let mut reg = alice_at_a_belt();
-        let far = rock_in(&reg, 30_000_002);
+        let far = rock_in(&reg, 30_990_002);
         assert!(lock(&mut reg, ALICE, far.id).is_err());
         assert!(lock(&mut reg, ALICE, crate::asteroid::MIN_ROCK_ID + 199).is_err());
         assert!(reg.locks().is_empty());

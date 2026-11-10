@@ -1010,7 +1010,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    const SYSTEM: i64 = 30_000_001;
+    const SYSTEM: i64 = 30_990_001;
     const ALICE: i64 = 90_000_001;
     const ALICE_SHIP: i64 = 100_000_001;
     const SITE_ID: i64 = population::SITE_BASE + 4242;
@@ -1137,7 +1137,7 @@ mod tests {
             id: crate::asteroid::MIN_ROCK_ID,
             type_id: ORE_TYPE,
             belt_id: 40_000_003,
-            solar_system_id: 30_000_002,
+            solar_system_id: 30_990_002,
             quantity: 10,
             radius: LAW.radius(10),
             position: [0.0; 3],

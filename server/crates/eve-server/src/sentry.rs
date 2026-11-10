@@ -489,7 +489,7 @@ mod tests {
     const SHIP: [i64; 2] = [100_000_001, 100_000_002];
     /// An invented hull: the typedata fixture's frigate.
     const HULL: i64 = 990_000_001;
-    const SYS: i64 = 30_000_003;
+    const SYS: i64 = 30_990_003;
     const T0: BlueTime = 133_000_000_000_000_000;
     const GATE: i64 = 50_000_001;
     const STATION: i64 = 60_000_001;
@@ -503,7 +503,7 @@ mod tests {
     /// [`world`], as a bundle's with `npc_data` when it is given.
     fn world_with(security: f64, bundle: Option<Table>) -> Registry {
         let text = format!(
-            "gate\t{GATE}\t990001\t5000\t0\t0\t0\t{SYS}\t{}\t30000099\n\
+            "gate\t{GATE}\t990001\t5000\t0\t0\t0\t{SYS}\t{}\t30990099\n\
              station\t{STATION}\t990002\t3000\t2000000\t0\t0\t{SYS}\t0\t0\n",
             GATE + 1000
         );
@@ -525,7 +525,7 @@ mod tests {
             "universe",
             crate::celestial::Universe::parse(
                 &[format!(
-                    "{SYS}\t19000001\t29000001\t\t\t{security}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
+                    "{SYS}\t19990001\t29000001\t\t\t{security}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
                 )],
                 &[],
                 &[],

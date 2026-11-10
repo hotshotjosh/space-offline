@@ -261,13 +261,13 @@ mod tests {
     fn the_corp_lp_push_carries_reason_and_issuer() {
         let p = CorpLpChange {
             to: vec![1],
-            issuer_corp_id: 1_000_077,
+            issuer_corp_id: 1_980_077,
         };
         assert_eq!(
             p.to_push(),
             (
                 "OnCorpLPChange",
-                vec![crate::pyutil::bstr("donation"), PyValue::Int(1_000_077)]
+                vec![crate::pyutil::bstr("donation"), PyValue::Int(1_980_077)]
             )
         );
     }

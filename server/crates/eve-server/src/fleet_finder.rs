@@ -935,7 +935,7 @@ mod tests {
     fn a_docked_boss_advert_carries_the_station_system() {
         let mut reg = world();
         let fleet = alices_fleet(&mut reg);
-        reg.character_mut(ALICE).expect("alice").solar_system_id = Some(30_000_777);
+        reg.character_mut(ALICE).expect("alice").solar_system_id = Some(30_990_777);
         assert!(reg.roster().get(ALICE).is_none(), "docked: not in space");
         call(
             &mut reg,
@@ -947,7 +947,7 @@ mod tests {
         .expect("listed");
         assert_eq!(
             reg.ext::<Finder>().adverts[&fleet].solar_system_id,
-            30_000_777
+            30_990_777
         );
     }
 

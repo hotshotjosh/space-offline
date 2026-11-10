@@ -177,10 +177,10 @@ fn police_are_called_on_an_in_space_pilot_in_the_net_of_his_system() {
     let mut c = crate::content::Content::fixture();
     let u = crate::celestial::Universe::parse(
         &[format!(
-            "{here}\t19000001\t29000001\t\t500001\t0.9\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tInvented empire"
+            "{here}\t19990001\t29000001\t\t589001\t0.9\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tInvented empire"
         )],
-        &["19000001\t\t\t\t\tInvented region".to_owned()],
-        &["29000001\t19000001\t\t\t\tInvented constellation".to_owned()],
+        &["19990001\t\t\t\t\tInvented region".to_owned()],
+        &["29000001\t19990001\t\t\t\tInvented constellation".to_owned()],
     )
     .expect("invented rows");
     c.insert("universe", u);
@@ -194,7 +194,7 @@ fn police_are_called_on_an_in_space_pilot_in_the_net_of_his_system() {
     assert_eq!(got.character, ALICE);
     assert_eq!(got.system, here);
     assert_eq!(got.security, 0.9);
-    assert_eq!(got.faction, Some(500_001));
+    assert_eq!(got.faction, Some(589_001));
     // Docked, nobody comes.
     let docked = world(&[]);
     assert_eq!(police_call(&docked, ALICE), None);
@@ -904,9 +904,9 @@ const STATION_LOW: i64 = 60_500_002;
 fn station_world(ship_type: i64) -> Registry {
     let catalogue = crate::celestial::Catalogue::parse(&format!(
         "#kind\tid\ttype_id\tradius\tx\ty\tz\tsystem\tdest\tdest_system\n\
-         #system\t{HIGH}\t29000001\t19000001\n\
-         station\t{STATION_HIGH}\t1529\t0.0\t1.0\t2.0\t3.0\t{HIGH}\t0\t0\n\
-         station\t{STATION_LOW}\t1529\t0.0\t4.0\t5.0\t6.0\t{LOW}\t0\t0\n"
+         #system\t{HIGH}\t29000001\t19990001\n\
+         station\t{STATION_HIGH}\t990961529\t0.0\t1.0\t2.0\t3.0\t{HIGH}\t0\t0\n\
+         station\t{STATION_LOW}\t990961529\t0.0\t4.0\t5.0\t6.0\t{LOW}\t0\t0\n"
     ));
     let mut stations = crate::stations::Table::default();
     for (id, system) in [(STATION_HIGH, HIGH), (STATION_LOW, LOW)] {
@@ -914,7 +914,7 @@ fn station_world(ship_type: i64) -> Registry {
             id,
             crate::stations::Station {
                 system_id: system,
-                region_id: 19_000_001,
+                region_id: 19_990_001,
                 owner_id: 1_999_501,
                 operation_id: 99,
             },

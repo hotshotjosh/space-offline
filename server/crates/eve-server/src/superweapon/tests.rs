@@ -41,14 +41,14 @@ pub(crate) fn ship(who: i64) -> i64 {
 fn content() -> crate::content::Content {
     let mut c = crate::content::Content::fixture();
     let row = format!(
-        "{SYSTEM}\t19000001\t29000001\t\t\t-0.5\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {SYSTEM}"
+        "{SYSTEM}\t19990001\t29000001\t\t\t-0.5\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {SYSTEM}"
     );
     c.insert(
         "universe",
         Universe::parse(
             &[row],
-            &["19000001\t\t\t\t\tFixture region".to_owned()],
-            &["29000001\t19000001\t\t\t\tFixture constellation".to_owned()],
+            &["19990001\t\t\t\t\tFixture region".to_owned()],
+            &["29000001\t19990001\t\t\t\tFixture constellation".to_owned()],
         )
         .expect("the invented rows parse"),
     );

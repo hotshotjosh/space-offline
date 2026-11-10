@@ -2525,7 +2525,7 @@ mod tests {
     #[test]
     fn an_explicit_output_slot_wins() {
         let t = Table::fixture();
-        let to = Slot::new(1_000_001, STATION_PLAIN, 115);
+        let to = Slot::new(1_980_001, STATION_PLAIN, 115);
         let p = plan(
             &t,
             Some(PILOT),

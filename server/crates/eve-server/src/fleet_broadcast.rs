@@ -287,9 +287,9 @@ mod tests {
     use super::*;
     use crate::fleet::Fleets;
 
-    const BOSS: i64 = 1_000_001;
-    const ANN: i64 = 1_000_002;
-    const BEN: i64 = 1_000_003;
+    const BOSS: i64 = 1_980_001;
+    const ANN: i64 = 1_980_002;
+    const BEN: i64 = 1_980_003;
     const SHIP: i64 = 670;
 
     fn fleet() -> (Fleets, i64) {
@@ -374,7 +374,7 @@ mod tests {
             .accept_invite(ANN, id, Some(SHIP), None, None)
             .expect("accepted");
         for who in [BOSS, ANN] {
-            reg.character_mut(who).expect("a pilot").solar_system_id = Some(30_000_999);
+            reg.character_mut(who).expect("a pilot").solar_system_id = Some(30_990_999);
         }
         reg
     }
@@ -474,7 +474,7 @@ mod tests {
         vec![
             PyValue::Bytes(b"TravelTo".to_vec()),
             PyValue::Int(scope),
-            PyValue::Int(30_000_002),
+            PyValue::Int(30_990_002),
             PyValue::None,
         ]
     }
@@ -504,9 +504,9 @@ mod tests {
                 .accept_invite(who, id, Some(SHIP), None, None)
                 .expect("accepted");
         }
-        reg.character_mut(BOSS).expect("a pilot").solar_system_id = Some(30_000_999);
-        reg.character_mut(ANN).expect("a pilot").solar_system_id = Some(30_000_001);
-        reg.character_mut(BEN).expect("a pilot").solar_system_id = Some(30_000_002);
+        reg.character_mut(BOSS).expect("a pilot").solar_system_id = Some(30_990_999);
+        reg.character_mut(ANN).expect("a pilot").solar_system_id = Some(30_990_001);
+        reg.character_mut(BEN).expect("a pilot").solar_system_id = Some(30_990_002);
         let all = audience(&mut reg, BOSS, BROADCAST_ALL, Range::Fleet);
         assert_eq!(all.len(), 3, "{all:?}");
         for who in [BOSS, ANN, BEN] {

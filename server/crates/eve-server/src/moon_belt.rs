@@ -664,7 +664,7 @@ mod tests {
     const NULL: i64 = 39_000_003;
     const LOW: i64 = 39_000_002;
     const HIGH: i64 = 39_000_001;
-    const WORMHOLE: i64 = 31_000_001;
+    const WORMHOLE: i64 = 31_990_001;
 
     fn ores() -> OreTable {
         moon_fixture::table()
@@ -849,7 +849,7 @@ mod tests {
     fn universe() -> Universe {
         let row = |id: i64, sec: f64| {
             format!(
-                "{id}\t19000001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}"
+                "{id}\t19990001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}"
             )
         };
         Universe::parse(
@@ -859,8 +859,8 @@ mod tests {
                 row(HIGH, 0.9),
                 row(WORMHOLE, -0.99),
             ],
-            &["19000001\t\t\t\t\tFixture region".to_owned()],
-            &["29000001\t19000001\t\t\t\tFixture constellation".to_owned()],
+            &["19990001\t\t\t\t\tFixture region".to_owned()],
+            &["29000001\t19990001\t\t\t\tFixture constellation".to_owned()],
         )
         .expect("the invented rows parse")
     }

@@ -3477,7 +3477,7 @@ type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=4000
             let mut log = Vec::new();
             let steps = [
                 (vec![alice], 1_000_000),
-                (vec![alice, bob], 1_000_010),
+                (vec![alice, bob], 1_980_010),
                 (vec![alice, bob], 1_000_000 + EVERY),
                 (vec![alice, bob], 1_000_000 + 2 * EVERY),
             ];

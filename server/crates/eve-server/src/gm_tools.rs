@@ -489,7 +489,7 @@ mod tests {
     const BOT: i64 = 90_000_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOT_SHIP: i64 = 100_000_002;
-    const SYS: i64 = 30_000_003;
+    const SYS: i64 = 30_990_003;
     /// The content fixture's invented frigate.
     const HULL: i64 = 990_000_001;
 

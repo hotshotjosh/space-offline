@@ -2078,7 +2078,7 @@ mod tests {
     /// `Character::default()`'s system, and so declared zero-sec.
     const HOME: i64 = 30_000_001;
     /// A system nobody starts in.
-    const AWAY: i64 = 30_000_003;
+    const AWAY: i64 = 30_990_003;
     const T0: BlueTime = 133_000_000_000_000_000;
 
     /// Alice and Bob, both in space in `system`.

@@ -128,8 +128,8 @@ mod tests {
     use crate::model::{Character, SandboxConfig};
     use crate::service::Request;
 
-    const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const ALICE: i64 = 1_980_001;
+    const BOB: i64 = 1_980_002;
 
     fn allow(_: &Registry, _: i64) -> Option<Refusal> {
         None

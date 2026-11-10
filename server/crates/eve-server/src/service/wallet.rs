@@ -2447,8 +2447,8 @@ mod tests {
             name: name.to_owned(),
             ship_id: ship,
             station_id: Some(STATION),
-            solar_system_id: Some(30_000_142),
-            region_id: 10_000_002,
+            solar_system_id: Some(30_990_142),
+            region_id: 10_990_002,
             balance: 1_000_000.0,
             ..Character::default()
         };
@@ -2992,7 +2992,7 @@ mod tests {
     // refusal carries (bar the one the client itself branches on) and which
     // status a contract lands in are `[A]` and not asserted.
 
-    const ELSEWHERE: i64 = 60_000_004;
+    const ELSEWHERE: i64 = 60_700_004;
 
     /// The client's key out of a refusal (`eveexceptions.UserError` args[0]).
     fn raised_key(err: &ServiceError) -> Option<String> {
@@ -3111,7 +3111,7 @@ mod tests {
         let mut reg = world();
         let carol = reg.character_mut(CAROL).unwrap();
         carol.station_id = Some(ELSEWHERE);
-        carol.solar_system_id = Some(30_000_144);
+        carol.solar_system_id = Some(30_990_144);
         reg
     }
 
@@ -3230,7 +3230,7 @@ mod tests {
         let id = courier_from_alice(&mut reg, &[(stack, 40)], 1_000.0, 5_000.0, ELSEWHERE);
         assert_eq!(
             con::attr(&reg.contracts.get(id).unwrap().row(), "endSolarSystemID"),
-            Some(&PyValue::Int(30_000_144))
+            Some(&PyValue::Int(30_990_144))
         );
         accept(&mut reg, BOB, id).unwrap();
         let package = package_at(&reg, BOB, STATION).unwrap();

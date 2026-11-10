@@ -1280,8 +1280,8 @@ mod tests {
     use crate::model::{Character, SandboxConfig};
     use crate::space_state::{Motion, Presence};
 
-    const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const ALICE: i64 = 1_980_001;
+    const BOB: i64 = 1_980_002;
     /// `typedata::FIXTURE`'s hull.
     const FRIGATE: i64 = 990_000_001;
     /// Invented rows (CP58e): a probe launcher, a probe that finds ships
@@ -1451,7 +1451,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
         assert_eq!(count(&mut reg), 1);
         assert!(!scanning_suppressed(reg.content(), system));
         let row =
-            format!("{system}\t19000001\t29000001\t\t\t0.5\t\t0\t0\t0\t0\t0\t0\t\t1\t\t\tFixture");
+            format!("{system}\t19990001\t29000001\t\t\t0.5\t\t0\t0\t0\t0\t0\t0\t\t1\t\t\tFixture");
         let universe = crate::celestial::Universe::parse(&[row], &[], &[]).unwrap();
         let mut c = content();
         c.insert("universe", universe);
@@ -1570,7 +1570,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
             probe_id: PROBE_ID_BASE + 1,
             type_id: COMBAT_PROBE,
             owner_id: ALICE,
-            solar_system_id: 30_000_001,
+            solar_system_id: 30_990_001,
             position: [0.0; 3],
             scan_range: AU,
             range_step: 2,

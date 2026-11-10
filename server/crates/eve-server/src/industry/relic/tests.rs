@@ -13,9 +13,9 @@ use crate::skill::Skills;
 
 const ME: i64 = 90_000_001;
 const STATION: i64 = 60_000_001;
-const STATION_OWNER: i64 = 1_000_001;
-const STATION_TYPE: i64 = 1_531;
-const SYSTEM: i64 = 30_000_001;
+const STATION_OWNER: i64 = 1_980_001;
+const STATION_TYPE: i64 = 990961531;
+const SYSTEM: i64 = 30_990_001;
 
 // Relics: one family of two tiers, same datacores and skills.
 const RELIC_INTACT: i64 = 990_801;

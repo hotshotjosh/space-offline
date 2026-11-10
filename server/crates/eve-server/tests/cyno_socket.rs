@@ -392,7 +392,7 @@ fn undock(client: &mut MockClient, first_call_id: i64) {
         "MachoBindObject",
         first_call_id,
         vec![
-            PyValue::Tuple(vec![PyValue::Int(60_012_526), PyValue::Int(5)]),
+            PyValue::Tuple(vec![PyValue::Int(60_712_526), PyValue::Int(5)]),
             PyValue::Tuple(vec![
                 bstr("Undock"),
                 PyValue::Tuple(vec![]),
@@ -412,14 +412,14 @@ fn undock(client: &mut MockClient, first_call_id: i64) {
         "beyonce",
         "MachoResolveObject",
         first_call_id + 2,
-        vec![PyValue::Int(30_000_001)],
+        vec![PyValue::Int(30_990_001)],
     ));
     let _ = call_rsp_collecting(client);
     client.send(&call_req_args(
         "beyonce",
         "MachoBindObject",
         first_call_id + 3,
-        vec![PyValue::Int(30_000_001), PyValue::None],
+        vec![PyValue::Int(30_990_001), PyValue::None],
     ));
     let _ = call_rsp_collecting(client);
 }

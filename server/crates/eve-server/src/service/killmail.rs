@@ -518,7 +518,7 @@ mod tests {
     /// REVIEW-FIX: a pilot of an NPC corporation gets no corporation list.
     #[test]
     fn an_npc_corporation_has_no_kill_list() {
-        const NPC_CORP: i64 = 1_000_009;
+        const NPC_CORP: i64 = 1_980_009;
         let mut reg = world();
         reg.character_mut(ALICE).expect("Alice").corporation_id = NPC_CORP;
         let shooter = crate::killmail::Attacker {

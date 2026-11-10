@@ -898,7 +898,7 @@ mod tests {
 
     #[test]
     fn the_old_explicit_form_is_left_alone() {
-        assert_eq!(p("spawn gang1 RED mine 3 role Hulk 30000042"), Cmd::Raw);
+        assert_eq!(p("spawn gang1 RED mine 3 role Hulk 30990042"), Cmd::Raw);
         assert_eq!(p("spawn alpha red mine 3 all5 merlin"), Cmd::Raw);
         assert_eq!(p("side alpha blue"), Cmd::Raw);
     }

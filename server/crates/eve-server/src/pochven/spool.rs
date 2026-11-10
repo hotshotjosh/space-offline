@@ -232,7 +232,7 @@ mod world {
     const BOB_SHIP: i64 = 100_268_002;
     const GUN: i64 = 100_268_101;
     const GUN_TYPE: i64 = 990_268_001;
-    const HULL: i64 = 587;
+    const HULL: i64 = 990960587;
     /// Invented: 0.25 a cycle up to 1.0, a 2.5 s cycle.
     const PER_CYCLE: f64 = 0.25;
     const MAX: f64 = 1.0;

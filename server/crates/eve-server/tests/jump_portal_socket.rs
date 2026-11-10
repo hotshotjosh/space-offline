@@ -417,7 +417,7 @@ fn undock(client: &mut MockClient, first_call_id: i64) -> String {
         "MachoBindObject",
         first_call_id,
         vec![
-            PyValue::Tuple(vec![PyValue::Int(60_012_526), PyValue::Int(5)]),
+            PyValue::Tuple(vec![PyValue::Int(60_712_526), PyValue::Int(5)]),
             PyValue::Tuple(vec![
                 bstr("Undock"),
                 PyValue::Tuple(vec![]),
@@ -437,14 +437,14 @@ fn undock(client: &mut MockClient, first_call_id: i64) -> String {
         "beyonce",
         "MachoResolveObject",
         first_call_id + 2,
-        vec![PyValue::Int(30_000_001)],
+        vec![PyValue::Int(30_990_001)],
     ));
     let _ = call_rsp_collecting(client);
     client.send(&call_req_args(
         "beyonce",
         "MachoBindObject",
         first_call_id + 3,
-        vec![PyValue::Int(30_000_001), PyValue::None],
+        vec![PyValue::Int(30_990_001), PyValue::None],
     ));
     let (bound, _) = call_rsp_collecting(client);
     bound_object_id(&bound)
@@ -510,7 +510,7 @@ const GROUP_ISOTOPE: i64 = 990_672;
 const GROUP_HULL: i64 = 990_673;
 const GROUP_PORTAL: i64 = 990_674;
 const LIST_PLAIN: i64 = 990_680;
-const HOME: i64 = 30_000_001;
+const HOME: i64 = 30_990_001;
 const DEST: i64 = 30_670_002;
 /// The client's attribute and effect ids, by name.
 const EFFECT_PORTAL: i64 = 2_152;

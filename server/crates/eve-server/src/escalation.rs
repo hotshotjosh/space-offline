@@ -718,8 +718,8 @@ mod tests {
     use crate::space_state::{Motion, Presence};
     use std::sync::Arc;
 
-    const PILOT: i64 = 1_000_001;
-    const OTHER: i64 = 1_000_002;
+    const PILOT: i64 = 1_980_001;
+    const OTHER: i64 = 1_980_002;
     const HIGH: i64 = 39_000_001;
     const FACTION: i64 = 599_041;
     const FROM: i64 = 999_411;

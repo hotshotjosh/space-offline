@@ -1173,7 +1173,7 @@ mod tests {
             seq: 7,
             unix_s: 100,
             p95_ms: 12.5,
-            humans: vec![(30_000_001, 2), (30_000_009, 1)],
+            humans: vec![(30_990_001, 2), (30_990_009, 1)],
         };
         assert_eq!(BubbleState::parse(&st.render()), Some(st));
         assert_eq!(BubbleState::parse("nonsense"), None);
@@ -1478,13 +1478,13 @@ mod tests {
                 &mut reg,
                 None,
                 &[
-                    "spawn", "gang1", "RED", "mine", "3", "role", "Hulk", "30000042",
+                    "spawn", "gang1", "RED", "mine", "3", "role", "Hulk", "30990042",
                 ],
             )
             .unwrap(),
         );
         assert!(
-            r.starts_with("echo: spawn gang1 RED mine 3 role Hulk 30000042 tokens=gang11:"),
+            r.starts_with("echo: spawn gang1 RED mine 3 role Hulk 30990042 tokens=gang11:"),
             "{r}"
         );
         for (words, wire) in [

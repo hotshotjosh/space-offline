@@ -2969,7 +2969,7 @@ mod tests {
             "universe",
             crate::celestial::Universe::parse(
                 &[format!(
-                    "{system}\t19000001\t29000001\t\t\t0.95\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
+                    "{system}\t19990001\t29000001\t\t\t0.95\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tx"
                 )],
                 &[],
                 &[],

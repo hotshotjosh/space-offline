@@ -1024,18 +1024,18 @@ mod tests {
             contract_id: FIRST_CONTRACT_ID,
             kind: TYPE_ITEM_EXCHANGE,
             issuer_id: 90_000_001,
-            issuer_corp_id: 1_000_044,
+            issuer_corp_id: 1_980_044,
             assignee_id: 90_000_002,
             availability: AVAIL_MYSELF,
             acceptor_id: 0,
-            start_station_id: 60_003_760,
-            start_system_id: 30_000_142,
-            start_constellation_id: 20_000_020,
-            start_region_id: 10_000_002,
-            end_station_id: 60_003_760,
-            end_system_id: 30_000_142,
-            end_constellation_id: 20_000_020,
-            end_region_id: 10_000_002,
+            start_station_id: 60_703_760,
+            start_system_id: 30_990_142,
+            start_constellation_id: 20_990_020,
+            start_region_id: 10_990_002,
+            end_station_id: 60_703_760,
+            end_system_id: 30_990_142,
+            end_constellation_id: 20_990_020,
+            end_region_id: 10_990_002,
             price: 1_250.5,
             reward: 0.0,
             collateral: 0.0,
@@ -1104,8 +1104,8 @@ mod tests {
         let mut courier = sample();
         courier.contract_id = book.mint();
         courier.kind = TYPE_COURIER;
-        courier.end_station_id = 60_000_004;
-        courier.end_system_id = 30_000_003;
+        courier.end_station_id = 60_700_004;
+        courier.end_system_id = 30_990_003;
         courier.collateral = 2_500_000.25;
         courier.reward = 10_000.0;
         courier.crate_id = 100_000_777;
@@ -1336,7 +1336,7 @@ mod tests {
             ("assignedToID", PyValue::Int(90_000_002)),
             ("minutesExpire", PyValue::Int(1440)),
             ("numDays", PyValue::Int(0)),
-            ("startStationID", PyValue::Int(60_003_760)),
+            ("startStationID", PyValue::Int(60_703_760)),
             ("destinationID", PyValue::Int(0)),
             ("price", PyValue::Int(5000)),
             ("reward", PyValue::Int(0)),

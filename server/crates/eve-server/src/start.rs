@@ -997,8 +997,8 @@ mod tests {
     fn registry_from(schools: Table, config: crate::model::SandboxConfig) -> Registry {
         let catalogue = crate::celestial::Catalogue::parse(&format!(
             "#kind\tid\ttype_id\tradius\tx\ty\tz\tsystem\tdest\tdest_system\n\
-             #system\t{SYSTEM}\t29000001\t19000001\n\
-             station\t{FIRST}\t1529\t0.0\t1.0\t2.0\t3.0\t{SYSTEM}\t0\t0\n\
+             #system\t{SYSTEM}\t29000001\t19990001\n\
+             station\t{FIRST}\t990961529\t0.0\t1.0\t2.0\t3.0\t{SYSTEM}\t0\t0\n\
              station\t{SECOND}\t1530\t0.0\t4.0\t5.0\t6.0\t{SYSTEM}\t0\t0\n"
         ));
         let mut stations = crate::stations::Table::default();
@@ -1007,7 +1007,7 @@ mod tests {
                 id,
                 crate::stations::Station {
                     system_id: SYSTEM,
-                    region_id: 19_000_001,
+                    region_id: 19_990_001,
                     owner_id: owner,
                     operation_id: 99,
                 },
@@ -1636,11 +1636,11 @@ mod tests {
         let want = Character {
             station_id: Some(FIRST),
             station_owner_id: 1_999_101,
-            station_type_id: 1529,
+            station_type_id: 990961529,
             station_operation_id: 99,
             solar_system_id: Some(SYSTEM),
             constellation_id: 29_000_001,
-            region_id: 19_000_001,
+            region_id: 19_990_001,
             corporation_id: CORP,
             school_id: SCHOOL,
             ..Character::default()

@@ -138,13 +138,13 @@ mod tests {
     /// Invented ids (`schema.md` §1.1), never a client value.
     #[test]
     fn a_row_reads_owner_operation_and_region() {
-        let t = Table::parse(&["69000001\t39000001\t19000001\t1999001\t99\t7,21\t0.5\t0.05"])
+        let t = Table::parse(&["69000001\t39000001\t19990001\t1999001\t99\t7,21\t0.5\t0.05"])
             .expect("parses");
         assert_eq!(
             t.get(69_000_001),
             Some(&Station {
                 system_id: 39_000_001,
-                region_id: 19_000_001,
+                region_id: 19_990_001,
                 owner_id: 1_999_001,
                 operation_id: 99,
             })

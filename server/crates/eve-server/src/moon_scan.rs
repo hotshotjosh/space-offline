@@ -691,7 +691,7 @@ mod tests {
     const ALICE_SHIP: i64 = 100_000_001;
     /// Invented systems: a null-sec one, a wormhole.
     const NULL: i64 = 39_000_003;
-    const WORMHOLE: i64 = 31_000_001;
+    const WORMHOLE: i64 = 31_990_001;
     /// Invented moons (and a planet) of those systems.
     const MOON_A: i64 = 40_300_001;
     const MOON_B: i64 = 40_300_002;
@@ -723,13 +723,13 @@ mod tests {
     fn universe() -> Universe {
         let row = |id: i64, sec: f64| {
             format!(
-                "{id}\t19000001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}"
+                "{id}\t19990001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}"
             )
         };
         Universe::parse(
             &[row(NULL, -0.5), row(WORMHOLE, -0.99)],
-            &["19000001\t\t\t\t\tFixture region".to_owned()],
-            &["29000001\t19000001\t\t\t\tFixture constellation".to_owned()],
+            &["19990001\t\t\t\t\tFixture region".to_owned()],
+            &["29000001\t19990001\t\t\t\tFixture constellation".to_owned()],
         )
         .expect("the invented rows parse")
     }

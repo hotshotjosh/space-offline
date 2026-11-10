@@ -130,7 +130,7 @@ mod tests {
     use crate::space_state::{Motion, Presence};
 
     // Invented ids.
-    const ALICE: i64 = 1_000_001;
+    const ALICE: i64 = 1_980_001;
     const SHIP: i64 = 10_001;
     const HOME: i64 = 30_001;
 

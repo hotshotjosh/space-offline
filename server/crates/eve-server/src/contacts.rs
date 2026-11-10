@@ -635,8 +635,8 @@ mod contacts_tests {
             reg.contacts.get(ALICE, BOB).map(|c| c.relationship),
             Some(10.0)
         );
-        call(&mut reg, ALICE, "AddContact", &[PyValue::Int(3_008_416)]).expect("agent form");
-        assert!(reg.contacts.get(ALICE, 3_008_416).is_some());
+        call(&mut reg, ALICE, "AddContact", &[PyValue::Int(3_978_416)]).expect("agent form");
+        assert!(reg.contacts.get(ALICE, 3_978_416).is_some());
     }
 
     #[test]
@@ -751,7 +751,7 @@ mod contacts_tests {
     fn contacts_round_trip_through_their_records() {
         let mut c = Contacts::default();
         c.put(ALICE, BOB, -7.5, true);
-        c.put(ALICE, 1_000_125, 10.0, false);
+        c.put(ALICE, 1_980_125, 10.0, false);
         c.set_blocked(BOB, &[ALICE], true);
         let mut text = String::new();
         c.render(&mut text);

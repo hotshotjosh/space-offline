@@ -722,7 +722,7 @@ mod tests {
     const CORP_B: i64 = 98_000_002;
     const ALLY_X: i64 = 99_000_001;
     const ALLY_Y: i64 = 99_000_002;
-    const NPC_CORP: i64 = 1_000_001;
+    const NPC_CORP: i64 = 1_980_001;
 
     fn aff(c: i64, corp: i64, ally: Option<i64>) -> Affiliation {
         Affiliation {

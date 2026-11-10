@@ -379,7 +379,7 @@ fn the_rooms_are_the_valid_ones_in_dungeon_order_and_the_pick_is_stable() {
 #[test]
 fn only_pve_rooms_are_drawn() {
     let mut faction = room(990_903);
-    faction.faction = Some(500_001);
+    faction.faction = Some(589_001);
     let mut no_aoe = room(990_904);
     no_aoe
         .objects

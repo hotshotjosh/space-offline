@@ -369,11 +369,11 @@ mod tests {
     use crate::damage::BlueTime;
     use std::collections::BTreeMap;
 
-    const A: i64 = 30_000_001;
-    const B: i64 = 30_000_002;
-    const C: i64 = 30_000_003;
-    const D: i64 = 30_000_004;
-    const E: i64 = 30_000_005;
+    const A: i64 = 30_990_001;
+    const B: i64 = 30_990_002;
+    const C: i64 = 30_990_003;
+    const D: i64 = 30_990_004;
+    const E: i64 = 30_990_005;
     const T0: BlueTime = 1_000 * crate::liveness::COOL_AFTER;
 
     fn apply(live: &mut Liveness, rows: &[(i64, Reasons)], now: BlueTime) {

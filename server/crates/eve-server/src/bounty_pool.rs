@@ -898,7 +898,7 @@ mod tests {
     fn attacker(character: Option<i64>, damage: i64) -> Attacker {
         Attacker {
             character,
-            corporation: Some(1_000_009),
+            corporation: Some(1_980_009),
             alliance: None,
             faction: None,
             ship_type: None,

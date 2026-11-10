@@ -231,8 +231,8 @@ mod tests {
     use crate::model::{Character, SandboxConfig};
     use crate::session_table::SessionEntry;
 
-    const SYS1: i64 = 30_000_001;
-    const SYS2: i64 = 30_000_003;
+    const SYS1: i64 = 30_990_001;
+    const SYS2: i64 = 30_990_003;
 
     fn pilot(id: i64, corp: i64, alliance: Option<i64>, ss: i64) -> Character {
         Character {

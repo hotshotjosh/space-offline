@@ -4216,8 +4216,8 @@ mod tests {
     const ALICE: i64 = 90_000_001;
     const BOB: i64 = 90_000_002;
     const STATION: i64 = 60_003_760;
-    const SYSTEM: i64 = 30_000_142;
-    const REGION: i64 = 10_000_002;
+    const SYSTEM: i64 = 30_990_142;
+    const REGION: i64 = 10_990_002;
     const TRITANIUM: i64 = 34;
 
     /// Two pilots docked in one station, each with a million ISK.
@@ -4276,7 +4276,7 @@ mod tests {
     /// wallet), and the ask never refills.
     #[test]
     fn a_seeded_ask_is_finite_and_its_isk_leaves_the_economy() {
-        const NPC_CORP: i64 = 1_000_090;
+        const NPC_CORP: i64 = 1_980_090;
         let mut reg = market();
         reg.stations.insert(
             STATION,

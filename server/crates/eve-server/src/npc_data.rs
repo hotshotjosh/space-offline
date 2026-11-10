@@ -1146,7 +1146,7 @@ mod tests {
             "990110\ttype\t\t9001\t\t1999001\t901\t1.0\t0.0",
         ),
         (BOUNTY, "990100\t12500.0\t1999001=0.5"),
-        (REGIONS, "19000001\t599001\t1.0\t2"),
+        (REGIONS, "19990001\t599001\t1.0\t2"),
         (HOME_PIRATE, "599002\t599001"),
         (LOOT, "599001\t1\tweapon\tbase\t990120\t0"),
     ];
@@ -1180,7 +1180,7 @@ mod tests {
         assert_eq!(t.bounty[&990_100].multipliers[&1_999_001], 0.5);
         assert_eq!(t.corporations[&1_999_001].faction_id, Some(599_001));
         assert_eq!(t.loot[0].type_id, 990_120);
-        assert_eq!(t.region_pirate(19_000_001), Some(599_001));
+        assert_eq!(t.region_pirate(19_990_001), Some(599_001));
     }
 
     /// An absent file is an empty table, never an error (plan §1.3).
@@ -1197,7 +1197,7 @@ mod tests {
         let swapped = "#region_id\tweight\tfaction_id\trule\n".to_owned();
         let e = from(&[(REGIONS, swapped)]).expect_err("a reordered header");
         assert!(e.contains("npc/regions.tsv") && e.contains("header"), "{e}");
-        let short = format!("{}\n19000001\t599001\t1.0\n", REGIONS.1);
+        let short = format!("{}\n19990001\t599001\t1.0\n", REGIONS.1);
         assert!(from(&[(REGIONS, short)]).is_err());
         let role = format!(
             "{}\n990100\t99101\t599001\tgroup\tAsteroid\tFrigate\tbase\t\tTURRET\tHEALER\n",

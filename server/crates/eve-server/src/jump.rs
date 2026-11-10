@@ -605,12 +605,12 @@ mod tests {
     use crate::notify::Push;
 
     const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOB_SHIP: i64 = 100_000_002;
     /// The characters' home: `Character::default()`'s system.
     const A: i64 = 30_000_001;
-    const B: i64 = 30_000_003;
+    const B: i64 = 30_990_003;
     const GATE_A: i64 = 51;
     const GATE_B: i64 = 52;
     /// In B, leading to a gate this catalogue does not hold.

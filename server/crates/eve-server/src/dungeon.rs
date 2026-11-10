@@ -224,7 +224,7 @@ mod tests {
     /// subscripts, all naming the solar system.
     #[test]
     fn the_location_wrapper_carries_its_three_subscripted_keys() {
-        let v = location_wrap(30_000_001);
+        let v = location_wrap(30_990_001);
         for key in ["solarsystemID", "typeID", "locationID"] {
             assert!(
                 crate::pyutil::dict_get(&v, key.as_bytes()).is_some(),
@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn a_pocket_is_aimed_at_its_centre() {
         let p = Pocket {
-            solar_system_id: 30_000_001,
+            solar_system_id: 30_990_001,
             position: POCKET_OFFSET,
             npc_ids: vec![],
         };

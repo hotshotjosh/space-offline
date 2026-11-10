@@ -817,7 +817,7 @@ mod tests {
     use eve_marshal::PyValue;
     use std::sync::Arc;
 
-    const SYSTEM: i64 = 30_000_001;
+    const SYSTEM: i64 = 30_990_001;
     const ALICE: i64 = 90_000_001;
     const ALICE_SHIP: i64 = 100_000_001;
     const SITE_ID: i64 = population::SITE_BASE + 4343;
@@ -2014,10 +2014,10 @@ mod tests {
         const CLOUD: i64 = 990_302;
         let universe = Universe::parse(
             &[format!(
-                "{JSYS}\t19000001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t1\t0\t\t\tWH"
+                "{JSYS}\t19990001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t1\t0\t\t\tWH"
             )],
-            &["19000001\t\t\t\t\tR".to_owned()],
-            &["29000001\t19000001\t\t\t\tC".to_owned()],
+            &["19990001\t\t\t\t\tR".to_owned()],
+            &["29000001\t19990001\t\t\t\tC".to_owned()],
         )
         .expect("an invented universe");
         let obj = |id, type_id, x, radius| Object {

@@ -249,7 +249,7 @@ mod tests {
     use super::*;
     use crate::space_state::{Motion, Presence};
 
-    const ALICE: i64 = 1_000_001;
+    const ALICE: i64 = 1_980_001;
     const ALICE_SHIP: i64 = 100_000_001;
     static CLOAK: ModuleType = ModuleType {
         type_id: 990_000_901,
@@ -331,7 +331,7 @@ mod tests {
             warp_factor: 4_000,
         };
         reg.roster_mut()
-            .arrive(Presence::arriving(ALICE, ALICE_SHIP, 30_000_001, motion));
+            .arrive(Presence::arriving(ALICE, ALICE_SHIP, 30_990_001, motion));
         reg
     }
 
@@ -347,7 +347,7 @@ mod tests {
 
     // ---- the mid-cycle stop (RANGE-STOP) ------------------------------
 
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const BOB_SHIP: i64 = 100_000_002;
     const WEB: i64 = 100_000_060;
     /// Invented rows: a medium-slot module (slot effect 13) with a targeted,

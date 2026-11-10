@@ -245,7 +245,7 @@ mod tests {
         Report {
             kill_id: id,
             time: 1_000 + id,
-            system: 30_000_001,
+            system: 30_990_001,
             victim: 2,
             victim_corporation: victim_corp,
             victim_alliance: None,

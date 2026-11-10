@@ -1223,7 +1223,7 @@ mod tests {
             "CanNotDeclareWarAgainstSelf"
         );
         assert_eq!(
-            key_of(&declare(&mut reg, ALICE, 1_000_044, hq)),
+            key_of(&declare(&mut reg, ALICE, 1_980_044, hq)),
             "CrpCantDeclareWarOnNPCCorp"
         );
         assert_eq!(
@@ -2980,8 +2980,8 @@ mod tests {
 
     // ---- the war HQ's system ---------------------------------------------------
 
-    const HIGH_SYSTEM: i64 = 30_000_501;
-    const LOW_SYSTEM: i64 = 30_000_502;
+    const HIGH_SYSTEM: i64 = 30_990_501;
+    const LOW_SYSTEM: i64 = 30_990_502;
 
     /// A registry whose universe table has an invented high-sec and an
     /// invented low-sec system.

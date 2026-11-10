@@ -2302,7 +2302,7 @@ mod tests {
 
     // ---- MINE-UI -------------------------------------------------------
 
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const BOB_SHIP: i64 = 100_000_070;
 
     /// Bob in space in Alice's system, a second pilot to hear `OnOreMinedByOther`.

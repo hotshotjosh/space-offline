@@ -1361,7 +1361,7 @@ mod tests {
     /// one; and an id in the wormhole range that no table lists.
     const HIGH_SYSTEM: i64 = 39_000_001;
     const NULL_SYSTEM: i64 = 39_000_003;
-    const WORMHOLE_SYSTEM: i64 = 31_000_042;
+    const WORMHOLE_SYSTEM: i64 = 31_990_042;
     /// A large-class type id the size table lists.
     const LARGE_TYPE: i64 = 35_833;
 

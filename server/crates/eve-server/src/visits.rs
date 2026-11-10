@@ -250,10 +250,10 @@ mod tests {
     #[test]
     fn agents_rank_is_the_standing_over_ten() {
         let mut reg = world();
-        reg.standings.set(ME, 3_010_001, 5.0);
+        reg.standings.set(ME, 3_980_001, 5.0);
         let rs = agents_rowset(Some(ME), &reg);
         assert_eq!(rs.len(), 1);
-        assert_eq!(rs.rows()[0].values()[0], DbValue::Int(3_010_001));
+        assert_eq!(rs.rows()[0].values()[0], DbValue::Int(3_980_001));
         assert_eq!(rs.rows()[0].values()[1], DbValue::Real(0.5));
     }
 }

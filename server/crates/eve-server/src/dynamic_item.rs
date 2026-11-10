@@ -986,12 +986,12 @@ mod tests {
     #[test]
     fn the_dynitem_kind_survives_the_registry() {
         let (mut reg, _, _) = world();
-        let r = row_of(31_000_001, vec![(attr::CPU, 0.1 + 0.2)]);
+        let r = row_of(31_990_001, vec![(attr::CPU, 0.1 + 0.2)]);
         put(&mut reg, &r);
         let snap = reg.to_snapshot();
         let mut fresh = Registry::new(crate::model::SandboxConfig::default());
         fresh.apply_snapshot(snap);
-        assert_eq!(row(&fresh, 31_000_001), Some(r));
+        assert_eq!(row(&fresh, 31_990_001), Some(r));
     }
 }
 

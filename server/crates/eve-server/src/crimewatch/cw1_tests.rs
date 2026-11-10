@@ -13,7 +13,7 @@ const SHIP: [i64; 3] = [100_000_001, 100_000_002, 100_000_003];
 /// An invented hull: anything but the capsule.
 const HULL: i64 = 990_000_001;
 /// The system the fights happen in; its security is each test's.
-const SYS: i64 = 30_000_003;
+const SYS: i64 = 30_990_003;
 const T0: BlueTime = 133_000_000_000_000_000;
 const HIGH: f64 = 0.75;
 const LOW: f64 = 0.25;

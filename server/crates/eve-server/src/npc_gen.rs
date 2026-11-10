@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(s.faction_id, None);
         // And through a registry with no bundle.
         let w = crate::service::Registry::new(crate::model::SandboxConfig::default());
-        assert!(!belt_squad_in(&w, 30_000_001, &[0, 0]).members.is_empty());
+        assert!(!belt_squad_in(&w, 30_990_001, &[0, 0]).members.is_empty());
     }
 
     fn dungeon() -> crate::dungeon_data::Dungeon {

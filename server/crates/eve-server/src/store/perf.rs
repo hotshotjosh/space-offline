@@ -92,7 +92,7 @@ pub(super) fn big_snapshot() -> Snapshot {
                 status: crate::industry::Status::Installed,
                 installer_id: id,
                 completed_character_id: None,
-                solar_system_id: 30_000_001,
+                solar_system_id: 30_990_001,
                 station_id: 60_000_000,
                 start_date: 133_000_000_000_000_000,
                 end_date: 133_000_003_000_000_000,
@@ -148,7 +148,7 @@ pub(super) fn big_snapshot() -> Snapshot {
             vec![k.to_string()],
             row(&[
                 "133000000000000000".into(),
-                "30000001".into(),
+                "30990001".into(),
                 "90000001".into(),
                 "98000001".into(),
                 "-".into(),
@@ -217,7 +217,7 @@ pub(super) fn big_snapshot() -> Snapshot {
         let state = if o < OPEN_ORDERS { 0 } else { 1 };
         let _ = writeln!(
             text,
-            "mktorder\t{o}\t{}\t{}\t10000002\t30000001\t60000000\t12.5\t1000\t{}\t1\t0\t133000000000000000\t90\t32767\t0\t{state}\t-1",
+            "mktorder\t{o}\t{}\t{}\t10990002\t30990001\t60000000\t12.5\t1000\t{}\t1\t0\t133000000000000000\t90\t32767\t0\t{state}\t-1",
             90_000_000 + o % CHARS,
             34 + o % 500,
             if state == 0 { 500 } else { 0 },
@@ -226,7 +226,7 @@ pub(super) fn big_snapshot() -> Snapshot {
     for t in 0..TRADES {
         let _ = writeln!(
             text,
-            "mkttrade\t{t}\t133000000000000000\t{}\t10\t12.5\t60000000\t{}\t{}\t10000002",
+            "mkttrade\t{t}\t133000000000000000\t{}\t10\t12.5\t60000000\t{}\t{}\t10990002",
             34 + t % 500,
             90_000_000 + t % CHARS,
             90_000_000 + (t + 1) % CHARS,

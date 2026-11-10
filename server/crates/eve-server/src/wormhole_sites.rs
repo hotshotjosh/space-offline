@@ -855,13 +855,13 @@ mod tests {
     fn the_gm_jump_names_a_j_space_system_by_id_or_class() {
         let sys = |id: i64, class: i64| {
             format!(
-                "{id}\t19000001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t{class}\t0\t\t\tWH {id}"
+                "{id}\t19990001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t{class}\t0\t\t\tWH {id}"
             )
         };
         let u = crate::celestial::Universe::parse(
             &[sys(31_990_005, 3), sys(31_990_002, 3), sys(31_990_001, 1)],
-            &["19000001\t\t\t\t\tR".to_owned()],
-            &["29000001\t19000001\t\t\t\tC".to_owned()],
+            &["19990001\t\t\t\t\tR".to_owned()],
+            &["29000001\t19990001\t\t\t\tC".to_owned()],
         )
         .unwrap();
         assert_eq!(
@@ -884,12 +884,12 @@ mod tests {
     #[test]
     fn fx_picks_the_lowest_j_space_system_with_a_beacon() {
         let sys = |id: i64| {
-            format!("{id}\t19000001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t3\t0\t\t\tWH {id}")
+            format!("{id}\t19990001\t29000001\t\t\t-1.0\t\t0\t0\t0\t0\t0\t0\t3\t0\t\t\tWH {id}")
         };
         let u = crate::celestial::Universe::parse(
             &[sys(31_990_005), sys(31_990_002), sys(31_990_001)],
-            &["19000001\t\t\t\t\tR".to_owned()],
-            &["29000001\t19000001\t\t\t\tC".to_owned()],
+            &["19990001\t\t\t\t\tR".to_owned()],
+            &["29000001\t19990001\t\t\t\tC".to_owned()],
         )
         .unwrap();
         let with = |ids: &'static [i64]| move |id: i64| ids.contains(&id);

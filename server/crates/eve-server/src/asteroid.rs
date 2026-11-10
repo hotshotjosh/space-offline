@@ -1486,13 +1486,13 @@ mod tests {
     /// The shape `tools/asteroids.py` writes. The numbers are a fixture, not
     /// the client's: each test asserts a property that holds for any law.
     const COUNTS: &str = "\
-# solarSystemID\t30000001
+# solarSystemID\t30990001
 #belt_id\tordinal\ttype_id\tcount\tsystem\tgrowth\tunit_size\tmax_radius
-40000003\t0\t1224\t22\t30000001\t0.5\t90.0\t16255.0
-40000003\t0\t1230\t30\t30000001\t0.5\t90.0\t16255.0
-40000003\t0\t17459\t10\t30000001\t0.5\t600.0\t16255.0
-40000006\t1\t1228\t27\t30000001\t0.5\t90.0\t16255.0
-40000099\t9\t1228\t5\t30000001\t0.5\t90.0\t16255.0
+40000003\t0\t1224\t22\t30990001\t0.5\t90.0\t16255.0
+40000003\t0\t1230\t30\t30990001\t0.5\t90.0\t16255.0
+40000003\t0\t17459\t10\t30990001\t0.5\t600.0\t16255.0
+40000006\t1\t1228\t27\t30990001\t0.5\t90.0\t16255.0
+40000099\t9\t1228\t5\t30990001\t0.5\t90.0\t16255.0
 ";
 
     const CELESTIALS: &str = "\
@@ -1517,12 +1517,12 @@ planet\t40000002\t11\t5060000.0\t161891117336.0\t21288951986.0\t-73529712226.0
         assert_eq!(c.rows()[0].type_id, 1224);
         assert_eq!(c.rows()[0].law.unit_size, 90.0);
         let bad = Counts::parse(
-            "40000003\t0\t1224\t22\t30000001\t0.5\t90.0\t16255.0\n\
-             40000003\tx\t1224\t22\t30000001\t0.5\t90.0\t16255.0\n\
-             40000003\t0\t1224\t22\t30000001\n\
-             40000003\t0\t1224\t22\t30000001\t0.0\t90.0\t16255.0\n\
-             40000003\t0\t1224\t0\t30000001\t0.5\t90.0\t16255.0\n\
-             40000003\t50000\t1224\t2\t30000001\t0.5\t90.0\t16255.0\n",
+            "40000003\t0\t1224\t22\t30990001\t0.5\t90.0\t16255.0\n\
+             40000003\tx\t1224\t22\t30990001\t0.5\t90.0\t16255.0\n\
+             40000003\t0\t1224\t22\t30990001\n\
+             40000003\t0\t1224\t22\t30990001\t0.0\t90.0\t16255.0\n\
+             40000003\t0\t1224\t0\t30990001\t0.5\t90.0\t16255.0\n\
+             40000003\t50000\t1224\t2\t30990001\t0.5\t90.0\t16255.0\n",
         );
         assert_eq!(bad.rows().len(), 1, "{bad:?}");
         assert!(Counts::parse("").rows().is_empty());
@@ -1706,12 +1706,12 @@ planet\t40000002\t11\t5060000.0\t161891117336.0\t21288951986.0\t-73529712226.0
     /// Three systems, belts interleaved across them, so one system's ids
     /// are not one contiguous run. Invented ids and laws.
     const MULTI_COUNTS: &str = "\
-40000003\t0\t1224\t6\t30000001\t0.5\t90.0\t16255.0
-40000003\t0\t17459\t3\t30000001\t0.5\t600.0\t16255.0
-40000006\t1\t1228\t5\t30000002\t0.5\t90.0\t16255.0
-40000007\t2\t1230\t4\t30000001\t0.5\t90.0\t16255.0
-40000008\t3\t1224\t7\t30000003\t0.5\t90.0\t16255.0
-40000009\t4\t1228\t2\t30000002\t0.5\t90.0\t16255.0
+40000003\t0\t1224\t6\t30990001\t0.5\t90.0\t16255.0
+40000003\t0\t17459\t3\t30990001\t0.5\t600.0\t16255.0
+40000006\t1\t1228\t5\t30990002\t0.5\t90.0\t16255.0
+40000007\t2\t1230\t4\t30990001\t0.5\t90.0\t16255.0
+40000008\t3\t1224\t7\t30990003\t0.5\t90.0\t16255.0
+40000009\t4\t1228\t2\t30990002\t0.5\t90.0\t16255.0
 ";
 
     const MULTI_CELESTIALS: &str = "\
@@ -1723,7 +1723,7 @@ belt\t40000009\t15\t0.0\t0.0\t0.0\t-7000000.0
 ";
 
     /// The systems the fixture has, and two it does not.
-    const SYSTEMS: [i64; 5] = [30_000_001, 30_000_002, 30_000_003, 30_000_004, 0];
+    const SYSTEMS: [i64; 5] = [30_990_001, 30_990_002, 30_990_003, 30_990_004, 0];
 
     /// `in_system` against the filter it replaced: the same rows, in the
     /// same order, for every system.
@@ -1780,7 +1780,7 @@ belt\t40000009\t15\t0.0\t0.0\t0.0\t-7000000.0
             if let Some(first) = subset.first().copied() {
                 // A duplicate id moved to another system: the later wins.
                 subset.push(Rock {
-                    solar_system_id: 30_000_004,
+                    solar_system_id: 30_990_004,
                     ..first
                 });
             }
@@ -1796,8 +1796,8 @@ belt\t40000009\t15\t0.0\t0.0\t0.0\t-7000000.0
         let f = field();
         let any = *f.iter().next().unwrap();
         assert_eq!(f.get(any.id), Some(&any));
-        assert_eq!(f.in_system(30_000_001).count(), f.len());
-        assert_eq!(f.in_system(30_000_002).count(), 0);
+        assert_eq!(f.in_system(30_990_001).count(), f.len());
+        assert_eq!(f.in_system(30_990_002).count(), 0);
         assert_eq!(
             f.get(MIN_ROCK_ID + 199),
             None,
@@ -1818,18 +1818,18 @@ belt\t40000009\t15\t0.0\t0.0\t0.0\t-7000000.0
     /// lacks among the rows, so one system's rows are two ranges.
     const LAZY_COUNTS: &str = "\
 #belt_id\tordinal\ttype_id\tcount\tsystem\tgrowth\tunit_size\tmax_radius
-40000003\t0\t1224\t6\t30000001\t0.5\t90.0\t16255.0
-40000003\t0\t17459\t3\t30000001\t0.5\t600.0\t16255.0
-40000006\t1\t1228\t5\t30000002\t0.5\t90.0\t16255.0
+40000003\t0\t1224\t6\t30990001\t0.5\t90.0\t16255.0
+40000003\t0\t17459\t3\t30990001\t0.5\t600.0\t16255.0
+40000006\t1\t1228\t5\t30990002\t0.5\t90.0\t16255.0
 not\ta\trow
-40000007\t2\t1230\t4\t30000001\t0.5\t90.0\t16255.0
-40000099\t9\t1230\t4\t30000002\t0.5\t90.0\t16255.0
-40000008\t3\t1224\t7\t30000003\t0.5\t90.0\t16255.0
-40000009\t4\t1228\t2\t30000002\t0.5\t90.0\t16255.0
+40000007\t2\t1230\t4\t30990001\t0.5\t90.0\t16255.0
+40000099\t9\t1230\t4\t30990002\t0.5\t90.0\t16255.0
+40000008\t3\t1224\t7\t30990003\t0.5\t90.0\t16255.0
+40000009\t4\t1228\t2\t30990002\t0.5\t90.0\t16255.0
 ";
 
-    const A: i64 = 30_000_001;
-    const ALICE: i64 = 1_000_001;
+    const A: i64 = 30_990_001;
+    const ALICE: i64 = 1_980_001;
     const ALICE_SHIP: i64 = 100_000_001;
     /// A blue-clock origin; any value works.
     const T0: crate::damage::BlueTime = 1_000 * COOL_AFTER;
@@ -1944,7 +1944,7 @@ not\ta\trow
         tick(&mut reg, T0);
         assert_eq!(rows_in(reg.rocks(), A), rows_in(&eager(), A));
         assert_eq!(reg.rocks().len(), eager().in_system(A).count());
-        for s in [30_000_002, 30_000_003] {
+        for s in [30_990_002, 30_990_003] {
             assert_eq!(reg.rocks().in_system(s).count(), 0, "system {s}");
             assert!(!reg.rocks().is_materialised(s));
         }
@@ -2082,7 +2082,7 @@ not\ta\trow
             ordinal: 0,
             type_id: 991,
             count,
-            solar_system_id: 30_000_001,
+            solar_system_id: 30_990_001,
             law: law_90(),
         }]
     }
@@ -2210,7 +2210,7 @@ not\ta\trow
         let file = TmpFile::new(LAZY_COUNTS);
         let mut f = lazy_field(&file);
         let mut d = Deltas::default();
-        let s = 30_000_002;
+        let s = 30_990_002;
         materialise(&mut f, s, &mut d);
         let whole = rows_in(&f, s);
         let gone = *whole.iter().find(|r| r.belt_id == 40_000_006).unwrap();
@@ -2279,7 +2279,7 @@ not\ta\trow
         }
         capture_into(&mut f, &mut d);
         assert_index_is_the_filter(&f, "mined");
-        f.drop_system(30_000_002);
+        f.drop_system(30_990_002);
         assert_index_is_the_filter(&f, "dropped");
         let keys = f.reset_keys(d.of(KIND));
         f.restore(&keys);
@@ -2287,7 +2287,7 @@ not\ta\trow
         for k in &keys {
             d.del(KIND, k);
         }
-        materialise(&mut f, 30_000_002, &mut d);
+        materialise(&mut f, 30_990_002, &mut d);
         assert_index_is_the_filter(&f, "laid out again");
         assert!(f.iter().eq(eager().iter()), "everything regrown");
     }

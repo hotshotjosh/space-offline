@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(got, vec![(90_000_701, 5.0), (90_000_702, 0.0)]);
         // Anything that is not a player corp, or a malformed call, is empty.
         assert_eq!(
-            compositions_value(&reg, &[PyValue::Int(NPC_A), PyValue::Int(1_000_001)], NOW),
+            compositions_value(&reg, &[PyValue::Int(NPC_A), PyValue::Int(1_980_001)], NOW),
             PyValue::List(vec![])
         );
         assert_eq!(compositions_value(&reg, &[], NOW), PyValue::List(vec![]));

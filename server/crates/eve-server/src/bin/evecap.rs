@@ -965,7 +965,7 @@ Thrown at:
  <pre>/eve/client/script/remote/michelle.py(213) OnPrimaryViewChanged
  <pre>/eve/client/script/remote/michelle.py(453) AddBallpark
         formations = []
-        solarsystemID = 30000001
+        solarsystemID = 30990001
 Formatted exception info: TypeError: must be tuple, not list
 Stackhash: -4787970
 ";

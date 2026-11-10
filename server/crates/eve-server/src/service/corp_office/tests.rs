@@ -1224,7 +1224,7 @@ fn the_votes_tab_question_is_answered_false_and_the_campaign_snapshot_names_the_
         PyValue::Bool(false)
     );
     // The caller's session system, not the first configured character's.
-    reg.character_mut(BOB).expect("bob").solar_system_id = Some(30_000_777);
+    reg.character_mut(BOB).expect("bob").solar_system_id = Some(30_990_777);
     assert_eq!(
         call(
             &mut reg,
@@ -1232,6 +1232,6 @@ fn the_votes_tab_question_is_answered_false_and_the_campaign_snapshot_names_the_
             "GetLocalCampaignClientSnapshot",
             BOB
         ),
-        PyValue::Tuple(vec![PyValue::Int(30_000_777), PyValue::None])
+        PyValue::Tuple(vec![PyValue::Int(30_990_777), PyValue::None])
     );
 }

@@ -870,7 +870,7 @@ mod breaker_sweep_tests {
             &Request {
                 service,
                 method,
-                args: &[PyValue::Int(3_008_416)],
+                args: &[PyValue::Int(3_978_416)],
                 kwargs: &[],
                 bind_params: None,
                 actor: None,

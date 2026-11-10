@@ -456,7 +456,7 @@ mod tests {
     const PRICE: f64 = 100_000.0;
     /// Invented module item ids, put in the ship by the test.
     const MOD_A: i64 = 100_000_901;
-    const SHIELD_EXT: i64 = 3841;
+    const SHIELD_EXT: i64 = 990963841;
 
     fn world() -> Registry {
         world_with(|_| {})

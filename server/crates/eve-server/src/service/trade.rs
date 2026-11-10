@@ -131,7 +131,7 @@ mod tests {
     const ALICE_SHIP: i64 = 100_000_901;
     const BOB_SHIP: i64 = 100_000_902;
     const CAROL_SHIP: i64 = 100_000_903;
-    const STATION: i64 = 60_000_901;
+    const STATION: i64 = 60_700_901;
     const OTHER_STATION: i64 = 60_000_902;
     const ITEM: i64 = 100_000_911;
     const STACK: i64 = 100_000_912;

@@ -957,7 +957,7 @@ mod missile_tests {
             mass: 77.0,
             cloak: 0,
             harmonic: -1,
-            corporation_id: 1_000_123,
+            corporation_id: 1_980_123,
             alliance_id: 0,
             physics: Some(Physics {
                 max_velocity: 4_321.0,

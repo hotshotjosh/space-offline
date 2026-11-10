@@ -235,7 +235,7 @@ fn fee_is_a_share_of_the_value_in_whole_cents() {
 #[test]
 fn wormhole_space_has_no_asset_safety() {
     assert!(applies(SYSTEM));
-    assert!(!applies(31_000_005));
+    assert!(!applies(31_990_005));
 }
 
 /// **PV-1e.** A Triglavian system has no asset safety, as wormhole space has
@@ -258,7 +258,7 @@ fn a_structure_in_pochven_leaves_no_wrap() {
     let mut reg = Registry::new(config(100.0)).with_content(std::sync::Arc::new(c));
     assert!(!applies_in(&reg, SYSTEM), "the Triglavian system");
     assert!(applies_in(&reg, OTHER_SYSTEM), "a system the map lacks");
-    assert!(!applies_in(&reg, 31_000_005), "wormhole space");
+    assert!(!applies_in(&reg, 31_990_005), "wormhole space");
     assert_eq!(
         wrap_place(&mut reg, BOSS, SYSTEM, 1, 0, &|_| false),
         Err(Refusal::NoSafetyHere)
@@ -320,7 +320,7 @@ fn a_wormhole_system_keeps_the_older_move_to_the_harbour() {
     let (mut reg, id, corp) = world();
     let spare = store_item(&mut reg, BOSS, id);
     let mut s = crate::structure::get(reg.deltas(), id).unwrap();
-    s.system = 31_000_005;
+    s.system = 31_990_005;
     let w = wrap_structure(&mut reg, &s, 1, &|_| false);
     assert!(w.wraps.is_empty());
     assert!(all(reg.deltas()).is_empty());
@@ -556,7 +556,7 @@ fn things_can_be_put_in_safety_from_a_structure_one_is_not_docked_in() {
         Err(Refusal::NothingThere)
     );
     assert_eq!(
-        wrap_place(&mut reg, BOSS, 31_000_005, id, now, &|_| false),
+        wrap_place(&mut reg, BOSS, 31_990_005, id, now, &|_| false),
         Err(Refusal::NoSafetyHere)
     );
     let wrap = wrap_place(&mut reg, BOSS, SYSTEM, id, now, &|i| i == ship).unwrap();
@@ -615,7 +615,7 @@ fn a_failed_delivery_in_one_world_does_not_delay_the_same_wrap_id_in_another() {
     let (mut b, id_b, corp_b) = world();
     let _ = unanchor(&mut b, id_b, corp_b);
     // Two worlds in one process, born at invented, different instants.
-    for (reg, birth) in [(&mut a, 1_000_001), (&mut b, 1_000_002)] {
+    for (reg, birth) in [(&mut a, 1_980_001), (&mut b, 1_980_002)] {
         let mut w = *reg.deltas().world().expect("a world");
         w.birth = birth;
         reg.deltas_mut().set_world(w);

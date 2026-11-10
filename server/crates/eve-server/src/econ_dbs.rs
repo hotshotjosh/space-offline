@@ -269,8 +269,8 @@ pub fn on_rollover(reg: &mut Registry, now: BlueTime) -> usize {
 mod tests {
     use super::*;
 
-    const SYSTEM: i64 = 30_000_001;
-    const OTHER: i64 = 30_000_002;
+    const SYSTEM: i64 = 30_990_001;
+    const OTHER: i64 = 30_990_002;
     const T0: BlueTime = 130_000_000_000_000_000;
     const HOUR: BlueTime = 36_000_000_000;
 

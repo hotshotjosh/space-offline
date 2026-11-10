@@ -505,7 +505,7 @@ mod tests {
             Style::Hacking,
             None,
         );
-        w.reg.ext_mut::<Hacks>().start(1_000_002, w.can, other);
+        w.reg.ext_mut::<Hacks>().start(1_980_002, w.can, other);
         assert!(activate(&mut w.reg, w.can).is_err());
         assert!(w.reg.modules().running(ANALYZER).is_none());
         assert_eq!(w.reg.ext::<Hacks>().armed(ALICE), None);

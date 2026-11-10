@@ -2643,7 +2643,7 @@ mod tests {
             character_id: id,
             name: format!("P{id}"),
             ship_id: id + 100_000_000,
-            station_id: Some(60_007_000),
+            station_id: Some(60_707_000),
             solar_system_id: Some(home),
             ..crate::model::Character::default()
         };

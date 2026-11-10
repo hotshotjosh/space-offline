@@ -6641,7 +6641,7 @@ mod tests {
         };
         set(&mut reg, PyValue::None).expect("clearing");
         assert_eq!(
-            key_of(&set(&mut reg, PyValue::Int(60_000_004)).unwrap_err()),
+            key_of(&set(&mut reg, PyValue::Int(60_700_004)).unwrap_err()),
             "CustomInfo"
         );
     }

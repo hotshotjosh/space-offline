@@ -11,10 +11,10 @@ use crate::notify::Push;
 use crate::space_state::Motion;
 use eve_marshal::PyValue;
 
-pub(crate) const SYSTEM: i64 = 30_000_001;
-pub(crate) const OTHER_SYSTEM: i64 = 30_000_002;
+pub(crate) const SYSTEM: i64 = 30_990_001;
+pub(crate) const OTHER_SYSTEM: i64 = 30_990_002;
 /// The `Character` default's station, catalogued here at [`STATION_AT`].
-pub(crate) const STATION: i64 = 60_012_526;
+pub(crate) const STATION: i64 = 60_712_526;
 pub(crate) const PLANET: i64 = 40_000_200;
 pub(crate) const BELT_A: i64 = 40_000_201;
 pub(crate) const BELT_B: i64 = 40_000_202;
@@ -102,8 +102,8 @@ fn pilot_at_station(id: i64, name: &str, ship: i64) -> crate::model::Character {
 pub(crate) fn world_of(pilots: Vec<crate::model::Character>) -> Registry {
     let catalogue = crate::celestial::Catalogue::parse(&format!(
         "#kind\tid\ttype_id\tradius\tx\ty\tz\tsystem\tdest\tdest_system\n\
-         #system\t{SYSTEM}\t20000001\t10000001\n\
-         #system\t{OTHER_SYSTEM}\t20000001\t10000001\n\
+         #system\t{SYSTEM}\t20990001\t10990001\n\
+         #system\t{OTHER_SYSTEM}\t20990001\t10990001\n\
          station\t{STATION}\t2502\t0.0\t{sx}\t0.0\t0.0\t{SYSTEM}\t0\t0\n\
          planet\t{PLANET}\t11\t6000000.0\t{sx}\t0.0\t{AU}\t{SYSTEM}\t0\t0\n\
          moon\t{MOON}\t14\t1000000.0\t{sx}\t0.0\t{moon_z}\t{SYSTEM}\t0\t0\n\

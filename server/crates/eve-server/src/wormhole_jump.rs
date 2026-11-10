@@ -682,8 +682,8 @@ mod tests {
     /// The universe fixture's null-sec system: one static, to the invented
     /// wormhole class.
     const NULL: i64 = 39_000_003;
-    const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const ALICE: i64 = 1_980_001;
+    const BOB: i64 = 1_980_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOB_SHIP: i64 = 100_000_002;
 

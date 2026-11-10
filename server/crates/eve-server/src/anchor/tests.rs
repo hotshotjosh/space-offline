@@ -37,12 +37,12 @@ const T0: BlueTime = 133_000_000_000_000_000;
 
 fn universe() -> Universe {
     let row = |id: i64, sec: f64| {
-        format!("{id}\t19000001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}")
+        format!("{id}\t19990001\t29000001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tFixture {id}")
     };
     Universe::parse(
         &[row(SYSTEM, -0.5), row(HIGH, 0.9)],
-        &["19000001\t\t\t\t\tFixture region".to_owned()],
-        &["29000001\t19000001\t\t\t\tFixture constellation".to_owned()],
+        &["19990001\t\t\t\t\tFixture region".to_owned()],
+        &["29000001\t19990001\t\t\t\tFixture constellation".to_owned()],
     )
     .expect("the invented rows parse")
 }

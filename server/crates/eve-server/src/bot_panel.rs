@@ -654,22 +654,22 @@ mod tests {
     fn a_preset_becomes_bots_spawn_lines() {
         let table = shipped();
         let p = table.iter().find(|p| p.key == "ally-miners").unwrap();
-        let lines = lines_for(p, 7, "RED", &|_| 30_000_042);
+        let lines = lines_for(p, 7, "RED", &|_| 30_990_042);
         assert_eq!(
             lines,
             [
-                "/bots spawn ao7 RED foreman 1 role Orca 30000042",
-                "/bots spawn am7 RED mine 10 role Hulk 30000042",
+                "/bots spawn ao7 RED foreman 1 role Orca 30990042",
+                "/bots spawn am7 RED mine 10 role Hulk 30990042",
             ]
         );
         let g = table.iter().find(|p| p.key == "foe-gang-small").unwrap();
         let far = lines_for(g, 8, "RED", &|at| match at {
-            Where::Near(3) => 30_000_099,
-            _ => 30_000_042,
+            Where::Near(3) => 30_990_099,
+            _ => 30_990_042,
         });
         assert_eq!(
             far,
-            ["/bots spawn hs8 FOES roamgang 4 role Rifter 30000099"]
+            ["/bots spawn hs8 FOES roamgang 4 role Rifter 30990099"]
         );
     }
 
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn nearby_stays_home_without_a_gate_graph() {
         let (reg, _) = world(true);
-        assert_eq!(nearby(&reg, 30_000_001, 3, 5), 30_000_001);
+        assert_eq!(nearby(&reg, 30_990_001, 3, 5), 30_990_001);
     }
 
     #[test]

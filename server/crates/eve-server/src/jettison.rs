@@ -512,7 +512,7 @@ mod tests {
     const BOB: i64 = 90_000_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOB_SHIP: i64 = 100_000_002;
-    const SYSTEM: i64 = 30_000_001;
+    const SYSTEM: i64 = 30_990_001;
     /// Invented rows: a hauler with a very big hold, a stackable that takes
     /// a lot of room and a plain stackable. **Not the client's numbers.**
     const HAULER: i64 = 990_920_001;

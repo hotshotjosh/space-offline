@@ -506,11 +506,11 @@ mod tests {
     use crate::session_table::SessionEntry;
 
     const ALICE: i64 = 1_000_001;
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const ALICE_SHIP: i64 = 100_000_001;
     const BOB_SHIP: i64 = 100_000_002;
     const A: i64 = 30_000_001;
-    const B: i64 = 30_000_003;
+    const B: i64 = 30_990_003;
     const STATION_A: i64 = 60_000_001;
     const STATION_B: i64 = 60_000_002;
     const PLANET_B: i64 = 22;

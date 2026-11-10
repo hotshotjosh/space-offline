@@ -513,9 +513,9 @@ mod tests {
     const ALICE_SHIP: i64 = 100_000_001;
     /// Invented ids (no client data). `A` is `Character::default()`'s system.
     const A: i64 = 30_000_001;
-    const B: i64 = 30_000_003;
+    const B: i64 = 30_990_003;
     /// Linked to nothing: never anyone's neighbour.
-    const C: i64 = 30_000_009;
+    const C: i64 = 30_990_009;
     const GATE_A: i64 = 51;
     const GATE_B: i64 = 52;
     /// A blue-clock origin; any value works.
@@ -568,7 +568,7 @@ mod tests {
         reg.ext::<Liveness>()
     }
 
-    const BOB: i64 = 1_000_002;
+    const BOB: i64 = 1_980_002;
     const BOB_SHIP: i64 = 100_000_002;
     /// Over the budget by any margin: an overrun by definition.
     const OVER: Duration = LOCK_BUDGET.saturating_add(Duration::from_millis(1));

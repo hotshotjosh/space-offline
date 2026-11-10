@@ -2380,7 +2380,7 @@ mod tests {
         let build = || {
             let mut r = Roster::default();
             for (c, x) in [(1, 0.0), (2, 5_000.0), (3, 9_000.0)] {
-                let mut p = presence(c, 30_000_001);
+                let mut p = presence(c, 30_990_001);
                 p.motion = Motion::arrived([x, 0.0, 0.0], [0.0; 3]);
                 r.arrive(p);
             }
@@ -2433,7 +2433,7 @@ mod tests {
     fn the_revision_counts_structural_writes_only() {
         let mut r = Roster::default();
         let r0 = r.revision();
-        r.arrive(presence(7, 30_000_001));
+        r.arrive(presence(7, 30_990_001));
         assert_eq!(r.revision(), r0 + 1);
         r.set_ship_id(7, 40_000);
         assert_eq!(r.revision(), r0 + 2);
@@ -2454,9 +2454,9 @@ mod tests {
         assert_eq!(r.revision(), r0 + 4, "a leave of nobody is not a write");
         // Not state: equal rosters at different revisions compare equal.
         let mut a = Roster::default();
-        a.arrive(presence(8, 30_000_001));
+        a.arrive(presence(8, 30_990_001));
         let mut b = a.clone();
-        b.arrive(presence(8, 30_000_001));
+        b.arrive(presence(8, 30_990_001));
         assert_ne!(a.revision(), b.revision());
         assert_eq!(a, b);
     }
@@ -2470,7 +2470,7 @@ mod tests {
     #[test]
     fn arriving_in_space_forgets_the_previous_flight() {
         let mut roster = Roster::default();
-        roster.arrive(presence(7, 30_000_001));
+        roster.arrive(presence(7, 30_990_001));
         roster
             .get_mut(7)
             .expect("just arrived")
@@ -2483,7 +2483,7 @@ mod tests {
 
         roster.leave(7);
         assert_eq!(roster.get(7), None);
-        roster.arrive(presence(7, 30_000_001));
+        roster.arrive(presence(7, 30_990_001));
         assert_eq!(
             roster.get(7).map(|p| p.motion.position),
             Some([1.0, 2.0, 3.0]),
@@ -2571,20 +2571,20 @@ mod tests {
     #[test]
     fn the_audience_is_the_system_minus_the_subject() {
         let mut roster = Roster::default();
-        roster.arrive(presence(1, 30_000_001));
-        roster.arrive(presence(2, 30_000_001));
-        roster.arrive(presence(3, 30_000_002));
+        roster.arrive(presence(1, 30_990_001));
+        roster.arrive(presence(2, 30_990_001));
+        roster.arrive(presence(3, 30_990_002));
 
-        assert_eq!(roster.others_in_system(30_000_001, 1), vec![2]);
-        assert_eq!(roster.others_in_system(30_000_001, 2), vec![1]);
+        assert_eq!(roster.others_in_system(30_990_001, 1), vec![2]);
+        assert_eq!(roster.others_in_system(30_990_001, 2), vec![1]);
         assert_eq!(
-            roster.others_in_system(30_000_002, 3),
+            roster.others_in_system(30_990_002, 3),
             Vec::<i64>::new(),
             "alone in a system hears from nobody"
         );
         assert_eq!(
             roster
-                .in_system(30_000_001)
+                .in_system(30_990_001)
                 .iter()
                 .map(|p| p.character_id)
                 .collect::<Vec<_>>(),
@@ -2798,7 +2798,7 @@ mod tests {
     fn a_ship_told_to_orbit_itself_stays_where_it_is() {
         use crate::model::{Character, SandboxConfig};
         use crate::service::Registry;
-        const ALICE: i64 = 1_000_001;
+        const ALICE: i64 = 1_980_001;
         let alice = Character {
             character_id: ALICE,
             name: "Alice".to_owned(),
@@ -2937,7 +2937,7 @@ mod tests {
             for start in starts {
                 let mut m = Motion::arrived(start, [0.0, 0.0, 300.0]);
                 m.mode = Mode::Orbit {
-                    ball_id: 60_000_004,
+                    ball_id: 60_700_004,
                     range: 500.0,
                 };
                 m.tethered_in_plane(target, r, ball_id, tick);
@@ -2969,7 +2969,7 @@ mod tests {
         let target = [0.0; 3];
         let mut m = Motion::arrived([8_000.0, 1_000.0, -500.0], [120.0, -40.0, 90.0]);
         m.mode = Mode::Orbit {
-            ball_id: 60_000_004,
+            ball_id: 60_700_004,
             range: 2_500.0,
         };
         let speed = m.speed();
@@ -2997,7 +2997,7 @@ mod tests {
     fn a_follow_is_untouched_by_the_orbital_plane() {
         let mut a = Motion::arrived([9_000.0, 4_000.0, -1_000.0], [10.0, 0.0, 0.0]);
         a.mode = Mode::Follow {
-            ball_id: 60_000_004,
+            ball_id: 60_700_004,
             range: 1_000.0,
         };
         let mut b = a;
@@ -3014,7 +3014,7 @@ mod tests {
         let n = plane_normal(ball_id, tick);
         let mut m = Motion::arrived([n[0] * 5_000.0, n[1] * 5_000.0, n[2] * 5_000.0], [0.0; 3]);
         m.mode = Mode::Orbit {
-            ball_id: 60_000_004,
+            ball_id: 60_700_004,
             range: 1_000.0,
         };
         m.tethered_in_plane([0.0; 3], 1_000.0, ball_id, tick);
@@ -3034,7 +3034,7 @@ mod tests {
     fn the_roster_is_the_only_answer_to_whether_a_pilot_is_in_space() {
         let mut roster = Roster::default();
         assert!(!roster.is_in_space(7));
-        roster.arrive(presence(7, 30_000_001));
+        roster.arrive(presence(7, 30_990_001));
         assert!(roster.is_in_space(7));
         assert_eq!(roster.leave(7).map(|p| p.ship_id), Some(10_007));
         assert!(!roster.is_in_space(7));
@@ -3058,7 +3058,7 @@ mod tests {
                 .wrapping_add(1_442_695_040_888_963_407);
             (state >> 33) % n
         };
-        const SYSTEMS: [i64; 4] = [30_000_001, 30_000_002, 30_000_003, 30_000_004];
+        const SYSTEMS: [i64; 4] = [30_990_001, 30_990_002, 30_990_003, 30_990_004];
         let mut roster = Roster::default();
         let mut truth: std::collections::BTreeMap<i64, Presence> = Default::default();
         for step in 0..2_000 {
@@ -3106,7 +3106,7 @@ mod tests {
         max_velocity: 300.0,
         ..UNIT_TAU
     };
-    const PAIR_SYSTEM: i64 = 30_000_001;
+    const PAIR_SYSTEM: i64 = 30_990_001;
     /// Invented ids; the low 16 bits differ, so the two planes do.
     const SHIP_A: i64 = 9_000_000_045;
     const SHIP_B: i64 = 1_000_000_123;

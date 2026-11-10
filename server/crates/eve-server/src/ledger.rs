@@ -1443,7 +1443,7 @@ mod tests {
             kind: Kind::Market,
             id: 9,
             date: row.date,
-            owners: vec![BOT, 1_000_001],
+            owners: vec![BOT, 1_980_001],
             held: false,
         };
         let mut r = rules(gone_at, 0);

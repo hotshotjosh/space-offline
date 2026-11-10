@@ -433,8 +433,8 @@ mod tests {
     };
     use std::time::{Duration, Instant};
 
-    const STATION: i64 = 60_000_007;
-    const CAROL: i64 = 1_000_003;
+    const STATION: i64 = 60_700_007;
+    const CAROL: i64 = 1_980_003;
     const CAROL_SHIP: i64 = 100_000_003;
 
     fn call(

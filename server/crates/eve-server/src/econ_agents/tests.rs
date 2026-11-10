@@ -13,8 +13,8 @@ use eve_marshal::PyValue;
 const BOT: i64 = 90_000_501;
 const BUYER: i64 = 90_000_502;
 const STATION: i64 = 60_003_760;
-const SYSTEM: i64 = 30_000_142;
-const REGION: i64 = 10_000_002;
+const SYSTEM: i64 = 30_990_142;
+const REGION: i64 = 10_990_002;
 const HULL_ITEM: i64 = 100_000_501;
 /// Merlin, Miner I, 125mm, its round, Veldspar, Tritanium: `item::SPAWNABLE`.
 const MERLIN: i64 = 603;

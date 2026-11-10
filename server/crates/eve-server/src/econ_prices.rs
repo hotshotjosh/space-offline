@@ -749,7 +749,7 @@ mod tests {
     const BUYER: i64 = 90_000_201;
     const SELLER: i64 = 90_000_202;
     const OTHER: i64 = 90_000_203;
-    const NPC_CORP: i64 = 1_000_007;
+    const NPC_CORP: i64 = 1_980_007;
     const PLAYER_CORP: i64 = 98_000_001;
     const ALLIANCE: i64 = 99_000_001;
 
@@ -780,7 +780,7 @@ mod tests {
         assert!(same_group(&reg, BUYER, SELLER));
         assert!(same_group(&reg, BUYER, BUYER));
         assert!(!same_group(&reg, BUYER, OTHER));
-        assert!(!same_group(&reg, BUYER, 1_000_001), "an NPC side");
+        assert!(!same_group(&reg, BUYER, 1_980_001), "an NPC side");
         let npc = with_pilots(NPC_CORP, None);
         assert!(
             !same_group(&npc, BUYER, SELLER),

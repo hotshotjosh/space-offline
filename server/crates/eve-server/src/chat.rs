@@ -3225,7 +3225,7 @@ mod tests {
     const B: i64 = 90_000_002;
     const C: i64 = 90_000_003;
     const SYS1: i64 = 30_000_001;
-    const SYS2: i64 = 30_000_003;
+    const SYS2: i64 = 30_990_003;
     const QUIET: Duration = Duration::from_millis(300);
 
     struct World {

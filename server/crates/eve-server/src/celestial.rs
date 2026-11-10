@@ -1144,13 +1144,13 @@ mod tests {
     /// The real extract's shape, abbreviated. Tab-separated, as the tool
     /// writes it.
     const SAMPLE: &str = "\
-# solarSystemID\t30000001
+# solarSystemID\t30990001
 #kind\tid\ttype_id\tradius\tx\ty\tz
 star\t40000001\t45041\t63350000.0\t0.0\t0.0\t0.0
 planet\t40000002\t11\t5060000.0\t161891117336.0\t21288951986.0\t-73529712226.0
 moon\t40000004\t14\t270000.0\t162088094286.0\t21314854783.0\t-73598621491.0
 belt\t40000003\t15\t0.0\t161967513600.0\t21288837120.0\t-73505464320.0
-station\t60014437\t2502\t0.0\t331522498560.0\t43594997760.0\t-586328186880.0
+station\t60714437\t2502\t0.0\t331522498560.0\t43594997760.0\t-586328186880.0
 gate\t50000056\t29624\t0.0\t331516354560.0\t43597455360.0\t-586353991680.0
 ";
 
@@ -1279,7 +1279,7 @@ gate\t53\t17\t2323.0\t0.0\t0.0\t5000000.0\t2\t99\t9
         // everywhere, which is what it was before a second system existed.
         let bare = Catalogue::parse("planet\t12\t11\t500.0\t1.0\t2.0\t3.0\n");
         assert_eq!(bare.system_of(12), Some(0));
-        assert_eq!(bare.served_in(30_000_001).count(), 1);
+        assert_eq!(bare.served_in(30_990_001).count(), 1);
     }
 
     /// The `#system` lines are read, and only they: the header comment and

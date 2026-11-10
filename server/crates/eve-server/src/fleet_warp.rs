@@ -170,10 +170,10 @@ mod tests {
     use super::*;
     use crate::fleet::Fleets;
 
-    const BOSS: i64 = 1_000_001;
-    const ANN: i64 = 1_000_002;
-    const BEN: i64 = 1_000_003;
-    const CAT: i64 = 1_000_004;
+    const BOSS: i64 = 1_980_001;
+    const ANN: i64 = 1_980_002;
+    const BEN: i64 = 1_980_003;
+    const CAT: i64 = 1_980_004;
     const SHIP: i64 = 670;
 
     /// A fleet of four: the boss and three members in the default squad.

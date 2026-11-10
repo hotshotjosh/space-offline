@@ -825,12 +825,12 @@ modifier\t9240\tcharID\tItemModifier\t212\t213\t0\t\t
     const HI_SLOT: i64 = 27;
     const LO_SLOT: i64 = 11;
     /// The fixture's cruiser stands in for the fixture hull both pilots fly.
-    const FLOWN_HULL: i64 = 587;
+    const FLOWN_HULL: i64 = 990960587;
 
     /// Alice, in a ship the table holds, with a launcher online in a high
     /// slot and `rounds` missiles in it; Bob next to her in the same hull.
     fn world() -> Registry {
-        let text = FIXTURE.replace("type\t990470001\t25\t6", "type\t587\t25\t6");
+        let text = FIXTURE.replace("type\t990470001\t25\t6", "type\t990960587\t25\t6");
         let mut content = crate::content::Content::fixture();
         content.insert(
             crate::typedata::TABLE.name,
