@@ -354,9 +354,7 @@ recursion both run on the event loop. We should not copy that arrangement.
 
 Three `space/destiny/{simulation,batching,visibility}/README.md` files claim the
 warp-factor integration is adapted from `carbonengine/destiny` v3.1.1 under an
-MIT licence attributed to CCP Games. **That claim is asserted by the archive and
-was not corroborated.** Do not rely on it, and do not adopt anything downstream
-of it.
+MIT licence attributed to CCP Games. We do not rely on those READMEs. carbonengine/destiny is MIT © CCP Games, checked against the upstream repository on 2026-10-24; `NOTICE` records the revision read (`114e89fa`) and is the basis for the portions it lists.
 
 ---
 

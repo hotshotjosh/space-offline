@@ -766,12 +766,8 @@ the `_destiny.dll` addresses in `docs/re/warp.md` §4.2 and §5.1, the
   so our own client could not be asked — but note the lesson from `WarpTo`
   (§4.4): *"the method table is built at runtime"* means an absent entry point
   should be re-probed, not assumed.
-- **The `carbonengine/destiny` MIT licence claim** in their `visibility/README.md`
-  — asserted by the archive, never corroborated, and CCP does not publish
-  carbonengine under MIT. Treat the notice as false and the code as AGPL. *An
-  MIT header inside an AGPL archive asserting a licence for someone else's
-  proprietary engine is the single most expensive thing in that tree to
-  believe.*
+- **The `carbonengine/destiny` MIT licence** is not taken from their
+  `visibility/README.md`. carbonengine/destiny is MIT © CCP Games, checked against the upstream repository on 2026-10-24; `NOTICE` records the revision read (`114e89fa`) and is the basis for the portions it lists.
 - **The 13 extra character-row fields** EvEJS sends (37 keys against our 24) are
   **[I]** as unwanted; nobody has re-checked `charselData` and
   `characterSlots` for a read of any of them.

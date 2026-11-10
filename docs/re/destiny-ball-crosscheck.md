@@ -197,13 +197,9 @@ CCP's serialiser, and a fact learned from a second reading is ours to use.
 This document is that extraction, complete: the layout above is everything
 their 23 KB encoder knows that we did not.
 
-One trap to name explicitly. Their `visibility/README.md` carries a **"Carbon
-license notice"** claiming `carbonengine/destiny` v3.1.1 is MIT © CCP Games,
-which would make that part freely portable. `docs/archive/evejs-261018-reference.md`
-§8 already lists this claim as uncorroborated. CCP does not publish
-carbonengine under MIT. **Treat the notice as false and the code as AGPL**;
-an MIT header inside an AGPL archive asserting a licence for someone else's
-proprietary engine is the single most expensive thing in the tree to believe.
+Licence note. Their `visibility/README.md` carries a "Carbon license notice"
+saying `carbonengine/destiny` v3.1.1 is MIT © CCP Games. We do not rely on
+that README. carbonengine/destiny is MIT © CCP Games, checked against the upstream repository on 2026-10-24; `NOTICE` records the revision read (`114e89fa`) and is the basis for the portions it lists.
 
 ---
 
