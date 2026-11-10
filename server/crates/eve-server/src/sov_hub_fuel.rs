@@ -475,7 +475,7 @@ fn add_reply(reg: &mut Registry, body: &[u8], character: i64) -> Reply {
             quantity: amount as i64,
         }
     };
-    if reg.apply_items(&[edit]).is_err() {
+    if crate::sov_proto::apply_items_on_clock(reg, character, &[edit]).is_err() {
         return status(404);
     }
     add(reg.deltas_mut(), hub_id, item.type_id, amount, unix_now());
@@ -954,6 +954,32 @@ mod tests {
             .find(|e| e.0 == ICE as u64)
             .expect("ice");
         assert_eq!(ice.1, 40, "the bay reads what was deposited");
+    }
+
+    /// The hold's `OnItemChange` leaves on the clock's queue; `pending`
+    /// drains only after the client's next call, which left the stack
+    /// reading 100 for about 20 s after an `AddRequest` of 40.
+    #[test]
+    fn a_deposit_pushes_the_hold_change_on_the_clock_not_on_pending() {
+        let (mut reg, hub, k) = world();
+        let earlier = reg.take_pending_raw().len();
+        let queued = reg.scheduled_len();
+        let r = add_reply(&mut reg, &msg_add(k.alice, 40, hub), ALICE);
+        assert_eq!(r.status, 200);
+        let pending = reg.take_pending_raw();
+        assert!(
+            pending.is_empty(),
+            "{} push(es) wait for a call ({earlier} were there before)",
+            pending.len()
+        );
+        assert!(reg.scheduled_len() > queued, "nothing was scheduled");
+        let due = reg.take_due(std::time::Instant::now());
+        let names: Vec<&str> = due.iter().map(|p| p.to_push().0).collect();
+        assert!(names.contains(&"OnItemChange"), "{names:?}");
+        assert!(
+            due.iter().all(|p| p.audience() == Some(vec![ALICE])),
+            "every push goes to the pilot alone"
+        );
     }
 
     #[test]

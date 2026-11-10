@@ -1124,7 +1124,7 @@ pub fn configure(
         })
         .collect();
     if !edits.is_empty() {
-        reg.apply_items(&edits).map_err(|e| {
+        crate::sov_proto::apply_items_on_clock(reg, who, &edits).map_err(|e| {
             crate::errln!("[sov_upgrade] hub {hub_id}: consuming {new_items:?} failed: {e}");
             500u32
         })?;

@@ -49,6 +49,36 @@ pub(crate) fn read_id(body: &[u8], field: u64) -> Option<u64> {
     get_uint(&get_bytes(body, field)?, 1)
 }
 
+/// Apply item edits made inside a gateway request and send the owner's
+/// item pushes on the clock's queue. `pending` drains only after the client's
+/// next macho call, so a push left there reaches the client late (the reagent
+/// bay and upgrade installs waited about 20 s, `var/ci-1111-sov`). What was on
+/// `pending` already belongs to another turn and is put back raw
+/// (`drones::apply_held`, `combat::apply_on_the_clock`). On `Err` nothing was
+/// applied and nothing is sent.
+pub(crate) fn apply_items_on_clock(
+    reg: &mut crate::service::Registry,
+    owner: i64,
+    edits: &[crate::item::Edit],
+) -> Result<Vec<crate::item::Change>, crate::item::EditError> {
+    let before = reg.take_pending_raw();
+    let applied = reg.apply_items(edits);
+    let ours = reg.take_pending_raw();
+    reg.restore_pending(before);
+    if applied.is_ok() {
+        for (_, p) in ours {
+            reg.schedule(
+                std::time::Duration::ZERO,
+                crate::notify::Addressed {
+                    to: Some(vec![owner]),
+                    inner: p,
+                },
+            );
+        }
+    }
+    applied
+}
+
 /// Wall-clock unix seconds.
 pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()

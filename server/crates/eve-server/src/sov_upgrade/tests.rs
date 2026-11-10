@@ -737,6 +737,32 @@ fn the_drop_checks_run_in_the_clients_order_the_hold_check_last() {
     assert_eq!(r, Err(409));
 }
 
+/// The consumed item's `OnItemChange` leaves on the clock's queue. `pending`
+/// drains only after the client's next call, which left the pilot's hold
+/// showing the item for about 20 s.
+#[test]
+fn an_install_pushes_the_consumed_item_on_the_clock_not_on_pending() {
+    let mut reg = world();
+    let bay = TestBay::default();
+    let _ = reg.take_pending_raw();
+    let queued = reg.scheduled_len();
+    install(&mut reg, &bay, ALICE, &[ITEM_A], &[(9_201, true)]).unwrap();
+    let pending: Vec<&str> = reg
+        .take_pending_raw()
+        .into_iter()
+        .map(|(_, p)| p.to_push().0)
+        .collect();
+    assert!(pending.is_empty(), "the push waits for a call: {pending:?}");
+    assert!(reg.scheduled_len() > queued, "nothing was scheduled");
+    let due = reg.take_due(std::time::Instant::now());
+    let names: Vec<&str> = due.iter().map(|p| p.to_push().0).collect();
+    assert!(names.contains(&"OnItemChange"), "{names:?}");
+    assert!(
+        due.iter().all(|p| p.audience() == Some(vec![ALICE])),
+        "every push goes to the pilot alone"
+    );
+}
+
 #[test]
 fn the_pilot_must_be_within_transfer_range_of_the_hub() {
     let mut reg = world();
