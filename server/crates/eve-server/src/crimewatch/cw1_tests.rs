@@ -33,6 +33,11 @@ fn universe(security: f64) -> crate::celestial::Universe {
 /// Alice, Bob and Carol in space in `SYS` (security `security`), in hulls,
 /// Alice with ISK.
 fn world(security: f64) -> Registry {
+    world_dev(security, false)
+}
+
+/// [`world`], with the server's `--dev` switch as given.
+fn world_dev(security: f64, dev: bool) -> Registry {
     let pilot = |i: usize, id: i64| crate::model::Character {
         character_id: id,
         name: format!("pilot {id}"),
@@ -45,6 +50,7 @@ fn world(security: f64) -> Registry {
     content.insert("universe", universe(security));
     let mut reg = Registry::new(crate::model::SandboxConfig {
         characters: vec![pilot(0, ALICE), pilot(1, BOB), pilot(2, CAROL)],
+        dev,
         ..crate::model::SandboxConfig::default()
     })
     .with_content(std::sync::Arc::new(content));
@@ -1226,4 +1232,123 @@ fn a_green_safety_pilot_is_refused() {
     assert!(attack_refusal(&reg, ALICE, Some(HULL), STRUCTURE, T0).is_none());
     let (reg, _) = structure_world(-0.4);
     assert!(attack_refusal(&reg, ALICE, Some(HULL), STRUCTURE, T0).is_none());
+}
+
+// ---- /cwatch (#201) --------------------------------------------------------
+
+fn said(v: Result<PyValue, ServiceError>) -> String {
+    match v {
+        Ok(PyValue::Bytes(b)) => String::from_utf8_lossy(&b).into_owned(),
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn clear_idles_a_suspect_and_tells_the_system() {
+    let mut reg = world(LOW);
+    suspect(&mut reg, ALICE, T0);
+    let _ = due(&mut reg);
+    assert!(is_suspect(&reg, ALICE, T0));
+    assert!(clear(&mut reg, ALICE, T0));
+    let out = due(&mut reg);
+    let timer = sent(&out, ALICE, "OnCriminalTimerUpdate");
+    assert_eq!(timer.len(), 1, "{timer:?}");
+    assert_eq!(timer[0][0], PyValue::Int(state::CRIMINAL_IDLE));
+    assert_eq!(
+        sent(&out, CAROL, "OnSystemCriminalFlagUpdates"),
+        vec![vec![ints(&[ALICE]), ints(&[]), ints(&[])]]
+    );
+    assert!(!is_suspect(&reg, ALICE, T0));
+    assert!(flag_of(&reg, ALICE, T0).is_none());
+    // nothing left to clear, and the record is gone
+    assert!(!clear(&mut reg, ALICE, T0));
+    assert!(due(&mut reg).is_empty());
+}
+
+#[test]
+fn clear_ends_a_weapons_timer_so_docking_is_allowed() {
+    let mut reg = world(HIGH);
+    aggression(&mut reg, ALICE, BOB, T0, T0);
+    engage(&mut reg, ALICE, BOB, T0, T0);
+    let during = T0 + 10 * SEC;
+    assert!(refuse_dock(&reg, Some(ALICE), during).is_err());
+    assert!(engaged_pair(&reg, during));
+    let _ = due(&mut reg);
+    assert!(clear(&mut reg, ALICE, during));
+    assert!(refuse_dock(&reg, Some(ALICE), during).is_ok());
+    assert!(!is_criminal(&reg, ALICE, during));
+    assert!(!engaged_pair(&reg, during));
+    let out = due(&mut reg);
+    assert_eq!(
+        sent(&out, ALICE, "OnCrimewatchEngagementEnded"),
+        vec![vec![PyValue::Int(BOB)]]
+    );
+    assert_eq!(
+        sent(&out, BOB, "OnCrimewatchEngagementEnded"),
+        vec![vec![PyValue::Int(ALICE)]]
+    );
+    let weapons = sent(&out, ALICE, "OnWeaponsTimerUpdate");
+    assert_eq!(weapons.len(), 1, "{weapons:?}");
+    assert_eq!(weapons[0][0], PyValue::Int(state::WEAPONS_IDLE));
+}
+
+/// An engagement past its end that the tick has not swept yet is not live:
+/// status counts 0 and clear does not claim to have cleared it.
+#[test]
+fn an_expired_unswept_engagement_is_not_counted_or_cleared() {
+    let mut reg = world(LOW);
+    engage(&mut reg, ALICE, BOB, T0, T0);
+    let _ = due(&mut reg);
+    let late = T0 + ENGAGEMENT_DURATION + SEC;
+    assert!(status_text(&reg, ALICE, T0).contains("engagements 1"));
+    assert!(status_text(&reg, ALICE, late).contains("engagements 0"));
+    assert!(!clear(&mut reg, ALICE, late));
+}
+
+fn engaged_pair(reg: &Registry, now: BlueTime) -> bool {
+    reg.combat().crimewatch().engaged(ALICE, BOB, now)
+}
+
+#[test]
+fn clear_on_a_bot_is_refused_without_dev() {
+    let mut reg = world(LOW);
+    reg.character_mut(BOB).expect("a pilot").is_bot = true;
+    let now = crate::pyutil::filetime_now();
+    suspect(&mut reg, BOB, now);
+    let text = said(slash(&mut reg, Some(ALICE), &["clear", &BOB.to_string()]));
+    assert!(text.starts_with("refused: a bot gets nothing"), "{text}");
+    assert!(is_suspect(&reg, BOB, now));
+    // status is a read, and a human GM may clear a human
+    let text = said(slash(&mut reg, Some(ALICE), &["status", &BOB.to_string()]));
+    assert!(text.contains("flag suspect"), "{text}");
+    suspect(&mut reg, CAROL, now);
+    let text = said(slash(&mut reg, Some(ALICE), &["clear", &CAROL.to_string()]));
+    assert!(text.starts_with(&format!("cleared {CAROL}")), "{text}");
+    assert!(text.contains("CONCORD already sent stays"), "{text}");
+    assert!(!is_suspect(&reg, CAROL, now));
+    // with --dev the bot is cleared too
+    let mut dev = world_dev(LOW, true);
+    dev.character_mut(BOB).expect("a pilot").is_bot = true;
+    suspect(&mut dev, BOB, now);
+    let text = said(slash(&mut dev, Some(ALICE), &["clear", &BOB.to_string()]));
+    assert!(text.starts_with("cleared"), "{text}");
+    assert!(!is_suspect(&dev, BOB, now));
+}
+
+#[test]
+fn status_text_names_every_timer() {
+    let mut reg = world(LOW);
+    let calm = status_text(&reg, ALICE, T0);
+    for name in ["weapons Idle", "pvp Idle", "npc Idle", "criminal Idle", "flag none"] {
+        assert!(calm.contains(name), "{calm}");
+    }
+    suspect(&mut reg, ALICE, T0);
+    let busy = status_text(&reg, ALICE, T0);
+    assert!(busy.contains("criminal Counting("), "{busy}");
+    assert!(busy.contains("flag suspect"), "{busy}");
+    // no words is status on self; bad input answers the usage line
+    let text = said(slash(&mut reg, Some(ALICE), &[]));
+    assert!(text.starts_with(&format!("crimewatch {ALICE}:")), "{text}");
+    assert!(said(slash(&mut reg, Some(ALICE), &["wipe"])).starts_with("usage:"));
+    assert_eq!(said(slash(&mut reg, Some(ALICE), &["status", "1"])), "no such character");
 }

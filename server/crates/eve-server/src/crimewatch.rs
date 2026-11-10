@@ -423,6 +423,28 @@ impl Crimewatch {
         let e = self.engagements.entry(pair(a, b)).or_default();
         e.last = e.last.max(at);
     }
+
+    /// Forget `character_id`'s timers and flag level; the `told` wire stays
+    /// so the next [`sync`] pushes idle. Also drops the criminal acts they
+    /// committed and a kill-right activation on them. Returns whether there
+    /// was anything to forget.
+    fn clear_record(&mut self, character_id: i64) -> bool {
+        let mut had = false;
+        if let Some(r) = self.records.get_mut(&character_id) {
+            for clock in &mut r.clocks {
+                had |= clock.last.is_some();
+                clock.last = None;
+                clock.inherited = false;
+            }
+            had |= r.level.take().is_some();
+        }
+        let acts = self.criminal_acts.len();
+        self.criminal_acts
+            .retain(|(offender, _), _| *offender != character_id);
+        had |= self.criminal_acts.len() != acts;
+        had |= self.activations.remove(&character_id).is_some();
+        had
+    }
 }
 
 /// The timeout an engagement whose last aggression was `last` shows at
@@ -1034,6 +1056,97 @@ pub fn end_engagements(w: &mut Registry, character_id: i64) {
             tell_engagement_ended(w, key);
         }
     }
+}
+
+/// GM: every timer of `character_id` idle now, its flag dropped, its
+/// engagements ended, and its system told (`sync` pushes the `On*TimerUpdate`
+/// idles and the `OnSystemCriminalFlagUpdates` `newIdles`, since the flag
+/// level going to `None` differs from what was `announced`). Returns whether
+/// anything ran. CONCORD ships already sent are not touched.
+pub fn clear(w: &mut Registry, character_id: i64, now: BlueTime) -> bool {
+    let mut ran = w.combat_mut().crimewatch_mut().clear_record(character_id);
+    ran |= w
+        .combat()
+        .crimewatch()
+        .engagements_of(character_id, now)
+        .next()
+        .is_some();
+    sync(w, character_id, now);
+    end_engagements(w, character_id);
+    ran
+}
+
+/// The text `/cwatch status` answers: each timer's phase (the [`Phase`]
+/// debug form), the flag, and the number of live engagements.
+pub fn status_text(w: &Registry, character_id: i64, now: BlueTime) -> String {
+    let cw = w.combat().crimewatch();
+    let timers: Vec<String> = [
+        (Timer::Weapons, "weapons"),
+        (Timer::Pvp, "pvp"),
+        (Timer::Npc, "npc"),
+        (Timer::Criminal, "criminal"),
+    ]
+    .iter()
+    .map(|(t, name)| format!("{name} {:?}", cw.phase(character_id, *t, now)))
+    .collect();
+    let flag = match cw.flag(character_id, now) {
+        None => "none",
+        Some(CrimeKind::Suspect) => "suspect",
+        Some(CrimeKind::Criminal) => "criminal",
+    };
+    let engagements = cw.engagements_of(character_id, now).count();
+    format!(
+        "crimewatch {character_id}: {}; flag {flag}; engagements {engagements}",
+        timers.join(", ")
+    )
+}
+
+const CWATCH_USAGE: &str = "usage: /cwatch [status|clear] [characterID]";
+
+/// `/cwatch [status|clear] [characterID]` (GM): read or wipe a pilot's
+/// crimewatch timers. No words is `status` on yourself. `status` is the read
+/// gate (the slash console's GM role); `clear` is the reset gate, so a bot
+/// target needs `--dev` (`gm_tools::gate`). A `slash::COMMANDS` row
+/// (coordinator). Open owner question: `gm_tools.rs` (every session has
+/// `ROLE_GML` until accounts exist, so a player can clear their own flags).
+pub fn slash(
+    w: &mut Registry,
+    actor: Option<i64>,
+    words: &[&str],
+) -> Result<eve_marshal::PyValue, ServiceError> {
+    let say = |s: &str| Ok(crate::pyutil::bstr(s));
+    let (verb, who) = match words {
+        [] => ("status", None),
+        [v] => (*v, None),
+        [v, id] => match id.parse::<i64>() {
+            Ok(id) => (*v, Some(id)),
+            Err(_) => return say(CWATCH_USAGE),
+        },
+        _ => return say(CWATCH_USAGE),
+    };
+    let clearing = match verb.to_ascii_lowercase().as_str() {
+        "status" => false,
+        "clear" => true,
+        _ => return say(CWATCH_USAGE),
+    };
+    let Some(who) = who.or(actor).filter(|id| w.character(*id).is_some()) else {
+        return say("no such character");
+    };
+    let now = crate::pyutil::filetime_now();
+    if !clearing {
+        return say(&status_text(w, who, now));
+    }
+    if let Err(refused) = crate::gm_tools::gate(w, crate::gm_tools::Gate::Reset, who) {
+        return say(refused);
+    }
+    let head = if clear(w, who, now) {
+        format!("cleared {who}'s crimewatch timers and flag.")
+    } else {
+        format!("{who} had nothing to clear.")
+    };
+    say(&format!(
+        "{head} CONCORD already sent stays; /npcclear rats to remove it"
+    ))
 }
 
 fn tell_engagement_ended(w: &mut Registry, (a, b): (i64, i64)) {
