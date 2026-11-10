@@ -1505,6 +1505,19 @@ def eoci_main(EOCI_NAME):
         check('the session ship changed', changed,
               '%s -> %s' % (text(old_ship), text(getattr_safe(sess, 'shipid'))))
         if changed:
+            # The client postpones the ego switch ("Postponing ego: A -> B",
+            # gameui.py:602); the capsule becomes the ego a moment later
+            # (ci-1111 client.log: postponed at 04:28:15.103, ego changed after
+            # the read).  Wait for the capsule instead of reading once.
+            capsule = const_of('groupCapsule', GROUP_CAPSULE)
+
+            def ego_slim():
+                p2, e2 = get_ego_ball(timeout_ms=2000)
+                if p2 is None or e2 is None:
+                    return None
+                ok2, sl = safe(lambda: get_michelle().GetItem(p2.ego))
+                return sl if getattr_safe(sl, 'groupID') == capsule else None
+            wait_for(ego_slim, timeout_ms=30000)
             park2, ego2 = get_ego_ball()
             slim = None
             if park2 is not None and ego2 is not None:
