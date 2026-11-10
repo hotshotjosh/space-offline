@@ -98,6 +98,7 @@ Modules	ECM burst	client-proved	fci_ecm_burst green 2026-11-04 (regress-batch1, 
 Modules	Disruptors work on rats	client-proved	fci_rat_point 2026-11-03 (regress-w23a): a warp disruptor, a scrambler and a tracking disruptor run on a belt rat			
 Modules	Cyno inhibitors	client-proved	fci_cyno_inhibit 11-03 (regress-w14c); unit tests			Covert fields are not affected; 100 km, one minute to activate, one hour to live (all from the bundle); the industrial cyno is refused [A]
 Market and wallet	Market trade between two clients	client-proved	fci_market_trade W10			
+Market and wallet	The wallet journal's Type column names every entry type, from the content bundle's table	built-unproved	ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run		3.7	
 Market and wallet	Buying with the corporation wallet	client-proved	fci_corp_buy W10			
 Market and wallet	Contracts	client-proved	fci_contracts W10			
 Market and wallet	Regional market: a far seller in the book	client-proved	fci_prog_null W10			

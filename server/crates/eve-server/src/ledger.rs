@@ -54,8 +54,7 @@
 /// `refGMCashTransfer`. Verified three ways: the client's own
 /// `accountingentrytypes.fsdbinary` (218 rows, read by `tools/fsd.py`), and
 /// independently by two lanes deriving `entryTypeNameID == 59792 +
-/// entryTypeID` from the localisation corpus, where 59795 is "GM Cash
-/// Transfer".
+/// entryTypeID` from the localisation corpus (this one is 59795).
 pub const REF_GM_CASH_TRANSFER: i64 = 3;
 
 /// The offset from an entry type id to its localised name's message id.
@@ -86,10 +85,9 @@ pub const ENTRY_TYPE_NAME_ID_BASE: i64 = 59_792;
 /// | 59901..=59910 | 10001..=10010 | the DUST 514 / console ISK block |
 /// | 59911..=59912 | 11001..=11002 | the AUR block |
 ///
-/// So entry type 119 is *not* 59911 "Modify AUR" and 120 is *not* 59912
-/// "Respec payment"; those two messages belong to 11001 and 11002. 119 is
-/// 503029 "Bid Reimbursement" and 120 is 503484 "Industry Facility Tax", per
-/// the client's own table. The old cap therefore did not blank anything -- it
+/// So entry type 119 is *not* message 59911 and 120 is *not* 59912; those two
+/// messages belong to 11001 and 11002. 119 and 120 have their own ids in the
+/// client's own table. The old cap therefore did not blank anything -- it
 /// printed a **real string for the wrong entry type**, twelve times over
 /// (109..=120), which is the one failure mode worse than an empty cell
 /// because nothing about it looks broken.
@@ -100,183 +98,181 @@ pub const ENTRY_TYPE_NAME_ID_MAX: i64 = 108;
 /// Not an oversight on our side: `accountingentrytypes.fsdbinary` has no row
 /// for them, and the corpus has no message at `59792 + id` either (59892,
 /// 59896 and 59897 are all absent from en-us). Two independent sources agree
-/// the ids are vacant, so [`entry_type_name_id`] answers `None` rather than
+/// the ids are vacant, so [`entry_type_name_id_in`] answers `None` rather than
 /// hand the client an id it would render as the literal `[no messageID:
 /// 59892]`.
 const ENTRY_TYPE_RUN_GAPS: [i64; 3] = [100, 104, 105];
 
-/// Entry types whose name ids were allocated **individually**, not from the
-/// run.
-///
-/// # Why there are two mechanisms at all
-///
-/// Entry types 0..=108 are the 2003-era wallet, and their names were
-/// allocated as one contiguous message block ([`ENTRY_TYPE_NAME_ID_BASE`]).
-/// Everything added since got a message id from whatever the localisation
-/// tool happened to be handing out that patch, so the ids here are scattered
-/// from 234,494 to 1,046,599 with no arithmetic relating them to the entry
-/// type. They can only be looked up.
-///
-/// # Why the cap must not simply be raised
-///
-/// `59792 + id` past the run lands either on an unrelated string (59913 is
-/// `UI/Jukebox/Play`) or on nothing at all. A missing message is the louder
-/// failure: the client renders the literal text `[no messageID: 59941]` into
-/// the Type column, so raising the cap to cover entry type 149 would turn an
-/// empty cell into visible garbage. (That is the same shape as the
-/// unresolvable `UserError` key this project shipped once before, which
-/// produced a fatal modal.) The answer is a lookup table, not a bigger cap.
-///
-/// # Provenance
-///
-/// Both columns come from one row of the client's own
-/// `accountingentrytypes.fsdbinary` -- `entryTypeID` at +0 and
-/// `entryTypeNameID` at +32, per `findings/pyd-schemas.tsv` -- so this is
-/// build 3619879 truth and not a reconstruction. Every row was then checked
-/// against the shipped localisation corpus (`tools/loctable.py id`): all
-/// 112 message ids resolve to a real en-us string, and 49 of them carry a
-/// `UI/Wallet/EntryTypeNames/<label>` path, which is the independent
-/// cross-check. The comment on each row is that label (or, where the
-/// namespace has none, the fsd `name` column) and the English text the client
-/// will actually print.
-///
-/// Sorted by entry type id; [`entry_type_name_id`] binary-searches it.
-const ENTRY_TYPE_NAME_IDS: [(i64, i64); 112] = [
-    (109, 234494), // Lottery Give Away (no EntryTypeNames label; fsd name) -- 'Lottery Give Away'
-    (111, 263475), // Aurum Token exchanged for Aur (no EntryTypeNames label; fsd name) -- 'Aurum Token exchanged for Aur'
-    (112, 277685), // Datacore Fee (no EntryTypeNames label; fsd name) -- 'Datacore Fee'
-    (113, 279064), // WarSurrenderWalletEntry -- 'War Surrender Fee'
-    (114, 279063), // WarAllyWalletEntry -- 'War Ally Contract'
-    (115, 285170), // bountyReimbursedTypeName -- 'Bounty Reimbursement'
-    (116, 285169), // killRightFeeTypeName -- 'Kill Right'
-    (117, 287844), // SecurityTagProcessingFee -- 'Fee for processing one or more security tags'
-    (118, 503028), // IndustryTeamBid -- 'Industry Team Bid'
-    (119, 503029), // IndustryTeamBidReimbursement -- 'Bid Reimbursement'
-    (120, 503484), // industryFacilityTaxName -- 'Industry Facility Tax'
-    (122, 507741), // infrastructureHubBillName -- 'Infrastructure Hub bill'
-    (123, 510859), // assetSafetyTaxRef -- 'Asset safety recovery tax'
-    (124, 514021), // opportunityRewardName -- 'Opportunity Reward'
-    (125, 515360), // projectDiscoveryRewardName -- 'Project Discovery reward'
-    (126, 515396), // projectDiscoveryRewardTax -- 'Corporation tax on Project Discovery rewards'
-    (127, 312131), // ReprocessingTax -- 'Reprocessing Tax'
-    (128, 312132), // JumpCloneActivationFee -- 'Jump Clone Activation Fee'
-    (129, 522816), // operationRewardName -- 'Mission Reward'
-    (131, 529365), // resouceWarsRewardName -- 'Mining Site Protection Money'
-    (132, 530052), // DuelWagerEscrow -- 'Duel wager escrow payment'
-    (133, 530053), // DuelWagerPayment -- 'Duel wager reward'
-    (134, 530054), // DuelWagerRefund -- 'Duel wager refund'
-    (135, 317046), // RefEntryTypeReactions -- 'Reactions'
-    (136, 531920), // externalTradeFreeze -- 'External Trade Freeze'
-    (137, 531921), // externalTradeThaw -- 'External Trade Thaw'
-    (138, 531922), // externalTradeDelivery -- 'External Trade Delivery'
-    (139, 539336), // seasonChallengeRewardName -- 'Challenge Completed'
-    (140, 543036), // StructureGateJumpPaymentName -- 'Jump Bridge Fee'
-    (141, 543737), // SkillPurchaseName -- 'Skill Purchase'
-    (142, 545149), // itemTraderPaymentName -- 'Item Trade'
-    (143, 552172), // HyperNetEntryFee -- 'HyperNode transaction'
-    (144, 552175), // HyperNetPayout -- 'Completed HyperNet Relay Payout'
-    (145, 552173), // HyperNetRelayFee -- 'HyperNet Relay Fee'
-    (146, 552174), // HyperNetExpired -- 'HyperNode refund for expired HyperNet Offer'
-    (147, 552388), // redeemedIskToken -- 'Redeemed ISK token'
-    (148, 559010), // DailyChallengeRewardName -- 'Daily Challenge Completed'
-    (149, 559228), // marketProviderTax -- 'SCC surcharge'
-    (155, 571898), // ESS Main Bank Autopayment (no EntryTypeNames label; fsd name) -- 'ESS Escrow Payment'
-    (156, 584301), // First Day ISK Bonus (no EntryTypeNames label; fsd name) -- 'First Day ISK Bonus'
-    (166, 644856), // Under constructions (no EntryTypeNames label; fsd name) -- 'Building Materials Delivered'
-    (167, 662530), // Alignment Based Gate Toll (no EntryTypeNames label; fsd name) -- 'Gate Toll'
-    (168, 669909), // Alignment Based Zarzakh Stargate Toll (no EntryTypeNames label; fsd name) -- 'Zarzakh Stargate Toll'
-    (170, 682461), // Corporation Projects Payment (no EntryTypeNames label; fsd name) -- 'Corporation Projects'
-    (172, 697061), // Insurgency corruption contribution ISK reward (no EntryTypeNames label; fsd name) -- 'Insurgency corruption contribution reward'
-    (173, 697062), // Insurgency suppression contribution ISK reward (no EntryTypeNames label; fsd name) -- 'Insurgency suppression contribution reward'
-    (174, 698549), // Daily Goal Entry type (no EntryTypeNames label; fsd name) -- 'Daily Goal Reward'
-    (175, 699236), // Daily Goal tax Entry type (no EntryTypeNames label; fsd name) -- 'Daily Goal Reward Tax'
-    (178, 712104), // Cosmetic Market Component Item Purchase (no EntryTypeNames label; fsd name) -- 'Paragon Hub Design Element'
-    (179, 720962), // Cosmetic Market Skin Sale Broker Fee (no EntryTypeNames label; fsd name) -- 'Paragon Hub Listing Fee'
-    (180, 720963), // Cosmetic Market Skin Purchase (no EntryTypeNames label; fsd name) -- 'Paragon Hub SKIN purchase'
-    (181, 720964), // Cosmetic Market Skin Sale (no EntryTypeNames label; fsd name) -- 'Paragon Hub SKIN sale'
-    (182, 720965), // Cosmetic Market Skin Sale Tax (no EntryTypeNames label; fsd name) -- 'Paragon Hub Vendor Fee'
-    (183, 721956), // Cosmetic Market Skin Transaction (no EntryTypeNames label; fsd name) -- 'Paragon Hub SKIN transaction'
-    (184, 1010920), // Fee for SovHub to claim a local Skyhook (no EntryTypeNames label; fsd name) -- 'Skyhook claim fee'
-    (185, 1011296), // Air Career Program Reward (no EntryTypeNames label; fsd name) -- 'AIR Career Program Reward'
-    (186, 1011633), // Freelance Job Creation - Base Fee (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Duration Fee'
-    (187, 1011635), // Freelance Job Creation - Broadcasting Fee (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Broadcasting Fee'
-    (188, 1011637), // Freelance Job Creation - Rewards Deposit (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Reward Escrow'
-    (189, 1011653), // Freelance Job Contribution Payouts (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Reward'
-    (190, 1011655), // Freelance Job Closing Refunds (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Escrow Refund'
-    (191, 1014042), // Freelance Job Contribution Payouts Tax (no EntryTypeNames label; fsd name) -- 'Freelance Jobs Reward Corporation Tax'
-    (192, 1017441), // PLEX Order Fee Cancellation Refund (no EntryTypeNames label; fsd name) -- 'GM Cash Transfer'
-    (194, 1038647), // Market Security Tax (no EntryTypeNames label; fsd name) -- 'Exordium Market Tax'
-    (195, 1039203), // Npc Bounty security Tax (no EntryTypeNames label; fsd name) -- 'Exordium Bounty Tax'
-    (196, 1039622), // Industry Security Tax (no EntryTypeNames label; fsd name) -- 'Exordium Industrial Tax'
-    (197, 1039790), // AGENTMISSIONSECURITYTAX (no EntryTypeNames label; fsd name) -- 'Exordium Mission Agent Tax'
-    (198, 1040362), // Achievement (no EntryTypeNames label; fsd name) -- 'Achievement'
-    (199, 1040363), // Achievement Category (no EntryTypeNames label; fsd name) -- 'Achievement'
-    (200, 1041757), // CampaignObjectiveIskReward (no EntryTypeNames label; fsd name) -- 'Campaign Objective Reward'
-    (201, 1046599), // CampaignObjectiveIskRewardTax (no EntryTypeNames label; fsd name) -- 'Campaign Objective Reward Tax'
-    (10001, 59901), // Modify ISK (no EntryTypeNames label; fsd name) -- 'Modify ISK'
-    (10002, 59902), // Primary Marketplace Purchase (no EntryTypeNames label; fsd name) -- 'Primary Marketplace Purchase'
-    (10003, 59903), // Battle Reward (no EntryTypeNames label; fsd name) -- 'Battle Reward'
-    (10004, 59904), // New Character Starting Funds (no EntryTypeNames label; fsd name) -- 'New Character Starting Funds'
-    (10005, 59905), // Corporation Account Withdrawal (no EntryTypeNames label; fsd name) -- 'Corporation Account Withdrawal'
-    (10006, 59906), // Corporation Account Deposit (no EntryTypeNames label; fsd name) -- 'Corporation Account Deposit'
-    (10007, 59907), // Battle WP Win Reward (no EntryTypeNames label; fsd name) -- 'Battle WP Win Reward'
-    (10008, 59908), // Battle WP Loss Reward (no EntryTypeNames label; fsd name) -- 'Battle WP Loss Reward'
-    (10009, 59909), // Battle Win Reward (no EntryTypeNames label; fsd name) -- 'Battle Win Reward'
-    (10010, 59910), // Battle Loss Reward (no EntryTypeNames label; fsd name) -- 'Battle Loss Reward'
-    (10011, 570207), // Reset ISK for Character Reset (no EntryTypeNames label; fsd name) -- 'DUST Reset ISK for Character Reset'
-    (10012, 283741), // District Contract Deposit (no EntryTypeNames label; fsd name) -- 'District Contract Deposit'
-    (10013, 283742), // District Contract Deposit Refund (no EntryTypeNames label; fsd name) -- 'District Contract Deposit Refund'
-    (10014, 283743), // District Contract Collateral (no EntryTypeNames label; fsd name) -- 'District Contract Collateral'
-    (10015, 283744), // District Contract Collateral Refund (no EntryTypeNames label; fsd name) -- 'District Contract Collateral Refund'
-    (10016, 283745), // District Contract Reward (no EntryTypeNames label; fsd name) -- 'District Contract Reward'
-    (10017, 287027), // District Clone Transportation (no EntryTypeNames label; fsd name) -- 'District Clone Transportation'
-    (10018, 287029), // District Clone Transportation Refund (no EntryTypeNames label; fsd name) -- 'District Clone Transportation Refund'
-    (10019, 287031), // District Infrastructure (no EntryTypeNames label; fsd name) -- 'District Infrastructure'
-    (10020, 287033), // District Clone Sales (no EntryTypeNames label; fsd name) -- 'District Clone Sales'
-    (10021, 287035), // District Clone Purchase (no EntryTypeNames label; fsd name) -- 'District Clone Purchase'
-    (10022, 288205), // Biomass Reward (no EntryTypeNames label; fsd name) -- 'Biomass Reward'
-    (10023, 306849), // KillSwapReward -- 'ISK Swap Reward'
-    (11001, 59911),  // Modify AUR (no EntryTypeNames label; fsd name) -- 'Modify AUR'
-    (11002, 59912),  // Respec payment (no EntryTypeNames label; fsd name) -- 'Respec payment'
-    (11003, 570204), // Entitlement (no EntryTypeNames label; fsd name) -- 'DUST Entitlement'
-    (11004, 570205), // Reset Reimbursement (no EntryTypeNames label; fsd name) -- 'DUST Reset Reimbursement'
-    (11005, 570206), // Reset AUR for Character Reset (no EntryTypeNames label; fsd name) -- 'DUST AUR for Character Reset'
-    (12001, 505817), // dustDailyMissionCP -- 'Command Points from completing Daily Missions'
-    (12002, 505819), // dustWarbargeCP -- 'Command points from warbarge'
-    (12003, 505821), // dustDonationCP -- 'Command points from donation'
-    (12004, 505823), // dustConsumeCPForClonePacks -- 'Command Point cost of purchasing Clone Packs'
-    (12005, 505825), // dustConsumeCPForMovingClones -- 'Command Point cost of moving Clones'
-    (12006, 505829), // dustConsumeCPForSellingClones -- 'Command Point cost of selling Clones'
-    (12007, 505827), // dustConsumeCPForChangingReinforcement -- 'Command Point cost of changing Reinforcement Timers'
-    (12008, 505831), // dustConsumeCPForChangingSurfaceInfrastructure -- 'Command Point cost of changing Surface Infrastructures'
-    (13001, 505873), // dustDailyMissionDK -- 'District Kredits from DUST daily mission fininshed'
-    (13002, 505875), // dustPlanetaryConquestDK -- 'District Kredits from Planetary Conquest activity'
-    (13003, 505877), // dustConsumeDKForPurchase -- 'District Kredit cost of purchasing items'
-    (13004, 505879), // dustConsumeDKForReroll -- 'Consuming District Kredits for rerolling market'
-    (13005, 505960), // dustSellingClonesDK -- 'District Kredit increase because of selling clones'
-];
+/// The wallet entry types in the content bundle (`docs/content/schema.md`,
+/// `wallet/entry-types.tsv`): the client's own
+/// `accountingentrytypes.fsdbinary`, one row per entry type.
+pub const ENTRY_TYPES_FILE: &str = "wallet/entry-types.tsv";
 
-/// The localised name's message id for an entry type, or `None`.
+/// The file's header line, `#` included.
+pub const ENTRY_TYPES_HEADER: &str = "#entry_type_id\tname_id";
+
+/// Entry type id to the message id of its localised name.
 ///
-/// Two mechanisms, because the data has two: the arithmetic run for the old
-/// entry types, then [`ENTRY_TYPE_NAME_IDS`] for the individually allocated
-/// ones. See those items for why.
+/// # Why a table and a run
 ///
-/// **`None` is the correct answer for anything not in either**, and it stays
-/// that way. A `None` blanks the Type column; a guessed id either prints
-/// another entry type's name or prints `[no messageID: N]`. An empty cell is
-/// the only one of the three that does not lie.
-pub fn entry_type_name_id(entry_type_id: i64) -> Option<i64> {
-    if (0..=ENTRY_TYPE_NAME_ID_MAX).contains(&entry_type_id) {
-        if ENTRY_TYPE_RUN_GAPS.contains(&entry_type_id) {
+/// Entry types `0..=`[`ENTRY_TYPE_NAME_ID_MAX`] are the 2003-era wallet, and
+/// their names were allocated as one contiguous message block
+/// ([`ENTRY_TYPE_NAME_ID_BASE`]). Everything added since got a message id from
+/// whatever the localisation tool handed out that patch, so the ids past the
+/// run have no arithmetic relating them to the entry type. They can only be
+/// looked up, and the client's table is where they are.
+///
+/// # Why the run must not simply be extended
+///
+/// `59792 + id` past the run lands either on an unrelated string or on
+/// nothing at all. A missing message is the louder failure: the client
+/// renders the literal text `[no messageID: N]` into the Type column, so
+/// raising the cap would turn an empty cell into visible garbage. The answer
+/// is a lookup table, not a bigger cap.
+///
+/// # Two sources
+///
+/// * **A bundle with `wallet/entry-types.tsv`** holds every row of the
+///   client's table, the run included. It is complete: an id it does not hold
+///   (the gaps in the run, an id the client does not define) is `None`, never
+///   the formula.
+/// * **Anything else** (no bundle, or a bundle extracted before the section
+///   existed) holds no rows ([`EntryTypes::default`]), and the formula answers
+///   for the run. Entries past the run have an empty Type cell, as they did
+///   before the table existed. The invented rows of [`EntryTypes::fixture`]
+///   are for tests only: a real client would show their ids as
+///   `[no messageID: N]`.
+///
+/// **`None` is the correct answer for anything not known**, and it stays that
+/// way. A `None` blanks the Type column; a guessed id either prints another
+/// entry type's name or prints `[no messageID: N]`. An empty cell is the only
+/// one of the three that does not lie.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntryTypes {
+    rows: std::collections::BTreeMap<i64, i64>,
+    /// `rows` is the client's whole table, so the formula must not answer.
+    complete: bool,
+}
+
+impl EntryTypes {
+    /// The rows of `wallet/entry-types.tsv` (the data lines, header already
+    /// checked). An error names the file and the data line.
+    pub fn parse(lines: &[String]) -> Result<Self, String> {
+        let mut rows = std::collections::BTreeMap::new();
+        for (n, line) in lines.iter().enumerate() {
+            let at = |why: &str| format!("{ENTRY_TYPES_FILE}: data line {}: {why}", n + 1);
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() != 2 {
+                return Err(at(&format!("{} fields, expected 2", f.len())));
+            }
+            let id: i64 = f[0]
+                .parse()
+                .map_err(|_| at("entry_type_id is not an integer"))?;
+            let name_id: i64 = f[1].parse().map_err(|_| at("name_id is not an integer"))?;
+            if id < 0 || name_id <= 0 {
+                return Err(at("entry_type_id must be >= 0 and name_id > 0"));
+            }
+            if rows.insert(id, name_id).is_some() {
+                return Err(at(&format!("entry type {id} twice")));
+            }
+        }
+        if rows.is_empty() {
+            return Err(format!("{ENTRY_TYPES_FILE}: no rows"));
+        }
+        Ok(EntryTypes {
+            rows,
+            complete: true,
+        })
+    }
+
+    #[cfg(test)]
+    /// A complete table of exactly these `(entry type, name id)` rows, as a
+    /// bundle's file would be. For a test's own table.
+    pub fn from_rows(rows: &[(i64, i64)]) -> Self {
+        EntryTypes {
+            rows: rows.iter().copied().collect(),
+            complete: true,
+        }
+    }
+
+    /// Three invented rows: one at the edge of the formula run
+    /// ([`ENTRY_TYPE_NAME_ID_MAX`]), one past it, and one the server books
+    /// ([`crate::reprocess::ENTRY_TYPE_REPROCESSING_TAX`]). The name ids are
+    /// invented (`990_300_001+`, `docs/content/schema.md`).
+    pub fn fixture() -> Self {
+        EntryTypes {
+            rows: std::collections::BTreeMap::from([
+                (ENTRY_TYPE_NAME_ID_MAX, 990_300_001),
+                (ENTRY_TYPE_NAME_ID_MAX + 1, 990_300_002),
+                (crate::reprocess::ENTRY_TYPE_REPROCESSING_TAX, 990_300_003),
+            ]),
+            complete: false,
+        }
+    }
+
+    /// Whether these rows are the client's whole table, from a bundle.
+    #[cfg(test)]
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    /// The name id of `entry_type_id`, or `None`. See the type's note.
+    pub fn name_id(&self, entry_type_id: i64) -> Option<i64> {
+        if let Some(&n) = self.rows.get(&entry_type_id) {
+            return Some(n);
+        }
+        if self.complete {
             return None;
         }
-        return Some(ENTRY_TYPE_NAME_ID_BASE + entry_type_id);
+        run_name_id(entry_type_id)
     }
-    ENTRY_TYPE_NAME_IDS
-        .binary_search_by_key(&entry_type_id, |&(id, _)| id)
-        .ok()
-        .map(|i| ENTRY_TYPE_NAME_IDS[i].1)
+}
+
+/// The arithmetic run, for entry types `0..=`[`ENTRY_TYPE_NAME_ID_MAX`]
+/// except [`ENTRY_TYPE_RUN_GAPS`].
+fn run_name_id(entry_type_id: i64) -> Option<i64> {
+    if !(0..=ENTRY_TYPE_NAME_ID_MAX).contains(&entry_type_id)
+        || ENTRY_TYPE_RUN_GAPS.contains(&entry_type_id)
+    {
+        return None;
+    }
+    Some(ENTRY_TYPE_NAME_ID_BASE + entry_type_id)
+}
+
+/// This table's registration row: one line in `content_tables::TABLES`.
+pub const ENTRY_TYPES: crate::content::TableSpec = crate::content::TableSpec {
+    name: "wallet entry types",
+    load: boxed_load,
+    fixture: boxed_fixture,
+};
+
+fn boxed_load(src: &crate::content::Sources) -> Result<crate::content::Boxed, String> {
+    // **Never the invented fixture here**: its message ids would reach a real
+    // client as `[no messageID: N]`. No rows and the formula is the fallback.
+    let Some(b) = src.bundle else {
+        return Ok(Box::new(EntryTypes::default()));
+    };
+    let lines = b.data_lines(ENTRY_TYPES_FILE, ENTRY_TYPES_HEADER)?;
+    if lines.is_empty() {
+        src.note(crate::content::Origin::Fixture);
+        crate::errln!(
+            "[content] NO {ENTRY_TYPES_FILE} in the bundle: wallet entry types past the \
+             formula run show an empty Type cell; use tools/up.sh to re-extract"
+        );
+        return Ok(Box::new(EntryTypes::default()));
+    }
+    Ok(Box::new(EntryTypes::parse(&lines)?))
+}
+
+fn boxed_fixture() -> crate::content::Boxed {
+    Box::new(EntryTypes::fixture())
+}
+
+/// The localised name's message id for an entry type in `content`, or
+/// `None`. Panics, as `Content::get` does, when [`ENTRY_TYPES`] is not
+/// registered.
+pub fn entry_type_name_id_in(content: &crate::content::Content, entry_type_id: i64) -> Option<i64> {
+    content.get::<EntryTypes>().name_id(entry_type_id)
 }
 
 /// 100-nanosecond ticks in one day.
@@ -1225,118 +1221,174 @@ mod tests {
         );
     }
 
+    use crate::content::Content;
+
     #[test]
     fn the_gm_grant_entry_type_resolves_to_a_name_the_client_ships() {
-        // 59795 is "GM Cash Transfer" in the client's own corpus.
-        assert_eq!(entry_type_name_id(REF_GM_CASH_TRANSFER), Some(59_795));
+        // The run's formula answers for it on the fixture.
+        assert_eq!(
+            entry_type_name_id_in(&Content::fixture(), REF_GM_CASH_TRANSFER),
+            Some(ENTRY_TYPE_NAME_ID_BASE + REF_GM_CASH_TRANSFER)
+        );
     }
 
     #[test]
-    fn the_arithmetic_run_holds_at_both_of_its_ends_and_stops_at_the_right_one() {
-        // 0 "Undefined" and 108 "PLEX sold for Aurum" are the first and last
-        // rows of the run in `accountingentrytypes.fsdbinary`.
-        assert_eq!(entry_type_name_id(0), Some(59_792));
-        assert_eq!(entry_type_name_id(108), Some(59_900));
-        // 109 is where the arithmetic dies. Its real name id is 234494
-        // "Lottery Give Away"; `59792 + 109` is 59901 "Modify ISK", which
-        // belongs to entry type 10001.
-        assert_eq!(entry_type_name_id(109), Some(234_494));
-        assert_eq!(entry_type_name_id(10_001), Some(59_901));
+    fn the_fixture_answers_the_run_by_formula_and_its_own_rows_by_table() {
+        let c = Content::fixture();
+        // Inside the run, no fixture row: the formula, at both of its ends.
+        assert_eq!(entry_type_name_id_in(&c, 0), Some(ENTRY_TYPE_NAME_ID_BASE));
+        assert_eq!(
+            entry_type_name_id_in(&c, 1),
+            Some(ENTRY_TYPE_NAME_ID_BASE + 1)
+        );
+        // The gaps in the run are vacant.
+        for id in ENTRY_TYPE_RUN_GAPS {
+            assert_eq!(entry_type_name_id_in(&c, id), None, "gap {id}");
+        }
+        // Past the run the formula does not extend, and the fixture's rows
+        // answer with their invented ids.
+        assert_eq!(
+            entry_type_name_id_in(&c, ENTRY_TYPE_NAME_ID_MAX + 1),
+            Some(990_300_002)
+        );
+        assert_eq!(
+            entry_type_name_id_in(&c, crate::reprocess::ENTRY_TYPE_REPROCESSING_TAX),
+            Some(990_300_003)
+        );
+        for id in [-1, ENTRY_TYPE_NAME_ID_MAX + 2, 130, 999, 20_000] {
+            assert_eq!(entry_type_name_id_in(&c, id), None, "entry type {id}");
+        }
     }
 
-    /// The regression this file was opened for.
-    ///
-    /// The cap used to be 120, so these twelve ids answered `59792 + id` --
-    /// twelve real strings attached to the wrong entry type. 119 printed
-    /// "Modify AUR" and 120 printed "Respec payment", which are 11001 and
-    /// 11002.
     #[test]
-    fn the_twelve_entry_types_the_old_cap_mislabelled_now_answer_their_own_names() {
-        for (id, want) in [
-            (109, 234_494),
-            (111, 263_475),
-            (112, 277_685),
-            (113, 279_064),
-            (114, 279_063),
-            (115, 285_170),
-            (116, 285_169),
-            (117, 287_844),
-            (118, 503_028),
-            (119, 503_029),
-            (120, 503_484),
+    fn the_table_wins_over_the_formula_inside_the_run() {
+        // The fixture holds a row at the run's last id; the formula would
+        // say `base + id`.
+        let t = EntryTypes::fixture();
+        assert_ne!(
+            t.name_id(ENTRY_TYPE_NAME_ID_MAX),
+            run_name_id(ENTRY_TYPE_NAME_ID_MAX)
+        );
+        assert_eq!(t.name_id(ENTRY_TYPE_NAME_ID_MAX), Some(990_300_001));
+    }
+
+    #[test]
+    fn a_complete_table_never_falls_back_to_the_formula() {
+        // A table read from a bundle is the client's whole table: an id it
+        // does not hold is unknown, even one the formula would answer.
+        let t = EntryTypes::from_rows(&[(7, 990_300_011), (130, 990_300_012)]);
+        assert!(t.is_complete());
+        assert_eq!(t.name_id(7), Some(990_300_011));
+        assert_eq!(t.name_id(130), Some(990_300_012));
+        assert_eq!(t.name_id(8), None);
+        assert_eq!(t.name_id(0), None);
+        // And the fixture never answers a bundle's value.
+        assert!(!EntryTypes::fixture().is_complete());
+        assert_eq!(EntryTypes::fixture().name_id(130), None);
+    }
+
+    #[test]
+    fn the_file_parses_to_rows_and_refuses_what_is_wrong_naming_the_file() {
+        let ok =
+            |l: &[&str]| EntryTypes::parse(&l.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let t = ok(&["3\t990300021", "9\t990300022"]).unwrap();
+        assert_eq!(t.name_id(3), Some(990_300_021));
+        assert_eq!(t.name_id(9), Some(990_300_022));
+        for (bad, why) in [
+            (vec!["3"], "2"),
+            (vec!["x\t5"], "integer"),
+            (vec!["3\t0"], "name_id"),
+            (vec!["-3\t5"], "name_id"),
+            (vec!["3\t5", "3\t6"], "twice"),
+            (vec![], "no rows"),
         ] {
-            assert_eq!(
-                entry_type_name_id(id),
-                Some(want),
-                "entry type {id} must not fall back to the arithmetic run"
-            );
-            assert_ne!(entry_type_name_id(id), Some(ENTRY_TYPE_NAME_ID_BASE + id));
-        }
-        // 110 has no row in the client's table at all, so it is unknown --
-        // not 59902, which belongs to entry type 10002.
-        assert_eq!(entry_type_name_id(110), None);
-    }
-
-    #[test]
-    fn every_row_of_the_table_is_reachable_through_the_lookup() {
-        for (id, name_id) in ENTRY_TYPE_NAME_IDS {
-            assert_eq!(
-                entry_type_name_id(id),
-                Some(name_id),
-                "entry type {id} is in the table but did not resolve"
-            );
-        }
-        // The highest one, spelled out, so a silent truncation of the array
-        // fails here too: 13005 is the DUST "Selling Clones DK" entry.
-        assert_eq!(entry_type_name_id(13_005), Some(505_960));
-        // And the one the task was raised over: 149 "SCC surcharge".
-        assert_eq!(entry_type_name_id(149), Some(559_228));
-    }
-
-    #[test]
-    fn the_table_is_sorted_by_id_and_has_no_duplicates() {
-        // Both are load-bearing: `binary_search_by_key` silently returns the
-        // wrong row on an unsorted array, and a duplicate id means two
-        // sources disagreed and nobody noticed.
-        for w in ENTRY_TYPE_NAME_IDS.windows(2) {
-            assert!(
-                w[0].0 < w[1].0,
-                "entry type ids {} and {} are out of order or duplicated",
-                w[0].0,
-                w[1].0
-            );
+            let e = ok(&bad).unwrap_err();
+            assert!(e.starts_with(ENTRY_TYPES_FILE), "{e}");
+            assert!(e.contains(why), "{e} should mention {why}");
         }
     }
 
     #[test]
-    fn the_table_and_the_arithmetic_run_do_not_overlap_or_contradict() {
-        for (id, name_id) in ENTRY_TYPE_NAME_IDS {
-            assert!(
-                id > ENTRY_TYPE_NAME_ID_MAX,
-                "entry type {id} is inside the run and must not also be in the table"
-            );
-            // Nothing in the table is just the formula in disguise; if one
-            // row were, it would belong in the run instead.
-            assert_ne!(
-                name_id,
-                ENTRY_TYPE_NAME_ID_BASE + id,
-                "entry type {id} restates the arithmetic run"
-            );
-        }
+    fn a_bundle_file_loads_a_wrong_header_is_an_error_and_an_absent_file_is_the_formula_alone() {
+        let dir = crate::testkit::scratch_dir("wallet-entry-types");
+        let write = |text: &str| {
+            std::fs::create_dir_all(dir.join("wallet")).unwrap();
+            std::fs::write(dir.join(ENTRY_TYPES_FILE), text).unwrap();
+        };
+        let b = crate::content::Bundle {
+            dir: dir.to_path_buf(),
+        };
+        let authored = crate::authored::Dir::compiled_only();
+        let load = |b: &crate::content::Bundle| {
+            let src = crate::content::Sources::new(Some(b), &authored);
+            (ENTRY_TYPES.load)(&src).map(|t| *t.downcast::<EntryTypes>().unwrap())
+        };
+        // Absent: no rows and the formula, never the invented fixture rows.
+        let none = load(&b).unwrap();
+        assert_eq!(none, EntryTypes::default());
+        assert_ne!(none, EntryTypes::fixture());
+        assert_eq!(none.name_id(1), Some(ENTRY_TYPE_NAME_ID_BASE + 1));
+        assert_eq!(none.name_id(ENTRY_TYPE_NAME_ID_MAX + 1), None);
+        // No bundle at all: the same.
+        let src = crate::content::Sources::new(None, &authored);
+        let t = (ENTRY_TYPES.load)(&src).unwrap();
+        assert_eq!(*t.downcast::<EntryTypes>().unwrap(), EntryTypes::default());
+        // Present: complete.
+        write(&format!("{ENTRY_TYPES_HEADER}\n5\t990300031\n"));
+        let t = load(&b).unwrap();
+        assert!(t.is_complete());
+        assert_eq!(t.name_id(5), Some(990_300_031));
+        // A wrong header names the file.
+        write("#id\tname\n5\t990300031\n");
+        let e = load(&b).unwrap_err();
+        assert!(e.contains(ENTRY_TYPES_FILE), "{e}");
+        // A bad row names the file too.
+        write(&format!("{ENTRY_TYPES_HEADER}\n5\tx\n"));
+        let e = load(&b).unwrap_err();
+        assert!(e.contains(ENTRY_TYPES_FILE), "{e}");
     }
 
     #[test]
-    fn an_entry_type_we_cannot_name_is_none_rather_than_a_guess() {
-        // Negative, the gaps inside the run, the first id past the run with
-        // no row, and ids beyond the end of the table.
-        for id in [-1, 100, 104, 105, 110, 121, 130, 202, 999, 20_000] {
-            assert_eq!(
-                entry_type_name_id(id),
-                None,
-                "entry type {id} has no name we can prove, so it must blank the \
-                 Type column rather than print someone else's name"
-            );
-        }
+    fn get_entry_types_sends_the_name_id_of_each_row_from_the_content_tables() {
+        use eve_marshal::PyValue;
+        let mut reg = crate::testkit::registry();
+        let got = reg
+            .dispatch(&crate::service::Request {
+                service: "account",
+                method: "GetEntryTypes",
+                args: &[],
+                kwargs: &[],
+                bind_params: None,
+                actor: None,
+            })
+            .expect("answers");
+        let PyValue::List(rows) = got else {
+            panic!("a list: {got:?}");
+        };
+        let name_id_of = |want: i64| {
+            rows.iter().find_map(|r| {
+                let PyValue::Instance { state, .. } = r else {
+                    return None;
+                };
+                let id = crate::service::args::as_int_lax(crate::pyutil::dict_get(
+                    state,
+                    b"entryTypeID",
+                ))?;
+                (id == want).then(|| crate::pyutil::dict_get(state, b"entryTypeNameID").cloned())
+            })
+        };
+        // A row in the run, by formula.
+        assert_eq!(
+            name_id_of(REF_GM_CASH_TRANSFER),
+            Some(Some(PyValue::Int(
+                ENTRY_TYPE_NAME_ID_BASE + REF_GM_CASH_TRANSFER
+            )))
+        );
+        // A row past the run, from the table.
+        assert_eq!(
+            name_id_of(crate::reprocess::ENTRY_TYPE_REPROCESSING_TAX),
+            Some(Some(PyValue::Int(990_300_003)))
+        );
     }
 
     // ---- the ledger log (E4) -----------------------------------------------

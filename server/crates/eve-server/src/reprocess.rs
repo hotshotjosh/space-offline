@@ -290,8 +290,8 @@ pub const STANDING_TAX_ZERO_POINT: f64 = 6.67;
 /// "the reprocess tax is quoted and not charged".
 ///
 /// Cross-checked downstream, which is the part that makes it safe to send:
-/// `crate::ledger::ENTRY_TYPE_NAME_IDS` maps 127 to message **312131**,
-/// `UI/Wallet/EntryTypeNames/ReprocessingTax`, 'Reprocessing Tax' -- so
+/// the content bundle's `wallet/entry-types.tsv` carries this entry type's
+/// message id (`crate::ledger::entry_type_name_id_in`), so
 /// `account.GetEntryTypes` already ships a row for it and the Journal tab
 /// renders a name instead of a blank or a `[no messageID: N]`. An entry type
 /// the client cannot name is the failure mode `crate::ledger` is built to

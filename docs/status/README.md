@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (208 of 316) · **91% built** (289 of 316) · 3 parked, not counted.
+**66% proved** (208 of 317) · **91% built** (290 of 317) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -97,6 +97,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.7 Society, economy and bots
 
 - [ ] A rat drops loot sized to it: no capital guns, XL ammo or capital modules in sub-capital pools: *built-unproved*, tools/content_npc_regions.py loot_rows skips a charge size outside 1-3 and capital-named modules, check() bounds base kit and ammo prices by size [A]; loot.tsv 5644 -> 5076 rows, dearest size-1 base item ~122.6M -> ~117k; tests LootSizeBounds; #176: modules of CAPITAL_VOLUME or more leave every pool, a scriptable module is no longer sized by its script, faction and officer named modules sized by launcher group, Heavy or module_size (deadspace stays size-free, as the server gives it to size-3 rats only); loot.tsv 5076 -> 4649, dearest named drop at sizes 1-2 ~1.04B -> ~27M
+- [ ] The wallet journal's Type column names every entry type, from the content bundle's table: *built-unproved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run
 - [ ] A geode or crate that pays nothing is kept, and an empty role is redrawn: *built-unproved*, eve-mod-econ geode.rs redraw; service/crate_svc.rs open_one consumes only if paid, CustomNotify on a nothing-open, [crate] LOST on a failed take; tests a_geode_that_cannot_pay_is_kept, an_empty_role_is_redrawn_so_the_tier_gets_its_prizes, a_stack_that_pays_then_cannot_keeps_the_rest
 - [ ] World income multipliers (bounties, missions, NPC buy orders, insurance, a master): *built-unproved*, economy scale module and the --isk-scale family of flags with unit tests; a scaled NPC bid never passes the retail ask, Tier B loot bids stay unscaled, insurance is capped at a full policy, the refine guard follows the dial; the client still shows unscaled quotes
 - [ ] Built items priced above their materials (recipe markup, so building pays): *built-unproved*, content/econ/recipe-markup.tsv (the authored [A] markup, an input: an edit re-extracts) read by content_econ.py; econ/prices.tsv's build_min column (format 1.6) and insurance.rs BUILD_COVER x build_min cap full, so a payout is at most BUILD_COVER of the self-build cost at reference or NPC prices at any dial or markup (#143: the cap reads the self-build cost at the materials' live trading index, econ_prices::build_live cached per mktidx revision, so build, insure and lose never beats selling the materials at the index at any dial; left: trades below CLAMP.0 and the index's lag after a crash; tests: insurance build_insure_lose_never_beats_selling_the_materials_at_the_index, a_built_component_is_valued_by_its_cheaper_route); the markup and the cap take effect only after a re-extract (and, on a hosted server, a copy of the new bundle); a 1.6 server reads a 1.5 bundle with no build_min (econ_prices PRICES_HEADER_1_5); tests: tools/test_content_econ.py Markup and BuildMin, econ_prices the_build_min_column_is_optional_and_checked, insurance a_payout_never_exceeds_the_self_build_cost, econ_exchange a_recipe_markup_opens_no_buy_build_sell_to_the_npc_loop; no soak has shown builders earning yet
@@ -166,7 +167,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 30 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
-| Market and wallet | 18 | 8 | 0 | 0 | 0 |
+| Market and wallet | 18 | 9 | 0 | 0 | 0 |
 | Bots | 11 | 27 | 3 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
@@ -327,9 +328,10 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 18 of 26 proved, 8 open</summary>
+<details><summary><b>Market and wallet</b>: 18 of 27 proved, 9 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
+- [ ] The wallet journal's Type column names every entry type, from the content bundle's table: *built-unproved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run
 - [x] Buying with the corporation wallet: *client-proved*, fci_corp_buy W10
 - [x] Contracts: *client-proved*, fci_contracts W10
 - [x] Regional market: a far seller in the book: *client-proved*, fci_prog_null W10

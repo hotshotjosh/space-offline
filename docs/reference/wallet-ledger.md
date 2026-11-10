@@ -540,6 +540,18 @@ above ~112** — the run ends at 59912 and the later ref types (170+, 190+) got
 their message ids elsewhere, so do not extrapolate. For any ref type we
 actually book, grep the pickle for the name and read the `sI` before it.
 
+**Provenance of the ids past the run.** They are not in this repository. The
+content bundle carries them: `wallet/entry-types.tsv` (`docs/content/schema.md`)
+holds every row of the client's own `accountingentrytypes.fsdbinary`
+(`entryTypeID` and `entryTypeNameID` are two columns of one row), written by
+`tools/content_wallet.py`, whose `check` proves each id resolves to a string in
+the shipped en-us localisation and that the run above agrees with the table.
+`ledger::entry_type_name_id_in` reads that table; the formula answers only for
+the invented fixture rows (a server with no bundle, or a bundle extracted
+before the section existed). An id that the table does not hold stays `None`,
+which blanks the cell: a guessed id prints another entry type's name or
+`[no messageID: N]`, and an empty cell is the one answer that does not lie.
+
 Marked **[V]** for the id-to-text mapping (read out of the shipped table) and
 **[I]** for the rendered result, which depends on `eveLocalization`'s loaded
 language data and can only be confirmed with a client in front of you.

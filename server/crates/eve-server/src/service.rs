@@ -5155,30 +5155,47 @@ fn item_columns() -> Vec<Column> {
 /// `entryTypeNameID` may be `None`: `localization.GetByMessageID` opens
 /// `if messageID is None: return ''`.
 fn entry_type(entry_type_id: i64, name: &str) -> PyValue {
+    entry_type_named(entry_type_id, name, None)
+}
+
+/// [`entry_type`] with its `entryTypeNameID`.
+///
+/// **`None` blanks the Type column.** `GetStaticData` overwrites
+/// `entryTypeName` with `GetByMessageID(entryTypeNameID)`, and that returns
+/// `''` for `None`, so the name sent beside it is discarded. The id comes from
+/// the content bundle's `wallet/entry-types.tsv` (see
+/// `ledger::entry_type_name_id_in`), which [`name_entry_types`] applies.
+fn entry_type_named(entry_type_id: i64, name: &str, name_id: Option<i64>) -> PyValue {
     keyval(vec![
         ("entryTypeID", PyValue::Int(entry_type_id)),
-        // **Not `None`, which blanks the Type column.** `GetStaticData`
-        // overwrites `entryTypeName` with `GetByMessageID(entryTypeNameID)`,
-        // and that returns `''` for `None` -- so the name we send below is
-        // discarded and the column renders empty. The real id is
-        // `59792 + entryTypeID` for the run `0..=108` only; above that the
-        // mapping is a table, because the client's own
-        // `accountingentrytypes.fsdbinary` pairs `entryTypeID` with
-        // `entryTypeNameID` directly and the two stop agreeing at 109. This
-        // comment said `0..=120` until 2026-10-20 and that was wrong: the
-        // *message* block 59792..59912 is contiguous, but it spans three
-        // disjoint entry-type runs, so extrapolating to 120 printed twelve
-        // real names against the wrong entry types. See
-        // `ledger::entry_type_name_id`.
         (
             "entryTypeNameID",
-            match crate::ledger::entry_type_name_id(entry_type_id) {
+            match name_id {
                 Some(id) => PyValue::Int(id),
                 None => PyValue::None,
             },
         ),
         ("entryTypeName", PyValue::Unicode(name.to_owned())),
     ])
+}
+
+/// Give every [`entry_type`] row of `rows` its `entryTypeNameID` from the
+/// content tables (`ledger::entry_type_name_id_in`). A row whose id is
+/// unknown keeps `None`: an empty Type cell, never a guessed name.
+pub(crate) fn name_entry_types(content: &crate::content::Content, rows: &mut [PyValue]) {
+    for r in rows {
+        let PyValue::Instance { state, .. } = &*r else {
+            continue;
+        };
+        let (Some(id), Some(PyValue::Unicode(name))) = (
+            args::as_int_lax(crate::pyutil::dict_get(state, b"entryTypeID")),
+            crate::pyutil::dict_get(state, b"entryTypeName"),
+        ) else {
+            continue;
+        };
+        let named = entry_type_named(id, name, crate::ledger::entry_type_name_id_in(content, id));
+        *r = named;
+    }
 }
 
 /// Jump clone state, as `GetCloneState` reads it.

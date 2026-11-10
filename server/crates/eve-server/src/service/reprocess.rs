@@ -1406,7 +1406,7 @@ mod tests {
             crate::reprocess::ENTRY_TYPE_REPROCESSING_TAX
         );
         assert!(
-            crate::ledger::entry_type_name_id(entry.entry_type_id).is_some(),
+            crate::ledger::entry_type_name_id_in(reg.content(), entry.entry_type_id).is_some(),
             "an entry type the client cannot name blanks the Type column"
         );
         assert_eq!(entry.amount, -quoted, "a debit is signed negative");

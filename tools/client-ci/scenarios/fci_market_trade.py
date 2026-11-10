@@ -1524,6 +1524,23 @@ def eoci_main(EOCI_NAME):
         check('A: the sale names B as the other side', bool(sells) and getattr_safe(sells[-1], 'clientID') == EXPECT_CHARID,
               'client %s, expected %s' % (text(getattr_safe(sells[-1], 'clientID') if sells else None), text(EXPECT_CHARID)))
 
+        # The journal's Type column is the localised text of the entry type's
+        # `entryTypeNameID` (`accountsvc.GetStaticData` sets `entryTypeName`
+        # from `GetByMessageID`, [V] accountsvc.py:82-92), and the server's ids
+        # come from the content bundle's `wallet/entry-types.tsv`.
+        # 54 is the sales tax (inside the formula run), 10004 a new character's
+        # starting funds (past the run, in the table).  [A] 10004 is listed by
+        # `GetEntryTypes` whether or not this pilot has such a row; falsified
+        # if it is not (then the check names it).
+        acct = get_svc('account')
+        for ref, what in ((54, 'the sales tax, in the run'), (10004, 'the starting funds, past the run')):
+            ok_t, rec = safe(lambda: acct.GetRefTypeKeyByID(ref))
+            shown = getattr_safe(rec, 'entryTypeName') if ok_t and rec is not None else None
+            shown = text(shown).strip() if shown is not None else ''
+            check('A: the journal Type text of entry type %d (%s) is not empty' % (ref, what),
+                  ok_t and rec is not None and shown != '' and shown != 'None' and 'no messageID' not in shown,
+                  'row %s, text length %d' % ('found' if ok_t and rec is not None else text(rec), len(shown)))
+
         gone, w = wait_for(lambda: not my_orders(mq, ty, False), timeout_ms=PEER_WAIT_MS, step_ms=1000)
         check('A: the order is gone from GetMyOrders after the rest was bought', gone, 'after %s ms' % text(w))
         if not gone:

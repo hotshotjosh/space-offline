@@ -152,6 +152,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                 // bounties, the agents, the corporation refs, and the 92..94
                 // tax rows the client derives), so none is dropped.
                 super::corp_wallet::complete_entry_types(&mut rows);
+                super::name_entry_types(reg.content(), &mut rows);
                 rows
             })),
             // Iterated with `enumerate`, so never None. Unreachable for
