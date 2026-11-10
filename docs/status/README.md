@@ -53,7 +53,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Service modules: *missing*, env still claims a module; research report r-upwell-war
 - [ ] Structure combat: *built-unproved*, structure_combat::hit takes turret (combat.rs UnitPlan::Structure), missile (missile.rs) and drone (drones.rs) volleys; crimewatch::aggression_on_structure and attack_refusal by the client's CanAttackFreely (crimewatchSvc.py:419-453); killmail::on_structure_volley; layers, damage limit, overflow, under-fire window [A]; fci_upwell_shoot steps 1-6 written, not run
 - [ ] Structure destruction: wreck, killmail with a corporation victim, docked pilots put out, 188 and 141 notices, locks dropped: *built-unproved*, structure_combat::destroy; killmail::on_kill_structure; notifications::on_structure_kill; fci_upwell_kill written (--with-second)
-- [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written
+- [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written; no 184 when no pilot fired (a GM /upwell damage), because charID None raises in the client formatter (#47)
 - [ ] Asset safety: *partial*, asset_safety.rs: one wrap per owner at unanchor, the Assets tab, delivery after the manual wait, the auto-move after the long wait, the fee (waits and fee [A] world settings); wormhole space keeps the harbour move; fci_upwell_safety green (regress-w28a); a structure killed in known space wraps through evacuate
 - [ ] War headquarters: *missing*, no war HQ code
 
@@ -507,7 +507,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Service modules: *missing*, env still claims a module; research report r-upwell-war
 - [ ] Structure combat: *built-unproved*, structure_combat::hit takes turret (combat.rs UnitPlan::Structure), missile (missile.rs) and drone (drones.rs) volleys; crimewatch::aggression_on_structure and attack_refusal by the client's CanAttackFreely (crimewatchSvc.py:419-453); killmail::on_structure_volley; layers, damage limit, overflow, under-fire window [A]; fci_upwell_shoot steps 1-6 written, not run
 - [ ] Structure destruction: wreck, killmail with a corporation victim, docked pilots put out, 188 and 141 notices, locks dropped: *built-unproved*, structure_combat::destroy; killmail::on_kill_structure; notifications::on_structure_kill; fci_upwell_kill written (--with-second)
-- [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written
+- [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written; no 184 when no pilot fired (a GM /upwell damage), because charID None raises in the client formatter (#47)
 - [ ] Asset safety: *partial*, asset_safety.rs: one wrap per owner at unanchor, the Assets tab, delivery after the manual wait, the auto-move after the long wait, the fee (waits and fee [A] world settings); wormhole space keeps the harbour move; fci_upwell_safety green (regress-w28a); a structure killed in known space wraps through evacuate
 - [ ] War headquarters: *missing*, no war HQ code
 - [ ] POS (old starbases): *missing*, posMgr answers without towers (#204); anchoring, fuel, shields and moon cycles not built. Not planned

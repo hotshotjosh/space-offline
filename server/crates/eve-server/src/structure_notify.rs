@@ -154,22 +154,22 @@ pub fn lost_layer(reg: &mut Registry, s: &Structure, to: State, now: i64) {
 /// it is set, `allianceName` and `allianceLinkData` ('showinfo', 16159, id).
 /// `shooter` is the roster key of the last volley
 /// ([`crate::structure_combat::Fire::take_last_shooter`]); damage nobody
-/// fired (a GM command) sends `charID` None and an empty corporation **[A]**
-/// (falsifier: a TQ 184 for damage from no pilot).
-pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) {
+/// fired (a GM command) sends no 184 at all **[V]**: a `charID` of None makes
+/// the client's formatter raise (`_GetByMessageID ... int() NoneType`, the
+/// 2026-11-10 client-CI shoot run's `client.log:34670`), so there is nothing
+/// to send for a volley with no pilot behind it.
+pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) -> bool {
     let (sh, ar, hu) = s.damage.unwrap_or((1.0, 1.0, 1.0));
     let who = shooter.and_then(|k| reg.pilot(k));
+    let Some(char_id) = who.as_ref().and_then(|p| p.char_id) else {
+        return false;
+    };
     let mut d = base_data(s);
     d.extend(data([
         ("shieldPercentage", Value::Real(100.0 * sh)),
         ("armorPercentage", Value::Real(100.0 * ar)),
         ("hullPercentage", Value::Real(100.0 * hu)),
-        (
-            "charID",
-            who.as_ref()
-                .and_then(|p| p.char_id)
-                .map_or(Value::None, Value::Int),
-        ),
+        ("charID", Value::Int(char_id)),
     ]));
     let corp = who.as_ref().map(|p| p.corporation_id);
     let corp_name = corp
@@ -195,6 +195,7 @@ pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) {
         ]));
     }
     tell(reg, s, STRUCTURE_UNDER_ATTACK, d);
+    true
 }
 
 /// 188 `StructureDestroyed.MakeData` **[V]** (`structures.py:294-300`): the
@@ -219,7 +220,14 @@ pub fn on_events(reg: &mut Registry, s: &Structure, events: &[Event], now: i64) 
             let shooter = reg
                 .ext_mut::<crate::structure_combat::Fire>()
                 .take_last_shooter(s.id);
-            under_attack(reg, s, shooter);
+            if !under_attack(reg, s, shooter) {
+                // Nothing went out (damage no pilot fired): let the next
+                // volley raise the first aggression again with its pilot.
+                if let Some(mut row) = crate::structure::get(reg.deltas(), s.id) {
+                    row.notified = false;
+                    crate::structure::put(reg.deltas_mut(), &row);
+                }
+            }
         }
         if let Event::StateChanged { from, to } = ev {
             match to {
@@ -357,5 +365,57 @@ mod tests {
             ])
         );
         assert_eq!(val(&d, "solarsystemID"), &Value::Int(31));
+    }
+
+    #[test]
+    fn first_aggression_with_no_shooter_sends_no_184() {
+        let mut reg = world();
+        let s = structure_at(State::ShieldVulnerable);
+        on_events(&mut reg, &s, &[Event::FirstAggressed], T0);
+        assert!(
+            got(&reg, DIRECTOR).is_empty(),
+            "a charID of None raises in the client's formatter"
+        );
+    }
+
+    #[test]
+    fn first_aggression_by_a_character_sends_a_184_with_its_char_id() {
+        let mut reg = world();
+        let s = structure_at(State::ShieldVulnerable);
+        reg.ext_mut::<crate::structure_combat::Fire>()
+            .note_shooter(s.id, OTHER);
+        on_events(&mut reg, &s, &[Event::FirstAggressed], T0);
+        let n = got(&reg, DIRECTOR);
+        assert_eq!(n.len(), 1);
+        assert_eq!(n[0].type_id, STRUCTURE_UNDER_ATTACK);
+        assert_eq!(val(&n[0].data, "charID"), &Value::Int(OTHER));
+    }
+
+    #[test]
+    fn gm_damage_does_not_swallow_a_pilots_later_184() {
+        let mut reg = world();
+        let mut s = structure_at(State::ShieldVulnerable);
+        structure::put(reg.deltas_mut(), &s);
+        let e = crate::structure_space::env(&reg, T0);
+        s.set_damage(0.2, 1.0, 1.0, &e);
+        let events = s.take_events();
+        structure::put(reg.deltas_mut(), &s);
+        crate::structure_space::react_at(&mut reg, s.id, &events, T0);
+        assert!(got(&reg, DIRECTOR).is_empty(), "no pilot, no 184");
+        // The pilot's volley, same window.
+        reg.ext_mut::<crate::structure_combat::Fire>()
+            .note_shooter(s.id, OTHER);
+        let mut s = structure::get(reg.deltas(), s.id).unwrap();
+        let fire = structure::Env {
+            under_fire: true,
+            ..e
+        };
+        s.set_damage(0.1, 1.0, 1.0, &fire);
+        let events = s.take_events();
+        structure::put(reg.deltas_mut(), &s);
+        crate::structure_space::react_at(&mut reg, s.id, &events, T0);
+        let n = got(&reg, DIRECTOR);
+        assert_eq!(n.len(), 1, "exactly one 184");
+        assert_eq!(val(&n[0].data, "charID"), &Value::Int(OTHER));
     }
 }

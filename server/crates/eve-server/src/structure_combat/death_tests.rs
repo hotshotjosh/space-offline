@@ -344,7 +344,7 @@ fn the_first_aggression_notifies_the_managers_once_with_the_shooter() {
 }
 
 #[test]
-fn a_gm_damage_first_aggression_still_sends_a_formatted_184() {
+fn a_gm_damage_first_aggression_sends_no_184() {
     let (mut reg, id) = world();
     set_state(&mut reg, id, State::ShieldVulnerable);
     let mut s = structure::get(reg.deltas(), id).unwrap();
@@ -353,20 +353,9 @@ fn a_gm_damage_first_aggression_still_sends_a_formatted_184() {
     let events = s.take_events();
     structure::put(reg.deltas_mut(), &s);
     crate::structure_space::react(&mut reg, id, &events);
-    let got = received(&reg, BOSS, 184);
-    assert_eq!(got.len(), 1);
-    // Every key the formatter reads is there, whoever shot.
-    for key in [
-        "structureID",
-        "shieldPercentage",
-        "armorPercentage",
-        "hullPercentage",
-        "charID",
-        "corpName",
-        "corpLinkData",
-    ] {
-        let _ = get(&got[0], key);
-    }
+    // No pilot fired, so there is no `charID`; the client's formatter raises
+    // on a None one, so nothing is sent (`structure_notify::under_attack`).
+    assert!(received(&reg, BOSS, 184).is_empty());
 }
 
 /// One attribute of a `KeyVal` (its state dict is stored value first).
