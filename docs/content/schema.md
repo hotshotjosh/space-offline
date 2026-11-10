@@ -198,6 +198,7 @@ comment exactly as shown.
 | `mutators/mappings.tsv` | #222 MUTA-DATA (`content_mutators.py`) | #222 (`mutator_data`) |
 | `deploy/units.tsv` | hand-data (`content_deploy.py`, the `deploy` section) | `mtu` (`mtu::Specs`: the Mobile Depot and MTU space components) |
 | `deploy/injectors.tsv` | hand-data (`content_deploy.py`) | `skill_trading` (`skill_trading::Rows`: the extractor and injector item rows) |
+| `wallet/entry-types.tsv` | wallet-l1 (`content_wallet.py`, the `wallet` section) | `ledger` (`ledger::EntryTypes`: the journal's Type-column message id per entry type) |
 | `moon/beacons.tsv` | #52 MOON-DATA (`content_moon.py`, the `moon` section) | `moon_beacon` (`moon_beacon::Beacons`: the deployment exemption, the mining point warp) |
 | `moon/metenox.tsv` | #52 MOON-DATA (`content_moon.py`) | the Metenox lane (#55); the server does not read it yet |
 
@@ -1851,6 +1852,24 @@ The weights of what a geode holds are the authored `content/econ/geode-loot.tsv`
 ```
 
 Columns as `store/types.tsv`.
+
+### `wallet/entry-types.tsv` (wallet-l1)
+
+- **Writer:** `tools/content_wallet.py`, the `wallet` section of `content.py`. Input: the client's `accountingentrytypes` table (decoded by `tools/fsd.py` `accounting_entry_types`). One row per record that has an `entryTypeNameID`, the old arithmetic run (`entryTypeNameID == 59792 + entryTypeID` for ids 0..=108, **[V]**) and the individually allocated rest alike. `check` proves every `name_id` resolves in the en-us localisation and that the run agrees with the table.
+- **Readers:** `eve-server` `ledger::ENTRY_TYPES` (`ledger::EntryTypes`), through `ledger::entry_type_name_id_in`: `account.GetEntryTypes` sends it as `entryTypeNameID`, which the client turns into the Type column text. A table from a bundle is complete: an entry type it does not hold has no name id (an empty Type cell), never a guessed one.
+- **Optional, with a fallback (**[A]**):** a bundle extracted before this section has no file, and a server with no bundle has none either. The server then holds no rows and answers the run by its formula (never the invented fixture rows, whose message ids a real client would show as `[no messageID: N]`), and prints `[content] NO wallet/entry-types.tsv in the bundle` once for a bundle without the file; entry types past the run show an empty Type cell. Falsified if the owner wants a hard error: `load` would then return an `Err` and `tools/up.sh` must be re-run.
+- **Key:** `entry_type_id`.
+
+```
+#entry_type_id	name_id
+```
+
+| column | type | meaning |
+|---|---|---|
+| `entry_type_id` | `i64` | the client's `entryTypeID` (a `refType`) |
+| `name_id` | `i64` | its `entryTypeNameID`, a message id in the localisation |
+
+The fixture's three rows (tests only) use invented name ids `990_300_001+`; the entry type ids are the run's last id, the next id, and the reprocessing-tax `refType` the server books.
 
 ### `moon/beacons.tsv` (#52)
 
