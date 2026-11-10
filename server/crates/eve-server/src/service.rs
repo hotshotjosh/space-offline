@@ -140,14 +140,9 @@ pub struct Request<'a> {
     /// `Option<i64>` rather than `i64` is the whole design. A sentinel -- `0`,
     /// or "the first character" -- is a value every arm can accidentally use;
     /// `None` is a value no arm can read a character out of without saying
-    /// what it does instead. EvEJS reached the same conclusion the hard way
-    /// and could only write it down as a convention
-    /// (`services/_shared/sessionIdentity.js:5-18`): its ad-hoc
-    /// `session.characterID || session.charid || session.userid || 140000001`
-    /// chains "silently fall back to a hardcoded character, so a session with
-    /// no identity acts as a specific real player". 29 files import their
-    /// resolver; 277 of those chains remain. A rule you have to remember
-    /// fixed a tenth of the problem, so ours is a type.
+    /// what it does instead. A fallback character would let a call with no
+    /// character selected run as somebody else's character; a convention
+    /// does not stop that, a type does.
     pub actor: Option<i64>,
 }
 
