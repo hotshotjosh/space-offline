@@ -30,3 +30,9 @@ docs/content/R-WH.md
 docs/review/
 docs/guides/public-export.md
 docs/reference/unattended-root.md
+docs/guides/patcher.md
+docs/guides/remote-clients.md
+docs/reference/login-path.md
+docs/archive/
+docs/evejs/
+docs/re/evejs-data.md

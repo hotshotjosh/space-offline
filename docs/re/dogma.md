@@ -13,9 +13,9 @@ values and 54,307 effect entries across 27,160 types; `dogmaattributes` all
 
 Tooling: [`tools/dogma.py`](../../tools/dogma.py), built on
 [`tools/fsd.py`](../../tools/fsd.py). Shape files:
-[`findings/corpus-typedogma.tsv`](../../findings/corpus-typedogma.tsv),
-[`corpus-dogmaattributes.tsv`](../../findings/corpus-dogmaattributes.tsv),
-[`corpus-dogmaeffects.tsv`](../../findings/corpus-dogmaeffects.tsv).
+`findings/corpus-typedogma.tsv`,
+`corpus-dogmaattributes.tsv`,
+`corpus-dogmaeffects.tsv`.
 
 Read [`docs/re/static-corpus.md`](static-corpus.md) first; it decoded the cFSD
 *container* and this document finishes the *records*. Claims are marked **[V]**

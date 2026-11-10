@@ -214,7 +214,7 @@ grep its code roots. Paths without a crate are under
 
 | area | read first | code roots |
 |---|---|---|
-| `login` | `docs/reference/login-path.md`, `docs/reference/session-roles.md` | `conn.rs`, `session.rs`, `accounts.rs` |
+| `login` | `docs/reference/session-roles.md` | `conn.rs`, `session.rs`, `accounts.rs` |
 | `space` | `docs/re/warp.md`, `docs/re/jump-gates.md` | `destiny.rs`, `warp_in.rs`, `celestial.rs` |
 | `combat` | `docs/re/damage-death.md`, `docs/re/targeting.md` | `combat.rs`, `damage.rs`, `crimewatch.rs`, `concord.rs` |
 | `fitting` | `docs/re/dogma.md` | `fitting.rs`, `fitstate.rs`, `dogma.rs` |
@@ -227,7 +227,7 @@ grep its code roots. Paths without a crate are under
 | `upwell` | `docs/content/schema.md` | `structure.rs`, `structure_*.rs`, `structure_dock/` |
 | `fw` | `docs/status/progress.tsv` (grep `fw`) | `fw_lp.rs`, `fw_stats.rs` |
 | `pve` | `docs/re/agents-missions.md`, `docs/re/npc-behaviors.md` | `mission*.rs`, `dungeon.rs`, `abyss.rs` |
-| `bots` | `docs/archive/plan-bots.md` | `server/crates/eve-bot/src/` |
+| `bots` | `docs/reference/server.md` | `server/crates/eve-bot/src/` |
 | `tools` | `docs/README.md` | `tools/` |
 
 **Hot files.** A PR may touch these; expect a closer review and a slower import,

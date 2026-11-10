@@ -9,7 +9,7 @@ reach them, what format each one is in, which of them we can read today, and
 
 Tooling: [`tools/fsd.py`](../../tools/fsd.py) is the reader (library, stdlib
 only, read-only), [`tools/fsd_dump.py`](../../tools/fsd_dump.py) is the CLI,
-and [`findings/corpus-inventory.tsv`](../../findings/corpus-inventory.tsv) is
+and `findings/corpus-inventory.tsv` is
 the per-file inventory. Message ids are resolved with `tools/loctable.py`,
 which belongs to the `localization-corpus` lane.
 
