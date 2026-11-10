@@ -16,7 +16,7 @@ client's own routes:
    `component_activate[0]` is True and
    `sovereigntyResourceSvc.GetSkyhook(id).active` is True (fails on the
    empty record the stub gave);
-3. `/skyhook age <id> 60` moves `last_cycle` back whole cycles:
+3. `/skyhook age <id> 60` credits the harvest of whole cycles:
    `GetNextReagentHarvestAmounts(id)` gives a non-zero total (fails when the
    harvest is not stored, or the reagent-type field trap drops the reagent);
 4. `OrbitalSkyhook.is_character_authorised(id)` is True (fails on
@@ -1632,7 +1632,7 @@ def eoci_main(EOCI_NAME):
               'record %s' % text(sk_rec)[:200])
 
         # 3. the harvest.
-        gm_check('/skyhook age moves last_cycle back', '/skyhook age %d 60' % sky_id,
+        gm_check('/skyhook age credits the harvest', '/skyhook age %d 60' % sky_id,
                  expect=['cycles'])
 
         def harvested():

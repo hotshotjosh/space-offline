@@ -1634,7 +1634,17 @@ def eoci_main(EOCI_NAME):
         sky_id = found[0]
         gm_check('/skyhook activate builds and switches it on', '/skyhook activate %d' % sky_id,
                  expect=['active'])
-        gm_check('/skyhook age moves last_cycle back', '/skyhook age %d 60' % sky_id,
+        # Wait for the slim's component_activate (as fci_skyhook does) so the
+        # activation's snapshot has been applied before the age's own (ci-1111:
+        # a stale wholesale state won the client's cache and the stock read 0).
+        def built():
+            ca = slim_flag(park, sky_id, 'component_activate')
+            return bool(ca) and ca[0] is True
+        done, waited = wait_for(built, timeout_ms=10000, step_ms=500)
+        check('the slim says component_activate[0] is True within 10 s', bool(done),
+              'component_activate %s after %s ms' % (
+                  text(slim_flag(park, sky_id, 'component_activate')), text(waited)))
+        gm_check('/skyhook age credits the harvest', '/skyhook age %d 60' % sky_id,
                  expect=['cycles'])
 
         def unsecured_now():
@@ -1644,6 +1654,11 @@ def eoci_main(EOCI_NAME):
             return v2[1]
         stocked, waited = wait_for(lambda: (unsecured_now() or 0) > 0, timeout_ms=20000,
                                    step_ms=1000)
+        if not stocked:
+            ok_rd, rd = safe_pair(lambda: svc.localSkyhooksData.get_skyhook(sky_id).reagent_data)
+            say('client cache reagent_data: %s %s' % (ok_rd, text(
+                [(k, text(getattr_safe(v, 'simulation'))) for k, v in rd.items()]
+                if ok_rd and hasattr(rd, 'items') else rd)[:300]))
         precondition('the skyhook holds an unsecured stock before the raid', bool(stocked),
                      'unsecured %s after %s ms' % (text(unsecured_now()), text(waited)))
         if not stocked:
