@@ -193,7 +193,7 @@ fn a_systems_ice_belt_is_the_ice_of_its_band() {
 /// apart by `Difficulties::Star`, the rule `population.tsv` rows use.
 #[test]
 fn the_fields_are_told_apart_by_star() {
-    use eve_server::dungeon_data::{Exclusions, OreBand, Slot, candidates};
+    use eve_server::dungeon_data::{OreBand, Slot, candidates};
     let t = dungeons();
     let pick = |b| {
         let slot = Slot {
@@ -202,7 +202,7 @@ fn the_fields_are_told_apart_by_star() {
             difficulties: Difficulties::Star(b),
             faction: None,
         };
-        candidates(&t, &slot, &Exclusions::C3, &|_| None)
+        candidates(&t, &slot, &t.exclusions(), &|_| None)
     };
     assert_eq!(pick(OreBand::High), [HIGH_FIELD]);
     assert_eq!(pick(OreBand::Low), [LOW_FIELD]);
