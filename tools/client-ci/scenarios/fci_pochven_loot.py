@@ -1447,6 +1447,18 @@ def eoci_main(EOCI_NAME):
     def apart(a, b):
         return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
+    def gm_info_check(name, line, expect):
+        """`gm_check` for a command that answers as a raised `CustomInfo`
+        (`service/gm.rs` VISIBLE, as `/heal` does): the raise IS the readout,
+        as in fci_gm_pilot.py."""
+        ok, value = rcall('slash', 'SlashCmd', line)
+        reply = text(value)
+        if not ok and 'CustomInfo' in reply:
+            ok = True
+        low = reply.lower()
+        check(name, ok and all(e.lower() in low for e in expect), '%s -> %s' % (line, reply[:300]))
+        return ok, reply
+
     def eoci_body():
         mark = log_mark()
         sess = builtin('session')
@@ -1530,7 +1542,7 @@ def eoci_main(EOCI_NAME):
         hull_ship = getattr_safe(sess, 'shipid')
         held = []           # per kill: (wreck ball, owner, [(type, qty)])
         for n in range(KILLS):
-            gm_check('GM: /heal me (kill %d)' % (n + 1), '/heal me', expect=['healed'])
+            gm_info_check('GM: /heal me (kill %d)' % (n + 1), '/heal me', ['healed'])
             still = getattr_safe(sess, 'shipid') == hull_ship
             precondition('kill %d: still in the Tempest' % (n + 1), still,
                          'session.shipid %s, the Tempest %s' % (
@@ -1564,7 +1576,7 @@ def eoci_main(EOCI_NAME):
                                     timeout_ms=KILL_WAIT_MS, step_ms=1000)
             for m in guns:
                 deactivate_module(m.itemID)
-            gm_check('GM: /heal me after kill %d' % (n + 1), '/heal me', expect=['healed'])
+            gm_info_check('GM: /heal me after kill %d' % (n + 1), '/heal me', ['healed'])
             check('kill %d: the battleship is destroyed (it leaves the park)' % (n + 1),
                   bool(dead), 'after %s ms; approach: %s' % (text(waited), detail))
             if not dead:
