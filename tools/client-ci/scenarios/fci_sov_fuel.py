@@ -1496,8 +1496,19 @@ def eoci_main(EOCI_NAME):
         precondition('a ballpark to fly in', park is not None)
         if park is None:
             return
-        landed, detail = warp_to(park, hub_id, min_range=1000.0)
+        # `/sov go here` (GM) puts the ship at rest about 1 km off the hub's
+        # surface and saves the ~340 s of warp and approach; the flight stays
+        # as the fallback if the line is missing.
+        _ok_go, rep_go = gm('/sov go here')
+        detail = 'sov go: %s' % rep_go[:160]
+        near, _w = wait_for(
+            lambda: (lambda d: d is not None and d < 2000.0)(dist_to(park, hub_id)),
+            timeout_ms=30000, step_ms=500)
         close = dist_to(park, hub_id)
+        if not near:
+            landed, warp_detail = warp_to(park, hub_id, min_range=1000.0)
+            detail = 'sov go: %s; %s' % (rep_go[:160], warp_detail)
+            close = dist_to(park, hub_id)
         if close is None or close > 2000.0:
             landed, detail = approach(park, hub_id, 1500.0, timeout_ms=420000)
             close = dist_to(park, hub_id)
