@@ -1704,16 +1704,34 @@ def eoci_main(EOCI_NAME):
               bool(dmg), 'was %s, now %s after %s ms' % (text(before), text(bars()), text(waited)))
         no_new_tracebacks('fight', mark)
 
-        # 7. Scoop: the same item id comes home with the same modifiers.
+        # 7. Recall: the same item id comes home with the same modifiers.  The server
+        # refuses a scoop beyond 2 500 m ("too far away to scoop. Recall it first"), and
+        # its CmdReturnBay flies the drone home and scoops it itself.  The menu's
+        # "Return to drone bay" is droneFunctions.ReturnToDroneBay -> entity.CmdReturnBay
+        # [V droneFunctions.py:179-183].
         ok, v = safe(lambda: __import__(
             'eve.client.script.ui.services.menuSvcExtras.droneFunctions',
-            fromlist=['RealScoopToDroneBay']).RealScoopToDroneBay([item_a]))
-        # [V droneFunctions.py:186-190: gameui.GetShipAccess().ScoopDrone]
-        check('RealScoopToDroneBay (the menu\'s own function) took', ok, text(v)[:200])
+            fromlist=['ReturnToDroneBay']).ReturnToDroneBay([item_a]))
+        check('ReturnToDroneBay (the menu\'s own function) took', ok, text(v)[:200])
         home, waited = wait_for(
             lambda: [r for r in (ship_items(FLAG_DRONE_BAY)[1] or [])
                      if getattr_safe(r, 'itemID') == item_a]
-            if ship_items(FLAG_DRONE_BAY)[0] else None, timeout_ms=60000, step_ms=1000)
+            if ship_items(FLAG_DRONE_BAY)[0] else None, timeout_ms=120000, step_ms=1000)
+        if not home and item_a in drones_in_space():
+            # fallback: the drone is still out; scoop it by hand when it is in range
+            d = dist_to(park, item_a)
+            # the server compares centre distance with SCOOP_RANGE (drones.rs:1252, :2786), not surface distance
+            if d is not None and d <= 2500 - getattr_safe(park.GetBall(item_a), 'radius', 0.0):
+                ok, v = safe(lambda: __import__(
+                    'eve.client.script.ui.services.menuSvcExtras.droneFunctions',
+                    fromlist=['RealScoopToDroneBay']).RealScoopToDroneBay([item_a]))
+                # [V droneFunctions.py:186-190: gameui.GetShipAccess().ScoopDrone]
+                check('RealScoopToDroneBay (the menu\'s own function, in range) took',
+                      ok, text(v)[:200])
+                home, waited = wait_for(
+                    lambda: [r for r in (ship_items(FLAG_DRONE_BAY)[1] or [])
+                             if getattr_safe(r, 'itemID') == item_a]
+                    if ship_items(FLAG_DRONE_BAY)[0] else None, timeout_ms=30000, step_ms=1000)
         check('the same item id is back in the drone bay', bool(home), text(waited))
         ok2, info2 = rcall('dynamicItemService', 'GetDynamicItemInfo', item_a)
         check('GetDynamicItemInfo, asked again, returns the same modifiers',
