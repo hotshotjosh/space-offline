@@ -443,7 +443,7 @@ fn intact_malfunctioning_wrecked_have_their_own_runs_and_chance() {
     let skill_factor = 1.0
         + [SKILL_X, SKILL_Y, SKILL_Z]
             .into_iter()
-            .map(crate::industry::skill_probability)
+            .map(|s| crate::industry::skill_probability(fx(), s))
             .sum::<f64>();
     for (type_id, chance, runs) in [
         (RELIC_INTACT, INTACT_CHANCE, INTACT_RUNS),
@@ -620,25 +620,28 @@ fn decryptor_probability_multiplies_in_and_clamps_to_one() {
         .and_then(|s| s.invention.as_ref())
         .expect("a relic");
     // No decryptor is the plain chance, and the old entry point agrees.
-    assert_eq!(invention_probability_with(inv, |_| 0, 1.0), INTACT_CHANCE);
-    assert_eq!(invention_probability(inv, |_| 0), INTACT_CHANCE);
+    assert_eq!(
+        invention_probability_with(fx(), inv, |_| 0, 1.0),
+        INTACT_CHANCE
+    );
+    assert_eq!(invention_probability(fx(), inv, |_| 0), INTACT_CHANCE);
     // A multiplier multiplies.
     assert_eq!(
-        invention_probability_with(inv, |_| 0, SLOW_MULTIPLIER),
+        invention_probability_with(fx(), inv, |_| 0, SLOW_MULTIPLIER),
         INTACT_CHANCE * SLOW_MULTIPLIER
     );
     // The clamp is over the whole product: skills past certainty, brought
     // back under it by a multiplier below one, are not clamped first.
-    let skills = 1.0 + 3.0 * 5.0 * crate::industry::skill_probability(SKILL_X);
+    let skills = 1.0 + 3.0 * 5.0 * crate::industry::skill_probability(fx(), SKILL_X);
     let at_five = |_: i64| 5;
     assert_eq!(
-        invention_probability_with(inv, at_five, 2.0),
+        invention_probability_with(fx(), inv, at_five, 2.0),
         (INTACT_CHANCE * skills * 2.0).clamp(0.0, 1.0)
     );
     assert!(INTACT_CHANCE * skills > 0.3);
     // A big multiplier cannot pass certainty, nor a negative go below zero.
-    assert_eq!(invention_probability_with(inv, at_five, 1_000.0), 1.0);
-    assert_eq!(invention_probability_with(inv, at_five, -1.0), 0.0);
+    assert_eq!(invention_probability_with(fx(), inv, at_five, 1_000.0), 1.0);
+    assert_eq!(invention_probability_with(fx(), inv, at_five, -1.0), 0.0);
 }
 
 #[test]

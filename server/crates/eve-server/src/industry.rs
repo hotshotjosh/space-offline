@@ -1105,21 +1105,33 @@ pub const INVENTION_TIME_EFFICIENCY: i64 = 4;
 pub const INVENTION_SKILL_PROBABILITY: f64 = 1.0 / 30.0;
 pub const INVENTION_SKILL_PROBABILITY_LOWER: f64 = 1.0 / 40.0;
 
-/// Type list 799 (`evetypes.TYPE_LIST_LOWER_INVENTION_SKILL_PROBABILITY`,
+/// Type list 799 (`evetypes.TYPE_LIST_LOWER_INVENTION_SKILL_PROBABILITY`):
 /// the list `SkillProbabilityHelper` reads to decide which skills get the
-/// lower rate): its members, ascending: the four racial **Encryption
-/// Methods** skills (21790 Caldari, 21791 Minmatar, 23087 Amarr, 23121
-/// Gallente), 3408 Sleeper Encryption Methods, and 52308 / 55025.
+/// lower invention rate. **[V]** the key: it is the client's own constant
+/// and `types/typelists.tsv` carries a row under it. The members are read
+/// from that row ([`lower_invention_skill`]), not copied here.
+pub const LOWER_INVENTION_SKILL_PROBABILITY_LIST: i64 = 799;
+
+/// Whether `skill_type_id` is in type list 799 in `content`'s typelists
+/// (`dungeon_data::Table::typelists`, the bundle's `types/typelists.tsv`).
 ///
-/// **[V]**, read out of `res:/staticdata/typelist.fsdbinary` by raw cFSD
-/// slots -- `tools/fsd.py` has no confirmed column layout for that table, so
-/// the record was walked by hand: key 799's seventh slot is a length-prefixed
-/// `uint32` array of exactly these seven ids, and it is the only array slot
-/// in the record whose length is plausible for a type list. The four
-/// encryption skills being there and the datacore skills not is the
-/// well-known shape of the formula, which is the cross-check.
-pub const LOWER_INVENTION_SKILL_PROBABILITY_TYPES: [i64; 7] =
-    [3408, 21790, 21791, 23087, 23121, 52308, 55025];
+/// **[A]** every built bundle carries a typelist row under 799. Falsified
+/// by `content.py --check` finding no row for it. Decision: a content
+/// without the table or the row (no bundle) has an empty list, so every
+/// skill gets the 1/30 rate.
+pub fn lower_invention_skill(content: &crate::content::Content, skill_type_id: i64) -> bool {
+    let Some(list) = content
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.typelists.get(&LOWER_INVENTION_SKILL_PROBABILITY_LIST))
+    else {
+        return false;
+    };
+    let (group, category) = crate::typedata::installed_in(content)
+        .table()
+        .get(skill_type_id)
+        .map_or((0, 0), |r| (r.group_id, r.category_id));
+    list.contains(skill_type_id, group, category)
+}
 
 /// `Copying.MAX_RUNS` and `Invention.MAX_RUNS`: 500 each, where every other
 /// activity inherits `Activity.MAX_RUNS = MAX_RUNS_HARD_CAP`.
@@ -1408,7 +1420,7 @@ fn level_of(skills: Option<&Skills>, type_id: i64) -> i64 {
 /// Lower is faster, and the result is never allowed below zero: five levels
 /// of everything plus the best implant is `0.80 * 0.85 * 0.92 = 0.6256`, so
 /// the clamp is defensive rather than reachable.
-pub fn time_multiplier<F>(level: F, implants: &[i64]) -> f64
+pub fn time_multiplier<F>(content: &crate::content::Content, level: F, implants: &[i64]) -> f64
 where
     F: Fn(i64) -> i64,
 {
@@ -1416,27 +1428,32 @@ where
     m *= 1.0 + -4.0 * level(SKILL_INDUSTRY) as f64 / 100.0;
     m *= 1.0 + -3.0 * level(SKILL_ADVANCED_INDUSTRY) as f64 / 100.0;
     for &implant in implants {
-        m *= 1.0 + implant_time_bonus(implant) / 100.0;
+        m *= 1.0 + implant_time_bonus(content, implant) / 100.0;
     }
     m.max(0.0)
 }
 
-/// Attribute 440 on the six implants that carry it. Zero for anything else,
-/// which is the `if amount is not None` guard in
-/// `industryCommon.GetJobModifiers`.
-///
-/// **[V]**: 27167 `Zainou 'Beancounter' Industry BX-802` -2, 27170 `BX-801`
-/// -1, 27171 `BX-804` -4, and the three Serenity `Beancounter Manufacturing`
-/// implants 59797 / 59799 / 59801 at -8. Those six plus skill 3380 are the
-/// *only* seven types in the whole table with attribute 440.
-pub fn implant_time_bonus(type_id: i64) -> f64 {
-    match type_id {
-        27170 => -1.0,
-        27167 => -2.0,
-        27171 => -4.0,
-        59797 | 59799 | 59801 => -8.0,
-        _ => 0.0,
-    }
+/// Attribute 440 (the implants' manufacturing time bonus, percent).
+/// **[V-data]** the six implants that move manufacturing time carry it in
+/// the bundle's type data, with the old table's values. **[I]** the client
+/// has no named constant for it: the implants reach the job through dogma
+/// (`GetJobModifiers`, `industryCommon.py:473`, takes the character's
+/// attribute through `GetIndustryCharacterModifiers`). Falsified by an
+/// implant that carries 440 and does not change the client's job time.
+pub const ATTRIBUTE_IMPLANT_TIME_BONUS: i64 = 440;
+
+/// Attribute 1982 (`attributeManufactureTimePerLevel`, a required skill's
+/// time bonus per level, percent). **[V]** `dogma/const.py:643` names it,
+/// `industryCommon.py:44-46` lists it as the manufacturing
+/// `REQUIRED_SKILL_MODIFIERS`, and `industryCommon.py:487-492` applies
+/// `1.0 + amount * level / 100.0` per required skill.
+pub const ATTRIBUTE_REQUIRED_SKILL_TIME_BONUS: i64 = 1982;
+
+/// The implant's own value of attribute 440 in the type data. Zero for a
+/// type that does not carry it (or is not in the table), which is the
+/// `if amount is not None` guard in `industryCommon.GetJobModifiers`.
+pub fn implant_time_bonus(content: &crate::content::Content, type_id: i64) -> f64 {
+    crate::typedata::own_attribute_in(content, type_id, ATTRIBUTE_IMPLANT_TIME_BONUS).unwrap_or(0.0)
 }
 
 /// The `REQUIRED_SKILL_MODIFIERS` term: attribute 1982 on a blueprint's own
@@ -1445,13 +1462,17 @@ pub fn implant_time_bonus(type_id: i64) -> f64 {
 /// `1.0 + amount * level / 100.0` per required skill that has the attribute.
 /// A Tech I blueprint requires only skills without 1982; a Tech II one
 /// requires a production skill that has it.
-pub fn required_skill_time_multiplier<F>(bp: &Blueprint, level: F) -> f64
+pub fn required_skill_time_multiplier<F>(
+    content: &crate::content::Content,
+    bp: &Blueprint,
+    level: F,
+) -> f64
 where
     F: Fn(i64) -> i64,
 {
     let mut m = 1.0;
     for &(skill, _) in &bp.skills {
-        let per_level = required_skill_time_per_level(skill);
+        let per_level = required_skill_time_per_level(content, skill);
         if per_level != 0.0 {
             m *= 1.0 + per_level * level(skill) as f64 / 100.0;
         }
@@ -1459,17 +1480,11 @@ where
     m
 }
 
-/// Attribute 1982 for one skill type. **[V]** over the whole table: 26 types
-/// carry it, 81896 at -2 and the other 25 at -1, and every one of them is a
-/// T2 production skill.
-pub fn required_skill_time_per_level(type_id: i64) -> f64 {
-    match type_id {
-        81896 => -2.0,
-        3395 | 3396 | 3397 | 3398 | 3400 | 11433 | 11441 | 11442 | 11443 | 11444 | 11445
-        | 11446 | 11447 | 11448 | 11449 | 11450 | 11451 | 11452 | 11453 | 11454 | 11455 | 11529
-        | 52307 | 77725 | 81050 => -1.0,
-        _ => 0.0,
-    }
+/// Attribute 1982 for one skill type, from its type data row; zero for a
+/// skill without it.
+pub fn required_skill_time_per_level(content: &crate::content::Content, type_id: i64) -> f64 {
+    crate::typedata::own_attribute_in(content, type_id, ATTRIBUTE_REQUIRED_SKILL_TIME_BONUS)
+        .unwrap_or(0.0)
 }
 
 /// How long a manufacturing job takes, in whole seconds.
@@ -1734,6 +1749,7 @@ pub fn research_job_time(base_time: i64, level: i64, runs: i64) -> f64 {
 /// **No implant is folded for science** `[A]`: the research implants exist
 /// (the Zainou `Beancounter` research line) and none is an item here.
 pub fn activity_time_multiplier<F>(
+    content: &crate::content::Content,
     activity_id: i64,
     bp: &Blueprint,
     level: F,
@@ -1746,7 +1762,8 @@ where
     let advanced = per(SKILL_ADVANCED_INDUSTRY, -3.0);
     match activity_id {
         MANUFACTURING => {
-            time_multiplier(&level, implants) * required_skill_time_multiplier(bp, &level)
+            time_multiplier(content, &level, implants)
+                * required_skill_time_multiplier(content, bp, &level)
         }
         RESEARCH_TIME => (per(SKILL_RESEARCH, -5.0) * advanced).max(0.0),
         RESEARCH_MATERIAL => (per(SKILL_METALLURGY, -5.0) * advanced).max(0.0),
@@ -1790,8 +1807,8 @@ pub fn activity_max_runs(base_time: i64, time_modifiers: f64, cap: i64) -> i64 {
 
 /// `SkillProbabilityHelper.get_probability_from_type_id`: 1/40 for a skill
 /// in type list 799, 1/30 for any other.
-pub fn skill_probability(skill_type_id: i64) -> f64 {
-    if LOWER_INVENTION_SKILL_PROBABILITY_TYPES.contains(&skill_type_id) {
+pub fn skill_probability(content: &crate::content::Content, skill_type_id: i64) -> f64 {
+    if lower_invention_skill(content, skill_type_id) {
         INVENTION_SKILL_PROBABILITY_LOWER
     } else {
         INVENTION_SKILL_PROBABILITY
@@ -1811,11 +1828,11 @@ pub fn skill_probability(skill_type_id: i64) -> f64 {
 /// two (Wolf and Jaguar) are both 0.30, so it does not show there, and it
 /// would for an activity whose products differed. A decryptor is the third
 /// factor ([`invention_probability_with`]).
-pub fn invention_probability<F>(inv: &Invention, level: F) -> f64
+pub fn invention_probability<F>(content: &crate::content::Content, inv: &Invention, level: F) -> f64
 where
     F: Fn(i64) -> i64,
 {
-    invention_probability_with(inv, level, 1.0)
+    invention_probability_with(content, inv, level, 1.0)
 }
 
 /// [`invention_probability`] with a decryptor's `ProbabilityModifier`
@@ -1823,7 +1840,12 @@ where
 /// `max(min(reduce(mul, [every ProbabilityModifier.amount], 1), 1.0), 0.0)`:
 /// the clamp is over the whole product, so a multiplier below one can bring
 /// a chance the skills pushed past one back under it. `1.0` is no decryptor.
-pub fn invention_probability_with<F>(inv: &Invention, level: F, multiplier: f64) -> f64
+pub fn invention_probability_with<F>(
+    content: &crate::content::Content,
+    inv: &Invention,
+    level: F,
+    multiplier: f64,
+) -> f64
 where
     F: Fn(i64) -> i64,
 {
@@ -1847,7 +1869,7 @@ where
         + inv
             .skills
             .iter()
-            .map(|&(skill, _)| level(skill) as f64 * skill_probability(skill))
+            .map(|&(skill, _)| level(skill) as f64 * skill_probability(content, skill))
             .sum::<f64>();
     (1.0 * base * amount * multiplier).clamp(0.0, 1.0)
 }
@@ -2861,7 +2883,7 @@ impl Jobs {
             _ => bp.blueprint_type_id,
         };
 
-        let character_time = activity_time_multiplier(activity, bp, level, pilot.implants);
+        let character_time = activity_time_multiplier(content, activity, bp, level, pilot.implants);
         let time_modifiers = character_time * facility.time_multiplier;
 
         // `ResearchMaterial.job_validate` / `ResearchTime.job_validate`:
@@ -3093,6 +3115,7 @@ impl Jobs {
 
         let probability = invention.map_or(1.0, |inv| {
             invention_probability_with(
+                content,
                 inv,
                 level,
                 decryptor.map_or(1.0, |d| d.probability_multiplier),
@@ -3435,6 +3458,47 @@ mod tests {
         FX.with(|c| *c)
     }
 
+    /// `Content::fixture()` with a test-local type data text (invented
+    /// rows) and a type list 799 of `lower` types. Nothing here is a
+    /// shipped or bundle value.
+    fn content_with(types: &str, lower: &[i64]) -> crate::content::Content {
+        let mut c = crate::content::Content::fixture();
+        let table = crate::typedata::Table::parse(types).expect("the test type data parses");
+        c.insert(
+            crate::typedata::TABLE.name,
+            crate::typedata::Installed::build(table),
+        );
+        let mut d = crate::dungeon_data::Table::fixture();
+        d.typelists.insert(
+            LOWER_INVENTION_SKILL_PROBABILITY_LIST,
+            crate::dungeon_data::TypeList {
+                inc_types: lower.to_vec(),
+                ..Default::default()
+            },
+        );
+        c.insert(crate::dungeon_data::TABLE.name, d);
+        c
+    }
+
+    /// Invented implants (group 990_700, category 20) and skills (group
+    /// 990_701, category 16) for the time and chance figures: two implants
+    /// with a manufacturing time bonus, one implant without; three skills
+    /// with a required-skill time bonus of -2, -1 and none.
+    const IMPLANT_SMALL: i64 = 990_711;
+    const IMPLANT_LARGE: i64 = 990_712;
+    const IMPLANT_PLAIN: i64 = 990_713;
+    const SKILL_DOUBLE: i64 = 990_721;
+    const SKILL_SINGLE: i64 = 990_722;
+    const SKILL_NONE: i64 = 990_723;
+    const TYPES: &str = "\
+type\t990711\t990700\t20\t1\t1\t0\t0\t0\t0\t0\t\t440=-3\tImplant small
+type\t990712\t990700\t20\t1\t1\t0\t0\t0\t0\t0\t\t440=-9\tImplant large
+type\t990713\t990700\t20\t1\t1\t0\t0\t0\t0\t0\t\t\tImplant plain
+type\t990721\t990701\t16\t1\t1\t0\t0\t0\t0\t0\t\t1982=-2\tSkill double
+type\t990722\t990701\t16\t1\t1\t0\t0\t0\t0\t0\t\t1982=-1\tSkill single
+type\t990723\t990701\t16\t1\t1\t0\t0\t0\t0\t0\t\t\tSkill none
+";
+
     fn t() -> &'static Table {
         ROWS.with(|r| *r)
     }
@@ -3680,7 +3744,7 @@ mod tests {
         assert_eq!(activity_time(&table, bp, COPYING), Some(40));
         let inv = sci.invention.as_ref().expect("an invention with products");
         // `product.probability or 1.0`: the mean of 0.5 and 1.0.
-        assert_eq!(invention_probability(inv, |_| 0), 0.75);
+        assert_eq!(invention_probability(fx(), inv, |_| 0), 0.75);
     }
 
     /// A malformed row or an unknown `kind` refuses the whole table, naming
@@ -3996,30 +4060,46 @@ mod tests {
     #[test]
     fn the_time_multiplier_folds_industry_advanced_industry_and_implants() {
         let none = levels(&[]);
-        assert_eq!(time_multiplier(|t| level_of(Some(&none), t), &[]), 1.0);
+        let fixture = fx();
+        assert_eq!(
+            time_multiplier(fixture, |t| level_of(Some(&none), t), &[]),
+            1.0
+        );
 
         let industry5 = levels(&[(SKILL_INDUSTRY, 5)]);
-        let m = time_multiplier(|t| level_of(Some(&industry5), t), &[]);
+        let m = time_multiplier(fixture, |t| level_of(Some(&industry5), t), &[]);
         assert!((m - 0.80).abs() < 1e-12, "Industry 5 is -20%, got {m}");
 
         let both = levels(&[(SKILL_INDUSTRY, 5), (SKILL_ADVANCED_INDUSTRY, 5)]);
-        let m = time_multiplier(|t| level_of(Some(&both), t), &[]);
+        let m = time_multiplier(fixture, |t| level_of(Some(&both), t), &[]);
         assert!((m - 0.80 * 0.85).abs() < 1e-12, "and -15% more, got {m}");
 
-        // The best implant is -8%, and the six ids are the only ones that do
-        // anything at all.
-        let m = time_multiplier(|t| level_of(Some(&both), t), &[59801]);
-        assert!((m - 0.80 * 0.85 * 0.92).abs() < 1e-12);
-        assert_eq!(implant_time_bonus(27170), -1.0);
-        assert_eq!(implant_time_bonus(27167), -2.0);
-        assert_eq!(implant_time_bonus(27171), -4.0);
-        for t in [59797, 59799, 59801] {
-            assert_eq!(implant_time_bonus(t), -8.0);
-        }
-        // Not an industry implant, and not the reprocessing ones either.
-        for t in [3385, 3389, 12196, 587] {
-            assert_eq!(implant_time_bonus(t), 0.0);
-        }
+        // An implant folds its own attribute 440, read from the type data.
+        let c = content_with(TYPES, &[]);
+        let m = time_multiplier(&c, |t| level_of(Some(&both), t), &[IMPLANT_LARGE]);
+        assert!((m - 0.80 * 0.85 * 0.91).abs() < 1e-12);
+        let m = time_multiplier(
+            &c,
+            |t| level_of(Some(&none), t),
+            &[IMPLANT_SMALL, IMPLANT_LARGE],
+        );
+        assert!(
+            (m - 0.97 * 0.91).abs() < 1e-12,
+            "implants multiply, got {m}"
+        );
+        assert_eq!(implant_time_bonus(&c, IMPLANT_SMALL), -3.0);
+        assert_eq!(implant_time_bonus(&c, IMPLANT_LARGE), -9.0);
+        // A row without the attribute, a skill and a type the table lacks do
+        // nothing.
+        assert_eq!(implant_time_bonus(&c, IMPLANT_PLAIN), 0.0);
+        assert_eq!(implant_time_bonus(&c, SKILL_SINGLE), 0.0);
+        assert_eq!(implant_time_bonus(&c, 990_799), 0.0);
+        // Another table gives another bonus: the figure is not in the code.
+        let other = content_with(
+            "type\t990711\t990700\t20\t1\t1\t0\t0\t0\t0\t0\t\t440=-5\tImplant small\n",
+            &[],
+        );
+        assert_eq!(implant_time_bonus(&other, IMPLANT_SMALL), -5.0);
     }
 
     /// The `REQUIRED_SKILL_MODIFIERS` path reads attribute 1982 of each
@@ -4027,20 +4107,37 @@ mod tests {
     /// only Industry gets no bonus from the T2 production skills.
     #[test]
     fn the_required_skill_time_path_reads_only_the_required_skills() {
-        let maxed = levels(&[(SKILL_INDUSTRY, 5), (11_448, 5), (11_529, 5), (81_896, 5)]);
+        let c = content_with(TYPES, &[]);
+        let maxed = levels(&[
+            (SKILL_INDUSTRY, 5),
+            (SKILL_DOUBLE, 5),
+            (SKILL_SINGLE, 5),
+            (SKILL_NONE, 5),
+        ]);
         let level = |t: i64| level_of(Some(&maxed), t);
         let bp = rifter();
         assert_eq!(bp.skills, vec![(SKILL_INDUSTRY, 1)]);
-        assert_eq!(required_skill_time_multiplier(bp, level), 1.0);
-        // 11448 is a T2 production skill at -1%/level.
-        assert_eq!(required_skill_time_per_level(11_448), -1.0);
-        assert_eq!(required_skill_time_per_level(81_896), -2.0);
-        assert_eq!(required_skill_time_per_level(SKILL_INDUSTRY), 0.0);
-        let fake = Blueprint {
-            skills: vec![(11_448, 1)],
+        assert_eq!(required_skill_time_multiplier(&c, bp, level), 1.0);
+        // One skill at each figure: -2, -1 and none, per level.
+        assert_eq!(required_skill_time_per_level(&c, SKILL_DOUBLE), -2.0);
+        assert_eq!(required_skill_time_per_level(&c, SKILL_SINGLE), -1.0);
+        assert_eq!(required_skill_time_per_level(&c, SKILL_NONE), 0.0);
+        assert_eq!(required_skill_time_per_level(&c, SKILL_INDUSTRY), 0.0);
+        let with = |skills: Vec<(i64, i64)>| Blueprint {
+            skills,
             ..rifter().clone()
         };
-        assert!((required_skill_time_multiplier(&fake, level) - 0.95).abs() < 1e-12);
+        let m = required_skill_time_multiplier(&c, &with(vec![(SKILL_SINGLE, 1)]), level);
+        assert!((m - 0.95).abs() < 1e-12);
+        let m = required_skill_time_multiplier(&c, &with(vec![(SKILL_DOUBLE, 1)]), level);
+        assert!((m - 0.90).abs() < 1e-12);
+        let m = required_skill_time_multiplier(&c, &with(vec![(SKILL_NONE, 1)]), level);
+        assert_eq!(m, 1.0);
+        let both = with(vec![(SKILL_SINGLE, 1), (SKILL_DOUBLE, 1)]);
+        assert!((required_skill_time_multiplier(&c, &both, level) - 0.95 * 0.90).abs() < 1e-12);
+        // A table without the attribute gives no bonus: it is read, not coded.
+        let empty = content_with("", &[]);
+        assert_eq!(required_skill_time_multiplier(&empty, &both, level), 1.0);
     }
 
     /// `activity.time * runs`, then the modifiers, then one `round`.
@@ -5157,7 +5254,7 @@ mod tests {
         let bp = rifter();
         let none = |_: i64| 0;
         for a in SCIENCE_ACTIVITIES {
-            assert_eq!(activity_time_multiplier(a, bp, none, &[]), 1.0);
+            assert_eq!(activity_time_multiplier(fx(), a, bp, none, &[]), 1.0);
         }
         let five = |t: i64| {
             if [
@@ -5176,27 +5273,33 @@ mod tests {
         let advanced = 1.0 + -3.0 * 5.0 / 100.0;
         let skill = 1.0 + -5.0 * 5.0 / 100.0;
         assert_eq!(
-            activity_time_multiplier(RESEARCH_TIME, bp, five, &[]),
+            activity_time_multiplier(fx(), RESEARCH_TIME, bp, five, &[]),
             skill * advanced
         );
         assert_eq!(
-            activity_time_multiplier(RESEARCH_MATERIAL, bp, five, &[]),
+            activity_time_multiplier(fx(), RESEARCH_MATERIAL, bp, five, &[]),
             skill * advanced
         );
         assert_eq!(
-            activity_time_multiplier(COPYING, bp, five, &[]),
+            activity_time_multiplier(fx(), COPYING, bp, five, &[]),
             skill * advanced
         );
-        assert_eq!(activity_time_multiplier(INVENTION, bp, five, &[]), advanced);
+        assert_eq!(
+            activity_time_multiplier(fx(), INVENTION, bp, five, &[]),
+            advanced
+        );
         // Metallurgy speeds ME research and nothing else.
         let metallurgy = |t: i64| if t == SKILL_METALLURGY { 5 } else { 0 };
         assert_eq!(
-            activity_time_multiplier(RESEARCH_TIME, bp, metallurgy, &[]),
+            activity_time_multiplier(fx(), RESEARCH_TIME, bp, metallurgy, &[]),
             1.0
         );
-        assert_eq!(activity_time_multiplier(COPYING, bp, metallurgy, &[]), 1.0);
         assert_eq!(
-            activity_time_multiplier(RESEARCH_MATERIAL, bp, metallurgy, &[]),
+            activity_time_multiplier(fx(), COPYING, bp, metallurgy, &[]),
+            1.0
+        );
+        assert_eq!(
+            activity_time_multiplier(fx(), RESEARCH_MATERIAL, bp, metallurgy, &[]),
             skill
         );
     }
@@ -5626,9 +5729,34 @@ mod tests {
         assert_eq!(minerals, quoted);
     }
 
+    /// Type list 799 admits by type and by group, from the typelists table
+    /// and the type data row, and an excluded type is out.
+    #[test]
+    fn the_lower_rate_list_is_the_typelist_row() {
+        let mut c = content_with(TYPES, &[SKILL_NONE]);
+        assert!(lower_invention_skill(&c, SKILL_NONE));
+        assert!(!lower_invention_skill(&c, SKILL_SINGLE));
+        assert!(!lower_invention_skill(&c, 990_799));
+        let mut d = crate::dungeon_data::Table::fixture();
+        d.typelists.insert(
+            LOWER_INVENTION_SKILL_PROBABILITY_LIST,
+            crate::dungeon_data::TypeList {
+                inc_groups: vec![990_701],
+                exc_types: vec![SKILL_SINGLE],
+                ..Default::default()
+            },
+        );
+        c.insert(crate::dungeon_data::TABLE.name, d);
+        assert!(lower_invention_skill(&c, SKILL_DOUBLE));
+        assert!(lower_invention_skill(&c, SKILL_NONE));
+        assert!(!lower_invention_skill(&c, SKILL_SINGLE));
+        assert!(!lower_invention_skill(&c, IMPLANT_SMALL));
+    }
+
     /// `Invention.job_probability`, by hand from the client's formula: the
-    /// fixture's two products are both 0.25, and its three skills are two at
-    /// 1/30 a level and one in type list 799 at 1/40.
+    /// fixture's two products are both 0.25, and of its three skills the
+    /// last is put in type list 799 here (1/40), the other two are not
+    /// (1/30).
     #[test]
     fn invention_probability_is_the_clients_formula() {
         let inv = science(691)
@@ -5641,12 +5769,24 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(WOLF_BLUEPRINT, 0.25), (JAGUAR_BLUEPRINT, 0.25)]
         );
-        assert_eq!(invention_probability(inv, |_| 0), 0.25);
+        assert_eq!(inv.skills.len(), 3);
+        let lower = inv.skills[2].0;
+        let c = content_with("", &[lower]);
+        assert_eq!(invention_probability(&c, inv, |_| 0), 0.25);
         let one = |_: i64| 1;
         let amount = 1.0 + (1.0 / 30.0 + 1.0 / 30.0 + 1.0 / 40.0);
-        assert_eq!(invention_probability(inv, one), 1.0 * 0.25 * amount);
-        assert_eq!(skill_probability(21791), INVENTION_SKILL_PROBABILITY_LOWER);
-        assert_eq!(skill_probability(11452), INVENTION_SKILL_PROBABILITY);
+        assert_eq!(invention_probability(&c, inv, one), 1.0 * 0.25 * amount);
+        assert_eq!(
+            skill_probability(&c, lower),
+            INVENTION_SKILL_PROBABILITY_LOWER
+        );
+        assert_eq!(
+            skill_probability(&c, inv.skills[0].0),
+            INVENTION_SKILL_PROBABILITY
+        );
+        // Without the list every skill is 1/30.
+        let none = crate::content::Content::fixture();
+        assert_eq!(skill_probability(&none, lower), INVENTION_SKILL_PROBABILITY);
         // Clamped to 1.0, never above.
         let sure = Invention {
             products: vec![InventionProduct {
@@ -5656,7 +5796,7 @@ mod tests {
             }],
             ..inv.clone()
         };
-        assert_eq!(invention_probability(&sure, |_| 5), 1.0);
+        assert_eq!(invention_probability(&c, &sure, |_| 5), 1.0);
     }
 
     /// The roll: bounded, certain at 1.0, and the same answer every time it
@@ -5743,7 +5883,10 @@ mod tests {
             .expect("691 invents");
         assert_eq!(install.job.time_in_seconds, inv.time * 4);
         assert_eq!(install.job.product_type_id, WOLF_BLUEPRINT);
-        assert_eq!(install.job.probability, invention_probability(inv, |_| 1));
+        assert_eq!(
+            install.job.probability,
+            invention_probability(fx(), inv, |_| 1)
+        );
         // `prices[product.typeID] * COST_PERCENTAGE * runs`: the *Wolf*
         // blueprint's estimated item value, not the Rifter's.
         let wolf = find(WOLF_BLUEPRINT).expect("in the fixture");
