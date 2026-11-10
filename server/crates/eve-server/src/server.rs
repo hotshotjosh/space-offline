@@ -1109,13 +1109,12 @@ impl Server {
 /// One client id per connection, by CCP's own formula.
 ///
 /// `machoNet.GetIDOfAddress` is `offset * 10000000000 + nodeID`, with the
-/// offset counting from 1. A recording from Tranquility has
-/// `clientID=61731000003120`: the 6173rd client of node 1000003120.
+/// offset counting from 1. A Tranquility capture shows clientID
+/// 61731000003120: offset 6173 on node 1000003120.
 ///
-/// **Per connection, not per account.** This is the whole point of the
-/// function: `config.session.user_id` is an account id and was being used as
-/// this address, so two connections of one account were one address, and
-/// anything keyed by client id would keep only the later of the two.
+/// **Per connection, not per account.** `config.session.user_id` is an
+/// account id; used as this address it gave every connection that account
+/// opened the same address, so anything keyed by client id kept only the last.
 const CLIENT_ID_STEP: i64 = 10_000_000_000;
 
 /// A connection thread's stack. It decodes the client's bytes, so it needs
@@ -1550,8 +1549,8 @@ mod tests {
         assert_eq!(client_id(0, node), 10_000_000_000 + node);
         assert_eq!(client_id(1, node), 20_000_000_000 + node);
         assert_ne!(client_id(0, node), client_id(1, node));
-        // CCP's own recorded value, from the comment on `client_id`: the
-        // 6173rd client of node 1000003120.
+        // The Tranquility capture value from the comment on `client_id`:
+        // offset 6173 on node 1000003120.
         assert_eq!(client_id(6172, node), 61_731_000_003_120);
     }
 

@@ -3470,7 +3470,7 @@ fn a_character_selection_answers_with_a_session_change_first() {
     c.stream.shutdown(Shutdown::Both).expect("shutdown");
 }
 
-/// **`sessionIdentity.js`'s "cross-account hazard", as a test.**
+/// **Before a character is chosen, a call must never act as someone else.**
 ///
 /// A call made before any character is selected must answer its no-character
 /// branch -- never the first character in the roster. This is the one that

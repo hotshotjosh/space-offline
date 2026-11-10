@@ -36,8 +36,8 @@
 //!
 //! **Why the slot is marked at despawn, not at completion** [A]:
 //! `site::tick` vacates an instance as soon as its site stops being live,
-//! so marking it at completion would pull the pocket out from under the
-//! pilot who just cleared it, which conflict 6's grace exists to prevent.
+//! so marking it at completion would remove the pocket while the pilot who
+//! cleared it is still inside, which conflict 6's grace exists to prevent.
 //! The scanner keeps listing a completed site until it despawns. Falsified
 //! by a client that expects a cleared anomaly to leave the overlay at once.
 //!

@@ -11,9 +11,8 @@
 //! jettisoned" and raises `NotAllItemsWereJettisoned` with the types
 //! (`:65-72`). The first list is the ids that went into a can; the second
 //! ones launched as themselves (a container jettisoned whole). The client
-//! says no more; the shapes -- two lists in a tuple -- are the answer EvEJS
-//! records from a retail capture ("answered `([itemID], [])`") **[I]**
-//! (facts only: its `Handle_Jettison`).
+//! says no more; the shapes -- two lists in a tuple -- follow what EvEJS
+//! records of a retail capture, an id list and an empty list **[I]**.
 //!
 //! What this server does:
 //!
@@ -35,16 +34,16 @@
 //!   with its contents when its clock runs out. Contents are located *in* the
 //!   can at flag 0 (`hacking_loot::FLAG_IN_CAN`, the wreck's).
 //! - **Its lifetime** is `combat::WRECK_LIFETIME` from creation (two hours,
-//!   not extended by adding to it) **[I]**: EvEJS's `JETCAN_LIFETIME_MS`
-//!   states "jetcans last exactly 2 hours from creation, regardless of
-//!   whether items are added or removed", the same number as the wreck's
-//!   existing **[A]**. Falsified by a retail can that outlives two hours.
+//!   not extended by adding to it) **[I]**: an EvEJS constant gives two hours
+//!   from creation, unaffected by what is added or removed, the same number
+//!   as the wreck's existing **[A]**. Falsified by a retail can that outlives
+//!   two hours.
 //! - **The cooldown**: one new can per [`COOLDOWN`] (three minutes) per
-//!   pilot **[I]** (EvEJS `JETTISON_COOLDOWN_MS`); inside it a jettison adds
+//!   pilot **[I]** (an EvEJS constant); inside it a jettison adds
 //!   to the pilot's newest can when that is within loot range, and otherwise
 //!   raises `ShpJettisonPending` with the time left (key and `eta` parameter
-//!   [V], `findings/user-errors.tsv`; the string's form is EvEJS's, "2
-//!   minutes and 44 seconds"). The cooldown is read off the can's own
+//!   [V], `findings/user-errors.tsv`; the time is shown as minutes and
+//!   seconds, a form taken from EvEJS **[I]**). The cooldown is read off the can's own
 //!   record (`expires_at - WRECK_LIFETIME` is its birth), so no state is
 //!   kept and a restart, which removes every can, clears it too.
 //! - **Capacity**: the can's own, 55,000 m3. What does not fit stays in the
@@ -96,7 +95,7 @@ pub const GROUP_CARGO_CONTAINER: i64 = 12;
 pub const JETTISONABLE_FLAGS: [i64; 11] = [5, 134, 135, 136, 143, 149, 172, 181, 182, 185, 188];
 
 /// One new can per pilot per this long, in blue ticks (100 ns). **[I]**
-/// three minutes, EvEJS's `JETTISON_COOLDOWN_MS`; falsified by a retail
+/// three minutes, as an EvEJS constant has it; falsified by a retail
 /// second jettison inside three minutes that makes a second can.
 pub const COOLDOWN: BlueTime = 3 * 60 * 10_000_000;
 

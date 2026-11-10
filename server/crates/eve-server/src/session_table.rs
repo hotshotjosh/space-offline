@@ -236,12 +236,12 @@ mod tests {
         assert_eq!(t.of_character(ALICE).len(), 1);
     }
 
-    /// **Two sessions, one guest.** The client's docked guest panel appends
-    /// every `OnCharNowInStation` without de-duping and its removal walks the
-    /// live node list while mutating it, so it cannot clear a duplicate row
-    /// afterwards (evejs `services/_shared/guestLists.js:62-74`, which
-    /// records the same conclusion from the same client). So the de-dup has
-    /// to happen here, and `of_character` still has to report both -- those
+    /// **Two sessions, one guest.** The client's docked guest panel adds a
+    /// row for every `OnCharNowInStation` without checking for one already
+    /// there, and its removal loop edits the list it is walking, so a
+    /// duplicate row is never cleared again **[I]** (EvEJS's reading of the
+    /// client's `dockedUI/guests.py`; not yet re-read in our build). The
+    /// de-dup therefore has to happen here, and `of_character` still has to report both -- those
     /// are different questions.
     #[test]
     fn a_duplicate_login_is_two_sessions_and_one_guest() {

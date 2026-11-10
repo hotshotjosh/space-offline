@@ -718,7 +718,7 @@ fn the_bio_is_per_character() {
     );
 }
 
-/// **The hazard `sessionIdentity.js` names, as a test.**
+/// **A fallback character must never exist.**
 ///
 /// An id that is not a character must answer nothing -- never Alice.
 /// This is the test that fails if anyone reintroduces a default, and the

@@ -354,10 +354,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // list of 4-element lists with nulls for the absent ids.
             //
             // **Deduplicated by character, and that is not tidiness.** The
-            // client's guest panel appends every `OnCharNowInStation`
-            // without de-duping, and its removal walks the live node list
-            // while mutating it, so it cannot clear a duplicate row
-            // afterwards (`guestLists.js:62-74`, read off the same client).
+            // client's guest panel adds a row for every `OnCharNowInStation`
+            // without checking for one already there, and its removal loop
+            // edits the list it is walking, so a duplicate row is never
+            // cleared again **[I]** (EvEJS's reading of the client's
+            // `dockedUI/guests.py`; not yet re-read in our build).
             // `Registry::characters_at_station` returns distinct characters;
             // a character logged in twice is one guest.
             //
