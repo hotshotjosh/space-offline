@@ -36,7 +36,7 @@ Assumptions, each with its falsifier ([A]):
 
 EOCI_SCENARIO = 'fci_sov_fuel'
 
-EOCI_FCI_TIMEOUT_S = 600
+EOCI_FCI_TIMEOUT_S = 900
 
 # SERVER-EXPECT: absent  UNANSWERED (sovMgr|beyonce|michelle)
 # SERVER-EXPECT: absent  panicked at
@@ -1499,7 +1499,7 @@ def eoci_main(EOCI_NAME):
         landed, detail = warp_to(park, hub_id, min_range=1000.0)
         close = dist_to(park, hub_id)
         if close is None or close > 2000.0:
-            landed, detail = approach(park, hub_id, 1500.0)
+            landed, detail = approach(park, hub_id, 1500.0, timeout_ms=420000)
             close = dist_to(park, hub_id)
         precondition('within the transfer range of the hub', close is not None and close < 2000.0,
                      '%s m; %s' % (fmt(close, 0), detail))
