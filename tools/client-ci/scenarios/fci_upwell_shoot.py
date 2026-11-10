@@ -22,7 +22,7 @@ structure there, so the safety dialog cannot get in the way), undocks, and
    `OnDamageStateChange` push).
 
 3. Guns.  The Rifter was GM-fitted with two 200mm autocannons and EMP S in the
-   station.  `/upwell damage <id> 0.0004 1 1` (a few thousand points left [I]),
+   station.  `/upwell damage <id> 0.0001 1 1` (about 1.4k points left [I]),
    approach, lock, activate the guns; within 120 s `GetDamageState(id)[0]` is
    lower than at activation (fails without #46: nothing hits a structure).
 4. The shield runs out.  Within the bound the slim's `state` equals the
@@ -1706,8 +1706,8 @@ def eoci_main(EOCI_NAME):
             return
         ok, detail = set_safety_none()
         check('the safety is set to none', ok, detail)
-        gm_check('/upwell damage leaves a few thousand points',
-                 '/upwell damage %d 0.0004 1 1' % sid)
+        gm_check('/upwell damage leaves about 1.4k points',
+                 '/upwell damage %d 0.0001 1 1' % sid)
         wait_for(lambda: (lambda b: b is not None and b[0] < 0.01)(bars_of(park, sid)),
                  timeout_ms=BARS_BOUND_MS)
         start = bars_of(park, sid)
