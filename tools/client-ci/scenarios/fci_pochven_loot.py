@@ -1471,9 +1471,14 @@ def eoci_main(EOCI_NAME):
                      '%d system(s)' % len(pochven))
         if not pochven:
             return
-        for line in ('/devskills all5', '/createitem %d 1' % hull[0],
-                     '/createitem %d %d' % (gun[0], GUNS), '/createitem %d 2000' % ammo[0]):
-            gm_check('GM: ' + line, line)
+        # /createitem takes 1..1000 per call (item.rs SpawnError::BadQuantity), so the 2000
+        # rounds come as two calls of 1000 [V ci-1110 pochven_loot: the single 2000 was refused
+        # and the old gm_check had no `expect`, so the scenario went on without ammo].
+        gm_check('GM: /devskills all5', '/devskills all5')
+        for line in ('/createitem %d 1' % hull[0],
+                     '/createitem %d %d' % (gun[0], GUNS),
+                     '/createitem %d 1000' % ammo[0], '/createitem %d 1000' % ammo[0]):
+            gm_check('GM: ' + line, line, expect=['created'])
         ok, detail = board_ship(hull[0])
         precondition('boarded the Tempest', ok, detail)
         if not ok:
