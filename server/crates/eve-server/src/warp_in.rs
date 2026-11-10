@@ -3,8 +3,9 @@
 //!
 //! Every claim here is **[V]** — read out of this build's own bytecode with
 //! `tools/dis.py`, with the client's `co_lnotab` line numbers named. Nothing
-//! in this module is inferred, and nothing in it was copied from another
-//! implementation.
+//! in this module is inferred. The Mersenne Twister below follows the
+//! published MT19937 reference routines (`mt19937ar.c`, BSD-3-Clause), as
+//! CPython's `random` does.
 //!
 //! # Why this module exists
 //!
