@@ -1572,7 +1572,7 @@ def eoci_main(EOCI_NAME):
         precondition('the hold lists the skyhook and the den', bool(loaded), '')
         if not loaded:
             return
-        ok, reply = gm('/giveskill %d 1' % SKILL_DEN)
+        ok, reply = gm('/giveskill %d 2' % SKILL_DEN)
         precondition('the den-management skill is granted', ok and 'usage' not in reply.lower(),
                      reply[:200])
         undocked, detail = undock()
