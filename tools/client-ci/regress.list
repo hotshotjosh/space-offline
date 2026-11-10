@@ -398,8 +398,8 @@ fci_mutaplasmid_fit
 fci_mutaplasmid
 # mutadrone-224 (#224): a mutated drone in the bay and in space: the client's dogma loads the roll, the ball has a top speed that agrees, it flies, shoots a belt rat and is scooped back with the same item id and modifiers; the plain server
 fci_mutated_drone
-# pochven-loot (#228, PV-9): five Triglavian battleship kills in a Pochven system: each wreck is left, owned by an NPC, its loot opens, and a Survey Database turns up; needs the combat.rs wreck_extras line
-fci_pochven_loot
+# pochven-loot (#228, PV-9): five Triglavian battleship kills in a Pochven system: each wreck is left, owned by an NPC, its loot opens, and a Survey Database turns up; needs the combat.rs wreck_extras line and --dev (/devskills all5)
+fci_pochven_loot -- --dev
 # gm-pilot (#201 lane B): /who and /where readouts, /hurt then /heal on the ego ship's bars, /suicide leaves a capsule and a wreck; the plain server (no --dev)
 fci_gm_pilot
 # sovwf-219 (#219): workforce transfer between two sov hubs through sovHubSvc: B imports from A, A exports to B, both budgets move, networkable list, inactive gives them back; the plain server with a content bundle

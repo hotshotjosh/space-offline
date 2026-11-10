@@ -1474,7 +1474,9 @@ def eoci_main(EOCI_NAME):
         # /createitem takes 1..1000 per call (item.rs SpawnError::BadQuantity), so the 2000
         # rounds come as two calls of 1000 [V ci-1110 pochven_loot: the single 2000 was refused
         # and the old gm_check had no `expect`, so the scenario went on without ammo].
-        gm_check('GM: /devskills all5', '/devskills all5')
+        # needs --dev (regress.list); without it the answer is 'dev only' and the pilot cannot
+        # fire the Tempest's guns [V ci-1111 pochven_loot: the Leshak lived 480 s].
+        gm_check('GM: /devskills all5', '/devskills all5', expect=['skills at level'])
         for line in ('/createitem %d 1' % hull[0],
                      '/createitem %d %d' % (gun[0], GUNS),
                      '/createitem %d 1000' % ammo[0], '/createitem %d 1000' % ammo[0]):
@@ -1539,8 +1541,11 @@ def eoci_main(EOCI_NAME):
             if not ok2:
                 check('kill %d: the battleship locks' % (n + 1), False, detail2)
                 break
-            for m in guns:
-                activate_module(m.itemID)
+            acts = [activate_module(m.itemID) for m in guns]
+            check('kill %d: the guns activate' % (n + 1), any(a_[0] for a_ in acts),
+                  text([a_[1] for a_ in acts][:3]))
+            if not any(a_[0] for a_ in acts):
+                break
             dead, waited = wait_for(lambda: npc_id not in park.slimItems,
                                     timeout_ms=KILL_WAIT_MS, step_ms=1000)
             for m in guns:
