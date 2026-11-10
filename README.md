@@ -3,28 +3,32 @@
 ## What it is
 
 space-offline is an emulator for our favourite online space MMO, written in
-Rust with the standard library only, although some third-party crates are
-likely to be used for certain subsystems, like chat. It targets one client
+Rust with the standard library only: no third-party crates and no `unsafe`
+(`server/deps.allow` stays empty). It targets one client
 build: the `pinned` row of `tools/builds.tsv`. The goal is co-op and PvP with
 500 to 1,000 or more player-like bots that mine, fight, build and trade beside
 you. The build tools run in Docker and the client can run in a network jail, so
 nothing needs installing on the host. This project is not affiliated with or
 endorsed by CCP Games.
 
-Nothing from CCP is in this repository. The tools read a client you installed
-yourself, and extracted data stays in `out/`, which git ignores.
+The repository holds no client files and no copy of CCP's art, sound, game
+data files or published Static Data Export (SDE); we do not use the SDE. The
+tools read a client you installed yourself, and what they extract stays in
+`out/`, which git ignores. Everything the server needs to start is extracted
+from your own client install for the pinned build: the universe, item types and
+their attributes, skills, NPCs, agents, industry and dungeons all come out of
+the client's own static files and ResFiles, in a container with no network
+([`docs/guides/content-bundle.md`](docs/guides/content-bundle.md)).
 
-There is no CCP content here at all: no game data, art, sound, text or code,
-and no copy of CCP's published Static Data Export (SDE). We do not use the SDE.
-Everything the server needs to start is extracted from your own client install
-for the pinned build: the universe, item types and their attributes, skills,
-NPCs, agents, industry and dungeons all come out of the client's own static
-files and ResFiles, in a container with no network
-([`docs/guides/content-bundle.md`](docs/guides/content-bundle.md)). What the
-repository does hold is our own work: the server code, the tools, tables we
-authored for policy and tuning that no client file gives us (`content/`), and
-notes on how the client talks to a server, which is what interoperability
-needs. Tests use invented ids and rows, never extracted values.
+What the repository does hold is our own work: the server code, the tools,
+tables we authored for policy and tuning that no client file gives us
+(`content/`), and notes on how the client talks to a server, which is what
+interoperability needs. Those notes and the code comments describe the
+client's behaviour and cite where in the client it is found; some still carry
+short excerpts of it. A few small portions come from CCP's MIT-licensed
+`carbonengine/destiny` and other permissively licensed sources; [`NOTICE`](NOTICE)
+lists each one. The rule for tests is invented ids and rows, never extracted
+values.
 
 ## Status at a glance
 
