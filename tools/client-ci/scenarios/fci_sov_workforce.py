@@ -26,7 +26,7 @@ Assumptions, each with its falsifier ([A]):
   agrees; falsifier: the PRECONDITION that B is in A's networkable list fails.
 - the GM is the CEO of the alliance's executor corp, so holds the station-manager rule;
   falsifier: step 1 answers 403 (`SovWorkforceConfigureForbiddenError`).
-- `/sov info <system>` prints `hub <id> in`; falsifier: the PRECONDITION on the hub ids.
+- `/sov info <system>` prints `hub <id> <state>`; falsifier: the PRECONDITION on the hub ids.
 - the transfer rule itself (same alliance, within 6 jumps, clamped to the exporter's
   own harvest) is server design, not client data; no number of it is a check here.
 """
@@ -1409,7 +1409,7 @@ def eoci_main(EOCI_NAME):
     def hub_id_of(system):
         """The hub id `/sov info <system>` names, or None."""
         ok, rep = gm('/sov info %d' % system)
-        m = __import__('re').search(r'hub (\d+) in', rep)
+        m = __import__('re').search(r'hub (\d+) ', rep)
         return int(m.group(1)) if (ok and m) else None
 
     def eoci_body():
