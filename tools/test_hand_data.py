@@ -58,7 +58,7 @@ class Scan(unittest.TestCase):
     def test_invented_ranges(self):
         for v in (990001, 39000001, 69000005, 599001, 1999500):
             self.assertTrue(H.invented(v), v)
-        for v in (1234, 30000001, 60000004):
+        for v in (1234, 30990001, 60700004):
             self.assertFalse(H.invented(v), v)
 
 

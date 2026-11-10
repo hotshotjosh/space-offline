@@ -20,8 +20,8 @@ SERVER = "\n".join(
     + ["[svc] UNANSWERED foo.Bar -- answering None"]
 )
 BOTS = "\n".join([
-    "hulka1 +03:53.1 dock        CmdDock 60002590: why: homing Recovery -> ok",
-    "hulka2 +04:05.8 dock        CmdDock 60002590: why: homing Recovery -> ok",
+    "hulka1 +03:53.1 dock        CmdDock 60702590: why: homing Recovery -> ok",
+    "hulka2 +04:05.8 dock        CmdDock 60702590: why: homing Recovery -> ok",
     "tradea1 +15:08.0 lost        the connection -> FAILED: protocol: closed",
     "x1 +16:00.0 warp-member CmdWarpToStuff char 1 -> refused: no WarpTo",
     "x1 +16:01.0 observe     docked -> ok",

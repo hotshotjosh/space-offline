@@ -100,7 +100,7 @@ def with_star_and_moon_stations():
 def render(system):
     return celestials.render(
         {SYSTEM: system},
-        {SYSTEM: {"constellationID": 29000001, "regionID": 19000001}},
+        {SYSTEM: {"constellationID": 29000001, "regionID": 19990001}},
         [SYSTEM],
         {990006: 15000.0},
         {GATE_FAR: 39000002},
@@ -111,7 +111,7 @@ def render(system):
 # before CP2. Planet-only output must not move.
 PLANET_ONLY = (
     "#kind\tid\ttype_id\tradius\tx\ty\tz\tsystem\tdest\tdest_system\n"
-    "#system\t39000001\t29000001\t19000001\n"
+    "#system\t39000001\t29000001\t19990001\n"
     "star\t49000001\t990001\t500000.0\t0.0\t0.0\t0.0\t39000001\t0\t0\n"
     "planet\t49000010\t990002\t6000.0\t1000.0\t0.0\t-1000.0\t39000001\t0\t0\n"
     "moon\t49000011\t990003\t100.0\t1100.0\t0.0\t-1000.0\t39000001\t0\t0\n"

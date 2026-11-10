@@ -278,7 +278,7 @@ class Decode(Tmp):
             (10, widget("ten", [(34, 400, None), (35, 3, "x")],
                         [(12778, 1.5), (12779, 0.25), (12780, 2.0)],
                         [("alpha", 1), ("beta", -2)],
-                        [(1000010, 0.8), (1000011, 0.5), (1000012, 0.25), (1000013, 1.0)],
+                        [(1980010, 0.8), (1980011, 0.5), (1980012, 0.25), (1980013, 1.0)],
                         (0.75, None))),
             (11, widget("eleven", [], [], [], [], (None, 42))),
         ]
@@ -320,9 +320,9 @@ class Decode(Tmp):
     def test_f64_dict_holding_f32_is_read_as_f32(self):
         got, dec = self.widgets()
         rates = got[10]["rates"]
-        self.assertEqual(sorted(rates), [1000010, 1000011, 1000012, 1000013])
-        self.assertAlmostEqual(rates[1000010], 0.8, places=6)
-        self.assertEqual(rates[1000013], 1.0)
+        self.assertEqual(sorted(rates), [1980010, 1980011, 1980012, 1980013])
+        self.assertAlmostEqual(rates[1980010], 0.8, places=6)
+        self.assertEqual(rates[1980013], 1.0)
         self.assertIn("int/f32", dec.key_modes["row.rates"])
 
     def test_key_widths_are_recorded(self):

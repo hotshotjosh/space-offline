@@ -126,7 +126,7 @@ class DeriveSites(unittest.TestCase):
         self.assertIn("Ghost Site", problems[0])
 
     def test_filters(self):
-        rows = [drow(990921, 30, 2, 1), drow(990922, 30, 3, 1, faction="500010"),
+        rows = [drow(990921, 30, 2, 1), drow(990922, 30, 3, 1, faction="589010"),
                 drow(990923, 20, 3, 1), drow(990925, 30, 3, 13), drow(990926, 30, 3, 99), ["short"]]
         _, _, s = sites(rows, {})
         self.assertEqual(s, {})

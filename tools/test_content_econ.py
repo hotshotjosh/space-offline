@@ -564,7 +564,7 @@ class Stations(unittest.TestCase):
     def test_one_sorted_row_per_station_with_its_operation_services(self):
         st = [(69000002, 39000001, 1999001, 99, 0.5, 0.05),
               (69000001, 39000002, 1999002, 99, 0.4, 0.025)]
-        rows = E.station_rows(st, {39000001: 19000001, 39000002: 19000002}, self.OPS)
+        rows = E.station_rows(st, {39000001: 19990001, 39000002: 19000002}, self.OPS)
         self.assertEqual([r[0] for r in rows], [69000001, 69000002])
         self.assertEqual(content.encode_row(rows[0]),
                          "69000001\t39000002\t19000002\t1999002\t99\t7,21,25\t0.4\t0.025")

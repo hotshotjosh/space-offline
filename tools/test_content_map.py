@@ -26,9 +26,9 @@ class Ctx:
         self.systems = systems
         self._t = {
             content.SYSTEMS: Table({
-                39000001: {"constellationID": 29000001, "regionID": 19000001,
+                39000001: {"constellationID": 29000001, "regionID": 19990001,
                            "center": {"x": 1.0, "y": -2.0, "z": 3.5}},
-                39000002: {"constellationID": 29000002, "regionID": 19000002,
+                39000002: {"constellationID": 29000002, "regionID": 19990002,
                            "center": {"x": 9.46e15, "y": 0.0, "z": 0.0}},
             }),
             content.CONSTELLATIONS: Table({
@@ -37,8 +37,8 @@ class Ctx:
             }),
             # A region's centre may come by index.
             content.REGIONS: Table({
-                19000001: {"center": [10.0, 11.0, 12.0]},
-                19000002: {"center": [13.0, 14.0, 15.0]},
+                19990001: {"center": [10.0, 11.0, 12.0]},
+                19990002: {"center": [13.0, 14.0, 15.0]},
             }),
         }
 
@@ -51,18 +51,18 @@ class Centers(unittest.TestCase):
         rows = list(content.center_rows(Ctx()))
         self.assertEqual([r[:2] for r in rows], [
             ("s", 39000001), ("s", 39000002), ("c", 29000001), ("c", 29000002),
-            ("r", 19000001), ("r", 19000002)])
+            ("r", 19990001), ("r", 19990002)])
         self.assertEqual(rows[0][2:], (1.0, -2.0, 3.5))
 
     def test_a_region_by_index_and_a_system_by_key_agree_on_shape(self):
         rows = {r[:2]: r[2:] for r in content.center_rows(Ctx())}
-        self.assertEqual(rows[("r", 19000001)], (10.0, 11.0, 12.0))
+        self.assertEqual(rows[("r", 19990001)], (10.0, 11.0, 12.0))
         self.assertEqual(rows[("s", 39000002)], (9.46e15, 0.0, 0.0))
 
     def test_the_sandbox_keeps_the_selected_systems_and_their_parents(self):
         rows = list(content.center_rows(Ctx([39000002])))
         self.assertEqual([r[:2] for r in rows],
-                         [("s", 39000002), ("c", 29000002), ("r", 19000002)])
+                         [("s", 39000002), ("c", 29000002), ("r", 19990002)])
 
     def test_a_missing_center_is_refused(self):
         ctx = Ctx()
