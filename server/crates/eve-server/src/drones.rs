@@ -1216,7 +1216,7 @@ pub fn decide(drone: &Drone, view: &View) -> (Drone, Vec<Intent>) {
     // **The leash**: a target the pilot could not have ordered the drone
     // onto (beyond the control range from the ship) is let go.
     if let (Order::Engage(_), Some(at)) = (d.order, view.target)
-        && crate::space_state::distance(home, at) > view.control_range
+        && crate::space_state::distance(home, at) - view.target_radius > view.control_range
     {
         gun_off(&mut d, &mut out);
         d.order = Order::Idle;
@@ -2337,7 +2337,7 @@ fn errors(refused: Vec<(i64, PyValue)>) -> PyValue {
 /// **[V]**: the target is the pilot's active target, checked by the client
 /// (`:82-84`). Refused, `[A]` in our words: not the pilot's drone; a target
 /// not in this system; a target beyond the pilot's drone control range
-/// ([`CONTROL_RANGE`]) from the ship.
+/// ([`CONTROL_RANGE`]) from the ship, measured to a structure's surface.
 pub fn engage(w: &mut Registry, actor: Option<i64>, ids: &[i64], target: i64) -> PyValue {
     let Some(actor) = actor else {
         return errors(
@@ -2389,7 +2389,12 @@ pub fn engage(w: &mut Registry, actor: Option<i64>, ids: &[i64], target: i64) ->
             refused.push((id, refusal_text("Mining drones do not attack.")));
             continue;
         }
-        if crate::space_state::distance(s.motion.position, at) > CONTROL_RANGE {
+        // Surface to surface for a target with a radius (a structure's can be
+        // tens of kilometres): the gap guns use (`surface_gap`) **[I]**; falsifier:
+        // TQ refusing an engage that the client's range circle covers.
+        let gap = crate::structure_combat::surface_gap(w, s.motion.position, target)
+            .unwrap_or_else(|| crate::space_state::distance(s.motion.position, at));
+        if gap > drone_skills::control_range(w, actor, d.controller_id) {
             refused.push((
                 id,
                 refusal_text("That target is beyond your drone control range."),
@@ -3949,6 +3954,64 @@ modifier\t990581102\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t
         assert_eq!(d.order, Order::Idle);
         assert_eq!(d.firing, None);
         assert_eq!(census(&reg), (0, 1, 20));
+    }
+
+    /// The control range is measured to a structure's surface: its radius is
+    /// tens of kilometres, so a pilot parked beside it is far from its centre.
+    #[test]
+    fn engage_range_is_measured_to_the_structure_surface() {
+        use crate::structure_combat::tests::OWNER_CORP;
+        let mut reg = world(BIG_BAY, 1, 5);
+        undock(&mut reg, ALICE);
+        let id = launch_n(&mut reg, 1)[0];
+        crate::crimewatch::set_safety(&mut reg, ALICE, crate::crimewatch::Safety::None);
+        let ship = reg.roster().get(ALICE).expect("in space").motion.position;
+        let radius =
+            crate::structure_space::radius(reg.content(), crate::structure_space::ASTRAHUS);
+        let e = crate::structure_space::env(&reg, crate::pyutil::filetime_now());
+        let put_at = |reg: &mut Registry, gap: f64, sid: i64| {
+            let mut s = crate::structure::Structure::anchored(
+                sid,
+                crate::structure_space::ASTRAHUS,
+                OWNER_CORP,
+                SYSTEM,
+                [ship[0] + radius + gap, ship[1], ship[2]],
+                0.0,
+                "Target",
+                1,
+                &e,
+            );
+            s.set_state(crate::structure::State::ShieldVulnerable, &e);
+            s.upkeep = Some(crate::structure::Upkeep::Full);
+            crate::structure::put(reg.deltas_mut(), &s);
+            sid
+        };
+        // The surface gap is just inside the range, the centre gap just outside.
+        let near = put_at(&mut reg, CONTROL_RANGE - radius * 0.5, 7);
+        let far = put_at(&mut reg, CONTROL_RANGE + radius * 0.5, 8);
+        assert!(radius > 0.0, "the type has a radius");
+        let _ = reg.take_pending();
+        assert_eq!(
+            engage(&mut reg, Some(ALICE), &[id], near),
+            PyValue::Dict(vec![]),
+            "inside the range from the surface"
+        );
+        // One tick on: the leash keeps the order too.
+        tick(&mut reg, crate::pyutil::filetime_now());
+        assert_eq!(
+            reg.modules().drones().get(id).map(|d| d.order),
+            Some(Order::Engage(near)),
+            "the leash measures to the surface as well"
+        );
+        let refused = format!("{:?}", engage(&mut reg, Some(ALICE), &[id], far));
+        let text = format!(
+            "{:?}",
+            crate::pyutil::bstr("That target is beyond your drone control range.")
+        );
+        assert!(
+            refused.contains(&text),
+            "outside the range from the surface: {refused}"
+        );
     }
 
     /// **A drone engaged on an Upwell structure** (#46) closes on its fixed
