@@ -1400,19 +1400,28 @@ def eoci_main(EOCI_NAME):
                      '%s -> %s; %s' % (NPC_NAME, text(found), text(getattr(type_ids_named, 'note', ''))))
         if not found:
             return
-        before = ball_ids(park)
         ok, reply = gm_check('GM: deploy three', '/entity deploy 3 %s' % found[0],
                              expect=['deployed 3'])
         if not ok:
             return
-        new = []
+        # Wait on exactly the ids the deploy reply names ('deployed 3 x <name>: a, b, c'; npc.rs):
+        # a diff of every new ball also catches the client's own local balls, which carry
+        # negative ids and are never cleared [V ci-1110 gm_npcclear: the three deployed ids did
+        # leave].  [I] a deployed NPC's ball id is its item id; falsifier: the wait below times
+        # out while the server log lists the three ids.
+        import re
+        tail = reply.rsplit(':', 1)[-1]
+        new = sorted([int(x) for x in re.findall(r'\d+', tail)])
+        precondition('the deploy reply names three ids', len(new) == 3, text(reply)[:200])
+        if len(new) != 3:
+            return
 
         def arrived():
-            new[:] = sorted(ball_ids(park) - before)
-            return len(new) >= 3
+            return len(set(new) & ball_ids(park)) >= 3
         got, waited = wait_for(arrived, timeout_ms=WAIT_MS, step_ms=500)
-        precondition('three new balls arrive in the park', bool(got),
-                     '%d new after %s ms' % (len(new), text(waited)))
+        precondition('the three deployed balls arrive in the park', bool(got),
+                     '%d of %s there after %s ms' % (len(set(new) & ball_ids(park)), text(new),
+                                                     text(waited)))
         if not got:
             return
         ok, reply = gm_check('GM: /npcclear', '/npcclear', expect=['cleared 3 npcs'])
