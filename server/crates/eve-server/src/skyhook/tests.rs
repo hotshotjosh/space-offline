@@ -1463,9 +1463,9 @@ fn gm_spawn_activate_and_age_make_the_harvest_visible() {
     );
     assert!(said.contains("5 cycles"), "{said}");
     let aged = by_id(reg.deltas(), sk.id).unwrap();
-    assert_eq!(aged.last_cycle, NOW - 5 * r.cycle_s);
-    // Reading at NOW, five whole cycles show.
-    let s = current(&aged, Some(&r), NOW);
+    // The cycles are credited and the phase sits at now.
+    assert_eq!(aged.last_cycle, NOW);
+    let s = aged.sim();
     assert_eq!(
         u64::from(s.secured + s.unsecured),
         (5 * u64::from(r.per_cycle)).min(u64::from(r.secured_cap + r.unsecured_cap))
@@ -1529,6 +1529,55 @@ fn a_dispossessed_owners_skyhook_does_not_harvest() {
     assert!(!v.active);
     let (_, shown) = v.reagent.expect("a reagent");
     assert_eq!((shown.secured, shown.unsecured), (0, 0));
+}
+
+#[test]
+fn slash_age_credits_cycles_that_the_claim_and_join_clamps_leave_alone() {
+    let (mut reg, a, _) = world();
+    let r = reagent();
+    // The claim is as young as the skyhook, as in a scenario.
+    crate::sov::set_claim(reg.deltas_mut(), SYSTEM, Some((a, CORP)), filetime(NOW));
+    stand(&mut reg, SK, P_REAGENT, CORP, true, NOW);
+    let id = SK.to_string();
+    let said = slash_cmd::run(&mut reg, Some(ALICE), &["age", &id, "5"], NOW);
+    assert!(said.contains("credited 5 cycles"), "{said}");
+    let want = harvest(&sim(0, 0, NOW - 5 * r.cycle_s), &r, NOW);
+    assert!(
+        want.secured + want.unsecured > 0,
+        "five cycles produce something"
+    );
+    assert_eq!(want.last_cycle, NOW);
+    let s = settle(&mut reg, SK, NOW).expect("a row");
+    assert_eq!(s.sim(), want);
+    // Reading at the same moment shows the stock too.
+    let sk = by_id(reg.deltas(), SK).expect("a row");
+    assert_eq!(view(&reg, &sk, NOW).reagent.expect("a reagent").1, want);
+}
+
+#[test]
+fn slash_age_keeps_the_phase_of_the_partial_cycle() {
+    let (mut reg, a, _) = world();
+    let r = reagent();
+    crate::sov::set_claim(reg.deltas_mut(), SYSTEM, Some((a, CORP)), filetime(NOW));
+    stand(&mut reg, SK, P_REAGENT, CORP, true, NOW);
+    // Half a cycle in: nothing is whole yet, and the phase stays at NOW.
+    let later = NOW + r.cycle_s / 2;
+    let id = SK.to_string();
+    slash_cmd::run(&mut reg, Some(ALICE), &["age", &id, "5"], later);
+    let want = harvest(&sim(0, 0, NOW - 5 * r.cycle_s), &r, later);
+    assert_eq!(want.last_cycle, NOW);
+    assert_eq!(by_id(reg.deltas(), SK).expect("a row").sim(), want);
+}
+
+#[test]
+fn slash_age_on_a_skyhook_that_is_not_running_credits_nothing() {
+    let (mut reg, ..) = world();
+    stand(&mut reg, SK, P_REAGENT, CORP, false, NOW);
+    let id = SK.to_string();
+    let said = slash_cmd::run(&mut reg, Some(ALICE), &["age", &id, "5"], NOW);
+    assert!(said.contains("not running"), "{said}");
+    let s = by_id(reg.deltas(), SK).expect("a row");
+    assert_eq!((s.secured, s.unsecured), (0, 0));
 }
 
 #[test]

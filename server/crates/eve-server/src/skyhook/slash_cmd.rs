@@ -6,8 +6,9 @@
 //! - `spawn <planetID|nearest>`: an item and a row over a planet of the GM's
 //!   system, owned by the GM's corp, unbuilt;
 //! - `activate <id>`: finish the build now (or switch an idle one on);
-//! - `age <id> <cycles>`: move `last_cycle` back by whole cycles, so server
-//!   and client both see the elapsed time without waiting;
+//! - `age <id> <cycles>`: credit whole cycles of harvest now and leave
+//!   `last_cycle` at now, so server and client both see the stock without
+//!   waiting (a running skyhook only);
 //! - `go <id>`: put the GM's ship at the skyhook's surface;
 //! - `info <id>`: the row and the stocks now;
 //! - `window <id> now`: open a theft window on the skyhook right now (SKY-2);
@@ -158,18 +159,32 @@ fn age(reg: &mut Registry, id: i64, cycles: u64, now: u64) -> String {
         return format!("skyhook {id} has no reagent to age");
     };
     let mut sk = sk;
-    sk.last_cycle = sk
-        .last_cycle
-        .saturating_sub(cycles.saturating_mul(r.cycle_s));
+    // Credit the cycles now and keep the settled `last_cycle` (the partial
+    // cycle's phase): moving it back would be undone by the claim-time and join-time clamps in `live`, which
+    // are seconds old in a scenario **[V]** (ci-1110 fci_skyhook, "holds
+    // nothing to take"). A skyhook that is not running earns nothing.
+    let runs = running(reg.deltas(), &sk);
+    if runs {
+        let back = Sim {
+            last_cycle: sk
+                .last_cycle
+                .saturating_sub(cycles.saturating_mul(r.cycle_s)),
+            ..sk.sim()
+        };
+        let s = harvest(&back, &r, now);
+        sk.secured = s.secured;
+        sk.unsecured = s.unsecured;
+        sk.last_cycle = s.last_cycle;
+    }
     put(reg.deltas_mut(), &sk);
     announce_stocks(reg, &sk, now);
     format!(
-        "skyhook {id} last_cycle moved back {cycles} cycles of {} s{}",
+        "skyhook {id} credited {cycles} cycles of {} s{}",
         r.cycle_s,
-        if sk.active {
+        if runs {
             ""
         } else {
-            " (it is inactive, so nothing accrues)"
+            " (it is not running, so nothing accrues)"
         }
     )
 }
