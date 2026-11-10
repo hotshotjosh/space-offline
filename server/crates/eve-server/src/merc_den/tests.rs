@@ -581,6 +581,12 @@ fn a_launch_makes_the_item_the_row_the_ball_and_tells_the_pilot() {
             .any(|(v, k)| *v == PyValue::Int(id) && *k == crate::pyutil::bstr("itemID")),
         "{d:?}"
     );
+    // The text (728099) names the den by its type.
+    assert_eq!(
+        arg_of(&got[0].1[1], "typeID"),
+        Some(PyValue::Int(DEN_TYPE)),
+        "{d:?}"
+    );
 }
 
 #[test]
@@ -638,7 +644,7 @@ fn a_launch_is_refused_past_the_skill_maximum() {
     at_spot(&mut reg, ALICE, P_LAND, 5_000.0);
     assert_eq!(
         launch_one_at(&mut reg, ALICE, ALICE_DEN3, NOW),
-        Err(Refused::AtMaximum { max: 2 })
+        Err(Refused::AtMaximum { max: 2, level: 1 })
     );
     assert_eq!(owned_by(reg.deltas(), ALICE).len(), dens);
     // Level 2 allows four: with the skill back, what stops a third at this
@@ -744,8 +750,15 @@ fn a_den_rule_answers_under_the_clients_reason_key_the_rest_as_a_notify() {
             "MercenaryDen_DeploymentFailed_SkillLimits",
         ),
         (
-            Refused::AtMaximum { max: 3 },
+            Refused::AtMaximum {
+                max: 3,
+                level: SKILL_TOP,
+            },
             "MercenaryDen_DeploymentFailed_MaximumDensReached",
+        ),
+        (
+            Refused::AtMaximum { max: 3, level: 1 },
+            "MercenaryDen_DeploymentFailed_SkillLimits",
         ),
         (
             Refused::NoSkyhook,
@@ -769,17 +782,121 @@ fn a_den_rule_answers_under_the_clients_reason_key_the_rest_as_a_notify() {
         ),
     ];
     for (r, key) in rules {
-        let PyValue::Tuple(t) = refusal(&r) else {
+        let PyValue::Tuple(t) = refusal(&r, DEN_TYPE, 0) else {
             panic!("a (label, args) tuple")
         };
         assert_eq!(t[0], crate::pyutil::bstr(key), "{r:?}");
     }
     for r in [Refused::NotInSpace, Refused::NotInHold, Refused::NotADen] {
-        let PyValue::Tuple(t) = refusal(&r) else {
+        let PyValue::Tuple(t) = refusal(&r, DEN_TYPE, 0) else {
             panic!("a tuple")
         };
         assert_eq!(t[0], crate::pyutil::bstr("CustomNotify"), "{r:?}");
     }
+}
+
+fn arg_of(args: &PyValue, name: &str) -> Option<PyValue> {
+    let PyValue::Dict(d) = args else {
+        panic!("the args are a dict")
+    };
+    d.iter()
+        .find(|(_, k)| *k == crate::pyutil::bstr(name))
+        .map(|(v, _)| v.clone())
+}
+
+#[test]
+fn every_keyed_refusal_carries_the_den_type_the_texts_name() {
+    // [V] loc.tsv 728096-728102 and 870990 all read {[item]typeID.name}.
+    for r in [
+        Refused::NoSkill,
+        Refused::AtMaximum { max: 2, level: 1 },
+        Refused::NoSkyhook,
+        Refused::TooFar { metres: 9 },
+        Refused::SkyhookOffline,
+        Refused::NotWorkforce,
+        Refused::Occupied,
+        Refused::NoDefinition,
+    ] {
+        let PyValue::Tuple(t) = refusal(&r, 9_001, 0) else {
+            panic!("a tuple")
+        };
+        assert_eq!(arg_of(&t[1], "typeID"), Some(PyValue::Int(9_001)), "{r:?}");
+    }
+    // Occupied reads nothing else.
+    let PyValue::Tuple(t) = refusal(&Refused::Occupied, 9_001, 0) else {
+        panic!("a tuple")
+    };
+    let PyValue::Dict(d) = &t[1] else { panic!() };
+    assert_eq!(d.len(), 1);
+}
+
+#[test]
+fn the_skill_and_distance_refusals_carry_their_extra_args() {
+    let trained = 0;
+    let PyValue::Tuple(t) = refusal(&Refused::NoSkill, 9_001, trained) else {
+        panic!("a tuple")
+    };
+    assert_eq!(
+        arg_of(&t[1], "skillTypeID"),
+        Some(PyValue::Int(SKILL_DEN_MANAGEMENT))
+    );
+    assert_eq!(
+        arg_of(&t[1], "level"),
+        Some(PyValue::Int(i64::from(trained) + 1))
+    );
+    for r in [Refused::NoSkyhook, Refused::TooFar { metres: 9 }] {
+        let PyValue::Tuple(t) = refusal(&r, 9_001, 0) else {
+            panic!("a tuple")
+        };
+        assert_eq!(
+            arg_of(&t[1], "minDistance"),
+            Some(PyValue::Real(LAUNCH_RANGE)),
+            "{r:?}"
+        );
+    }
+}
+
+#[test]
+fn a_pilot_at_the_cap_is_told_the_next_level_until_the_top_level() {
+    let below = Refused::AtMaximum { max: 4, level: 2 };
+    let PyValue::Tuple(t) = refusal(&below, 9_001, 2) else {
+        panic!("a tuple")
+    };
+    assert_eq!(
+        t[0],
+        crate::pyutil::bstr("MercenaryDen_DeploymentFailed_SkillLimits")
+    );
+    assert_eq!(
+        arg_of(&t[1], "skillTypeID"),
+        Some(PyValue::Int(SKILL_DEN_MANAGEMENT))
+    );
+    assert_eq!(arg_of(&t[1], "level"), Some(PyValue::Int(3)));
+    let top = Refused::AtMaximum {
+        max: 10,
+        level: SKILL_TOP,
+    };
+    let PyValue::Tuple(t) = refusal(&top, 9_001, SKILL_TOP) else {
+        panic!("a tuple")
+    };
+    assert_eq!(
+        t[0],
+        crate::pyutil::bstr("MercenaryDen_DeploymentFailed_MaximumDensReached")
+    );
+    assert_eq!(arg_of(&t[1], "level"), None);
+    assert_eq!(arg_of(&t[1], "typeID"), Some(PyValue::Int(9_001)));
+}
+
+#[test]
+fn the_refused_drop_answer_names_the_den_type() {
+    let mut reg = world();
+    let args = drop_args(BOB_DEN);
+    let got = drop_call(&mut reg, &drop_request(&args, Some(BOB)))
+        .unwrap()
+        .unwrap();
+    let PyValue::Tuple(t) = &entries_of(got)[0] else {
+        panic!("a refusal")
+    };
+    assert_eq!(arg_of(&t[1], "typeID"), Some(PyValue::Int(DEN_TYPE)));
 }
 
 fn drop_request<'a>(args: &'a [PyValue], actor: Option<i64>) -> Request<'a> {
@@ -1644,7 +1761,7 @@ fn the_launch_check_and_the_window_use_the_same_dens_per_level() {
     at_spot(&mut reg, ALICE, P_LAND, 5_000.0);
     assert_eq!(
         launch_one_at(&mut reg, ALICE, ALICE_DEN3, NOW),
-        Err(Refused::AtMaximum { max: 2 }),
+        Err(Refused::AtMaximum { max: 2, level: 1 }),
         "the type's own row (9 a level) does not raise the maximum"
     );
 }

@@ -679,12 +679,15 @@ fn in_space(w: &Registry, system: i64) -> Vec<i64> {
 // Pushes
 // ---------------------------------------------------------------------------
 
-/// A macho notify to the owner: `(notifyMsg, {'itemID': id})`
-/// (`repository.py:93-106`) **[V]**.
+/// A macho notify to the owner: `(notifyMsg, {'itemID': id, 'typeID': type})`
+/// (`repository.py:93-106`) **[V]**. The message text (728099) names the den
+/// by `{[item]typeID.name}`, so the args carry the den's type **[V]**
+/// (`out/research/_w/loc.tsv`); without it the client's localizer raises.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Registered {
     pub to: i64,
     pub item: i64,
+    pub type_id: i64,
 }
 
 impl Push for Registered {
@@ -693,10 +696,10 @@ impl Push for Registered {
             "OnMercenaryDenRegistrationSuccess",
             vec![
                 crate::pyutil::bstr(MSG_SUCCESS),
-                PyValue::Dict(crate::pyutil::pypairs(vec![(
-                    "itemID",
-                    PyValue::Int(self.item),
-                )])),
+                PyValue::Dict(crate::pyutil::pypairs(vec![
+                    ("itemID", PyValue::Int(self.item)),
+                    ("typeID", PyValue::Int(self.type_id)),
+                ])),
             ],
         )
     }
@@ -908,6 +911,17 @@ fn per_level(reg: &Registry) -> u32 {
         .map_or(0, |d| d.dens_per_level)
 }
 
+/// The pilot's trained level of the den-management skill, at most [`SKILL_TOP`].
+fn trained_level(reg: &Registry, who: i64) -> u32 {
+    u32::try_from(crate::drone_skills::level_of(
+        reg,
+        who,
+        SKILL_DEN_MANAGEMENT,
+    ))
+    .unwrap_or(0)
+    .min(SKILL_TOP)
+}
+
 /// `(current, absolute)` dens a pilot may have: the trained level of the
 /// den-management skill times the table's dens per level, and the top level
 /// times it **[A]** (falsifier: the "My dens" window showing other maxima
@@ -944,6 +958,8 @@ pub enum Refused {
     /// As many dens as the skill allows.
     AtMaximum {
         max: u32,
+        /// The pilot's trained level of the den-management skill.
+        level: u32,
     },
     /// No skyhook in the system.
     NoSkyhook,
@@ -966,6 +982,14 @@ impl Refused {
     pub fn key(&self) -> Option<&'static str> {
         Some(match self {
             Refused::NoSkill => "MercenaryDen_DeploymentFailed_SkillLimits",
+            // Below the top level the next skill level raises the cap, so the
+            // skill-limits text applies **[I]** (from the texts 728097 and
+            // 728102; the client builds no args, `errors.py:20-31`);
+            // falsifier: a TQ pilot below level 5 at the cap seeing the
+            // maximum-reached dialog.
+            Refused::AtMaximum { level, .. } if *level < SKILL_TOP => {
+                "MercenaryDen_DeploymentFailed_SkillLimits"
+            }
             Refused::AtMaximum { .. } => "MercenaryDen_DeploymentFailed_MaximumDensReached",
             Refused::NoSkyhook | Refused::TooFar { .. } => {
                 "MercenaryDen_DeploymentFailed_RequiresNearbySkyhook"
@@ -976,6 +1000,41 @@ impl Refused {
             Refused::NoDefinition => "MercenaryDen_DeploymentFailed",
             _ => return None,
         })
+    }
+
+    /// The args the reason's message text reads **[V]**
+    /// (`out/research/_w/loc.tsv`, ids 728096-728102 and 870990): every
+    /// keyed text names the den by `{[item]typeID.name}`, so `typeID` is
+    /// always there; the client's localizer raises without it. Skill limits
+    /// (728097) also read `skillTypeID` and `level`; `level` is the pilot's
+    /// trained level `trained` plus one **[I]** (the text says "increase ...
+    /// to level {level}" and the server's rule decides the next level). The
+    /// nearby-skyhook text (728100) reads `minDistance` in metres **[V]**:
+    /// `[numeric]x.distance` goes through `numericPropertyHandler.py:25-26`
+    /// to `FmtDist(value)`, `format.py:193-209` (metres under 10 000, else
+    /// kilometres).
+    pub fn args(&self, den_type: i64, trained: u32) -> Vec<(&'static str, PyValue)> {
+        if self.key().is_none() {
+            return Vec::new();
+        }
+        let mut a = vec![("typeID", PyValue::Int(den_type))];
+        match self {
+            Refused::NoSkill | Refused::AtMaximum { .. } => {
+                if self.key() == Some("MercenaryDen_DeploymentFailed_SkillLimits") {
+                    let have = match self {
+                        Refused::AtMaximum { level, .. } => *level,
+                        _ => trained,
+                    };
+                    a.push(("skillTypeID", PyValue::Int(SKILL_DEN_MANAGEMENT)));
+                    a.push(("level", PyValue::Int(i64::from(have) + 1)));
+                }
+            }
+            Refused::NoSkyhook | Refused::TooFar { .. } => {
+                a.push(("minDistance", PyValue::Real(LAUNCH_RANGE)));
+            }
+            _ => {}
+        }
+        a
     }
 
     pub fn text(&self) -> String {
@@ -991,7 +1050,7 @@ impl Refused {
             Refused::NoSkill => {
                 "You need the Mercenary Den Management skill to launch a den.".to_owned()
             }
-            Refused::AtMaximum { max } => {
+            Refused::AtMaximum { max, .. } => {
                 format!("Your skill allows {max} mercenary den(s); you have them all out.")
             }
             Refused::NoSkyhook => {
@@ -1046,19 +1105,13 @@ fn check_launch(
     // The same per-level figure the window's maximum shows (`maximum_for`).
     def_of(reg.content(), item.type_id).ok_or(Refused::NoDefinition)?;
     let per = per_level(reg);
-    let level = u32::try_from(crate::drone_skills::level_of(
-        reg,
-        actor,
-        SKILL_DEN_MANAGEMENT,
-    ))
-    .unwrap_or(0)
-    .min(SKILL_TOP);
+    let level = trained_level(reg, actor);
     if level == 0 {
         return Err(Refused::NoSkill);
     }
     let max = level.saturating_mul(per);
     if owned_by(reg.deltas(), actor).len() as u64 >= u64::from(max) {
-        return Err(Refused::AtMaximum { max });
+        return Err(Refused::AtMaximum { max, level });
     }
     // The nearest skyhook of the system, any owner.
     let system = here.solar_system_id;
@@ -1163,6 +1216,7 @@ pub fn launch_one_at(
     reg.push(Registered {
         to: actor,
         item: den.id,
+        type_id: den.type_id,
     });
     crate::errln!(
         "[merc_den] {} launched by {} at skyhook {} over {}",
@@ -1185,9 +1239,12 @@ pub fn launch_one(reg: &mut Registry, actor: i64, item_id: i64) -> Result<i64, R
 /// (`eveMisc.py:46-56`). A den rule answers under the client's own reason key
 /// **[I]** (falsifier: a "message not found" dialog); the rest as a
 /// `CustomNotify`.
-fn refusal(r: &Refused) -> PyValue {
+fn refusal(r: &Refused, den_type: i64, trained: u32) -> PyValue {
     match r.key() {
-        Some(key) => PyValue::Tuple(vec![crate::pyutil::bstr(key), PyValue::Dict(Vec::new())]),
+        Some(key) => PyValue::Tuple(vec![
+            crate::pyutil::bstr(key),
+            PyValue::Dict(crate::pyutil::pypairs(r.args(den_type, trained))),
+        ]),
         None => crate::mtu::refusal(&r.text()),
     }
 }
@@ -1222,11 +1279,13 @@ pub(crate) fn drop_call(
     }
     let mut answer: Vec<(PyValue, PyValue)> = Vec::new();
     for item in items {
+        let den_type = reg.store().get(item).map_or(0, |i| i.type_id);
+        let trained = req.actor.map_or(0, |a| trained_level(reg, a));
         let entry = match req.actor {
-            None => refusal(&Refused::NotInSpace),
+            None => refusal(&Refused::NotInSpace, den_type, trained),
             Some(a) => match launch_one(reg, a, item) {
                 Ok(id) => PyValue::Int(id),
-                Err(r) => refusal(&r),
+                Err(r) => refusal(&r, den_type, trained),
             },
         };
         answer.push((PyValue::List(vec![entry]), PyValue::Int(item)));
