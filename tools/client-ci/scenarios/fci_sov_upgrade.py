@@ -1658,9 +1658,11 @@ def eoci_main(EOCI_NAME):
             ok = ok and ok_r
             rep = rep_r if not ok_r else rep
         precondition('the hub holds reagents (/sov reagents)', ok, rep[:200])
-        # One item at a time, each listed before the next: three /createitems in
-        # one second left holdTracker listing a container mid-rebind (ci-1111
-        # sov_upgrade, one traceback) [I: seen in that run only].
+        # One item at a time, each listed before the next (harmless).  The holdTracker
+        # tracebacks in ci-1111b were not three creates at once: one create queues
+        # OnItemChange and then an invalidation of the active ship's inventory, and
+        # the tracker lists the dropped container between the two (B1, a server fix
+        # in create_in_hold) [I: client.log order of ci-1111b sov_upgrade].
         def create_one(d):
             gm('/createitem %d 1' % d.type_id)
             it, _w = wait_for(lambda: cargo_item(d.type_id), timeout_ms=20000, step_ms=500)
@@ -1686,6 +1688,19 @@ def eoci_main(EOCI_NAME):
                      before_n is not None, before_why)
         precondition('A is a threat-detection upgrade (distribution attribute or name)',
                      is_threat_upgrade(a.type_id), 'A is type %s' % text(a.type_id))
+
+        # 0. The hub's ball has a model before anything is saved: SovereigntyHub.LoadModel sets
+        # self.model only after its module effects load, and OnUpgradesUpdated (run by the
+        # save's notice) calls self.model.SetControllerVariable without a None guard
+        # [V sovereigntyHub.py:62-75, :95-108].  A player flies to a loaded hub first [I].
+        def hub_model_loaded():
+            p = get_michelle().GetBallpark()
+            b = p.GetBall(hub_id) if p is not None else None
+            return b is not None and getattr_safe(b, 'model') is not None
+        loaded, waited = wait_for(hub_model_loaded, timeout_ms=120000, step_ms=1000)
+        precondition("the hub's model is loaded", bool(loaded), 'after %s ms' % text(waited))
+        if not loaded:
+            return
 
         # 1. install A (and the fillers) online: the answer is the state, not the empty list.
         ok, result = safe_pair(lambda: svc.SaveUpgradeConfiguration(
