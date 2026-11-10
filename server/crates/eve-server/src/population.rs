@@ -582,7 +582,7 @@ impl Prepared {
     /// draws, in a J-space system of class `c` (C1-C6), only the dungeons
     /// `sites` lists for `c` whose archetype and entry the row asks for
     /// (`Difficulties` is ignored: the class is the scope). The faction and
-    /// gas exclusions of `dungeon_data::Exclusions::C3` do not apply here,
+    /// gas exclusions of `dungeon_data::Table::exclusions` do not apply here,
     /// which is how the 500021 sites and the Fullerite reservoirs come in
     /// **for wormhole space only**. Each list is keyed `(row, Some(-c))`
     /// (no faction id is negative); a list that comes out empty is logged
@@ -641,12 +641,12 @@ impl Prepared {
 
     /// **PV-8: Pochven's candidates.** A `pochven` row draws the dungeons of
     /// the Triglavian faction (`trig`) with one of its archetypes and its
-    /// entry type, minus `Exclusions::C3`'s name parts (inert until a bundle
+    /// entry type, minus `Table::exclusions`'s name parts (inert until a bundle
     /// file carries dungeon names). Difficulty is ignored: the Triglavian
     /// dungeons have none, and the invasion sites have 9. Keyed
     /// `(row, Some(trig))`; a list that comes out empty is logged once.
     pub fn with_pochven_by(mut self, dungeons: &dungeon_data::Table, trig: i64) -> Prepared {
-        let ex = dungeon_data::Exclusions::C3;
+        let ex = dungeons.exclusions();
         // No bundle file carries dungeon names yet (`dungeon_data::candidates`),
         // so the name exclusion is inert here too.
         let name_of = |_: &dungeon_data::Dungeon| -> Option<String> { None };
@@ -907,7 +907,7 @@ fn candidates(row: &Row, band: Band, faction: Option<i64>, d: &dungeon_data::Tab
         difficulties,
         faction,
     };
-    let mut list = dungeon_data::candidates(d, &slot, &dungeon_data::Exclusions::C3, &|_| None);
+    let mut list = dungeon_data::candidates(d, &slot, &d.exclusions(), &|_| None);
     if faction.is_none() {
         list.retain(|id| !FACTION_ARCHETYPES.contains(&d.dungeons[id].archetype));
     }
@@ -1534,7 +1534,7 @@ mod tests {
                         faction: pirate(s.region_id),
                     };
                     assert!(
-                        dungeon_data::admits(dun, &want, &dungeon_data::Exclusions::C3, None),
+                        dungeon_data::admits(dun, &want, &d.exclusions(), None),
                         "{id}"
                     );
                     assert!(!EXCLUDED_FACTIONS.contains(&dun.faction.unwrap_or(0)));
@@ -2037,7 +2037,7 @@ mod tests {
             entry_type: Some(Entry::Signature.type_id()),
             resources: vec![Resource {
                 kind: ResourceKind::Gas,
-                type_ids: vec![dungeon_data::EXCLUDED_GAS_TYPES[0]],
+                type_ids: vec![dungeon_data::FIXTURE_EXCLUDED_GAS],
                 ore_band: None,
             }],
             ..Dungeon::default()

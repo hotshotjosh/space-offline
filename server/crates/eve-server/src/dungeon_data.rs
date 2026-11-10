@@ -92,13 +92,16 @@ pub const EXCLUDED_NAME_PARTS: [&str; 7] = [
     " OLD",
     "Training",
 ];
-/// [A] Fullerite-C28 … C540, the wormhole gases: a gas site holding one is a
-/// wormhole "Reservoir" site (C3 §4.2 step 2). Falsified by a Reservoir
-/// site whose `resources.tsv` gas row has none of these, or by typedata
-/// naming one of them other than "Fullerite-*".
-pub const EXCLUDED_GAS_TYPES: [i64; 9] = [
-    30370, 30371, 30372, 30373, 30374, 30375, 30376, 30377, 30378,
-];
+/// The market group of the wormhole gases (the Fullerites): a gas site
+/// holding one of its types is a wormhole "Reservoir" site (C3 §4.2 step 2).
+/// **[V-data]** in `types/market.tsv`: exactly nine types carry it, and no
+/// other type of their inventory group does. The members are read from the
+/// bundle ([`Table::excluded_gas`]), not copied here. Falsified by a built
+/// bundle whose members of this market group are not the wormhole gases.
+pub const EXCLUDED_GAS_MARKET_GROUP: i64 = 1859;
+/// The fixture's one excluded gas (invented): the member of the fixture's
+/// excluded-gas list.
+pub const FIXTURE_EXCLUDED_GAS: i64 = 990_080;
 
 /// One `dungeons.tsv` row, with its child rows attached, each sorted by key.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -294,6 +297,10 @@ pub struct Table {
     pub dungeons: BTreeMap<i64, Dungeon>,
     pub archetypes: BTreeMap<i64, Archetype>,
     pub typelists: BTreeMap<i64, TypeList>,
+    /// The types of [`EXCLUDED_GAS_MARKET_GROUP`] in `types/market.tsv`,
+    /// ascending. **Decision:** a bundle without that file has none, so no
+    /// gas is excluded; no bundle uses the fixture's invented one.
+    pub excluded_gas: Vec<i64>,
 }
 
 /// One data line, split, with typed accessors that name the column.
@@ -424,6 +431,12 @@ impl Table {
                 return Err(format!("{}: list {id} twice", TYPELISTS.0));
             }
         }
+        for ty in rows(b, crate::reprocess::MARKET, |f| Ok((f.i(0)?, f.oi(3)?)))? {
+            if ty.1 == Some(EXCLUDED_GAS_MARKET_GROUP) {
+                t.excluded_gas.push(ty.0);
+            }
+        }
+        t.excluded_gas.sort_unstable();
         t.attach(b, ROOMS, |f| {
             let r = Room {
                 id: f.i(1)?,
@@ -621,7 +634,7 @@ impl Table {
         let mut special = d(999108, 97, None, Some(1), ENTRY_ANOMALY);
         special.resources = vec![res(ResourceKind::Ore, &[990007], Some(OreBand::Special))];
         let mut reservoir = d(999106, 96, None, Some(2), ENTRY_SIGNATURE);
-        reservoir.resources = vec![res(ResourceKind::Gas, &[EXCLUDED_GAS_TYPES[0]], None)];
+        reservoir.resources = vec![res(ResourceKind::Gas, &[FIXTURE_EXCLUDED_GAS], None)];
         let mut nebula = d(999107, 96, None, Some(2), ENTRY_SIGNATURE);
         nebula.resources = vec![res(ResourceKind::Gas, &[990070], None)];
         let dungeons = [
@@ -663,6 +676,7 @@ impl Table {
                     (id, a)
                 })
                 .collect(),
+            excluded_gas: vec![FIXTURE_EXCLUDED_GAS],
             typelists: BTreeMap::from([
                 (9901, list(&[990001], &[99001], &[9906], &[990005])),
                 (9902, list(&[990004], &[], &[], &[])),
@@ -801,13 +815,15 @@ pub struct Exclusions<'a> {
     pub name_parts: &'a [&'a str],
 }
 
-impl Exclusions<'static> {
-    /// C3 §4.2 as written.
-    pub const C3: Exclusions<'static> = Exclusions {
-        factions: &EXCLUDED_FACTIONS,
-        gas_types: &EXCLUDED_GAS_TYPES,
-        name_parts: &EXCLUDED_NAME_PARTS,
-    };
+impl Table {
+    /// C3 §4.2 as written, with the gas list this table read.
+    pub fn exclusions(&self) -> Exclusions<'_> {
+        Exclusions {
+            factions: &EXCLUDED_FACTIONS,
+            gas_types: &self.excluded_gas,
+            name_parts: &EXCLUDED_NAME_PARTS,
+        }
+    }
 }
 
 /// Whether `name` contains an excluded fragment (case-sensitive, as C3
@@ -1013,6 +1029,44 @@ mod tests {
     }
 
     #[test]
+    fn the_excluded_gas_is_the_market_group_of_the_market_file() {
+        let t = synthetic();
+        let g = EXCLUDED_GAS_MARKET_GROUP;
+        // Invented rows: two types in the group (given out of order), one in
+        // another group, one with no market group.
+        let row = |ty: i64, grp: &str| format!("{ty}\t711\t2\t{grp}\t0.0\t\t\t\t\t\t\t\t1\t1");
+        let rows = [
+            row(990_092, &g.to_string()),
+            row(990_091, &g.to_string()),
+            row(990_093, &(g + 1).to_string()),
+            row(990_094, ""),
+        ];
+        write(
+            &t,
+            crate::reprocess::MARKET,
+            &rows.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        let c = Table::from_bundle(&bundle(&t)).unwrap();
+        assert_eq!(c.excluded_gas, [990_091, 990_092]);
+        // A dungeon holding one is out of a slot; one holding another gas is in.
+        let mut d = Table::fixture();
+        d.excluded_gas = c.excluded_gas.clone();
+        let mut reservoir = d.dungeons[&999106].clone();
+        reservoir.resources[0].type_ids = vec![990_092];
+        d.dungeons.insert(999106, reservoir);
+        let gas = slot(&[96], Entry::Signature, Difficulties::In(&[2]));
+        assert_eq!(candidates(&d, &gas, &d.exclusions(), &none), [999107]);
+        // No market file: nothing is excluded.
+        let bare = tmp();
+        assert!(
+            Table::from_bundle(&bundle(&bare))
+                .unwrap()
+                .excluded_gas
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn absent_files_give_an_empty_catalogue() {
         let t = tmp();
         assert_eq!(Table::from_bundle(&bundle(&t)).unwrap(), Table::default());
@@ -1073,12 +1127,12 @@ mod tests {
         let pirate = [FACTION_ARCHETYPES[0]];
         let s = slot(&pirate, Entry::Anomaly, Difficulties::In(&[2]));
         // 999104 has no difficulty, 999109 is a signature: neither is drawn.
-        assert_eq!(candidates(&t, &s, &Exclusions::C3, &none), [999101, 999103]);
+        assert_eq!(candidates(&t, &s, &t.exclusions(), &none), [999101, 999103]);
         let s = slot(&pirate, Entry::Signature, Difficulties::In(&[2, 3]));
-        assert_eq!(candidates(&t, &s, &Exclusions::C3, &none), [999109]);
+        assert_eq!(candidates(&t, &s, &t.exclusions(), &none), [999109]);
         let s = slot(&pirate, Entry::Anomaly, Difficulties::In(&[5]));
         assert!(
-            candidates(&t, &s, &Exclusions::C3, &none).is_empty(),
+            candidates(&t, &s, &t.exclusions(), &none).is_empty(),
             "an empty slot"
         );
     }
@@ -1090,9 +1144,9 @@ mod tests {
         let mut s = slot(&arch, Entry::Anomaly, Difficulties::In(&[2]));
         s.faction = Some(599001);
         // 999110 (archetype 98, faction 599002) passes: 98 carries no faction.
-        assert_eq!(candidates(&t, &s, &Exclusions::C3, &none), [999101, 999110]);
+        assert_eq!(candidates(&t, &s, &t.exclusions(), &none), [999101, 999110]);
         s.faction = Some(599002);
-        assert_eq!(candidates(&t, &s, &Exclusions::C3, &none), [999103, 999110]);
+        assert_eq!(candidates(&t, &s, &t.exclusions(), &none), [999103, 999110]);
     }
 
     #[test]
@@ -1101,23 +1155,23 @@ mod tests {
         let s = slot(&[98], Entry::Anomaly, Difficulties::In(&[2]));
         let keep = Exclusions {
             factions: &[],
-            ..Exclusions::C3
+            ..t.exclusions()
         };
         assert_eq!(candidates(&t, &s, &keep, &none), [999105, 999110]);
-        assert_eq!(candidates(&t, &s, &Exclusions::C3, &none), [999110]);
+        assert_eq!(candidates(&t, &s, &t.exclusions(), &none), [999110]);
         let gas = slot(&[96], Entry::Signature, Difficulties::In(&[2]));
-        assert_eq!(candidates(&t, &gas, &Exclusions::C3, &none), [999107]);
+        assert_eq!(candidates(&t, &gas, &t.exclusions(), &none), [999107]);
         // A name with any listed fragment is dropped; the rule, per fragment.
         for part in EXCLUDED_NAME_PARTS {
             let named = |id: i64| (id == 999107 + 800).then(|| format!("Example{part}Nebula"));
             assert!(
-                candidates(&t, &gas, &Exclusions::C3, &named).is_empty(),
+                candidates(&t, &gas, &t.exclusions(), &named).is_empty(),
                 "{part}"
             );
             assert!(excluded_name(&format!("x{part}y"), &EXCLUDED_NAME_PARTS));
         }
         let fine = |_| Some("Example Nebula".to_owned());
-        assert_eq!(candidates(&t, &gas, &Exclusions::C3, &fine), [999107]);
+        assert_eq!(candidates(&t, &gas, &t.exclusions(), &fine), [999107]);
     }
 
     #[test]
@@ -1125,18 +1179,18 @@ mod tests {
         let t = Table::fixture();
         let ore = |b| slot(&[97], Entry::Anomaly, Difficulties::Star(b));
         assert_eq!(
-            candidates(&t, &ore(OreBand::Low), &Exclusions::C3, &none),
+            candidates(&t, &ore(OreBand::Low), &t.exclusions(), &none),
             [999102]
         );
-        assert!(candidates(&t, &ore(OreBand::High), &Exclusions::C3, &none).is_empty());
+        assert!(candidates(&t, &ore(OreBand::High), &t.exclusions(), &none).is_empty());
         // `special` is drawn only by a row that asks for it.
         assert_eq!(
-            candidates(&t, &ore(OreBand::Special), &Exclusions::C3, &none),
+            candidates(&t, &ore(OreBand::Special), &t.exclusions(), &none),
             [999108]
         );
         // A dungeon with no ore row passes `*` (gas here).
         let gas = slot(&[96], Entry::Signature, Difficulties::Star(OreBand::Null));
-        assert_eq!(candidates(&t, &gas, &Exclusions::C3, &none), [999107]);
+        assert_eq!(candidates(&t, &gas, &t.exclusions(), &none), [999107]);
     }
 
     /// X-ICE: an ice dungeon's band follows the ice it holds, and a `*` ice
@@ -1174,7 +1228,7 @@ mod tests {
         }
         let drawn = |b| {
             let s = slot(&[28], Entry::Anomaly, Difficulties::Star(b));
-            candidates(&t, &s, &Exclusions::C3, &none)
+            candidates(&t, &s, &t.exclusions(), &none)
         };
         assert_eq!(drawn(OreBand::High), [1]);
         assert_eq!(drawn(OreBand::Low), [2]);

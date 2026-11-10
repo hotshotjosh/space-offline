@@ -14,7 +14,7 @@
 //!    to the client's ids. `population::Prepared::with_wormhole` draws a
 //!    J-space system's sites only from the rows this table lists for its
 //!    class, so the old exclusions (`dungeon_data::EXCLUDED_FACTIONS`,
-//!    `EXCLUDED_GAS_TYPES`) stay in force everywhere else and are lifted
+//!    the excluded-gas market group) stay in force everywhere else and are lifted
 //!    **for wormhole space only**.
 //! 2. **`wormholes/sleepers.tsv`** ([`SleeperRow`]): the Sleeper NPC types.
 //!    The extractor's faction grammar never parsed the Deadspace Sleeper
