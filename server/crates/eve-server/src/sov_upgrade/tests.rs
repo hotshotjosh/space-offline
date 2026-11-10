@@ -763,6 +763,19 @@ fn an_install_pushes_the_consumed_item_on_the_clock_not_on_pending() {
     );
 }
 
+/// A refusal names its half: the holder alliance, then the role.
+#[test]
+fn a_manage_refusal_names_the_holder_or_the_role() {
+    let reg = world();
+    let hub = sov_hub::by_id(reg.deltas(), HUB).expect("the hub");
+    assert_eq!(manage_refusal(&reg, &hub, ALICE), None);
+    let why = manage_refusal(&reg, &hub, 90_999_999).expect("a stranger is refused");
+    assert!(why.starts_with("holder"), "{why}");
+    let why = manage_refusal(&reg, &hub, BOB).expect("no role is refused");
+    assert!(why.starts_with("manage"), "{why}");
+    assert_eq!(manage_refusal(&reg, &hub, DAVE), None, "a station manager");
+}
+
 #[test]
 fn the_pilot_must_be_within_transfer_range_of_the_hub() {
     let mut reg = world();

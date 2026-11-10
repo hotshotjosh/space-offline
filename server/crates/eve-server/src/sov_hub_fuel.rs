@@ -407,6 +407,16 @@ fn access(reg: &Registry, hub: &crate::sov_hub::Hub, character: i64) -> bool {
     holder.is_some() && reg.character(character).and_then(|c| c.alliance_id) == holder
 }
 
+/// Log why the bay refused with 403 (the wire answer carries no reason) and
+/// answer it. One `[sov_hub_fuel] 403 hub H pilot P: <reason>` line each.
+fn refuse(hub_id: i64, who: i64, reason: &str) -> Reply {
+    crate::errln!(
+        "{}",
+        crate::sov_proto::refusal_line("sov_hub_fuel", hub_id, who, reason)
+    );
+    status(403)
+}
+
 /// `AddRequest` for `character`, under the write lock. Checks in the order of
 /// the spec: hub (404), access (403), item (404 gone, 403 not a reagent),
 /// range (403), amount (400).
@@ -418,7 +428,11 @@ fn add_reply(reg: &mut Registry, body: &[u8], character: i64) -> Reply {
         return status(404);
     };
     if !access(reg, &hub, character) {
-        return status(403);
+        return refuse(
+            hub_id,
+            character,
+            "holder: not in the alliance that holds the system",
+        );
     }
     let item_id = read_id(body, 1).and_then(|i| i64::try_from(i).ok());
     let Some(c) = reg.character(character).cloned() else {
@@ -436,7 +450,11 @@ fn add_reply(reg: &mut Registry, body: &[u8], character: i64) -> Reply {
         return status(404);
     };
     if item.group_id != crate::sov_resources::GROUP_COLONY_REAGENTS {
-        return status(403);
+        return refuse(
+            hub_id,
+            character,
+            &format!("item {} is not a reagent", item.item_id),
+        );
     }
     reg.advance_character(character);
     let here = reg
@@ -445,17 +463,25 @@ fn add_reply(reg: &mut Registry, body: &[u8], character: i64) -> Reply {
         .copied()
         .filter(|p| p.ship_id == c.ship_id && p.solar_system_id == hub.system_id);
     let Some(here) = here else {
-        return status(403);
+        return refuse(
+            hub_id,
+            character,
+            "location: not in space in the hub's system",
+        );
     };
     if here.motion.warp_active() {
-        return status(403);
+        return refuse(hub_id, character, "range: in warp");
     }
     let hull = crate::destiny::hull::of_in(reg.content(), c.ship_type_id);
     let gap = crate::space_state::distance(here.motion.position, hub.position)
         - crate::sov_hub::hub_radius(reg.content())
         - f64::from(hull.radius);
     if gap > crate::sov_hub::TRANSFER_RANGE {
-        return status(403);
+        return refuse(
+            hub_id,
+            character,
+            &format!("range: {gap:.0} m from the hub's surface"),
+        );
     }
     let amount = get_uint(body, 2).unwrap_or(0);
     if amount == 0 || i64::try_from(amount).map_or(true, |a| a > item.quantity) {
@@ -500,7 +526,11 @@ pub fn gateway(ty: &str, body: &[u8], character: i64, g: &Ground) -> Option<Repl
                 return Some(status(404));
             };
             if !access(&reg, &hub, character) {
-                return Some(status(403));
+                return Some(refuse(
+                    hub_id,
+                    character,
+                    "holder: not in the alliance that holds the system",
+                ));
             }
             let pad = reagent_types(&reg);
             Some(typed(

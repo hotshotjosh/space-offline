@@ -971,9 +971,17 @@ fn is_holder(reg: &Registry, hub: &Hub, who: i64) -> bool {
 }
 
 /// The window's own rule: the holder alliance and a station manager or
-/// director (the menu's rule, `celestialCheckers.py:1076-1084` **[V]**).
-fn may_manage(reg: &Registry, hub: &Hub, who: i64) -> bool {
-    is_holder(reg, hub, who) && crate::service::sov_hub::may_launch(reg, who)
+/// director (the menu's rule, `celestialCheckers.py:1076-1084` **[V]**). The
+/// reason `who` may not manage the hub, `None` when they may; the two halves
+/// are told apart for the 403 log line.
+fn manage_refusal(reg: &Registry, hub: &Hub, who: i64) -> Option<&'static str> {
+    if !is_holder(reg, hub, who) {
+        Some("holder: not in the alliance that holds the system")
+    } else if !crate::service::sov_hub::may_launch(reg, who) {
+        Some("manage: lacks the corporation role")
+    } else {
+        None
+    }
 }
 
 /// Whether `who`'s ship is within [`sov_hub::TRANSFER_RANGE`] of the hub's
@@ -1029,6 +1037,16 @@ fn held_long_enough(reg: &Registry, hub: &Hub, type_id: i64) -> bool {
     crate::sov_index::strategic_level(secs) as i64 >= need
 }
 
+/// Log why the hub refused with 403 (the wire answer carries no reason) and
+/// return the status. One `[sov_upgrade] 403 <reason>` line per refusal.
+fn refuse_403(hub_id: i64, who: i64, reason: &str) -> u32 {
+    crate::errln!(
+        "{}",
+        crate::sov_proto::refusal_line("sov_upgrade", hub_id, who, reason)
+    );
+    403
+}
+
 /// The checks on one dropped item, in the client's `GetDropError` order
 /// (`hubController.py:170-190`: type, installed, exclusive group, range, sov
 /// level, in the ship; the owner check first is ours), as the status the messenger branches on: 404 gone, 403 not
@@ -1041,11 +1059,18 @@ fn check_item(
     item_id: i64,
     taken: &[i64],
 ) -> Result<i64, u32> {
-    let ship = reg.character(who).map(|c| c.ship_id).ok_or(403u32)?;
+    let ship = reg
+        .character(who)
+        .map(|c| c.ship_id)
+        .ok_or_else(|| refuse_403(hub.hub_id, who, "no character"))?;
     let item = reg.store().get(item_id).cloned().ok_or(404u32)?;
     // Not the client's check, ours: another pilot's item is refused first.
     if item.owner_id != who {
-        return Err(403);
+        return Err(refuse_403(
+            hub.hub_id,
+            who,
+            &format!("item {item_id} belongs to {}", item.owner_id),
+        ));
     }
     if !UPGRADE_GROUPS.contains(&item.group_id) {
         return Err(400);
@@ -1067,11 +1092,25 @@ fn check_item(
     if clash {
         return Err(409);
     }
-    if !in_range(reg, who, hub) || !held_long_enough(reg, hub, item.type_id) {
-        return Err(403);
+    if !in_range(reg, who, hub) {
+        return Err(refuse_403(hub.hub_id, who, "range: out of transfer range"));
+    }
+    if !held_long_enough(reg, hub, item.type_id) {
+        return Err(refuse_403(
+            hub.hub_id,
+            who,
+            &format!("held: type {} needs a longer held claim", item.type_id),
+        ));
     }
     if item.location_id != ship {
-        return Err(403);
+        return Err(refuse_403(
+            hub.hub_id,
+            who,
+            &format!(
+                "location: item {item_id} is in {}, not the ship {ship}",
+                item.location_id
+            ),
+        ));
     }
     Ok(item.type_id)
 }
@@ -1096,8 +1135,8 @@ pub fn configure(
     now: u64,
 ) -> Result<Vec<Installed>, u32> {
     let hub = sov_hub::by_id(reg.deltas(), hub_id).ok_or(404u32)?;
-    if !may_manage(reg, &hub, who) {
-        return Err(403);
+    if let Some(why) = manage_refusal(reg, &hub, who) {
+        return Err(refuse_403(hub_id, who, why));
     }
     let stored = installed(reg.deltas(), hub_id);
     let mut taken: Vec<i64> = stored.iter().map(|i| i.type_id).collect();
@@ -1155,8 +1194,8 @@ pub fn uninstall(
     now: u64,
 ) -> Result<(), u32> {
     let hub = sov_hub::by_id(reg.deltas(), hub_id).ok_or(404u32)?;
-    if !may_manage(reg, &hub, who) {
-        return Err(403);
+    if let Some(why) = manage_refusal(reg, &hub, who) {
+        return Err(refuse_403(hub_id, who, why));
     }
     let stored = installed(reg.deltas(), hub_id);
     if !stored.iter().any(|i| i.type_id == type_id) {
@@ -1214,6 +1253,11 @@ fn get_hub_upgrades(
     // 403 for a pilot outside the holding alliance is our policy [A]; the
     // client's 403 path is real (`external_messenger.py:46`).
     if !is_holder(&reg, &hub, character) {
+        refuse_403(
+            hub_id,
+            character,
+            "holder: not in the alliance that holds the system",
+        );
         return status(403);
     }
     let moved = would_move(&reg, hub_id, production_bay(), now);

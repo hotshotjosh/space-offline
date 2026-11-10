@@ -79,6 +79,12 @@ pub(crate) fn apply_items_on_clock(
     applied
 }
 
+/// The log line of a gateway 403: the wire status carries no reason, so the
+/// server's log must. `tag` is the module, as in `[sov_upgrade]`.
+pub(crate) fn refusal_line(tag: &str, hub_id: i64, who: i64, reason: &str) -> String {
+    format!("[{tag}] 403 hub {hub_id} pilot {who}: {reason}")
+}
+
 /// Wall-clock unix seconds.
 pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()
@@ -146,5 +152,13 @@ mod tests {
         assert_eq!(r.status, 200);
         assert_eq!(r.payload.unwrap().0, "eve_public.x.api.GetResponse");
         assert_eq!(status(403).payload, None);
+    }
+
+    #[test]
+    fn a_refusal_line_names_module_hub_pilot_and_reason() {
+        assert_eq!(
+            refusal_line("sov_hub_fuel", 9_100, 7, "range: in warp"),
+            "[sov_hub_fuel] 403 hub 9100 pilot 7: range: in warp"
+        );
     }
 }
