@@ -1921,10 +1921,10 @@ mod tests {
     use eve_server::group_contacts::Affiliation;
     use std::sync::Arc;
 
-    const SHIP: i64 = 1_000_101;
-    const SYSTEM: i64 = 1_000_001;
+    const SHIP: i64 = 1_980_101;
+    const SYSTEM: i64 = 1_980_001;
     const LAUNCHER: i64 = 1_000_201;
-    const PROBE_ITEM: i64 = 1_000_301;
+    const PROBE_ITEM: i64 = 1_980_301;
 
     fn ball(id: i64, x: f64) -> Ball {
         Ball {
@@ -2301,8 +2301,8 @@ mod tests {
         assert_eq!(post(&mut m, &o, &park, SYSTEM), None);
         // Two neighbours: the lower-numbered system's gate.
         let map = Map::new()
-            .with_gate(SYSTEM, 2_000_501, 1_000_099, 2_000_502)
-            .with_gate(SYSTEM, 2_000_503, 1_000_098, 2_000_504);
+            .with_gate(SYSTEM, 2_000_501, 1_980_099, 2_000_502)
+            .with_gate(SYSTEM, 2_000_503, 1_980_098, 2_000_504);
         m.policy.travel = Some(Arc::new(map));
         assert_eq!(gate_of(&m, SYSTEM), Some(2_000_503));
         let Some(Act::WarpToItem { id, range }) = post(&mut m, &o, &park, SYSTEM) else {
@@ -2603,7 +2603,7 @@ mod tests {
         let (mut m2, mut o2) = setup(t);
         m2.camp.unit_radius = Some(SMALL_RADIUS);
         m2.policy.travel = Some(Arc::new(
-            Map::new().with_gate(SYSTEM, GATE, 1_000_098, 2_000_504),
+            Map::new().with_gate(SYSTEM, GATE, 1_980_098, 2_000_504),
         ));
         o2.warp_bubble.gates = vec![ball(GATE, 1.0e7)];
         let park = o2.park.clone().unwrap();
@@ -2619,7 +2619,7 @@ mod tests {
         let t = Instant::now();
         let (mut m, mut o) = at_gate(t);
         m.policy.travel = Some(Arc::new(
-            Map::new().with_gate(SYSTEM, GATE, 1_000_098, 2_000_504),
+            Map::new().with_gate(SYSTEM, GATE, 1_980_098, 2_000_504),
         ));
         // At the gate, on grid, but at the jump-in spot (too close), with a
         // unit in the hold: it keeps range at the standoff, no oftener than
@@ -3692,7 +3692,7 @@ mod tests {
             ),
         ));
         m.policy.travel = Some(Arc::new(
-            Map::new().with_gate(SYSTEM, GATE, 1_000_098, 2_000_504),
+            Map::new().with_gate(SYSTEM, GATE, 1_980_098, 2_000_504),
         ));
         o.ship = Some(ShipInfo {
             ship_id: SHIP,
@@ -3853,7 +3853,7 @@ mod tests {
             ),
         ));
         m.policy.travel = Some(Arc::new(
-            Map::new().with_gate(SYSTEM, GATE, 1_000_098, 2_000_504),
+            Map::new().with_gate(SYSTEM, GATE, 1_980_098, 2_000_504),
         ));
         o.ship = Some(ShipInfo {
             ship_id: SHIP,

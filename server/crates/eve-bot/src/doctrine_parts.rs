@@ -500,7 +500,7 @@ mod tests {
         const NAMED_MWD: i64 = 991_200_201;
         const TOO_META: i64 = 991_200_202;
         let row = |type_id, tier, meta| Loot {
-            faction_id: 500_001,
+            faction_id: 589_001,
             size: 1,
             kind: "prop".to_owned(),
             tier,

@@ -884,7 +884,7 @@ mod tests {
     const RUNNER2: i64 = 90_000_002;
 
     fn pitch() -> Pitch {
-        ("127.0.0.1:1".parse().expect("literal"), 30_000_001)
+        ("127.0.0.1:1".parse().expect("literal"), 30_990_001)
     }
 
     #[test]
@@ -966,7 +966,7 @@ mod tests {
         let then = Instant::now();
         assert_eq!(board.choose(pitch(), RUNNER1, 0, &[A], then), Some(A));
         assert_eq!(board.choose(pitch(), RUNNER2, 0, &[A], then), None);
-        let other: Pitch = (pitch().0, 30_000_002);
+        let other: Pitch = (pitch().0, 30_990_002);
         assert_eq!(board.choose(other, RUNNER2, 0, &[A], then), Some(A));
         assert_eq!(
             board.choose(pitch(), RUNNER2, 0, &[A], then + CLAIM_TTL),
@@ -1001,15 +1001,15 @@ mod tests {
             ),
         ]);
         let answer = PyValue::Dict(vec![
-            (PyValue::Int(2), PyValue::Int(30_000_002)),
-            (PyValue::List(vec![row]), PyValue::Int(30_000_001)),
+            (PyValue::Int(2), PyValue::Int(30_990_002)),
+            (PyValue::List(vec![row]), PyValue::Int(30_990_001)),
         ]);
         assert_eq!(
             read_counts(&answer),
-            BTreeMap::from([(30_000_001, 1), (30_000_002, 2)])
+            BTreeMap::from([(30_990_001, 1), (30_990_002, 2)])
         );
         assert_eq!(
-            read_rows(&answer, 30_000_001),
+            read_rows(&answer, 30_990_001),
             vec![SiteRow {
                 site_id: A,
                 dungeon_id: Some(999_001),
@@ -1018,7 +1018,7 @@ mod tests {
             }]
         );
         assert!(
-            read_rows(&answer, 30_000_002).is_empty(),
+            read_rows(&answer, 30_990_002).is_empty(),
             "a count has no rows"
         );
     }
@@ -1056,7 +1056,7 @@ mod tests {
         let now = Instant::now();
         let mut o = Observation::empty(now);
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(ShipInfo {
@@ -1171,7 +1171,7 @@ mod tests {
     fn armed(now: Instant) -> Observation {
         let mut o = Observation::empty(now);
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(ShipInfo {
@@ -1204,7 +1204,7 @@ mod tests {
         let mut m = Memory::new("Runner1", Policy::fast());
         let mut o = Observation::empty(Instant::now());
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(ShipInfo {
@@ -1251,7 +1251,7 @@ mod tests {
             matches!(
                 acts.last(),
                 Some(Act::Hunt(crate::hunt::HuntAct::Ess(
-                    crate::ess_raid::EssAct::Read { system: 30_000_001 }
+                    crate::ess_raid::EssAct::Read { system: 30_990_001 }
                 )))
             ),
             "{acts:?}"

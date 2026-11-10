@@ -343,8 +343,8 @@ mod tests {
     use super::*;
     use crate::brain::{ParkView, Policy};
 
-    const SHIP: i64 = 1_000_101;
-    const STATION: i64 = 1_000_301;
+    const SHIP: i64 = 1_980_101;
+    const STATION: i64 = 1_980_301;
     const BELT: i64 = 1_000_401;
     const GATE: i64 = 1_000_501;
     const RADIUS: f64 = 10_000.0;
@@ -361,7 +361,7 @@ mod tests {
     fn obs(now: Instant, x: f64) -> Observation {
         let mut o = Observation::empty(now);
         o.place = Place::InSpace {
-            system: 1_000_001,
+            system: 1_980_001,
             bound: true,
         };
         o.home = Some(STATION);

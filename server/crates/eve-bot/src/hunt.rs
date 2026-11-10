@@ -2334,8 +2334,8 @@ mod tests {
     use crate::society::Satisfaction;
     use std::sync::Arc;
 
-    const SYSTEM: i64 = 30_000_900;
-    const HIGH: i64 = 30_000_901;
+    const SYSTEM: i64 = 30_990_900;
+    const HIGH: i64 = 30_990_901;
     const SMALL_HULL: i64 = 9_001;
     const MEDIUM_HULL: i64 = 9_002;
     const LARGE_HULL: i64 = 9_003;
@@ -2418,16 +2418,16 @@ mod tests {
     #[test]
     fn only_low_null_and_wormhole_space_is_hunting_ground() {
         let d = doctrine()
-            .with_security(30_000_902, 0.3)
-            .with_security(30_000_903, 0.0)
-            .with_security(30_000_904, 0.04);
+            .with_security(30_990_902, 0.3)
+            .with_security(30_990_903, 0.0)
+            .with_security(30_990_904, 0.04);
         assert!(d.is_ground(SYSTEM));
-        assert!(d.is_ground(30_000_902));
-        assert!(d.is_ground(30_000_903));
+        assert!(d.is_ground(30_990_902));
+        assert!(d.is_ground(30_990_903));
         assert!(!d.is_ground(HIGH));
         // 0.04 is lifted to 0.05 by the client's rounding: still low sec.
-        assert!(d.is_ground(30_000_904));
-        assert!(!d.is_ground(30_000_999), "a system nothing is known of");
+        assert!(d.is_ground(30_990_904));
+        assert!(!d.is_ground(30_990_999), "a system nothing is known of");
         assert!(d.is_ground(WORMHOLE_SYSTEMS.start + 5));
         assert!(d.is_ground(VOID_SYSTEMS.start + 5));
         assert!(!Ground::new().is_ground(SYSTEM), "an empty doctrine");
@@ -4149,7 +4149,7 @@ mod tests {
         assert!(is_npc_wreck(&w(mine)));
         assert!(is_pilot_wreck(&slim(other, None, false, 100_000_001)));
         assert!(!is_npc_wreck(&w(slim(other, None, false, 100_000_001))));
-        let check = |s, fleet| may_loot(&w(s), Some(me), Some(1_000_009), fleet);
+        let check = |s, fleet| may_loot(&w(s), Some(me), Some(1_980_009), fleet);
         assert!(check(slim(me, None, false, rat), None), "mine");
         assert!(!check(slim(other, None, false, rat), None), "a stranger's");
         assert!(check(slim(other, Some(fleet), false, rat), Some(fleet)));
@@ -4159,7 +4159,7 @@ mod tests {
         ));
         assert!(!check(slim(other, Some(fleet), false, rat), None));
         assert!(check(slim(other, None, true, rat), None), "abandoned");
-        assert!(check(slim(1_000_124, None, false, rat), None), "NPC-owned");
+        assert!(check(slim(1_980_124, None, false, rat), None), "NPC-owned");
     }
 
     /// `observe` reads the slim: a different player corp is hostile, the
@@ -4185,10 +4185,10 @@ mod tests {
             tracked(1, 0.0, ship_slim(ME, CORP, None)),
             tracked(2, 1_000.0, ship_slim(90_000_910, CORP, None)),
             tracked(3, 2_000.0, ship_slim(BOB, BOB_CORP, None)),
-            tracked(4, 3_000.0, ship_slim(90_000_911, 1_000_009, None)),
+            tracked(4, 3_000.0, ship_slim(90_000_911, 1_980_009, None)),
             tracked(5, 4_000.0, ship_slim(90_000_912, OTHER_CORP, None)),
             tracked(6, 5_000.0, wreck(BOB)),
-            tracked(7, 6_000.0, wreck(1_000_009)),
+            tracked(7, 6_000.0, wreck(1_980_009)),
         ];
         let me = Me {
             char_id: ME,
@@ -4321,9 +4321,9 @@ mod filament_tests {
     use crate::filament::{self, Away, Mood};
     use std::sync::Arc;
 
-    const SYSTEM: i64 = 30_000_900;
+    const SYSTEM: i64 = 30_990_900;
     const HULL: i64 = 9_001;
-    const HOME: i64 = 60_000_010;
+    const HOME: i64 = 60_700_010;
     const ELSEWHERE: i64 = 60_000_077;
     const ME: i64 = 90_000_901;
     const FILAMENT_ITEM: i64 = 7_001;

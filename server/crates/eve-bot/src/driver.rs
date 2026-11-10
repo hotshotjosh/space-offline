@@ -8437,7 +8437,7 @@ mod tests {
     #[test]
     fn a_stranded_bot_flies_home_over_the_gates() {
         const NAME: &str = "Invented Strandbot";
-        const B: i64 = 30_000_903;
+        const B: i64 = 30_990_903;
         const STATION_B: i64 = 60_900_901;
         const GATE_A: i64 = 50_900_901;
         const GATE_B: i64 = 50_900_902;
@@ -8510,7 +8510,7 @@ mod tests {
     #[test]
     fn a_lent_bot_docks_at_the_lease_and_after_the_recall_at_its_base() {
         const NAME: &str = "Invented Lentbot";
-        const B: i64 = 30_000_903;
+        const B: i64 = 30_990_903;
         const STATION_B: i64 = 60_900_901;
         const GATE_A: i64 = 50_900_901;
         const GATE_B: i64 = 50_900_902;

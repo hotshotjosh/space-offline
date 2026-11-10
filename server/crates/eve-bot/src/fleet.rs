@@ -1260,7 +1260,7 @@ mod tests {
             PyValue::Bytes(name.as_bytes().to_vec()),
             PyValue::Int(BROADCAST_ALL),
             PyValue::Int(caller),
-            PyValue::Int(30_000_001),
+            PyValue::Int(30_990_001),
             PyValue::Int(item),
             PyValue::None,
         ]
@@ -1273,7 +1273,7 @@ mod tests {
             backup_call(BROADCAST_EVENT, &call),
             Some(BackupCall {
                 caller: ANN,
-                system: 30_000_001
+                system: 30_990_001
             })
         );
         assert_eq!(
@@ -1327,7 +1327,7 @@ mod tests {
         let m = Memory::new("Member1", Policy::fast());
         let mut o = Observation::empty(Instant::now());
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(brain::ShipInfo {
@@ -1519,12 +1519,12 @@ mod tests {
     #[test]
     fn global_broadcasts_are_send_broadcast_and_target_is_bubble() {
         let mut c = Command::new(0);
-        assert!(c.travel_to(30_000_777).is_empty(), "no fleet, no order");
+        assert!(c.travel_to(30_990_777).is_empty(), "no fleet, no order");
         c.fleet_id = Some(5);
-        let travel = c.travel_to(30_000_777);
+        let travel = c.travel_to(30_990_777);
         assert!(matches!(
             &travel[..],
-            [Order::Broadcast { name, item: 30_000_777, .. }] if *name == BROADCAST_TRAVEL_TO
+            [Order::Broadcast { name, item: 30_990_777, .. }] if *name == BROADCAST_TRAVEL_TO
         ));
         assert!(travel[0].describe().0.starts_with("SendBroadcast TravelTo"));
         let spotted = c.enemy_spotted(1_000_777, Some(587));
@@ -1545,7 +1545,7 @@ mod tests {
             PyValue::Bytes(BROADCAST_ENEMY_SPOTTED.as_bytes().to_vec()),
             PyValue::Int(3),
             PyValue::Int(90_000_777),
-            PyValue::Int(30_000_777),
+            PyValue::Int(30_990_777),
             PyValue::Int(1_000_777),
             PyValue::None,
         ];
@@ -1553,7 +1553,7 @@ mod tests {
             backup_call(BROADCAST_EVENT, &args),
             Some(BackupCall {
                 caller: 90_000_777,
-                system: 30_000_777
+                system: 30_990_777
             })
         );
     }

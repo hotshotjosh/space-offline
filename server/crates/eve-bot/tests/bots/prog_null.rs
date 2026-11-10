@@ -23,7 +23,7 @@ use std::sync::Arc;
 const BUILDER: i64 = 90_000_301;
 const CAROL: i64 = 90_000_302;
 const CORP: i64 = 1_999_701;
-const B: i64 = 30_000_003;
+const B: i64 = 30_990_003;
 const STATION_B: i64 = 60_900_001;
 const GATE_A: i64 = 50_900_001;
 const GATE_B: i64 = 50_900_002;

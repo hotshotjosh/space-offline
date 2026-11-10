@@ -710,8 +710,8 @@ mod tests {
     use crate::hunt::Pilot;
     use eve_server::group_contacts::Affiliation;
 
-    const SHIP: i64 = 1_000_101;
-    const STATION: i64 = 1_000_301;
+    const SHIP: i64 = 1_980_101;
+    const STATION: i64 = 1_980_301;
     const GATE: i64 = 1_000_501;
 
     fn ball(id: i64, x: f64) -> Ball {
@@ -771,7 +771,7 @@ mod tests {
     fn obs(now: Instant) -> Observation {
         let mut o = Observation::empty(now);
         o.place = Place::InSpace {
-            system: 1_000_001,
+            system: 1_980_001,
             bound: true,
         };
         o.park = Some(ParkView {
@@ -977,8 +977,8 @@ mod tests {
         o.hangar = vec![crate::ItemRow {
             item_id: 77,
             type_id: SMARTBOMB,
-            owner_id: 1_000_002,
-            location_id: 1_000_003,
+            owner_id: 1_980_002,
+            location_id: 1_980_003,
             flag_id: crate::FLAG_HANGAR,
             quantity: 1,
             group_id: 0,
@@ -1005,8 +1005,8 @@ mod tests {
         o.hangar = vec![crate::ItemRow {
             item_id: 88,
             type_id: 9_911,
-            owner_id: 1_000_002,
-            location_id: 1_000_003,
+            owner_id: 1_980_002,
+            location_id: 1_980_003,
             flag_id: crate::FLAG_HANGAR,
             quantity: 1,
             group_id: crate::camp::GROUP_LAUNCHER,
@@ -1035,8 +1035,8 @@ mod tests {
         o.hangar = vec![crate::ItemRow {
             item_id: 90,
             type_id: 1_000_903,
-            owner_id: 1_000_002,
-            location_id: 1_000_003,
+            owner_id: 1_980_002,
+            location_id: 1_980_003,
             flag_id: crate::FLAG_HANGAR,
             quantity: 1,
             group_id: 1_000_899,

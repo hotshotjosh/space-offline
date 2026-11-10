@@ -184,7 +184,7 @@ mod tests {
         // ... and the server's own rule, fed through the plan, agrees.
         let aff = |id| eve_server::group_contacts::Affiliation {
             character_id: id,
-            corporation_id: 1_000_001,
+            corporation_id: 1_980_001,
             alliance_id: None,
         };
         let me = eve_server::group_contacts::Affiliation {

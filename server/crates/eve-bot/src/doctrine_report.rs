@@ -209,7 +209,7 @@ mod tests {
             st.members.insert(90_500_000 + i, pilot(G1, "ratter"));
         }
         st.members.insert(90_500_100, pilot(G1, "miner"));
-        let mut t = Theatre::new(30_000_001, 0);
+        let mut t = Theatre::new(30_990_001, 0);
         t.sent = vec![
             Sent {
                 char_id: 90_500_000,

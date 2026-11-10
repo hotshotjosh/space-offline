@@ -26,7 +26,7 @@ use std::sync::Arc;
 const BUILDER: i64 = 90_000_301;
 const CAROL: i64 = 90_000_302;
 const CORP: i64 = 1_999_701;
-const B: i64 = 30_000_003;
+const B: i64 = 30_990_003;
 const STATION_B: i64 = 60_900_001;
 const GATE_A: i64 = 50_900_001;
 const GATE_B: i64 = 50_900_002;
@@ -252,10 +252,10 @@ fn no_trip_through_a_system_under_the_floor() {
 // status below; `Q` and `R` are low-sec. The short way home-to-far is
 // `A-P-D` (two jumps); the way round the police is `A-Q-R-D` (three).
 
-const P: i64 = 30_000_004;
-const Q: i64 = 30_000_005;
-const R: i64 = 30_000_006;
-const D: i64 = 30_000_007;
+const P: i64 = 30_990_004;
+const Q: i64 = 30_990_005;
+const R: i64 = 30_990_006;
+const D: i64 = 30_990_007;
 const STATION_D: i64 = 60_900_002;
 const HUNTER: i64 = 90_000_303;
 /// A status the police attack from 0.8 up, checked against the band table

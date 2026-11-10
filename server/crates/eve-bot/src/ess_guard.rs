@@ -587,7 +587,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::time::Instant;
 
-    const SYSTEM: i64 = 30_000_777;
+    const SYSTEM: i64 = 30_990_777;
     const BEACON: i64 = 100_000_777;
 
     fn ball(id: i64, x: f64) -> Ball {

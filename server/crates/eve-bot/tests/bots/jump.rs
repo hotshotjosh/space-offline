@@ -22,7 +22,7 @@ const BOB: i64 = 90_000_002;
 const ALICE_SHIP: i64 = 100_000_001;
 const BOB_SHIP: i64 = 100_000_002;
 const A: i64 = 30_000_001;
-const B: i64 = 30_000_003;
+const B: i64 = 30_990_003;
 const GATE_A: i64 = 50_000_001;
 const GATE_B: i64 = 50_000_002;
 

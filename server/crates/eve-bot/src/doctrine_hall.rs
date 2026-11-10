@@ -1337,7 +1337,7 @@ mod tests {
     const C3: i64 = 98_000_303;
     const AL: i64 = 99_000_301;
     const FOE: Group = 98_700_301;
-    const SYS: i64 = 30_000_301;
+    const SYS: i64 = 30_990_301;
     const ENEMY_HULL: i64 = 977;
     const ENEMY_GUN: i64 = 988;
     const ENEMY_PLATE: i64 = 989;

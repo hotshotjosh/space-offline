@@ -212,7 +212,7 @@ mod tests {
     use crate::brain::{ActKind, Ball, Place, Policy, Role, ShipInfo};
     use std::time::Instant;
 
-    const STATION: i64 = 60_012_526;
+    const STATION: i64 = 60_712_526;
     const SHIP: i64 = 100_000_301;
     const MODULE: i64 = 100_000_302;
     const WRECK: i64 = 100_000_303;
@@ -294,7 +294,7 @@ mod tests {
     fn space_obs(wreck_x: f64) -> Observation {
         let mut o = docked_obs();
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.salvager = Some(module(true, false));

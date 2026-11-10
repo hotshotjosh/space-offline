@@ -239,7 +239,7 @@ fn four_bots_form_two_corps_an_alliance_and_a_blue_and_a_red() {
         alliance_id: al,
     };
     assert!(!hall.hostile_to(aff(ANN, c1, Some(al)), aff(DEE, c2, Some(al))));
-    assert!(hall.hostile_to(aff(ANN, c1, Some(al)), aff(MAL, 1_000_044, None)));
+    assert!(hall.hostile_to(aff(ANN, c1, Some(al)), aff(MAL, 1_980_044, None)));
     assert!(
         hall.summary().contains("corps 2 alliances 1"),
         "{}",

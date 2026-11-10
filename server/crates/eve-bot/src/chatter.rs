@@ -769,7 +769,7 @@ fn say(st: &mut State, cx: &Ctx, cat: Cat, target: Option<i64>) -> Option<String
 mod tests {
     use super::*;
 
-    const SYS: i64 = 30_000_777;
+    const SYS: i64 = 30_990_777;
     const HUMAN: i64 = 970_000_101;
 
     fn secs(n: u64) -> Duration {

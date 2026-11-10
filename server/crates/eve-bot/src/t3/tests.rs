@@ -680,7 +680,7 @@ mod steer {
         m.target = Some((TARGET, "Invented Rat".to_owned()));
         let mut o = Observation::empty(Instant::now());
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.health = Some(Health {

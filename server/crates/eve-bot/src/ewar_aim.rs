@@ -242,10 +242,10 @@ mod tests {
     use crate::hunt::Ground;
     use std::time::{Duration, Instant};
 
-    const EGO: i64 = 1_000_001;
-    const PRIMARY: i64 = 1_000_011;
-    const LOGI: i64 = 1_000_012;
-    const OTHER: i64 = 1_000_013;
+    const EGO: i64 = 1_980_001;
+    const PRIMARY: i64 = 1_980_011;
+    const LOGI: i64 = 1_980_012;
+    const OTHER: i64 = 1_980_013;
 
     fn ball(id: i64, x: f64) -> Ball {
         Ball {

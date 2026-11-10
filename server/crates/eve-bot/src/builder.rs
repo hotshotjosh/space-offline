@@ -3342,7 +3342,7 @@ mod tests {
         let issued = 133_000_000_000_000_000;
         let own = OwnOrder {
             order: order(1, 10.0, 5, true, false),
-            solar_system_id: 30_000_001,
+            solar_system_id: 30_990_001,
             range: RANGE_STATION,
             issue_date: issued,
             last_state_change: None,

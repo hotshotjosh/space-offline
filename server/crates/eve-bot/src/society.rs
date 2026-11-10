@@ -1487,7 +1487,7 @@ mod tests {
         };
         let stranger = Affiliation {
             character_id: X,
-            corporation_id: 1_000_044,
+            corporation_id: 1_980_044,
             alliance_id: None,
         };
         let other_corp = Affiliation {

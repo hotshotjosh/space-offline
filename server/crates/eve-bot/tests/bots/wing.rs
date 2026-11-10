@@ -28,7 +28,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const SYSTEM_B: i64 = 30_000_027;
+const SYSTEM_B: i64 = 30_990_027;
 const STATION_B: i64 = 60_900_027;
 const GATE_AB: i64 = 50_900_027;
 const GATE_BA: i64 = 50_900_028;

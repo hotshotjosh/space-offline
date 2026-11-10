@@ -611,14 +611,14 @@ mod tests {
     use crate::supply::OreFacts;
 
     // Invented ids only.
-    const HOME: i64 = 32_000_001;
-    const LOW: i64 = 32_000_002;
-    const DEEP: i64 = 32_000_003;
-    const DEEP2: i64 = 32_000_004;
+    const HOME: i64 = 32_990_001;
+    const LOW: i64 = 32_990_002;
+    const DEEP: i64 = 32_990_003;
+    const DEEP2: i64 = 32_990_004;
     const ORE_H: i64 = 33_000_001;
     const ORE_R: i64 = 33_000_002;
-    const MIN_COMMON: i64 = 34_000_001;
-    const MIN_RARE: i64 = 34_000_002;
+    const MIN_COMMON: i64 = 34_990_001;
+    const MIN_RARE: i64 = 34_990_002;
     const ST_H: i64 = 62_000_001;
     const ST_D: i64 = 62_000_003;
     const ST_D2: i64 = 62_000_004;

@@ -1560,8 +1560,8 @@ mod tests {
         assert_eq!(run(true, 0.0, &npc), Err(Refusal::NotHostile));
         // A pilot of an NPC corporation is a stranger, and counts.
         let mut starter = loss(3, 5, 5_000_000.0);
-        starter.killer_corp = 1_000_125;
-        starter.victim_corp = 1_000_125;
+        starter.killer_corp = 1_980_125;
+        starter.victim_corp = 1_980_125;
         assert_eq!(run(true, 0.0, &starter), Ok(base));
         // Nor one by his own corporation.
         let mut own = loss(4, 5, 5_000_000.0);

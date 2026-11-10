@@ -393,7 +393,7 @@ mod tests {
 
     const BOSS: i64 = 90_000_901;
     const MATE: i64 = 90_000_902;
-    const SYSTEM: i64 = 30_000_901;
+    const SYSTEM: i64 = 30_990_901;
     const GATE: i64 = 1_000_901;
     const SHIP: i64 = 1_000_902;
     const FLEET: i64 = 1_000;

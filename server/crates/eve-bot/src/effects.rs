@@ -550,7 +550,7 @@ mod tests {
         assert!(is_character(A));
         assert!(!is_character(CORP));
         assert!(!is_character(99_000_811));
-        assert!(!is_character(1_000_044));
+        assert!(!is_character(1_980_044));
     }
 
     #[test]

@@ -2750,7 +2750,7 @@ mod tests {
         assert!(acquire_if_due(&mut m, true, false, false).is_none());
     }
 
-    const STATION: i64 = 60_012_526;
+    const STATION: i64 = 60_712_526;
     const SHIP: i64 = 100_000_101;
     const LASER: i64 = 100_000_102;
     const ROCK_A: i64 = eve_server::asteroid::MIN_ROCK_ID;
@@ -2806,7 +2806,7 @@ mod tests {
     fn in_space() -> Observation {
         let mut o = docked_ready();
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.park = Some(ParkView {
@@ -2875,9 +2875,9 @@ mod tests {
 
         let mut m = fast("Miner1");
         m.policy.react = false;
-        hear(&mut m, Heard::Travel { system: 30_000_042 }, o.now);
+        hear(&mut m, Heard::Travel { system: 30_990_042 }, o.now);
         let (m3, acts) = decide(&m, &o);
-        assert_eq!(acts, vec![Act::TravelTo { system: 30_000_042 }]);
+        assert_eq!(acts, vec![Act::TravelTo { system: 30_990_042 }]);
         assert_eq!(m3.order, None, "spent");
     }
 
@@ -3335,7 +3335,7 @@ mod tests {
         let mut o = in_space();
         park(&mut o).ego_warping = true;
         o.place = Place::InSpace {
-            system: 30_000_002,
+            system: 30_990_002,
             bound: false,
         };
         let (_, acts) = decide(&fast("Miner1"), &o);
@@ -3348,7 +3348,7 @@ mod tests {
         let mut o = in_space();
         park(&mut o).ego_warping = true;
         o.place = Place::InSpace {
-            system: 30_000_002,
+            system: 30_990_002,
             bound: false,
         };
         o.failures.insert(ActKind::Bind, GIVE_UP_AFTER);
@@ -3360,7 +3360,7 @@ mod tests {
     fn in_space_unbound_binds_first() {
         let mut o = in_space();
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: false,
         };
         o.park = None;

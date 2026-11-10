@@ -3444,7 +3444,7 @@ mod tests {
             ("characterID", PyValue::Int(90_000_002)),
             ("characterName", PyValue::Unicode("Miner1".to_owned())),
             ("shipTypeID", PyValue::Int(670)),
-            ("stationID", PyValue::Int(60_012_526)),
+            ("stationID", PyValue::Int(60_712_526)),
             ("solarSystemID", PyValue::None),
         ]);
         assert_eq!(
@@ -3453,7 +3453,7 @@ mod tests {
                 character_id: 90_000_002,
                 name: "Miner1".to_owned(),
                 ship_type_id: Some(670),
-                station_id: Some(60_012_526),
+                station_id: Some(60_712_526),
                 solar_system_id: None,
             })
         );

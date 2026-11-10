@@ -2619,13 +2619,13 @@ mod tests {
     use crate::hunt::Ground;
     use std::collections::BTreeSet;
 
-    const STAGING: i64 = 30_001_000;
-    const A: i64 = 30_001_001;
-    const B: i64 = 30_001_002;
-    const C: i64 = 30_001_003;
-    const A2: i64 = 30_001_011;
-    const B2: i64 = 30_001_012;
-    const HIGH: i64 = 30_001_099;
+    const STAGING: i64 = 30_991_000;
+    const A: i64 = 30_991_001;
+    const B: i64 = 30_991_002;
+    const C: i64 = 30_991_003;
+    const A2: i64 = 30_991_011;
+    const B2: i64 = 30_991_012;
+    const HIGH: i64 = 30_991_099;
     const SMALL: i64 = 9_101;
     const MEDIUM: i64 = 9_102;
     const LARGE: i64 = 9_103;

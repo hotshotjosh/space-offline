@@ -2183,23 +2183,23 @@ mod tests {
     #[test]
     fn docked_loot_in_the_hold_is_unloaded_rounds_are_not() {
         let mut o = docked_ready();
-        o.cargo.push(row(9, 25_589, 7, 3));
+        o.cargo.push(row(9, 990_985_589, 7, 3));
         let (_, acts) = decide(&escort(), &o);
         assert_eq!(acts, vec![Act::Unload(vec![(9, 3)])]);
         // Spare probes stay in the hold.
-        let mut probe = row(10, 25_589, 7, 4);
+        let mut probe = row(10, 990_985_589, 7, 4);
         probe.group_id = crate::camp::GROUP_PROBE;
         o.cargo.push(probe);
         let (_, acts) = decide(&escort(), &o);
         assert_eq!(acts, vec![Act::Unload(vec![(9, 3)])]);
         // So does a filament stocked for a jump.
-        let mut key = row(11, 25_589, 7, 1);
+        let mut key = row(11, 990_985_589, 7, 1);
         key.group_id = crate::filament::GROUP;
         o.cargo.push(key);
         let (_, acts) = decide(&escort(), &o);
         assert_eq!(acts, vec![Act::Unload(vec![(9, 3)])]);
         // And the camp's mobile warp disruptor.
-        let mut unit = row(12, 25_589, 7, 1);
+        let mut unit = row(12, 990_985_589, 7, 1);
         unit.group_id = crate::camp::GROUP_UNIT;
         o.cargo.push(unit);
         let (_, acts) = decide(&escort(), &o);
@@ -3602,7 +3602,7 @@ mod tests {
         field.group_id = crate::camp::GROUP_FIELD;
         let mut script = row(33, 5_012, 8, 5);
         script.group_id = crate::camp::GROUP_SCRIPT;
-        let mut unit = row(34, 5_011, 7, 5);
+        let mut unit = row(34, 990965011, 7, 5);
         unit.group_id = crate::camp::GROUP_UNIT;
         let kit = [field, script, unit];
         // Needed: kit, no lots.
@@ -3661,7 +3661,7 @@ mod tests {
                 hall: std::sync::Arc::new(crate::dev::DevHall::default()),
             }))
         };
-        let mut unit = row(34, 5_011, 7, 2);
+        let mut unit = row(34, 990965011, 7, 2);
         unit.group_id = crate::camp::GROUP_UNIT;
         let mut o = docked_cruiser(2);
         o.hangar = vec![unit];

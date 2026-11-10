@@ -415,11 +415,11 @@ mod tests {
     use crate::brain::{self, ActKind, Ball, Hostile, ParkView, Policy};
     use crate::drone_use::DroneAct;
 
-    const SHIP: i64 = 1_000_101;
-    const OTHER: i64 = 1_000_102;
+    const SHIP: i64 = 1_980_101;
+    const OTHER: i64 = 1_980_102;
     const NPC: i64 = 1_000_201;
     const NPC2: i64 = 1_000_202;
-    const STATION: i64 = 1_000_301;
+    const STATION: i64 = 1_980_301;
 
     fn ball(id: i64, x: f64) -> Ball {
         Ball {
@@ -442,7 +442,7 @@ mod tests {
     fn obs(now: Instant, scrambled: bool, on_grid: bool) -> Observation {
         let mut o = Observation::empty(now);
         o.place = brain::Place::InSpace {
-            system: 1_000_001,
+            system: 1_980_001,
             bound: true,
         };
         o.home = Some(STATION);

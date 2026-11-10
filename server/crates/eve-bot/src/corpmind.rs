@@ -3592,7 +3592,7 @@ mod tests {
     const ANN: i64 = 90_000_201;
     const BEN: i64 = 90_000_202;
     const CAS: i64 = 90_000_203;
-    const NPC: i64 = 1_000_044;
+    const NPC: i64 = 1_980_044;
     const C1: i64 = 98_000_201;
     const C2: i64 = 98_000_202;
     const AL: i64 = 99_000_201;

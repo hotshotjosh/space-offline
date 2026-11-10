@@ -915,7 +915,7 @@ mod tests {
     use crate::doctrine::testkit::*;
 
     const DAY: u64 = 86_400;
-    const SYS: i64 = 30_000_142;
+    const SYS: i64 = 30_990_142;
 
     fn clock() -> Clock {
         Clock { day_s: DAY }

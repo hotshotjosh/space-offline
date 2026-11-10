@@ -58,7 +58,7 @@ fn park() -> ParkView {
 fn scene(class: Class, j_space: bool, now: Instant) -> Observation {
     let mut o = Observation::empty(now);
     o.place = Place::InSpace {
-        system: 30_000_001,
+        system: 30_990_001,
         bound: true,
     };
     o.ship = Some(ShipInfo {

@@ -356,7 +356,7 @@ fn the_directional_scan_finds_ships_by_cone_and_the_sweep_counts_pilots() {
 
 /// Two systems with an invented gate pair, a station each: the same shape
 /// as the travel lane's fixture.
-const SYSTEM_B: i64 = 30_000_007;
+const SYSTEM_B: i64 = 30_990_007;
 const STATION_B: i64 = 60_900_007;
 const GATE_A: i64 = 50_900_007;
 const GATE_B: i64 = 50_900_008;

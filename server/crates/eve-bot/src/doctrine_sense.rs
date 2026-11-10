@@ -1487,7 +1487,7 @@ mod tests {
                 PyValue::List(vec![
                     attacker(970_560_002, G_ME, 970_510_009, 970_530_002),
                     // An NPC has no character and is no group.
-                    attacker(0, 1_000_001, 970_510_010, 970_530_002),
+                    attacker(0, 1_980_001, 970_510_010, 970_530_002),
                 ]),
             ),
             ("killBlob", PyValue::Bytes(blob.as_bytes().to_vec())),

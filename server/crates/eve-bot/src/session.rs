@@ -217,23 +217,23 @@ mod tests {
     fn a_dock_is_decoded_and_releases_the_park() {
         // The server's own `dock_change` shape: two keys, both halves.
         let f = frame(vec![
-            pair("stationid", PyValue::None, PyValue::Int(60_012_526)),
-            pair("solarsystemid", PyValue::Int(30_000_001), PyValue::None),
+            pair("stationid", PyValue::None, PyValue::Int(60_712_526)),
+            pair("solarsystemid", PyValue::Int(30_990_001), PyValue::None),
         ]);
         let c = SessionChange::from_frame(&f).expect("decodes");
-        assert_eq!(c.new_i64("stationid"), Some(60_012_526));
+        assert_eq!(c.new_i64("stationid"), Some(60_712_526));
         assert!(c.cleared("solarsystemid"));
         assert!(c.releases_park());
         assert!(c.moves_location());
 
         let mut view = SessionView::default();
         view.apply(&c);
-        assert_eq!(view.station_id(), Some(60_012_526));
+        assert_eq!(view.station_id(), Some(60_712_526));
         assert_eq!(view.solar_system_id(), None);
         assert_eq!(
             view.location_moniker(),
             Some(PyValue::Tuple(vec![
-                PyValue::Int(60_012_526),
+                PyValue::Int(60_712_526),
                 PyValue::Int(GROUP_STATION)
             ]))
         );
@@ -243,8 +243,8 @@ mod tests {
     fn a_jump_releases_the_park_and_a_board_does_not() {
         let jump = SessionChange::from_frame(&frame(vec![pair(
             "solarsystemid",
-            PyValue::Int(30_000_001),
-            PyValue::Int(30_000_003),
+            PyValue::Int(30_990_001),
+            PyValue::Int(30_990_003),
         )]))
         .expect("decodes");
         assert!(jump.releases_park());

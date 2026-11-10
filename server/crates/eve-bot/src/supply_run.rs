@@ -316,11 +316,11 @@ mod tests {
     use crate::verbs::BookOrder;
 
     // Invented ids only.
-    const HOME_SYS: i64 = 31_000_001;
-    const HIGH2: i64 = 31_000_002;
-    const LOW1: i64 = 31_000_003;
-    const NULL1: i64 = 31_000_004;
-    const NULL2: i64 = 31_000_005;
+    const HOME_SYS: i64 = 31_990_001;
+    const HIGH2: i64 = 31_990_002;
+    const LOW1: i64 = 31_990_003;
+    const NULL1: i64 = 31_990_004;
+    const NULL2: i64 = 31_990_005;
     const ST_HOME: i64 = 61_000_001;
     const ST_NULL: i64 = 61_000_004;
     const ST_HIGH: i64 = 61_000_002;

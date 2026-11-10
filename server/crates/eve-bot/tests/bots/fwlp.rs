@@ -428,7 +428,7 @@ fn a_plexer_with_no_office_is_refused_and_stays_unenlisted() {
 const FLIER: (i64, i64) = (90_000_841, 100_000_841);
 const WATCHER: (i64, i64) = (90_000_842, 100_000_842);
 /// Two systems with an invented gate pair, the second holding B's office.
-const FAR_SYSTEM: i64 = 30_000_841;
+const FAR_SYSTEM: i64 = 30_990_841;
 const FAR_STATION: i64 = 60_900_841;
 const GATE_NEAR: i64 = 50_900_841;
 const GATE_FAR: i64 = 50_900_842;

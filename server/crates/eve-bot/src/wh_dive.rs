@@ -582,8 +582,8 @@ mod tests {
 
     #[test]
     fn j_space_is_the_31_million_ids() {
-        assert!(in_j_space(31_000_001) && in_j_space(31_999_999));
-        assert!(!in_j_space(30_000_001) && !in_j_space(32_000_001));
+        assert!(in_j_space(31_990_001) && in_j_space(31_999_999));
+        assert!(!in_j_space(30_990_001) && !in_j_space(32_990_001));
     }
 
     /// The site budget fits inside the Sleepers' arrival delay, and the

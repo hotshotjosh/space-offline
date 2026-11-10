@@ -15,7 +15,7 @@ use std::time::Duration;
 const ALICE: i64 = 90_000_001;
 const ALICE_SHIP: i64 = 100_000_001;
 const A: i64 = 30_000_001;
-const B: i64 = 30_000_003;
+const B: i64 = 30_990_003;
 const PLANET_B: i64 = 40_000_102;
 
 fn start() -> SocketAddr {
@@ -23,7 +23,7 @@ fn start() -> SocketAddr {
     config.sandbox.characters = vec![pilot(ALICE, "Alice", ALICE_SHIP)];
     config.sandbox.celestials = eve_server::celestial::Catalogue::parse(&format!(
         "#system\t{A}\t20000001\t10000001\n\
-         #system\t{B}\t20000002\t10000002\n\
+         #system\t{B}\t20990002\t10990002\n\
          planet\t40000002\t11\t500.0\t100000000.0\t0.0\t0.0\t{A}\t0\t0\n\
          planet\t{PLANET_B}\t11\t500.0\t0.0\t100000000.0\t0.0\t{B}\t0\t0\n"
     ));

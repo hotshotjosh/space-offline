@@ -432,7 +432,7 @@ mod tests {
     fn space(foes: Vec<Foe>) -> Observation {
         let mut o = Observation::empty(Instant::now());
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(ShipInfo {
@@ -741,25 +741,25 @@ mod tests {
             Distress {
                 caller: ALICE,
                 corp: 98_000_001,
-                system: 30_000_001,
+                system: 30_990_001,
                 at: now,
                 taken: Vec::new(),
             },
         );
         // Another corp, another system, the caller itself: nothing.
-        assert_eq!(claim(&mut board, GUARD, 98_000_002, 30_000_001, now), None);
-        assert_eq!(claim(&mut board, GUARD, 98_000_001, 30_000_002, now), None);
-        assert_eq!(claim(&mut board, ALICE, 98_000_001, 30_000_001, now), None);
+        assert_eq!(claim(&mut board, GUARD, 98_000_002, 30_990_001, now), None);
+        assert_eq!(claim(&mut board, GUARD, 98_000_001, 30_990_002, now), None);
+        assert_eq!(claim(&mut board, ALICE, 98_000_001, 30_990_001, now), None);
         for g in 0..MAX_GUARDS as i64 {
             assert_eq!(
-                claim(&mut board, GUARD + g, 98_000_001, 30_000_001, now),
+                claim(&mut board, GUARD + g, 98_000_001, 30_990_001, now),
                 Some(ALICE)
             );
         }
-        assert_eq!(claim(&mut board, BOB, 98_000_001, 30_000_001, now), None);
+        assert_eq!(claim(&mut board, BOB, 98_000_001, 30_990_001, now), None);
         // A call goes stale.
         assert_eq!(
-            claim(&mut board, BOB, 98_000_001, 30_000_001, now + CALL_HOLDS),
+            claim(&mut board, BOB, 98_000_001, 30_990_001, now + CALL_HOLDS),
             None
         );
         assert!(board.is_empty());

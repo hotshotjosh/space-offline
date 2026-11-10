@@ -531,7 +531,7 @@ mod tests {
     use super::*;
 
     const ME: i64 = 90_000_201;
-    const SYS: i64 = 30_000_201;
+    const SYS: i64 = 30_990_201;
 
     fn view(value: f64, linked_by: Option<i64>) -> EssView {
         EssView {
@@ -690,7 +690,7 @@ mod tests {
         };
         let line = decision_line("Invented", SYS, &decide(&b), &b, Some(587));
         assert!(
-            line.starts_with("[ess] Invented: system 30000201 Skip(Hull)"),
+            line.starts_with("[ess] Invented: system 30990201 Skip(Hull)"),
             "{line}"
         );
         assert!(

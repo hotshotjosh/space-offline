@@ -34,7 +34,7 @@ const BOB: i64 = 90_000_202;
 const CAROL: i64 = 90_000_203;
 /// The sandbox home (`Character::default()`'s) and the high-sec system.
 const A: i64 = 30_000_001;
-const B: i64 = 30_000_003;
+const B: i64 = 30_990_003;
 const GATE_A: i64 = 50_000_201;
 const GATE_B: i64 = 50_000_202;
 /// An invented stargate type.

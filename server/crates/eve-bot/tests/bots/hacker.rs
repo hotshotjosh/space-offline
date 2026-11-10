@@ -206,7 +206,7 @@ fn a_hacker_scans_a_data_site_down_hacks_its_can_and_docks_again() {
 // the client's warp floor.
 
 /// The far system, and the invented gate pair.
-const FAR: i64 = 30_000_003;
+const FAR: i64 = 30_990_003;
 const GATE_HOME: i64 = 50_954_001;
 const GATE_FAR: i64 = 50_954_002;
 const GATE_TYPE: i64 = 990_541_001;

@@ -1258,8 +1258,8 @@ mod tests {
         let (a, b) = (S1, S2);
         let (ga, gb) = (gate_of(a, b), gate_of(b, a));
         let cat = Catalogue::parse(&format!(
-            "#system\t{a}\t20000001\t10000001\n\
-             #system\t{b}\t20000001\t10000001\n\
+            "#system\t{a}\t20990001\t10990001\n\
+             #system\t{b}\t20990001\t10990001\n\
              station\t69000001\t1\t500.0\t0.0\t0.0\t0.0\t{b}\t0\t0\n\
              gate\t{ga}\t1\t2473.0\t1.0e7\t0.0\t0.0\t{a}\t{gb}\t{b}\n\
              gate\t{gb}\t1\t2473.0\t0.0\t0.0\t1.0e7\t{b}\t{ga}\t{a}\n\
@@ -1498,8 +1498,8 @@ mod tests {
 
     #[test]
     fn a_system_name_is_read_back() {
-        let map = Map::new().with_name(30_000_777, "Testville");
-        assert_eq!(map.name_of(30_000_777), Some("Testville"));
+        let map = Map::new().with_name(30_990_777, "Testville");
+        assert_eq!(map.name_of(30_990_777), Some("Testville"));
         assert_eq!(map.name_of(1), None);
     }
 
@@ -1509,7 +1509,7 @@ mod tests {
     fn the_first_source_the_spendable_wallet_covers_is_taken() {
         let src = |station, price| Source {
             station,
-            system: 30_000_777,
+            system: 30_990_777,
             jumps: 1,
             price,
             units: 5,

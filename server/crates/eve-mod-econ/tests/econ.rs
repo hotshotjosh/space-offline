@@ -24,9 +24,9 @@ fn install() {
 
 const PILOT: i64 = 91_001;
 const STATION: i64 = 61_002;
-const CORP: i64 = 1_000_091;
+const CORP: i64 = 1_980_091;
 const WRECK_TYPE: i64 = 26_561;
-const SYSTEM: i64 = 30_000_142;
+const SYSTEM: i64 = 30_990_142;
 
 fn world() -> Registry {
     install();

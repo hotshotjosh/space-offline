@@ -822,7 +822,7 @@ mod tests {
     use super::*;
 
     fn spec_words() -> &'static str {
-        "spawn alpha red mine 2 all5 merlin 30000001"
+        "spawn alpha red mine 2 all5 merlin 30990001"
     }
 
     fn empty_hook() -> SpawnHook {
@@ -849,7 +849,7 @@ mod tests {
                 count: 2,
                 skills: "all5".into(),
                 ship: "merlin".into(),
-                system: Some(30_000_001),
+                system: Some(30_990_001),
                 tokens: Tokens::default(),
                 quarry: None,
                 fc: None,

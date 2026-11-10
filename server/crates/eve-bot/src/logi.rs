@@ -526,7 +526,7 @@ mod tests {
     use super::*;
     use crate::brain::{ActKind, Place, Policy, ShipInfo};
 
-    const STATION: i64 = 60_012_526;
+    const STATION: i64 = 60_712_526;
     const SHIP: i64 = 100_000_501;
     const REP_A: i64 = 100_000_502;
     const REP_B: i64 = 100_000_503;
@@ -586,7 +586,7 @@ mod tests {
     fn obs() -> Observation {
         let mut o = Observation::empty(Instant::now());
         o.place = Place::InSpace {
-            system: 30_000_001,
+            system: 30_990_001,
             bound: true,
         };
         o.ship = Some(ShipInfo {

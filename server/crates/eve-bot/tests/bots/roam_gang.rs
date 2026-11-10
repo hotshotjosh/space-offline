@@ -24,8 +24,8 @@ use eve_server::model::Character;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const SYSTEM_B: i64 = 30_000_017;
-const SYSTEM_C: i64 = 30_000_018;
+const SYSTEM_B: i64 = 30_990_017;
+const SYSTEM_C: i64 = 30_990_018;
 const STATION_C: i64 = 60_900_018;
 const GATE_AB: i64 = 50_900_017;
 const GATE_BA: i64 = 50_900_018;

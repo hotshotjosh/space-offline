@@ -19,7 +19,7 @@ const CAS: i64 = 90_000_402;
 const FRIEND: i64 = 90_000_411;
 const STRANGER: i64 = 90_000_412;
 const HELPER: i64 = 90_000_413;
-const NPC: i64 = 1_000_001;
+const NPC: i64 = 1_980_001;
 
 fn member(corp: i64) -> Member {
     Member {
@@ -506,10 +506,10 @@ fn each_tier_has_its_own_mail_and_only_the_allied_one_names_the_staging() {
         Stance5::Friendly,
         Stance5::Allied,
     ] {
-        let (title, body) = crate::mail::tier_text("Invented Corp", t, Some(30_000_999));
+        let (title, body) = crate::mail::tier_text("Invented Corp", t, Some(30_990_999));
         assert!(title.contains(t.name()), "{title}");
         assert!(body.len() <= crate::mail::MAX_TEXT, "{} chars", body.len());
-        assert_eq!(body.contains("30000999"), t == Stance5::Allied, "{t:?}");
+        assert_eq!(body.contains("30990999"), t == Stance5::Allied, "{t:?}");
         titles.insert(title);
     }
     assert_eq!(titles.len(), 5);
