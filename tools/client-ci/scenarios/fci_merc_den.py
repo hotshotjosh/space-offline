@@ -1409,7 +1409,7 @@ def eoci_main(EOCI_NAME):
     GROUP_HUB = 1012             # groupInfrastructureHub (sov_hub::GROUP_INFRASTRUCTURE_HUB)
     SKILL_DEN = 85233            # typeMercenaryDenManagementSkill [V]
     HAULERS = ('orca', 'obelisk', 'bestower', 'iteron mark v')
-    AGE_HOURS = 10
+    AGE_HOURS = 24    # anarchy unit 7200 s: 10 h is level 5 (stage 1 below 10); 24 h is level 12, stage 2 [V: merc_den.rs level/stage_of, content/sov/merc_dens.tsv]
     PUSH_MS = 30000
 
     def try_call(fn, *args, **kw):
