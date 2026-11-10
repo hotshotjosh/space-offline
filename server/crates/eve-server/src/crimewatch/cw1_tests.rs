@@ -1339,7 +1339,13 @@ fn clear_on_a_bot_is_refused_without_dev() {
 fn status_text_names_every_timer() {
     let mut reg = world(LOW);
     let calm = status_text(&reg, ALICE, T0);
-    for name in ["weapons Idle", "pvp Idle", "npc Idle", "criminal Idle", "flag none"] {
+    for name in [
+        "weapons Idle",
+        "pvp Idle",
+        "npc Idle",
+        "criminal Idle",
+        "flag none",
+    ] {
         assert!(calm.contains(name), "{calm}");
     }
     suspect(&mut reg, ALICE, T0);
@@ -1350,5 +1356,8 @@ fn status_text_names_every_timer() {
     let text = said(slash(&mut reg, Some(ALICE), &[]));
     assert!(text.starts_with(&format!("crimewatch {ALICE}:")), "{text}");
     assert!(said(slash(&mut reg, Some(ALICE), &["wipe"])).starts_with("usage:"));
-    assert_eq!(said(slash(&mut reg, Some(ALICE), &["status", "1"])), "no such character");
+    assert_eq!(
+        said(slash(&mut reg, Some(ALICE), &["status", "1"])),
+        "no such character"
+    );
 }
