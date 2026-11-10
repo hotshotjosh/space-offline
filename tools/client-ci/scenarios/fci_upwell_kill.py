@@ -1747,10 +1747,19 @@ def eoci_main(EOCI_NAME):
             check('2. session.solarsystemid2 is the system (in space in the ship)',
                   sess_attr('solarsystemid2') == system,
                   '%s vs %s' % (text(sess_attr('solarsystemid2')), text(system)))
+            # The server's SetState for the new ego arrives after the session
+            # change: read until the ego ball is a ship, not once.
+            # [V: run 2026-11-10 client2.log:41612 (read) vs :42807 (SetState)]
+            def ego_slim():
+                p2, e2 = get_ego_ball()
+                sl = p2.slimItems.get(p2.ego) if p2 is not None else None
+                return (p2, sl) if sl is not None and getattr_safe(
+                    sl, 'categoryID') == const_of('categoryShip', 6) else None
+            ego_ok, _w = wait_for(ego_slim, timeout_ms=30000)
             park2, ego = get_ego_ball()
-            eslim = get_michelle().GetItem(ego) if ego is not None else None
+            eslim = park2.slimItems.get(park2.ego) if park2 is not None else None
             check('2. B\'s ego ball is a ship',
-                  park2 is not None and eslim is not None
+                  bool(ego_ok) and park2 is not None and eslim is not None
                   and getattr_safe(eslim, 'categoryID') == const_of('categoryShip', 6),
                   'category %s' % text(getattr_safe(eslim, 'categoryID')))
             # The pilot put out is told of the death too: the hull is not in
