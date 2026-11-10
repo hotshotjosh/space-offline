@@ -1602,12 +1602,44 @@ def eoci_main(EOCI_NAME):
             return
         rat_type = getattr_safe(found[0][1], 'typeID')
         before = set([r for r, _s in found])
-        gm_check('GM: %d more rats of the belt rats\' own type' % MAX_RUNS,
-                 '/entity deploy %d %s' % (MAX_RUNS, text(rat_type)))
-        fresh, waited = wait_for(
-            lambda: [r for r, _s in rats(park) if r not in before] if
-            len([r for r, _s in rats(park) if r not in before]) >= MAX_RUNS else None,
-            timeout_ms=30000, step_ms=500)
+        # With --dev (/devskills all5) a Damavik kills a belt rat in about three cycles, so
+        # eight hits need a tougher target [V ci-1111 trig_player: best run 3 hits in every
+        # run].  Deploy the toughest NPC of the belt rats' own group instead: rank the
+        # group by shield + armour + hull (263, 265, 9), read in the client, no ids in
+        # this file.  A type the server will not deploy falls through to the next one,
+        # and the last resort is the belt rats' own type.
+        ev = __import__('evetypes')
+        okg, grp = safe(lambda: ev.GetGroupID(rat_type))
+        ranked = []
+        if okg:
+            okt, tids = safe(lambda: list(ev.GetTypeIDsByGroup(grp)))
+            for t in (tids if okt else []):
+                hp = sum([sheet_attr(t, a) or 0 for a in (263, 265, 9)])
+                ranked.append((hp, t))
+        ranked.sort(reverse=True)
+        tries = [t for _hp, t in ranked[:4]]
+        if rat_type not in tries:
+            tries.append(rat_type)
+        fresh, waited, target_type = None, 0, rat_type
+        replies = []
+        for cand in tries:
+            okd, reply = gm('/entity deploy %d %s' % (MAX_RUNS, text(cand)))
+            replies.append(reply[:80])
+            if not (okd and reply.lower().startswith('deployed')):
+                say('deploy of type %s refused: %s' % (text(cand), reply[:120]))
+                continue
+
+            def mine(cand=cand):
+                got = [r for r, sl in rats(park) if r not in before
+                       and getattr_safe(sl, 'typeID') == cand]
+                return got if len(got) >= MAX_RUNS else None
+            fresh, waited = wait_for(mine, timeout_ms=15000, step_ms=500)
+            if fresh:
+                target_type = cand
+                break
+        say('target type %s (belt rat type %s, group %s): %s; replies %s' % (
+            text(target_type), text(rat_type), text(grp if okg else None),
+            text([(int(h), t) for h, t in ranked[:4]]), text(replies)))
         precondition('the deployed rats are in the park', bool(fresh),
                      '%s after %s ms' % (text(fresh), text(waited)))
         if not fresh:
