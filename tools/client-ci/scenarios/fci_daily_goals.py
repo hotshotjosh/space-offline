@@ -1491,9 +1491,22 @@ def eoci_main(EOCI_NAME):
         progressed = []
         completed = []
         redeemed = []
-        msig.on_goal_progressed_internal.connect(lambda gid, p: progressed.append((gid, p)))
-        msig.on_goal_completed_internal.connect(lambda gid: completed.append(gid))
-        msig.on_goal_redeemed_internal.connect(lambda gid: redeemed.append(gid))
+        # Signal.connect refuses lambdas (signals/signal.py:48-49) and holds bound methods
+        # weakly, so the recorder must stay referenced in this local until the body ends
+        # [V ci-1110 daily_goals: 'Signal cannot connect lambda methods'].
+        class Recorder(object):
+            def on_progressed(self, gid, p):
+                progressed.append((gid, p))
+
+            def on_completed(self, gid):
+                completed.append(gid)
+
+            def on_redeemed(self, gid):
+                redeemed.append(gid)
+        recorder = Recorder()
+        msig.on_goal_progressed_internal.connect(recorder.on_progressed)
+        msig.on_goal_completed_internal.connect(recorder.on_completed)
+        msig.on_goal_redeemed_internal.connect(recorder.on_redeemed)
 
         # 1. the day's goals come through the gateway and parse (trap 1: a short
         # uuid raises inside get_current_goals and the whole fetch fails)
