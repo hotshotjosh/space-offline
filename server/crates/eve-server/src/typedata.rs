@@ -695,18 +695,26 @@ impl Installed {
             // may publish a group-186 type, so `by_name` skips the group and
             // `grantable_from` refuses it by id too. The abyssal
             // environment groups (1971, 1981, 1983, 1991) stay balls only.
+            // The skyhook silo (group 4745, category 2) is a store item too:
+            // `skyhook_theft` creates it in space, and `Edit::Create` resolves
+            // its type here. Like a wreck it is never granted (kept out of
+            // `by_name`).
             if matches!(
                 r.category_id,
                 CATEGORY_SKILL | CATEGORY_ENTITY | CATEGORY_CELESTIAL | CATEGORY_STATION
             ) && r.group_id != crate::mining::GROUP_HARVESTABLE_CLOUD
                 && !crate::ship_config::CONTAINER_GROUPS.contains(&r.group_id)
                 && r.group_id != crate::combat::GROUP_WRECK
+                && r.group_id != crate::skyhook_theft::GROUP_SILO
             {
                 continue;
             }
             let a = |id: i64| table.attribute(r.type_id, id);
             let name = intern(&r.name);
-            if r.published && r.group_id != crate::combat::GROUP_WRECK {
+            if r.published
+                && r.group_id != crate::combat::GROUP_WRECK
+                && r.group_id != crate::skyhook_theft::GROUP_SILO
+            {
                 by_name
                     .entry(r.name.to_ascii_lowercase())
                     .or_insert(items.len());
@@ -719,7 +727,10 @@ impl Installed {
                 // A ship or a blueprint is one object; everything else here
                 // stacks. The same split `item::SPAWNABLE` makes, row for row.
                 singleton: matches!(r.category_id, CATEGORY_SHIP | CATEGORY_BLUEPRINT)
-                    || r.group_id == crate::combat::GROUP_WRECK,
+                    || r.group_id == crate::combat::GROUP_WRECK
+                    // [I] one silo per window, with contents. Falsifier: the
+                    // client lists the silo through invCache with a quantity row.
+                    || r.group_id == crate::skyhook_theft::GROUP_SILO,
                 volume: r.volume,
                 capacity: r.capacity,
             });
@@ -1197,9 +1208,11 @@ pub fn own_attribute_in(content: &Content, type_id: i64, attribute_id: i64) -> O
 
 fn grantable_from<'t>(t: &'t Installed, needle: &str) -> Option<&'t ItemType> {
     match needle.parse::<i64>() {
-        Ok(id) => t
-            .item(id)
-            .filter(|i| t.is_published(i.type_id) && i.group_id != crate::combat::GROUP_WRECK),
+        Ok(id) => t.item(id).filter(|i| {
+            t.is_published(i.type_id)
+                && i.group_id != crate::combat::GROUP_WRECK
+                && i.group_id != crate::skyhook_theft::GROUP_SILO
+        }),
         Err(_) => t.item_named(needle),
     }
 }
@@ -1741,6 +1754,26 @@ type\t990186003\t990772\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tFixture Module
             assert!(grantable_from(&i, &id.to_string()).is_none(), "group {g}");
             assert!(i.table().get(id).is_some(), "group {g} stays in the table");
         }
+    }
+
+    /// The skyhook silo (group 4745, category 2) is a singleton store item and
+    /// is never granted by name. Invented rows.
+    #[test]
+    fn a_silo_group_type_is_a_singleton_item_never_granted_by_name() {
+        let i = Installed::build(
+            Table::parse(&format!(
+                "type\t990910002\t{g}\t{c}\t1\t1\t100.0\t0.0\t1000.0\t700.0\t0\t\t\tFixture Silo\n",
+                g = crate::skyhook_theft::GROUP_SILO,
+                c = CATEGORY_CELESTIAL
+            ))
+            .unwrap(),
+        );
+        let t = i.item(990_910_002).expect("a silo is an item");
+        assert!(t.singleton);
+        assert!(
+            i.item_named("Fixture Silo").is_none(),
+            "never granted by name"
+        );
     }
 
     /// ABYSS-TD: a wreck is never granted, even when the bundle publishes

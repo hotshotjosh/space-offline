@@ -1004,7 +1004,7 @@ mod tests {
         c.insert("sov stars", fixture_stars());
         let text = format!(
             "{}type\t{SKYHOOK_TYPE}\t{}\t46\t1\t1\t100.0\t0.0\t1000.0\t3000.0\t0\t\t\tInvented Skyhook\n\
-             type\t{SILO_TYPE}\t{GROUP_SILO}\t46\t1\t1\t100.0\t0.0\t1000.0\t700.0\t0\t\t\tInvented Silo\n\
+             type\t{SILO_TYPE}\t{GROUP_SILO}\t2\t1\t1\t100.0\t0.0\t1000.0\t700.0\t0\t\t\tInvented Silo\n\
              type\t{ROOMY_HULL}\t25\t6\t1\t1\t100.0\t5000.0\t1000.0\t20.0\t0\t\t\tInvented Roomy Hull\n\
              type\t{TINY_HULL}\t25\t6\t1\t1\t100.0\t120.0\t1000.0\t20.0\t0\t\t5646=30.0\tInvented Tiny Hull\n\
              type\t{FIXTURE_REAGENT_TYPE}\t{}\t43\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Reagent\n",
