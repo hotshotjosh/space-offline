@@ -556,13 +556,27 @@ pub fn component_activate(sk: &Skyhook) -> PyValue {
 }
 
 /// The extra slim keys (RE §3.4) **[V]**: `planetID`, `skyhook_state`,
-/// `skyhook_timer` (none), `component_activate` and `allianceID` (the
+/// `skyhook_timer` (none), `dunRotation` (zeros **[A]**: the client then builds a
+/// rotation adapter; falsifier: the traceback persists), `component_activate` and `allianceID` (the
 /// cleanup window compares it with the session's, `sovSvc.py:408`).
 pub fn extras_of(reg: &Registry, sk: &Skyhook) -> Vec<(&'static str, PyValue)> {
     vec![
         ("planetID", PyValue::Int(sk.planet)),
         ("skyhook_state", PyValue::Int(i64::from(slim_state(sk)))),
         ("skyhook_timer", PyValue::None),
+        // BasicOrbital.SetStaticRotation leaves `rotationCurve` None without
+        // it, and OrbitalSkyhook._UpdateModel (called from OnLoadObject:171)
+        // reads `.value` on that [V] (basicOrbital.py:14,
+        // spaceObject.py:505-524,
+        // spacecomponents/client/components/orbitalSkyhook.py:191-192).
+        (
+            "dunRotation",
+            PyValue::Tuple(vec![
+                PyValue::Real(0.0),
+                PyValue::Real(0.0),
+                PyValue::Real(0.0),
+            ]),
+        ),
         ("component_activate", component_activate(sk)),
         (
             "allianceID",

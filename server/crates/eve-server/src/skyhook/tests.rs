@@ -1581,6 +1581,22 @@ fn slash_age_on_a_skyhook_that_is_not_running_credits_nothing() {
 }
 
 #[test]
+fn the_slim_extras_carry_a_dun_rotation_of_three_reals() {
+    let (mut reg, ..) = world();
+    let sk = stand(&mut reg, SK, P_REAGENT, CORP, true, NOW);
+    let extras = extras_of(&reg, &sk);
+    let (_, v) = extras
+        .iter()
+        .find(|(k, _)| *k == "dunRotation")
+        .expect("a dunRotation key");
+    let PyValue::Tuple(t) = v else {
+        panic!("a tuple, got {v:?}");
+    };
+    assert_eq!(t.len(), 3);
+    assert!(t.iter().all(|x| matches!(x, PyValue::Real(_))));
+}
+
+#[test]
 fn slash_info_prints_the_rows_last_cycle_and_whether_it_runs() {
     let (mut reg, _, d) = world();
     let r = reagent();
