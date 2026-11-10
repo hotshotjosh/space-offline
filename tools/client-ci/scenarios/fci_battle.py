@@ -1662,7 +1662,10 @@ def eoci_main(EOCI_NAME):
         precondition('a null-sec system with a station seated us', system is not None, how)
         if system is None:
             return None, None
-        docked, waited = wait_for(lambda: getattr_safe(sess, 'solarsystemid') == system
+        # A docked session carries `solarsystemid2` and `stationid` but no
+        # `solarsystemid` (ci-1111 client.log: the /devhome session change moved
+        # only solarsystemid2 and stationid).
+        docked, waited = wait_for(lambda: getattr_safe(sess, 'solarsystemid2') == system
                                   and getattr_safe(sess, 'stationid'), timeout_ms=60000, step_ms=500)
         precondition('docked in the chosen system', bool(docked), 'after %s ms' % text(waited))
         home['station'] = getattr_safe(sess, 'stationid')
