@@ -208,7 +208,7 @@ pub(crate) fn alliance_registry(
 // /sov
 // ---------------------------------------------------------------------------
 
-const USAGE: &str = "usage: /sov set <systemID|here> <allianceID|shortName|none> | /sov clear <systemID|here> | /sov capture <systemID|here> <allianceID|shortName> | /sov info [systemID|here] | /sov index [systemID|here] [military industrial] | /sov capital <systemID|here> [now] | /sov entosis [systemID|here] | /sov window [systemID|here] | /sov reinforce <systemID|here> [now] | /sov resolve <systemID|here> attackers|defenders | /sov prime <allianceID|shortName> <hour> | /sov nodes [systemID|here] | /sov nodes spawn [systemID|here] | /sov nodes capture <nodeID> attackers|defenders | /sov reagents <systemID|here> <typeID|ice|lava> <n> | /sov age fuel <systemID|here> <hours> | /sov age claim <systemID|here> <days> | /sov upgrade <systemID|here> list | add <typeID> [offline] | clear";
+const USAGE: &str = "usage: /sov set <systemID|here> <allianceID|shortName|none> | /sov clear <systemID|here> | /sov capture <systemID|here> <allianceID|shortName> | /sov info [systemID|here] | /sov index [systemID|here] [military industrial] | /sov capital <systemID|here> [now] | /sov entosis [systemID|here] | /sov window [systemID|here] | /sov reinforce <systemID|here> [now] | /sov resolve <systemID|here> attackers|defenders | /sov prime <allianceID|shortName> <hour> | /sov nodes [systemID|here] | /sov nodes spawn [systemID|here] | /sov nodes capture <nodeID> attackers|defenders | /sov reagents <systemID|here> <typeID|ice|lava> <n> | /sov age fuel <systemID|here> <hours> | /sov age claim <systemID|here> <days> | /sov go <systemID|here> | /sov upgrade <systemID|here> list | add <typeID> [offline] | clear";
 
 fn parse_system(reg: &Registry, actor: Option<i64>, word: &str) -> Result<i64, String> {
     if word == "here" {
@@ -354,6 +354,11 @@ pub(crate) fn slash(
         }
         ["clear", system] => match parse_system(reg, actor, system) {
             Ok(system) => apply(reg, system, None),
+            Err(e) => format!("{USAGE} -- {e}"),
+        },
+        // `/sov go <system|here>`: beside the system's hub.
+        ["go", system] => match parse_system(reg, actor, system) {
+            Ok(system) => crate::sov_hub::go(reg, actor, system),
             Err(e) => format!("{USAGE} -- {e}"),
         },
         ["info"] => match parse_system(reg, actor, "here") {

@@ -231,6 +231,68 @@ pub fn put(d: &mut Deltas, h: &Hub) {
     );
 }
 
+/// How far off the hub's surface `/sov go` leaves the ship, in metres.
+pub const GO_GAP: f64 = 1_000.0;
+
+/// `/sov go <system|here>`: put `actor`'s ship [`GO_GAP`] off the surface of
+/// the hub in `system`, at rest, as `/skyhook go` does (the same ball update:
+/// position, velocity zero, stop). Lets a GM stand where the hub's fuel bay
+/// and upgrade window take items without flying the 50 km from the sun.
+pub fn go(reg: &mut Registry, actor: Option<i64>, system: i64) -> String {
+    let Some(actor) = actor else {
+        return "this needs a pilot".to_owned();
+    };
+    let Some(hub) = all(reg.deltas())
+        .into_iter()
+        .find(|h| h.system_id == system)
+    else {
+        return format!("system {system} has no hub");
+    };
+    reg.advance_character(actor);
+    let Some(here) = reg.roster().get(actor).copied() else {
+        return "you are not in space".to_owned();
+    };
+    if here.solar_system_id != system {
+        return format!("you are not in system {system}");
+    }
+    if here.motion.warp_active() {
+        return "you are in warp".to_owned();
+    }
+    let hull = crate::destiny::hull::of_in(
+        reg.content(),
+        reg.character(actor).map_or(0, |c| c.ship_type_id),
+    );
+    let point = [
+        hub.position[0],
+        hub.position[1],
+        hub.position[2] + hub_radius(reg.content()) + f64::from(hull.radius) + GO_GAP,
+    ];
+    let actions = vec![
+        crate::destiny::Action::SetBallPosition {
+            ball: here.ship_id,
+            point,
+        },
+        crate::destiny::Action::SetBallVelocity {
+            ball: here.ship_id,
+            velocity: [0.0; 3],
+        },
+        crate::destiny::Action::Stop { ball: here.ship_id },
+    ];
+    if let Some(p) = reg.roster_mut().get_mut(actor) {
+        for action in &actions {
+            p.motion.after(*action);
+        }
+    }
+    let stamp = reg.next_destiny_stamp();
+    let mut to = vec![actor];
+    to.extend(reg.roster().others_in_system(system, actor));
+    if let Some(update) = crate::destiny::ActionUpdate::new(to, stamp, actions) {
+        reg.push(update);
+    }
+    crate::grid::reconcile_in(reg, system);
+    format!("moved you to hub {}", hub.hub_id)
+}
+
 // ---------------------------------------------------------------------------
 // Placement and the ball
 // ---------------------------------------------------------------------------
@@ -1536,6 +1598,60 @@ mod tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// `/sov go` stands a pilot 1 km off the hub's surface from a million
+    /// metres away, at rest, and refuses a system without a hub.
+    #[test]
+    fn go_puts_the_ship_beside_the_hub_at_rest() {
+        let (mut reg, _a, _d) = world();
+        let hub_id = launched(&mut reg);
+        let hub = by_id(reg.deltas(), hub_id).expect("the hub");
+        place_at(&mut reg, ALICE, off(hub.position, [0.0, 0.0, 1_000_000.0]));
+        let out = go(&mut reg, Some(ALICE), SYSTEM);
+        assert!(out.contains(&hub_id.to_string()), "{out}");
+        let here = reg.roster().get(ALICE).copied().expect("in space");
+        let hull = crate::destiny::hull::of_in(
+            reg.content(),
+            reg.character(ALICE).expect("a pilot").ship_type_id,
+        );
+        let gap = crate::space_state::distance(here.motion.position, hub.position)
+            - hub_radius(reg.content())
+            - f64::from(hull.radius);
+        assert!((gap - GO_GAP).abs() < 1.0, "{gap} m from the surface");
+        assert_eq!(here.motion.velocity, [0.0; 3], "at rest");
+        assert!(go(&mut reg, Some(ALICE), SYSTEM + 1).contains("no hub"));
+        assert!(go(&mut reg, None, SYSTEM).contains("pilot"));
+    }
+
+    /// A ship in warp is not moved: `/sov go` refuses as the bay does.
+    #[test]
+    fn go_refuses_a_ship_in_warp() {
+        let (mut reg, _a, _d) = world();
+        let hub_id = launched(&mut reg);
+        let hub = by_id(reg.deltas(), hub_id).expect("the hub");
+        let far = off(hub.position, [0.0, 0.0, 1_000_000.0]);
+        place_at(&mut reg, ALICE, far);
+        reg.roster_mut()
+            .get_mut(ALICE)
+            .expect("in space")
+            .motion
+            .mode = crate::destiny::Mode::Warp {
+            goto: [1.0e30, 0.0, 0.0],
+            effect_stamp: 0,
+            total_distance: 1.0e30,
+            stop_distance: 0.0,
+            warp_factor: 4_000,
+        };
+        assert!(
+            reg.roster()
+                .get(ALICE)
+                .expect("in space")
+                .motion
+                .warp_active()
+        );
+        let out = go(&mut reg, Some(ALICE), SYSTEM);
+        assert!(out.contains("warp"), "{out}");
     }
 
     /// #258, the closure's half: a removal the closure itself pushes is
