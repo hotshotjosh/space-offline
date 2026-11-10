@@ -12,11 +12,14 @@
 
 One client, GM.  The character founds (or already has) an alliance, goes to a
 null-sec system, claims it with `/sov set here`, puts reagents in the hub, and
-makes two upgrade items it picks BY READING `GetDefinitions` in the client (no
-type ids in this file): A burns a reagent and fits the system's power, B asks
-for more than is left beside A.  Then, through `sovHubSvc`:
+makes the upgrade items it picks BY READING `GetDefinitions` in the client (no
+type ids in this file): A burns a reagent and fits the system's power; filler
+upgrades (distinct exclusive groups, the other reagent) are installed with it until
+B, a burning upgrade, asks for more power or workforce than is left (the authored
+table has no single upgrade above the system's power, so B cannot be "big" alone).  Then, through `sovHubSvc`:
 
-1. `SaveUpgradeConfiguration(hub, [itemA], [(typeA, True)])` -> `[(typeA, ONLINE)]`
+1. `SaveUpgradeConfiguration(hub, [itemA, fillers...], [(typeA, True), fillers...])` ->
+   all ONLINE, in order
    (fails on the empty answer, which gives `[]`);
 2. item A is gone from the cargo hold (fails when nothing was consumed);
 3. the client's own rule agrees: a `HubController` for the hub, its simulated
@@ -28,7 +31,7 @@ for more than is left beside A.  Then, through `sovHubSvc`:
    saved OFFLINE, else LOW would start it free; fails when the server ignores the budget);
 5. the hub's fuel record shows A's consumption as `burned_per_hour` (fails when
    burns are not set);
-6. `UninstallUpgrade((hub, typeB))` -> only A is left;
+6. `UninstallUpgrade((hub, typeB))` -> only A and the fillers are left;
 8. (SOV-UPG-2, #80) with A, a threat-detection upgrade (chosen by the site-distribution
    attribute 1695 or its name, not by group 4768, which holds the Exploration Detector too), ONLINE, the Agency's
    `GetCombatAnomalyInstances` lists more combat anomalies for the system than it did before
@@ -1586,24 +1589,74 @@ def eoci_main(EOCI_NAME):
         if not burners:
             return
         a = burners[0]
-        bigs = sorted([d for d in defs if d.type_id != a.type_id and not d.power_produced
-                       and d.mutually_exclusive_group != a.mutually_exclusive_group
-                       and d.power + a.power > budget], key=lambda d: d.power)
-        precondition('GetDefinitions gave an upgrade that does not fit beside the first',
-                     bool(bigs), 'budget %s, first needs %s' % (text(budget), text(a.power)))
+        # B must not fit beside what is installed, in power or in workforce.  The
+        # authored table tops out at 200 power (content/sov/upgrades.tsv), below what
+        # the system gives (275 in the 2026-11-10 run), so no single upgrade is "too
+        # big" beside A.  Install FILLER upgrades first (each in an exclusive group of
+        # its own, burning the other reagent than A so A's burn stays alone on its
+        # record) until some burning upgrade of an unused group no longer fits; that
+        # one is B.  The fillers are derived from the definitions; no ids in this file.
+        used_groups = set([a.mutually_exclusive_group])
+        room = {'p': budget - a.power, 'w': wf_have - (a.workforce or 0)}
+        fuel_cost = {}
+        fillers = []
+
+        def fits(d):
+            return d.power <= room['p'] and (d.workforce or 0) <= room['w']
+
+        def too_big():
+            return sorted([d for d in defs if d.type_id != a.type_id and d.fuel_type_id
+                           and not d.power_produced
+                           and d.mutually_exclusive_group not in used_groups
+                           and not fits(d)], key=lambda d: (d.power, d.type_id))
+        for _i in range(30):
+            if too_big():
+                break
+            cands = [d for d in defs if d.fuel_type_id and d.fuel_type_id != a.fuel_type_id
+                     and d.power and not d.power_produced
+                     and d.mutually_exclusive_group not in used_groups and fits(d)
+                     and d.startup_cost < REAGENTS // 2
+                     and fuel_cost.get(d.fuel_type_id, 0) + d.startup_cost + 1 <= REAGENTS]
+            if not cands:
+                break
+            f = max(cands, key=lambda d: (d.power, -d.type_id))
+            fillers.append(f)
+            used_groups.add(f.mutually_exclusive_group)
+            room['p'] -= f.power
+            room['w'] -= (f.workforce or 0)
+            fuel_cost[f.fuel_type_id] = fuel_cost.get(f.fuel_type_id, 0) + f.startup_cost + 1
+        bigs = too_big()
+        precondition('GetDefinitions gave an upgrade that does not fit beside the first '
+                     'and the fillers',
+                     bool(bigs), 'budget %s workforce %s, A needs %s, %d filler(s) room %s power %s workforce' % (
+                         text(budget), text(wf_have), text(a.power), len(fillers),
+                         text(room['p']), text(room['w'])))
         if not bigs:
             return
         b = bigs[0]
+        base_want = [(a.type_id, ONLINE)] + [(f.type_id, ONLINE) for f in fillers]
+        base_cfg = [(a.type_id, True)] + [(f.type_id, True) for f in fillers]
 
-        ok, rep = gm('/sov reagents here %d %d' % (a.fuel_type_id, REAGENTS))
+        reagent_types = [a.fuel_type_id] + sorted(set(f.fuel_type_id for f in fillers))
+        ok = True
+        rep = ''
+        for rt in reagent_types:
+            ok_r, rep_r = gm('/sov reagents here %d %d' % (rt, REAGENTS))
+            ok = ok and ok_r
+            rep = rep_r if not ok_r else rep
         precondition('the hub holds reagents (/sov reagents)', ok, rep[:200])
-        for d in (a, b):
+        for d in [a] + fillers + [b]:
             gm('/createitem %d 1' % d.type_id)
         item_a, _w = wait_for(lambda: cargo_item(a.type_id), timeout_ms=20000, step_ms=500)
+        item_fs = []
+        for f in fillers:
+            it, _w = wait_for(lambda: cargo_item(f.type_id), timeout_ms=20000, step_ms=500)
+            item_fs.append(it)
         item_b, _w = wait_for(lambda: cargo_item(b.type_id), timeout_ms=20000, step_ms=500)
-        precondition('both upgrade items are in the ship', bool(item_a) and bool(item_b),
-                     'A %s B %s' % (text(item_a), text(item_b)))
-        if not (item_a and item_b):
+        precondition('all the upgrade items (A, %d filler(s), B) are in the ship' % len(fillers),
+                     bool(item_a) and bool(item_b) and all(item_fs),
+                     'A %s fillers %s B %s' % (text(item_a), text(item_fs), text(item_b)))
+        if not (item_a and item_b and all(item_fs)):
             return
 
         def installed_now():
@@ -1619,11 +1672,12 @@ def eoci_main(EOCI_NAME):
         precondition('A is a threat-detection upgrade (distribution attribute or name)',
                      is_threat_upgrade(a.type_id), 'A is type %s' % text(a.type_id))
 
-        # 1. install A online: the answer is the state, not the empty list.
-        ok, result = safe_pair(lambda: svc.SaveUpgradeConfiguration(hub_id, [item_a], [(a.type_id, True)]))
+        # 1. install A (and the fillers) online: the answer is the state, not the empty list.
+        ok, result = safe_pair(lambda: svc.SaveUpgradeConfiguration(
+            hub_id, [item_a] + item_fs, base_cfg))
         got = [(x.upgrade_type_id, x.power_state) for x in result] if ok else result
-        check('SaveUpgradeConfiguration answers the installed upgrade ONLINE',
-              ok and got == [(a.type_id, ONLINE)], text(got))
+        check('SaveUpgradeConfiguration answers the installed upgrades ONLINE',
+              ok and got == base_want, text(got))
 
         # 2. the item was consumed.
         sleep_ms(1500)
@@ -1654,14 +1708,14 @@ def eoci_main(EOCI_NAME):
 
         # 4. B online beside A: B reads LOW, A stays ONLINE.
         ok, result = safe_pair(lambda: svc.SaveUpgradeConfiguration(
-            hub_id, [item_b], [(a.type_id, True), (b.type_id, True)]))
+            hub_id, [item_b], base_cfg + [(b.type_id, True)]))
         now_list, _raw = installed_now()
         # A slot that owes a reagent startup and would end LOW is saved OFFLINE (a
         # LOW slot would later go ONLINE without paying it); a power-only one stays LOW.
         b_want = OFFLINE if (b.fuel_type_id and b.startup_cost) else LOW
-        check('B reads %s (no power left) and A stays ONLINE'
+        check('B reads %s (no power or workforce left) and A stays ONLINE'
               % ('OFFLINE, it owes a startup' if b_want == OFFLINE else 'LOW'),
-              ok and now_list == [(a.type_id, ONLINE), (b.type_id, b_want)],
+              ok and now_list == base_want + [(b.type_id, b_want)],
               '%s / %s' % (text(now_list), text(result) if not ok else ''))
 
         # 5. the burn of A is on the hub's fuel record.
@@ -1675,7 +1729,7 @@ def eoci_main(EOCI_NAME):
         ok, err = safe_pair(lambda: svc.UninstallUpgrade((hub_id, b.type_id)))
         left, _raw = installed_now()
         check('UninstallUpgrade removes B and leaves A',
-              ok and left == [(a.type_id, ONLINE)], '%s %s' % (text(left), text(err) if not ok else ''))
+              ok and left == base_want, '%s %s' % (text(left), text(err) if not ok else ''))
 
         # 8. A is ONLINE and the site population runs: the Agency lists more
         # combat anomalies here than before step 1 (the population re-reads a live
