@@ -1573,6 +1573,13 @@ def eoci_main(EOCI_NAME):
                     moved += 1
                 elif first_fail is None:
                     first_fail = text(v)[:200]
+            # the Add reply goes out before the OnItemChange pushes (dispatch.rs:80-93,
+            # 2186-2189), so a list in the same millisecond still shows the stacks:
+            # poll [V ci-1110 belt_combat: listed in the Add's own millisecond].
+            def wreck_empty():
+                ok3, rows3 = safe(lambda: inv.GetInventoryFromId(wreck).List())
+                return (ok3 and not rows3) or None
+            wait_for(wreck_empty, timeout_ms=5000, step_ms=250)
             ok, left = safe(lambda: inv.GetInventoryFromId(wreck).List())
             check('Loot All empties the wreck', ok and not left,
                   'moved %d stack(s); wreck still lists %s; first failure %s'
