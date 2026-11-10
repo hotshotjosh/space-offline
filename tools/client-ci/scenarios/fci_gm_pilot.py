@@ -1440,6 +1440,17 @@ def eoci_main(EOCI_NAME):
     def eoci_body():
         mark = log_mark()
         sess = builtin('session')
+        # The character starts in its capsule, and a pod death makes no wreck by design
+        # (combat.rs:330, damage.rs:1018-1031), so board a hull first: /suicide must kill a ship.
+        rifter = type_ids_named('rifter', exact=True)
+        precondition('the client knows the Rifter', bool(rifter), text(rifter))
+        if not rifter:
+            return
+        gm_check('GM: /createitem rifter', '/createitem rifter', expect=['created'])
+        ok, detail = board_ship(rifter[0])
+        check('boarded the Rifter', ok, detail)
+        if not ok:
+            return
         undocked, detail = undock()
         check('undocked into space', undocked, detail)
         if not undocked:
@@ -1458,9 +1469,12 @@ def eoci_main(EOCI_NAME):
         ok, reply = gm_info('/who')
         n = None
         low = reply.lower()
-        if ' online' in low:
-            head = low.split(' online')[0].split()[-1]
-            n = int(head) if head.isdigit() else None
+        # the reply is a CustomInfo repr whose text starts '<n> online (...)'; the token before
+        # ' online' is the repr's quote and digit ("'1"), so match the digits [V ci-1110 gm_pilot]
+        import re
+        m_online = re.search(r'(\d+) online', low)
+        if m_online:
+            n = int(m_online.group(1))
         check('/who lists the pilot and counts at least one online',
               ok and bool(name) and name.lower() in low and n is not None and n >= 1,
               '/who -> %s' % reply[:300])
