@@ -1446,8 +1446,12 @@ def eoci_main(EOCI_NAME):
                            == const_of('categoryEntity', CATEGORY_ENTITY))
 
     def current_5804(module_id):
+        # In space the accurate getter reads the godma item, which the server's pushes feed;
+        # the plain getter reads the dogma-location copy and drops them [V client
+        # dogma/clientDogmaLocation.py:421-427; ci-1110 trig_player: godma showed 5804 rising
+        # from 0 while the plain read stayed 0].  The module tooltip reads it the same way.
         loc = dogma_loc()
-        ok, v = safe(lambda: loc.GetAttributeValue(module_id, ATTR_CURRENT))
+        ok, v = safe(lambda: loc.GetAccurateAttributeValue(module_id, ATTR_CURRENT))
         return v if ok else None
 
     def newest_ts():
@@ -1461,7 +1465,9 @@ def eoci_main(EOCI_NAME):
                     pass
         return best
 
-    def outgoing_hits(since_ts, gun_name):
+    sampled = [False]
+
+    def outgoing_hits(since_ts, gun_name, sample=False):
         """Damage numbers of the outgoing hit lines that name the gun, oldest first
         (` - <gun>` after the hit; not the incoming colour).  [A] the shape."""
         import re
@@ -1481,6 +1487,18 @@ def eoci_main(EOCI_NAME):
                     out.append(int(m.group(1)))
             except Exception:
                 pass
+        if not out and sample and not sampled[0]:
+            # [I] the line shape is unverified; one sample row shows why nothing matched
+            sampled[0] = True
+            fresh_rows = []
+            for row in list(rows):
+                try:
+                    if row[2] > since_ts:
+                        fresh_rows.append(text(row[0])[:200])
+                except Exception:
+                    pass
+            say('outgoing_hits matched nothing for %r; %d newer log row(s), last: %s'
+                % (gun_name, len(fresh_rows), text(fresh_rows[-1:])))
         return out
 
     def median(xs):
@@ -1598,7 +1616,14 @@ def eoci_main(EOCI_NAME):
         best = []                      # the longest unbroken run of outgoing hits
         seen_5804 = []
         tooltip_done = [False]
+        start_ship = getattr_safe(builtin('session'), 'shipid')
         for rat in sorted(fresh)[:MAX_RUNS]:
+            now_ship = getattr_safe(builtin('session'), 'shipid')
+            if now_ship != start_ship:
+                check('the pilot is still in the ship it started in', False,
+                      'shipid %s -> %s (the ship died; godma is empty for the old hull)'
+                      % (text(start_ship), text(now_ship)))
+                break
             ok, detail = lock_target(rat)
             if not ok:
                 say('could not lock rat %s: %s' % (text(rat), detail))
@@ -1619,7 +1644,7 @@ def eoci_main(EOCI_NAME):
             # c. wait for the run: eight hits, or the rat dies and the module stops
             wait_for(lambda: len(outgoing_hits(since, gun_name)) >= RUN_HITS
                      or module_active(m.itemID) is False, timeout_ms=120000, step_ms=1000)
-            hits = outgoing_hits(since, gun_name)
+            hits = outgoing_hits(since, gun_name, sample=True)
             say('run on rat %s: %s' % (text(rat), text(hits)))
             if len(hits) > len(best):
                 best = hits
