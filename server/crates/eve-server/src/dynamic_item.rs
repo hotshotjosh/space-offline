@@ -152,7 +152,7 @@ pub fn attributes(content: &Content, row: &Row, result_type: i64) -> BTreeMap<i6
 }
 
 /// The `GetDynamicItemInfo` KeyVal for a stored row: `itemID`, `typeID`,
-/// `sourceTypeID`, `mutatorTypeID`, `attributes`, `modifiers`. Keys are Int,
+/// `sourceTypeID`, `mutatorTypeID`, `attributes`, `modifiers`, `characterID`. Keys are Int,
 /// values Real [I: the rule the godma rows follow].
 pub fn info_value(content: &Content, row: &Row, result_type: i64) -> PyValue {
     // A dict entry is `(value, key)` on the wire.
@@ -172,6 +172,16 @@ pub fn info_value(content: &Content, row: &Row, result_type: i64) -> PyValue {
         ("mutatorTypeID", PyValue::Int(row.mutator_type)),
         ("attributes", PyValue::Dict(attrs)),
         ("modifiers", PyValue::Dict(mods)),
+        // The Show Info header reads the creator unguarded [V]
+        // (infoContentBase.py:786-790); None when no creator is recorded.
+        (
+            "characterID",
+            if row.creator == 0 {
+                PyValue::None
+            } else {
+                PyValue::Int(row.creator)
+            },
+        ),
     ])
 }
 
@@ -778,11 +788,18 @@ mod tests {
     }
 
     #[test]
-    fn info_value_has_the_six_fields_and_real_values() {
+    fn info_value_has_the_seven_fields_and_real_values() {
         let c = content();
         let r = row_of(42, vec![(attr::CPU, 0.5), (ATTR_P, 1.0)]);
         let info = info_value(&c, &r, RES);
         assert_eq!(field(&info, b"itemID"), &PyValue::Int(42));
+        assert_eq!(field(&info, b"characterID"), &PyValue::Int(7));
+        let mut anon = r.clone();
+        anon.creator = 0;
+        assert_eq!(
+            field(&info_value(&c, &anon, RES), b"characterID"),
+            &PyValue::None
+        );
         assert_eq!(field(&info, b"typeID"), &PyValue::Int(RES));
         assert_eq!(field(&info, b"sourceTypeID"), &PyValue::Int(SRC));
         assert_eq!(field(&info, b"mutatorTypeID"), &PyValue::Int(MUT));
