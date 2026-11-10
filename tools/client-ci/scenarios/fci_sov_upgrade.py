@@ -44,8 +44,11 @@ Assumptions, each with its falsifier ([A]):
   falsifier: the PRECONDITION "both upgrade items are in the ship" fails.
 - the GM is the CEO of the alliance's executor corp, so holds the station-manager
   rule; falsifier: step 1 answers 403 (`SovUpgradeInstallUnauthorizedError`).
-- the pilot is within 2.5 km of the hub after `/tr me <system>`; falsifier: step
-  1 answers 403.
+- `/sov go here` (GM) leaves the ship at rest about 1 km off the hub's surface;
+  falsifier: the PRECONDITION "within the transfer range of the hub" fails.
+  (The old assumption, "within 2.5 km after `/tr me`", failed in ci-1111: a
+  system id lands at the sun, and step 1 answered 403 from out of range,
+  eve-server.log:328.)
 - `/sov reagents here <type> <n>` is the SOV-FUEL lane's GM line; falsifier: the
   PRECONDITION on it fails.
 """
@@ -1523,8 +1526,18 @@ def eoci_main(EOCI_NAME):
             return
         hub_id = hubs[0][0]
         # the pilot is the alliance's founder, so holds the station-manager rule
-        # (the CEO); the 2.5 km transfer range is kept by warping to the ball.
-        gm('/tr me %d' % system)
+        # (the CEO); the 2.5 km transfer range is kept by /sov go, which puts the
+        # ship at rest about 1 km off the hub's surface.
+        ok_go, rep_go = gm_check('/sov go puts the ship by the hub', '/sov go here',
+                                 expect=['moved you to hub'])
+        park_go = get_ballpark(timeout_ms=30000)
+        near, _w = wait_for(
+            lambda: (lambda d: d is not None and d < 2000)(dist_to(park_go, hub_id)),
+            timeout_ms=30000, step_ms=500)
+        precondition('within the transfer range of the hub after /sov go here', bool(near),
+                     '%s; gap %s' % (rep_go[:160], fmt(dist_to(park_go, hub_id), 0)))
+        if not near:
+            return
 
         svc = get_svc('sovHubSvc')
         res = get_svc('sovereigntyResourceSvc')
@@ -1645,14 +1658,16 @@ def eoci_main(EOCI_NAME):
             ok = ok and ok_r
             rep = rep_r if not ok_r else rep
         precondition('the hub holds reagents (/sov reagents)', ok, rep[:200])
-        for d in [a] + fillers + [b]:
+        # One item at a time, each listed before the next: three /createitems in
+        # one second left holdTracker listing a container mid-rebind (ci-1111
+        # sov_upgrade, one traceback) [I: seen in that run only].
+        def create_one(d):
             gm('/createitem %d 1' % d.type_id)
-        item_a, _w = wait_for(lambda: cargo_item(a.type_id), timeout_ms=20000, step_ms=500)
-        item_fs = []
-        for f in fillers:
-            it, _w = wait_for(lambda: cargo_item(f.type_id), timeout_ms=20000, step_ms=500)
-            item_fs.append(it)
-        item_b, _w = wait_for(lambda: cargo_item(b.type_id), timeout_ms=20000, step_ms=500)
+            it, _w = wait_for(lambda: cargo_item(d.type_id), timeout_ms=20000, step_ms=500)
+            return it
+        item_a = create_one(a)
+        item_fs = [create_one(f) for f in fillers]
+        item_b = create_one(b)
         precondition('all the upgrade items (A, %d filler(s), B) are in the ship' % len(fillers),
                      bool(item_a) and bool(item_b) and all(item_fs),
                      'A %s fillers %s B %s' % (text(item_a), text(item_fs), text(item_b)))
