@@ -107,6 +107,11 @@ pub const COMMANDS: &[Command] = &[
         run: entity,
     },
     Command {
+        name: "cwatch",
+        usage: "/cwatch [status|clear] [characterID]",
+        run: crate::crimewatch::slash,
+    },
+    Command {
         name: "npcclear",
         usage: "/npcclear [radius <km>|system] [spawned|rats|wrecks|all]",
         run: crate::npc::npcclear_slash,

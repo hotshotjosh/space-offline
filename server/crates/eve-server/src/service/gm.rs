@@ -51,8 +51,8 @@ fn refuse_slash(line: &str) -> ServiceError {
 }
 
 /// The commands whose reply is a readout the GM must see (`/bots`, and the
-/// pilot tools `/who`, `/where`, `/heal`, `/hurt` and `/suicide`, whose usage lines and refusals the GM must see). The `[A]` on `CustomInfo` below is inherited.
-const VISIBLE: &[&str] = &["/bots", "/who", "/where", "/heal", "/hurt", "/suicide"];
+/// pilot tools `/who`, `/where`, `/heal`, `/hurt` and `/suicide`, and `/cwatch`, whose usage lines and refusals the GM must see). The `[A]` on `CustomInfo` below is inherited.
+const VISIBLE: &[&str] = &["/bots", "/who", "/where", "/heal", "/hurt", "/suicide", "/cwatch"];
 
 /// **A reply the player can see.** `chat.slash_command` files a command's
 /// return value in the logger window (`'slash result: %s'`), which nobody has
@@ -407,6 +407,7 @@ mod tests {
             "/heal",
             "/hurt 50 50",
             "/suicide",
+            "/cwatch status",
         ] {
             let out = visible_reply(line, bstr("text"));
             assert!(matches!(out, Err(ServiceError::Raise(_))), "{line}");

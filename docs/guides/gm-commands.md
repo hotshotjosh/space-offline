@@ -61,6 +61,7 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/heal` | `/heal [me\|characterID\|shipID]` |
 | `/hurt` | `/hurt <armour %> <hull %> [me\|characterID\|shipID]` |
 | `/suicide` | `/suicide` |
+| `/cwatch` | `/cwatch [status\|clear] [characterID]` |
 
 Three more commands come from the modules of `eve-offline-server` (the server the
 tools start by default); the bare `eve-server` does not have them. They are not
