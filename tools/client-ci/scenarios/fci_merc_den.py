@@ -1419,16 +1419,19 @@ def eoci_main(EOCI_NAME):
         except Exception as e:
             return False, '%s %s' % (e.__class__.__name__, text(getattr_safe(e, 'msg') or e))
 
-    def client_has_message(label, what):
+    def client_has_message(label, what, args=None):
         """In-client check that a dialog label has text: `cfg.messages` is the
         client's message table [V: eveCfg.py:232]; an absent key makes
         `cfg.GetMessage` return the ErrMessageNotFound content, titled
         'Message not found' [V: eveCfg.py:231-234, 258-262].  The dialog text is
-        never logged, so the log cannot show this."""
+        never logged, so the log cannot show this.  `args` are the kwargs the
+        server's push carries: 728096-728102 read `{[item]typeID.name}`, and a
+        probe without them raises in the localizer and logs a traceback
+        [V: ci-1111 merc_den client.log:38368, :40081]."""
         cfg = builtin('cfg')
         okm, table = safe_pair(lambda: cfg.messages)
         has = okm and table is not None and label in table
-        ok2, msg = safe_pair(lambda: cfg.GetMessage(label))
+        ok2, msg = safe_pair(lambda: cfg.GetMessage(label, args or {}))
         title = text(getattr_safe(msg, 'title')) if ok2 else '?'
         return check('the client has dialog text for %s (%s)' % (label, what),
                      bool(has) and ok2 and title != 'Message not found',
@@ -1715,7 +1718,7 @@ def eoci_main(EOCI_NAME):
                   'DeploymentFailed_SkyhookAlreadyOccupied' in blob2,
                   text(log_lines_with(blob2, 'DeploymentFailed')))
             client_has_message('MercenaryDen_DeploymentFailed_SkyhookAlreadyOccupied',
-                               'the refusal')
+                               'the refusal', {'typeID': den_t})
             ids_after = list(safe_pair(lambda: repo.get_my_mercenary_dens_ids())[1] or [])
             check('the refused launch added no den', len(ids_after) == len(ids_before),
                   '%d before, %d after' % (len(ids_before), len(ids_after)))
@@ -1820,6 +1823,19 @@ def eoci_main(EOCI_NAME):
         # 7. Start: the client gets the attributes, started.
         a_dev = a_anarchy = 0
         if aid is not None:
+            # Record the job board's tag-count signal before the start; the MTO
+            # job raises if the completion beats the 0.2 s debounce
+            # [V: ci-1111 merc_den client.log:39953; job_board_signals.py:30].
+            tagged = []
+
+            class TagRecorder(object):
+                def on_tags(self, *args, **kw):
+                    tagged.append(1)
+            recorder = TagRecorder()
+            okc, vc = safe_pair(lambda: __import__(
+                'jobboard.client.job_board_signals',
+                fromlist=['on_content_tag_count_updated']
+            ).on_content_tag_count_updated.connect(recorder.on_tags))
             ok_s, started = try_call(repo.start_activity, aid)
             check('start_activity returns the activity, started',
                   ok_s and bool(getattr_safe(started, 'is_started')), text(started)[:200])
@@ -1836,6 +1852,10 @@ def eoci_main(EOCI_NAME):
             ok_b, info_b = safe_pair(lambda: repo.get_mercenary_den(den_id))
             dev_b = dev_level(info_b) if ok_b else None
             ana_b = getattr_safe(info_b.evolution_info, 'anarchy_level') if ok_b else None
+            # Wait for the job board's tag count (0.2 s debounce) before completing;
+            # an 84 ms completion raised in the MTO job [I: TQ activities last minutes].
+            counted, _w = wait_for(lambda: bool(tagged), timeout_ms=5000, step_ms=250)
+            say('job board tag count after the start: %s (connected %s)' % (bool(counted), okc))
             gm_check('/mercden complete finishes the activity', '/mercden complete %s' % aid.hex,
                      expect=['completed'])
 
@@ -1868,7 +1888,8 @@ def eoci_main(EOCI_NAME):
         check('no BackedOffException in the client log',
               'BackedOffException' not in blob,
               text(log_lines_with(blob, 'BackedOffException')))
-        client_has_message('MercenaryDen_DeploymentSuccessful', 'the success dialog')
+        client_has_message('MercenaryDen_DeploymentSuccessful', 'the success dialog',
+                           {'typeID': den_t})
         # the deliberate refused launch (1b) logs one EXCEPTION record: the client
         # raises the UserError it was sent [V: eveMisc.py:56-57 -> bluepy/__init__.py:44-46
         # -> logmodule/__init__.py:142-160]; that one is the test, not a fault
