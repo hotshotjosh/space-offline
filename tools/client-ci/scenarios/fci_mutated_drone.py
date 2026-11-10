@@ -1610,6 +1610,21 @@ def eoci_main(EOCI_NAME):
         if not belts:
             no_new_tracebacks('belt', mark)
             return
+        # Drones do not follow a warp [I], and EngageTarget drops every drone michelle cannot
+        # find (droneFunctions.py:56-65) [V ci-1111 mutated_drone client.log:30010
+        # CmdEngage ([], rat)]; so scoop it before the warp and launch it again at the belt.
+        ok, v = safe(lambda: __import__(
+            'eve.client.script.ui.services.menuSvcExtras.droneFunctions',
+            fromlist=['RealScoopToDroneBay']).RealScoopToDroneBay([item_a]))
+        check('RealScoopToDroneBay before the warp took', ok, text(v)[:200])
+        racked, waited = wait_for(
+            lambda: [r for r in (ship_items(FLAG_DRONE_BAY)[1] or [])
+                     if getattr_safe(r, 'itemID') == item_a]
+            if ship_items(FLAG_DRONE_BAY)[0] else None, timeout_ms=60000, step_ms=1000)
+        check('the drone is in the bay before the warp', bool(racked), text(waited))
+        if not racked:
+            no_new_tracebacks('pre-warp scoop', mark)
+            return
         ok, detail = warp_to(park, sorted([(dist_to(park, b) or 1e18, b) for b, _s in belts])[0][1])
         check('warped to the belt', ok, detail)
         if not ok:
@@ -1656,6 +1671,22 @@ def eoci_main(EOCI_NAME):
         check('the nearest rat locks', ok, detail)
         if not ok:
             no_new_tracebacks('lock', mark)
+            return
+        ok, v = safe(lambda: __import__(
+            'eve.client.script.ui.services.menuSvcExtras.droneFunctions',
+            fromlist=['LaunchDrones']).LaunchDrones([item_a]))
+        check('LaunchDrones at the belt took', ok, text(v)[:200])
+        out2, waited = wait_for(lambda: item_a in drones_in_space(), timeout_ms=30000)
+        check('the drone is in space at the belt (michelle.GetDrones)', bool(out2),
+              '%s after %s ms' % (shape(drones_in_space()), text(waited)))
+        if not out2:
+            no_new_tracebacks('belt launch', mark)
+            return
+        item2, _w = wait_for(lambda: get_michelle().GetItem(item_a), timeout_ms=15000)
+        check('michelle knows the drone at the belt (EngageTarget drops unknown drones)',
+              item2 is not None, text(item2)[:120])
+        if item2 is None:
+            no_new_tracebacks('belt item', mark)
             return
         ok, v = safe(lambda: __import__(
             'eve.client.script.ui.services.menuSvcExtras.droneFunctions',
