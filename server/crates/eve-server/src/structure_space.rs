@@ -443,7 +443,9 @@ pub fn announce_added(reg: &mut Registry, s: &Structure) {
     )
     .map(|a| a.with_extras(vec![(s.id, extras_of(reg, s))]));
     if let Some(a) = added {
-        reg.push(HubAdded(a));
+        // Scheduled, not pushed: this runs from the clock as well as from
+        // calls, and `pending` only drains after a client's next call.
+        reg.schedule(std::time::Duration::ZERO, HubAdded(a));
     }
 }
 
@@ -460,7 +462,10 @@ pub fn announce_slim(reg: &mut Registry, s: &Structure) {
         slim: slim(s),
         extras: extras_of(reg, s),
     };
-    reg.push(push);
+    // Scheduled, not pushed (see `announce_bars`): the timers flip a state on
+    // the server's clock, and `pending` drains only after a client call
+    // [V] the 2026-11-10 timers run: 5.4 s flip, nothing sent in the 30 s wait.
+    reg.schedule(std::time::Duration::ZERO, push);
 }
 
 /// `OnDamageStateChange` with the structure's bars as they now read, to every
@@ -484,7 +489,7 @@ fn announce_removed(reg: &mut Registry, system: i64, id: i64) {
     let to = in_space(reg, system);
     let stamp = reg.next_destiny_stamp();
     if let Some(gone) = crate::destiny::BallsRemoved::new(to, stamp, vec![id]) {
-        reg.push(gone);
+        reg.schedule(std::time::Duration::ZERO, gone);
     }
 }
 
@@ -1048,11 +1053,16 @@ mod tests {
         }
     }
 
+    /// Everything queued, by call and by clock: what a pilot is sent.
+    fn drain(reg: &mut Registry) -> Vec<Box<dyn crate::notify::Push>> {
+        let mut out: Vec<_> = reg.take_pending().into_iter().map(|(_, p)| p).collect();
+        let later = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        out.extend(reg.take_due(later));
+        out
+    }
+
     fn names(reg: &mut Registry) -> Vec<&'static str> {
-        reg.take_pending()
-            .into_iter()
-            .map(|(_, p)| p.to_push().0)
-            .collect()
+        drain(reg).into_iter().map(|p| p.to_push().0).collect()
     }
 
     #[test]
@@ -1111,6 +1121,10 @@ mod tests {
             .take_due(later)
             .into_iter()
             .filter(|p| p.to_push().0 == "DoDestinyUpdate")
+            .filter(|p| {
+                let name = format!("{:?}", crate::pyutil::bstr("OnDamageStateChange"));
+                format!("{:?}", p.to_push().1).contains(&name)
+            })
             .collect();
         assert_eq!(sent.len(), 1, "one bars update");
         let body = format!("{:?}", sent[0].to_push().1);
@@ -1199,8 +1213,8 @@ mod tests {
         row.set_damage(0.25, 1.0, 1.0, &e);
         let _ = reg.take_pending();
         announce_added(&mut reg, &row);
-        let sent = reg.take_pending();
-        let body = format!("{:?}", sent[0].1.to_push().1);
+        let sent = drain(&mut reg);
+        let body = format!("{:?}", sent[0].to_push().1);
         assert!(
             body.contains("Real(0.25)"),
             "the shield fraction rides the slim pair: {body}"
@@ -1585,6 +1599,37 @@ mod tests {
         let got = received(&reg, BOSS, 186);
         assert_eq!(got.len(), 1);
         assert_eq!(int(get(&got[0], "timeLeft")), s.timer.end.unwrap() - T0);
+    }
+
+    /// A state the server's clock flips reaches the pilots on the clock's
+    /// queue, not in `pending`, which drains only after a client's next call.
+    #[test]
+    fn a_clock_driven_slim_change_is_scheduled_not_pushed() {
+        let mut reg = world();
+        let id = online_structure(&mut reg, SYSTEM, ASTRAHUS);
+        let mut s = structure::get(reg.deltas(), id).unwrap();
+        s.damage = Some((0.0, 0.9, 1.0));
+        structure::put(reg.deltas_mut(), &s);
+        let _ = reg.take_pending_raw();
+        let queued = reg.scheduled_len();
+        tick(&mut reg, std::time::Instant::now(), T0);
+        assert_eq!(
+            structure::get(reg.deltas(), id).unwrap().state,
+            State::ArmorReinforce
+        );
+        let pending: Vec<&str> = reg
+            .take_pending_raw()
+            .into_iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert!(
+            !pending.contains(&"DoDestinyUpdate"),
+            "the slim change waits for a call: {pending:?}"
+        );
+        assert!(
+            reg.scheduled_len() >= queued + 2,
+            "the slim change and the bars are on the clock's queue"
+        );
     }
 
     #[test]
