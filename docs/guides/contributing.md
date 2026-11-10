@@ -250,6 +250,7 @@ because they are central, risky, or being rewritten. Paths are under
 | `server/deps.allow`, `server/Cargo.toml`, `server/Cargo.lock` | the allowlist is empty and stays empty: the server is std-only |
 | `docs/README.md` | the maintainer keeps it; a PR proposes a change in its text |
 | `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; a maintainer changes them |
+| `LICENSE.md`, `LICENSE-additions.md`, `CONTRIBUTING-terms.md`, `NOTICE` | the licence, its additional terms, the contributor terms and the third-party notices; only the owner changes them |
 | `tools/flaky.tsv`, `tools/gate_reds.py`, `tools/test-parallel.sh` | the gate's flaky-rerun list and the code that reads it and runs the rerun; a row on the list is a reviewed maintainer commit, and the gate reads the list from the base, never from the change under test |
 
 ## 11. Flags and variables

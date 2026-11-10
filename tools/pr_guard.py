@@ -20,7 +20,7 @@ import sys
 
 MAX_BYTES = 1024 * 1024
 GUARDED_EXACT = {
-    "CLAUDE.md", "AGENTS.md", "LICENSE", "LICENSE.md", "CONTRIBUTING-terms.md", "NOTICE", "CODEOWNERS",
+    "CLAUDE.md", "AGENTS.md", "LICENSE", "LICENSE.md", "LICENSE-additions.md", "CONTRIBUTING-terms.md", "NOTICE", "CODEOWNERS",
     "docs/guides/public-export.md", "docs/guides/jail.md",
     "docs/lanes/README.md",
     "tools/land.sh", "tools/gate.sh", "tools/dev.sh",
