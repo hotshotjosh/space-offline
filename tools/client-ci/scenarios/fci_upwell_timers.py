@@ -64,7 +64,7 @@ server pushes.
 Step 5 (issue #48, the 184) runs last, in a null-sec system (an own-corporation
 structure there is no crime): the pilot goes back to the station, boards a
 GM-made Rifter with two autocannons, jumps to the first null-sec system of the
-client's map, spawns a structure and `/upwell damage <id> 0.951 1 1` (hurt, but
+client's map, spawns a structure and `/upwell damage <id> 0.9501 1 1` (hurt, but
 above the server's 95 % line, so nothing is said yet).  The guns do the rest:
 
 5. Under attack.  A notification of the client's
@@ -2028,7 +2028,7 @@ def eoci_main(EOCI_NAME):
             sid = found[0][0]
             # Hurt but above the server's 95 % line: aggressed, nothing said.
             gm_check('/upwell damage hurts the shield a little',
-                     '/upwell damage %d 0.951 1 1' % sid, expect=['state'])
+                     '/upwell damage %d 0.9501 1 1' % sid, expect=['state'])
             sleep_ms(3000)
             check('the GM damage alone says nothing',
                   note_for(seen, nc.notificationTypeStructureUnderAttack, sid) is None,
