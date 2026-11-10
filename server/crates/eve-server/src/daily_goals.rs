@@ -487,6 +487,17 @@ fn goal_id_msg(reg: &Registry, ch: i64, day: i64, slot: usize) -> Vec<u8> {
     out
 }
 
+/// A notice body whose field 1 is the goal `Identifier` as a length-delimited
+/// message (`ProgressedNotice`, `CompletedNotice` and `RedeemedNotice` all
+/// declare `1 msg Identifier goal`; `[V]` notices_pb2.py, nested descriptor
+/// `goal` type 11). Putting the bare uuid in field 1 makes the client's
+/// `Unpack` fail with a DecodeError.
+fn goal_notice(reg: &Registry, ch: i64, day: i64, slot: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    put_bytes(&mut out, 1, &goal_id_msg(reg, ch, day, slot));
+    out
+}
+
 fn notify(reg: &mut Registry, ch: i64, ty: &str, payload: Vec<u8>) {
     crate::gateway_out::queue(reg, ty, payload, Target::Character(ch));
 }
@@ -515,11 +526,11 @@ fn advance(reg: &mut Registry, ch: i64, g: &Goal, by: i64) -> bool {
         p.earned = g.row.isk.max(0);
     }
     put_prog(reg, ch, g.day, g.slot, p);
-    let mut m = goal_id_msg(reg, ch, g.day, g.slot);
+    let mut m = goal_notice(reg, ch, g.day, g.slot);
     put_field_varint(&mut m, 2, new as u64);
     notify(reg, ch, N_PROGRESSED, m);
     if done {
-        let m = goal_id_msg(reg, ch, g.day, g.slot);
+        let m = goal_notice(reg, ch, g.day, g.slot);
         notify(reg, ch, N_COMPLETED, m);
     }
     done
@@ -595,7 +606,7 @@ pub fn redeem(reg: &mut Registry, ch: i64, day: i64, slot: usize) -> bool {
         reference,
         &description,
     );
-    let m = goal_id_msg(reg, ch, day, slot);
+    let m = goal_notice(reg, ch, day, slot);
     notify(reg, ch, N_REDEEMED, m);
     true
 }
@@ -1223,6 +1234,49 @@ mod tests {
             0,
             "per character"
         );
+    }
+
+    /// `[V]` notices_pb2.py: Progressed/Completed/Redeemed notices all declare
+    /// `1 msg dailygoal.Identifier goal`, and `Identifier` is `1 bytes uuid`.
+    /// Field 1 must hold a message whose field 1 holds the 16-byte uuid.
+    #[test]
+    fn the_goal_notices_nest_the_goal_identifier_as_a_message() {
+        let mut reg = world(SMALL);
+        let day = day_of(NOW);
+        let kill = goal_of(&reg, ALICE, day, "ta");
+        let want = goal_uuid(reg.world().seed, ALICE, day, kill.slot);
+        let nested = |body: &[u8]| {
+            let id = get_bytes(body, 1).expect("field 1 is the goal message");
+            // Tag 0x0a, length 0x10, 16 uuid bytes: nothing trailing or unknown.
+            assert_eq!(id.len(), 18, "Identifier is exactly one uuid field");
+            assert_eq!(
+                get_bytes(&id, 1).as_deref(),
+                Some(&want[..]),
+                "Identifier.uuid"
+            );
+        };
+        for _ in 0..3 {
+            credit(&mut reg, ALICE, Act::KillNpc, NOW);
+        }
+        let sent = crate::gateway_out::take(&mut reg);
+        let progressed: Vec<_> = sent.iter().filter(|n| n.0 == N_PROGRESSED).collect();
+        // Three kill steps, then the bonus moved by one.
+        assert_eq!(progressed.len(), 4);
+        for (i, n) in progressed.iter().take(3).enumerate() {
+            nested(&n.1);
+            assert_eq!(get_uint(&n.1, 2), Some(i as u64 + 1), "current_progress");
+        }
+        // The bonus goal's own notice: its id, progress 1.
+        let bonus = get_bytes(&progressed[3].1, 1).expect("the bonus goal message");
+        let bonus_want = goal_uuid(reg.world().seed, ALICE, day, BONUS_SLOT);
+        assert_eq!(get_bytes(&bonus, 1).as_deref(), Some(&bonus_want[..]));
+        assert_eq!(get_uint(&progressed[3].1, 2), Some(1), "bonus progress");
+        let done = sent.iter().find(|n| n.0 == N_COMPLETED).expect("completed");
+        nested(&done.1);
+        assert!(redeem(&mut reg, ALICE, day, kill.slot));
+        let sent = crate::gateway_out::take(&mut reg);
+        let paid = sent.iter().find(|n| n.0 == N_REDEEMED).expect("redeemed");
+        nested(&paid.1);
     }
 
     #[test]
