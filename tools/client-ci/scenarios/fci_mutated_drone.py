@@ -1631,6 +1631,27 @@ def eoci_main(EOCI_NAME):
             ok1, v1 = safe(lambda: park.GetDamageState(rat))
             return list(v1) if ok1 and v1 is not None else None
         before = bars()
+
+        def out_of_warp(ball_ids, timeout_ms=90000):
+            """Wait until none of `ball_ids` is in DSTBALL_WARP: a belt rat enters in warp
+            from 100 km and the server cancels a lock on a ship in active warp silently
+            (targeting.rs, TargetingAttemptCancelled) [V ci-1110 mutated_drone client.log].
+            [I] the client ball leaves mode 3 on landing; falsifier: this times out while
+            the server log shows the rat's first Orbit."""
+            def landed():
+                for bid in ball_ids:
+                    ok, b = safe(lambda: park.GetBall(bid))
+                    if ok and b is not None and getattr_safe(b, 'mode') == MODE_WARP:
+                        return False
+                return True
+            got, waited = wait_for(landed, timeout_ms=timeout_ms, step_ms=500)
+            return bool(got), waited
+
+        landed, lw = out_of_warp([rat])
+        check('the rat has left its warp-in', landed, '%s ms' % text(lw))
+        if not landed:
+            no_new_tracebacks('rat warp-in', mark)
+            return
         ok, detail = lock_target(rat)
         check('the nearest rat locks', ok, detail)
         if not ok:
