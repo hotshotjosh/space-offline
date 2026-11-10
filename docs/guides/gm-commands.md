@@ -37,7 +37,7 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/essdeposit` | `/essdeposit <isk>` |
 | `/econ` | `/econ [regionID \| report [regionID] [hours] \| tsv [hours] \| price-tape [regionID] [days] \| audit [days] \| price <typeID> \| history [days] \| closed [days] \| burn on\|off]` |
 | `/grant` | `/grant <username> <player\|gm>` |
-| `/sov` | `/sov set <system\|here> <alliance\|none> \| /sov clear <system\|here> \| /sov capture <system\|here> <alliance> \| /sov info [system\|here]` |
+| `/sov` | `/sov set <system\|here> <alliance\|none> \| /sov clear <system\|here> \| /sov capture <system\|here> <alliance> \| /sov info [system\|here] \| /sov go <system\|here>` |
 | `/fwcapture` | `/fwcapture [<seconds> \| reset]` |
 | `/sovfuel` | `/sovfuel [status [system\|here]] \| /sovfuel <blocks\|all> \| /sovfuel burn <days>` |
 | `/givelp` | `/givelp <corpID> <amount>` |

@@ -179,7 +179,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "sov",
-        usage: "/sov set <system|here> <alliance|none> | /sov clear <system|here> | /sov capture <system|here> <alliance> | /sov info [system|here]",
+        usage: "/sov set <system|here> <alliance|none> | /sov clear <system|here> | /sov capture <system|here> <alliance> | /sov info [system|here] | /sov go <system|here>",
         run: crate::service::sov::slash,
     },
     Command {
