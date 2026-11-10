@@ -613,15 +613,13 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `solarSystemID`, `planetTypeID`, `radius`, `celestialIndex` and
             // the colony's own keys when the character has one.
             //
-            // **`radius` must be a Python float.** The client's template
-            // writer computes `Diam = planet.radius * 2 / 1000` under Python
-            // 2 integer division, and `eveplanet/verification.py::
-            // _VerifyDiamater` rejects a non-float outright with
-            // `PITemplateVerificationFailed`. Every SDE planet radius is
-            // integer-valued, so a bare number would always marshal as
-            // `PyInt` and always fail. EvEJS found this the hard way and
-            // wrote it down at `planetMgrService.js:389-393`; it is one of
-            // the few notes of theirs worth taking verbatim.
+            // **`radius` must be a Python float.** `_VerifyDiamater`
+            // (`eveplanet/verification.py`) raises
+            // `PITemplateVerificationFailed` unless the diameter is a float.
+            // The template writer gets that diameter as `radius * 2 / 1000`,
+            // which stays an int under Python 2 when the radius is one, and
+            // SDE radii have no fractional part, so an unwrapped radius
+            // always fails.
             //
             // `solarSystemID` and `celestialIndex` are `0` because the
             // map chain is not in the server yet (`service.rs` still flags
