@@ -168,25 +168,27 @@ pub(crate) fn corp_standings_value(reg: &Registry, actor: Option<i64>, now: i64)
 /// player corp (a character, an NPC corp: there the panel shows
 /// transactions, not this).
 pub(crate) fn compositions_value(reg: &Registry, args: &[PyValue], now: i64) -> PyValue {
-    let (Some(PyValue::Int(from_id)), Some(PyValue::Int(corp))) = (args.first(), args.get(1))
-    else {
+    let (Some(from_id), Some(corp)) = (
+        crate::service::args::as_int(args.first()),
+        crate::service::args::as_int(args.get(1)),
+    ) else {
         return PyValue::List(vec![]);
     };
-    if !is_player_corp(reg, *corp) {
+    if !is_player_corp(reg, corp) {
         return PyValue::List(vec![]);
     }
     let descriptor =
         DbRowDescriptor::from_pairs(&[("ownerID", DbType::I4), ("standing", DbType::R5)])
             .expect("two fixed-width columns are a valid layout");
     PyValue::List(
-        counting_members(reg, *corp, now)
+        counting_members(reg, corp, now)
             .into_iter()
             .map(|member| {
                 let row = DbRow::new(
                     descriptor.clone(),
                     vec![
                         DbValue::Int(member),
-                        DbValue::Real(reg.standings.get(member, *from_id)),
+                        DbValue::Real(reg.standings.get(member, from_id)),
                     ],
                 )
                 .expect("the values match the descriptor declared above");
@@ -482,5 +484,19 @@ mod tests {
         let was = before(&reg, CORP);
         assert_eq!(announce(&mut reg, was, None), 0);
         assert!(reg.take_pending().is_empty());
+    }
+
+    #[test]
+    fn compositions_need_two_int_ids_and_refuse_text() {
+        let reg = world();
+        let empty = PyValue::List(vec![]);
+        for args in [
+            vec![PyValue::Int(NPC_A)],
+            vec![PyValue::Int(NPC_A), PyValue::Bytes(b"x".to_vec())],
+            vec![PyValue::Real(1.0), PyValue::Int(CORP)],
+            vec![PyValue::Bool(true), PyValue::Int(CORP)],
+        ] {
+            assert_eq!(compositions_value(&reg, &args, NOW), empty);
+        }
     }
 }

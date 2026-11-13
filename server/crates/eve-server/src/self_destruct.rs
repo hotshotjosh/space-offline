@@ -171,10 +171,7 @@ pub fn start(
     args: &[PyValue],
     now: BlueTime,
 ) -> Result<PyValue, ServiceError> {
-    let ship_id = match args.first() {
-        Some(PyValue::Int(n)) => Some(*n),
-        _ => None,
-    };
+    let ship_id = crate::service::args::as_int(args.first());
     let pilot = actor
         .and_then(|a| reg.roster().get(a).copied())
         .filter(|p| Some(p.ship_id) == ship_id)
@@ -811,5 +808,18 @@ mod tests {
     #[test]
     fn the_const_keeps_todays_behaviour() {
         const { assert!(!SELF_DESTRUCT_PAYS_INSURANCE) };
+    }
+
+    #[test]
+    fn a_ship_id_that_is_not_an_int_is_refused() {
+        let mut reg = world();
+        let raised = |r: Result<PyValue, ServiceError>| matches!(r, Err(ServiceError::Raise(_)));
+        for a in [
+            PyValue::Real(ALICE_SHIP as f64),
+            PyValue::Bytes(vec![]),
+            PyValue::Bool(true),
+        ] {
+            assert!(raised(start(&mut reg, Some(ALICE), &[a], T0)));
+        }
     }
 }

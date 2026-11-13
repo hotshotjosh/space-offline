@@ -62,9 +62,8 @@ pub fn on_kill(w: &mut Registry, ev: &KillEvent) {
 
 /// **The `shipKillCounter.GetItemKillCountPlayer` answer.**
 pub fn count_call(w: &Registry, args: &[PyValue]) -> PyValue {
-    let ship = match args.first() {
-        Some(PyValue::Int(i)) => *i,
-        _ => return PyValue::Int(0),
+    let Some(ship) = crate::service::args::as_int(args.first()) else {
+        return PyValue::Int(0);
     };
     PyValue::Int(count(w, ship))
 }
@@ -132,5 +131,23 @@ mod tests {
         on_kill(&mut reg, &event(ALICE, ALICE_SHIP, 587, Some(BOB)));
         assert_eq!(count(&reg, ALICE_SHIP), 0, "dropped with the ship");
         assert_eq!(count(&reg, BOB_SHIP), 1, "Bob's ship earned its own");
+    }
+
+    #[test]
+    fn a_ship_id_that_is_not_an_int_counts_zero() {
+        let mut reg = alice_has_bob_locked();
+        on_kill(&mut reg, &event(BOB, BOB_SHIP, 587, Some(ALICE)));
+        assert_eq!(
+            count_call(&reg, &[PyValue::Int(ALICE_SHIP)]),
+            PyValue::Int(1)
+        );
+        for a in [
+            PyValue::Real(ALICE_SHIP as f64),
+            PyValue::Bytes(vec![]),
+            PyValue::Bool(true),
+        ] {
+            assert_eq!(count_call(&reg, &[a]), PyValue::Int(0));
+        }
+        assert_eq!(count_call(&reg, &[]), PyValue::Int(0));
     }
 }

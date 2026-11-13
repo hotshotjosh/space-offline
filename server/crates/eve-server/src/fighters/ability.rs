@@ -562,20 +562,14 @@ pub enum MoveError {
     Args(&'static str),
 }
 
-fn number(v: &PyValue) -> Option<f64> {
-    match v {
-        PyValue::Int(n) => Some(*n as f64),
-        PyValue::Real(r) if r.is_finite() => Some(*r),
-        _ => None,
-    }
-}
-
 /// An `(x, y, z)` of finite numbers.
 fn point_arg(v: Option<&PyValue>) -> Option<[f64; 3]> {
     match v? {
-        PyValue::Tuple(p) | PyValue::List(p) if p.len() == 3 => {
-            Some([number(&p[0])?, number(&p[1])?, number(&p[2])?])
-        }
+        PyValue::Tuple(p) | PyValue::List(p) if p.len() == 3 => Some([
+            crate::service::args::as_float_finite(p.first())?,
+            crate::service::args::as_float_finite(p.get(1))?,
+            crate::service::args::as_float_finite(p.get(2))?,
+        ]),
         _ => None,
     }
 }
@@ -646,11 +640,13 @@ pub fn movement(
     args: &[PyValue],
 ) -> Result<(), MoveError> {
     let wire_target = |args: &[PyValue]| -> Result<(i64, f64), MoveError> {
-        let (Some(PyValue::Int(target)), Some(range)) = (args.first(), args.get(1)) else {
+        let (Some(target), Some(range)) = (crate::service::args::as_int(args.first()), args.get(1))
+        else {
             return Err(MoveError::Args("(targetID, range)"));
         };
-        let range = number(range).ok_or(MoveError::Args("(targetID, range)"))?;
-        Ok((*target, range.clamp(0.0, MAX_RANGE)))
+        let range = crate::service::args::as_float_finite(Some(range))
+            .ok_or(MoveError::Args("(targetID, range)"))?;
+        Ok((target, range.clamp(0.0, MAX_RANGE)))
     };
     enum Cmd {
         Orbit(i64, f64),
@@ -2553,5 +2549,29 @@ effect\t{bm}\t2\t1\t2349\t0\t0\t0\t0\tfixtureBomb\teffects.FixtureBomb
                 .any(|r| r.name == "fighters_destroyed"),
             "kill_hooks::PLAYER carries the fighters row"
         );
+    }
+
+    #[test]
+    fn a_nan_or_text_range_is_refused_and_an_int_range_reads() {
+        let (mut reg, ids, _) = fly(&[(ATTACKER, SQUADRON)]);
+        for range in [
+            PyValue::Real(f64::NAN),
+            PyValue::Real(f64::INFINITY),
+            PyValue::Bytes(vec![]),
+            PyValue::Bool(true),
+            PyValue::None,
+        ] {
+            let e =
+                move_call(&mut reg, &ids, "ORBIT", &[PyValue::Int(1), range]).expect_err("refused");
+            assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
+        }
+        let e = move_call(
+            &mut reg,
+            &ids,
+            "ORBIT",
+            &[PyValue::Int(990_000_999_999), PyValue::Int(500)],
+        )
+        .expect_err("an int range reads, then no such ball");
+        assert_eq!(ft::key_of(&e), "CustomNotify");
     }
 }

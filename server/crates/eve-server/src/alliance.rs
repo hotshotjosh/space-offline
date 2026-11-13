@@ -893,16 +893,9 @@ pub fn sync_characters(reg: &mut Registry) {
 /// `eveCfg.allianceshortnameRowHeader` declares **[V]**. Only ids that name
 /// an alliance come back; the client remembers the rest as unknown.
 pub fn multi_short_names(reg: &Registry, args: &[PyValue]) -> PyValue {
-    let ids: Vec<i64> = match args.first() {
-        Some(PyValue::List(v) | PyValue::Tuple(v)) => v
-            .iter()
-            .filter_map(|x| match x {
-                PyValue::Int(i) => Some(*i),
-                _ => None,
-            })
-            .collect(),
-        Some(PyValue::Int(i)) => vec![*i],
-        _ => Vec::new(),
+    let ids: Vec<i64> = match crate::service::args::as_int(args.first()) {
+        Some(i) => vec![i],
+        None => crate::service::args::as_int_list(args.first()),
     };
     let mut rs = eve_rowset::Rowset::new(&["allianceID", "shortName"]).expect("a fixed header");
     for id in ids {
@@ -1219,5 +1212,35 @@ mod tests {
         let a = s.get(id).expect("exists");
         assert_eq!(a.description.chars().count(), DESCRIPTION_MAX_LEN);
         assert_eq!(a.url.chars().count(), URL_MAX_LEN);
+    }
+
+    #[test]
+    fn multi_short_names_takes_a_bare_id_or_the_ints_of_a_list() {
+        let (s, id) = founded();
+        let mut reg = crate::testkit::registry_with(|_| {});
+        s.save(reg.deltas_mut());
+        let rows = |v: PyValue| format!("{v:?}");
+        let one = rows(multi_short_names(&reg, &[PyValue::Int(id)]));
+        assert!(one.contains("INVP"), "{one}");
+        let list = PyValue::List(vec![
+            PyValue::Unicode("junk".into()),
+            PyValue::Int(id),
+            PyValue::Int(id + 999),
+        ]);
+        assert_eq!(rows(multi_short_names(&reg, &[list])), one);
+        assert_eq!(
+            rows(multi_short_names(
+                &reg,
+                &[PyValue::Tuple(vec![PyValue::Int(id)])]
+            )),
+            one
+        );
+        let none = rows(multi_short_names(&reg, &[PyValue::Real(id as f64)]));
+        assert!(!none.contains("INVP"), "{none}");
+        let mixed = PyValue::List(vec![PyValue::Real(id as f64), PyValue::Bool(true)]);
+        let none = rows(multi_short_names(&reg, &[mixed]));
+        assert!(!none.contains("INVP"), "{none}");
+        let none = rows(multi_short_names(&reg, &[PyValue::Bytes(vec![])]));
+        assert!(!none.contains("INVP"), "{none}");
     }
 }

@@ -168,10 +168,7 @@ pub fn on_jump(w: &mut crate::service::Registry, system: i64) {
 /// version is the adler32 of the marshalled rowset, so it moves exactly when
 /// the numbers do (the same wrapper as `marketProxy.GetOrders`).
 pub fn history_answer(w: &crate::service::Registry, args: &[PyValue]) -> PyValue {
-    let int = |i: usize, default: i64| match args.get(i) {
-        Some(PyValue::Int(n)) => *n,
-        _ => default,
-    };
+    let int = |i: usize, default: i64| crate::service::args::as_int(args.get(i)).unwrap_or(default);
     let now = crate::pyutil::filetime_now();
     let rows = w.ext::<MapStats>().rows(int(0, 0), int(1, 1), now);
     let columns = ["solarSystemID", "value1", "value2", "value3"]
@@ -383,6 +380,29 @@ mod tests {
             assert_eq!(pairs(&t[0]), vec![(900_001, 2), (900_002, 1)]);
             assert_eq!(pairs(&t[1]), vec![(900_001, 1)]);
             assert_eq!(t[2], PyValue::Int(1));
+        }
+
+        #[test]
+        fn a_float_bool_or_text_history_stat_reads_as_its_default() {
+            let mut reg = world();
+            on_jump(&mut reg, A);
+            let body = |a: &[PyValue]| match history_answer(&reg, a) {
+                PyValue::Instance { state, .. } => match *state {
+                    PyValue::Tuple(t) => t[1].clone(),
+                    other => panic!("a tuple, got {other:?}"),
+                },
+                other => panic!("an instance, got {other:?}"),
+            };
+            let dflt = body(&[PyValue::Int(0), PyValue::Int(1)]);
+            assert_ne!(body(&[PyValue::Int(1), PyValue::Int(1)]), dflt);
+            for stat in [
+                PyValue::Real(1.0),
+                PyValue::Bool(true),
+                PyValue::Bytes(b"x".to_vec()),
+            ] {
+                assert_eq!(body(&[stat, PyValue::Int(1)]), dflt);
+            }
+            assert_eq!(body(&[]), body(&[PyValue::Int(0), PyValue::Int(1)]));
         }
 
         fn event(victim: i64, ship_type: i64) -> KillEvent {
