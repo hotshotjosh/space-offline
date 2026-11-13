@@ -287,7 +287,7 @@ pub const COMMANDS: &[Command] = &[
     // ANSI-1 (#85): aim an Ansiblex by hand.
     Command {
         name: "jbridge",
-        usage: "/jbridge link <gateID> <systemID> | /jbridge unlink <gateID> | /jbridge list",
+        usage: "/jbridge link <gateID> <systemID> | /jbridge unlink <gateID> | /jbridge list | /jbridge charge <gateID|here> <GJ|full>",
         run: crate::jump_bridge::slash,
     },
     Command {

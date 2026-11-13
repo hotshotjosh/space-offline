@@ -51,7 +51,7 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/devminecrit` | `/devminecrit crit \| waste \| both \| off` |
 | `/devhome` | `/devhome <system name\|id>` |
 | `/upwell` | `/upwell spawn <astrahus\|raitaru\|athanor\|typeID> <name> \| /upwell give <type> \| /upwell list \| /upwell damage <id> <shield> <armor> <hull> \| /upwell state <id> <code\|name>` |
-| `/jbridge` | `/jbridge link <gateID> <systemID> \| /jbridge unlink <gateID> \| /jbridge list` |
+| `/jbridge` | `/jbridge link <gateID> <systemID> \| /jbridge unlink <gateID> \| /jbridge list \| /jbridge charge <gateID\|here> <GJ\|full>` |
 | `/shutdown` | `/shutdown [seconds] [message] \| /shutdown cancel \| /shutdown status` |
 | `/dailygoals` | `/dailygoals \| /dailygoals swap <slot> <key>` |
 | `/skyhook` | `/skyhook state <id> <state> \| spawn <planetID\|nearest> \| activate <id> \| age <id> <cycles> \| go <id> \| info <id> \| window <id> now \| link finish <id>` |
