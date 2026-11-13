@@ -173,6 +173,9 @@ pub fn call_in(
     let Some(actor) = req.actor else {
         return Err(not_in_space());
     };
+    if crate::jump_bridge::quiet_in_transit(reg, actor, item, &component, &method) {
+        return Ok(PyValue::None);
+    }
     let Some(system) = actor_system(reg, actor) else {
         return Err(not_in_space());
     };
@@ -342,6 +345,21 @@ mod tests {
         ));
         assert!(matches!(
             run(&mut reg, None, &ping_args("testComp", "Ping")),
+            Err(ServiceError::Raise(_))
+        ));
+    }
+
+    /// The jump-bridge exception (`jump_bridge::quiet_in_transit`) is that
+    /// component's alone: any other component's call from a pilot mid-jump is
+    /// still refused, about an item in the system the session still names.
+    #[test]
+    fn a_pilot_mid_jump_is_still_refused_by_any_other_component() {
+        let mut reg = world();
+        reg.roster_mut().leave(PILOT);
+        crate::jump::arm_at(&mut reg, PILOT, SYSTEM, OTHER_SYSTEM, [0.0; 3]);
+        assert_eq!(reg.jumps().session_system(PILOT), Some(SYSTEM));
+        assert!(matches!(
+            run(&mut reg, Some(PILOT), &ping_args("testComp", "Ping")),
             Err(ServiceError::Raise(_))
         ));
     }

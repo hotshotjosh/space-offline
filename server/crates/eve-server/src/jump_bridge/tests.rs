@@ -1152,6 +1152,42 @@ fn the_info_is_a_new_style_object_with_the_init_keys() {
     assert_eq!(bytes[5] & 0x3f, 0x23, "{:02x?}", &bytes[..8]);
 }
 
+fn component_call(reg: &mut Registry, who: i64, gate_id: i64) -> Result<PyValue, ServiceError> {
+    let args = [
+        PyValue::Int(gate_id),
+        crate::pyutil::bstr(COMPONENT),
+        crate::pyutil::bstr("GetJumpBridgeInfo"),
+    ];
+    let req = Request {
+        service: "beyonce",
+        method: "CallComponentFromClient",
+        args: &args,
+        kwargs: &[],
+        bind_params: None,
+        actor: Some(who),
+    };
+    crate::space_component::call(reg, &req)
+}
+
+/// Mid-jump the pilot is out of the roster while the client still shows the
+/// origin's gate window; its refresh is answered `None` (the window's "no
+/// access"), not the router's not-in-space refusal.
+#[test]
+fn the_info_asked_mid_jump_is_none_not_a_refusal() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    let before = component_call(&mut reg, ALICE, 11).unwrap();
+    assert!(matches!(before, PyValue::ObjectEx { .. }), "{before:?}");
+    jump(&mut reg, ALICE, 11).unwrap();
+    assert!(reg.jumps().contains(ALICE));
+    assert_eq!(component_call(&mut reg, ALICE, 11).unwrap(), PyValue::None);
+    // The partner gate, not in the system the session names, is still refused.
+    assert!(component_call(&mut reg, ALICE, 22).is_err());
+    // Someone who is not jumping and not in space still gets the refusal.
+    assert!(component_call(&mut reg, STRANGER, 11).is_err());
+}
+
 #[test]
 fn only_the_info_of_a_pilot_mid_jump_is_quiet() {
     let mut reg = world();
