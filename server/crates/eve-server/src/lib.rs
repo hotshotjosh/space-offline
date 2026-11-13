@@ -292,6 +292,8 @@ pub(crate) mod skill_queue;
 pub mod skill_trading;
 pub(crate) mod skillgate;
 pub mod skins;
+// EM-3 (#207): ship emblem licences and logos on hulls.
+pub mod emblem;
 pub(crate) mod slash;
 pub(crate) mod slim_extra;
 pub mod trade;

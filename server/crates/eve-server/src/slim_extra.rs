@@ -67,6 +67,8 @@ pub const SOURCES: &[Source] = &[
     crate::bubble::slim_extras,
     // FIX-W7A: an ESS warp beacon carries a `name` (the warp raised without).
     crate::ess::slim_extras,
+    // EM-3 (#207): a ship with an enabled emblem carries `cosmeticsItems`.
+    crate::emblem::slim,
 ];
 
 /// Every source's extras for `ids`, concatenated in table order.

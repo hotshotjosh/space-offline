@@ -36,6 +36,7 @@ pub const TABLES: &[TableSpec] = &[
     crate::mutator_data::TABLE,
     crate::nes::TABLE,
     crate::skins::TABLE,
+    crate::emblem::TABLE,
     crate::npc_data::TABLE,
     crate::pochven::filaments::TABLE,
     crate::pochven::loot::TABLE,

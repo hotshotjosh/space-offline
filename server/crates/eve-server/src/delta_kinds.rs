@@ -315,6 +315,10 @@ pub const KINDS: &[(&str, &str)] = &[
     // builds). `lic char lic_type -> expires single_use`, `app ship -> lic_type
     // kept`.
     ("skin", "skins"),
+    // EM-3 (#207): `own char ship_type cosmetic_type -> 1` (an emblem licence a
+    // pilot owns), `slot ship_item backend_slot -> cosmetic_type` (an enabled
+    // logo slot; dropped with the ship item).
+    ("emblem", "emblem"),
     // U1-UPWELL: `structure_id -> type owner_corp system x y z yaw name bio
     // profile state upkeep shield armor hull timer_start timer_end timer_paused
     // unanchor_at reinforce_weekday reinforce_hour deed_present [next_weekday

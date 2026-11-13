@@ -22,6 +22,9 @@ pub const CHAIN: &[Arm] = &[
     crate::nes_vault::gateway,
     // SKINS: the applied SKIN of a ship (`cosmetic.ship.api`).
     crate::skins::gateway,
+    // EM-3 (#207): ship emblem licences and logos (`entitlement.character`,
+    // `cosmetic.ship.logo`).
+    crate::emblem::gateway,
     // DG-2 (#202): the daily goals (`eve_public.dailygoal.api`).
     crate::daily_goals::gateway,
     // SOV-FUEL (#218): the hub's reagent bay, `hub.fuel.api` Get and Add.

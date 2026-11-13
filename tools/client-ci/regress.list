@@ -147,6 +147,7 @@ fci_school_books -- --character Alice,school=@SCHOOL@
 fci_pa10_coalesce@on --with-second --serial -- --coalesce-destiny --character Alice --character Bob
 fci_pa10_coalesce@off --with-second --serial -- --no-coalesce-destiny --character Alice --character Bob
 fci_skin_viewer --with-second --serial -- --character Alice --character Bob
+fci_emblem --with-second --serial -- --character Alice --character Bob
 lobby_guests --with-second -- --character Alice --character Bob
 
 # dev worlds (reset before each run)
