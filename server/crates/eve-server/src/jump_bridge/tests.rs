@@ -7,9 +7,24 @@ use crate::space_state::{Motion, Presence};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-const HERE: i64 = 91_001;
-const THERE: i64 = 91_002;
-const ELSEWHERE: i64 = 91_003;
+const HERE: i64 = 30_960_001;
+const THERE: i64 = 30_960_002;
+const ELSEWHERE: i64 = 30_960_003;
+/// An invented hull with a base cost, one with none, one on the restricted list.
+const SHIP: i64 = 9_960_001;
+const SHIP_NO_COST: i64 = 9_960_002;
+const SHIP_BANNED: i64 = 9_960_003;
+const BANNED_GROUP: i64 = 9_960_100;
+const BAN_LIST: i64 = 9_960_200;
+/// Invented capacitor figures of the gate type, cost of `SHIP`, the zone
+/// multipliers of the invented table, and the light years of the invented
+/// centres (every ly figure is HERE-relative, along x).
+const CAP: f64 = 400.0;
+const RECHARGE_MS: f64 = 3_600_000.0;
+const BASE: f64 = 10.0;
+const MULTS: [f64; 5] = [1.0, 2.0, 3.0, 4.0, 5.0];
+const THERE_LY: f64 = 7.0;
+const ELSEWHERE_LY: f64 = 30.0;
 const ALICE: i64 = 5_001;
 const STRANGER: i64 = 5_002;
 const ALICE_SHIP: i64 = 6_001;
@@ -18,6 +33,51 @@ const CORP_A: i64 = 7_001;
 const CORP_B: i64 = 7_002;
 const CORP_X: i64 = 7_099;
 const ALLIANCE: i64 = 8_001;
+
+/// The invented content: the gate type's capacitor, three hulls, the zone
+/// table and one restricted list. `table` false leaves out `jump-bridges`.
+fn content(table: bool) -> crate::content::Content {
+    let mut c = crate::content::Content::fixture();
+    let rows = format!(
+        "{}type\t{TYPE_ANSIBLEX}\t9960300\t9960400\t1\t1\t1.0\t1.0\t1.0\t500.0\t0\t\t482={CAP};55={RECHARGE_MS}\tGate\n\
+         type\t{SHIP}\t9960301\t6\t1\t1\t1.0\t1.0\t1.0\t10.0\t0\t\t6364={BASE}\tHull\n\
+         type\t{SHIP_NO_COST}\t9960301\t6\t1\t1\t1.0\t1.0\t1.0\t10.0\t0\t\t\tFree Hull\n\
+         type\t{SHIP_BANNED}\t{BANNED_GROUP}\t6\t1\t1\t1.0\t1.0\t1.0\t10.0\t0\t\t6364=5.0\tBanned Hull\n",
+        crate::typedata::FIXTURE
+    );
+    let t = crate::typedata::Table::parse(&rows).expect("the test rows parse");
+    c.insert("typedata", crate::typedata::Installed::build(t));
+    let at = |id: i64, ly: f64| format!("s\t{id}\t{}\t0.0\t0.0", ly * crate::celestial::LIGHTYEAR);
+    let centers = crate::celestial::Centers::parse(&[
+        at(HERE, 0.0),
+        at(THERE, THERE_LY),
+        at(ELSEWHERE, ELSEWHERE_LY),
+    ])
+    .expect("the test centres parse");
+    c.insert("centers", centers);
+    let mut d = crate::dungeon_data::Table::fixture();
+    d.typelists.insert(
+        BAN_LIST,
+        crate::dungeon_data::TypeList {
+            inc_groups: vec![BANNED_GROUP],
+            ..Default::default()
+        },
+    );
+    c.insert("dungeon_data", d);
+    if table {
+        c.insert(
+            "jump bridges",
+            Bridges::new([(
+                TYPE_ANSIBLEX,
+                GateRow {
+                    restriction_list: Some(BAN_LIST),
+                    zones: MULTS,
+                },
+            )]),
+        );
+    }
+    c
+}
 
 fn world() -> Registry {
     let mut text = String::new();
@@ -28,6 +88,7 @@ fn world() -> Registry {
         character_id: id,
         ship_id: ship,
         corporation_id: corp,
+        ship_type_id: SHIP,
         ..Character::default()
     };
     let mut reg = Registry::new(SandboxConfig {
@@ -37,7 +98,8 @@ fn world() -> Registry {
         ],
         celestials: Catalogue::parse(&text),
         ..SandboxConfig::default()
-    });
+    })
+    .with_content(std::sync::Arc::new(content(true)));
     for (client, who) in [(1, ALICE), (2, STRANGER)] {
         reg.session_opened(crate::session_table::SessionEntry {
             client_id: client,
@@ -93,6 +155,34 @@ fn bare_pair(reg: &mut Registry) {
     ally(reg, &[CORP_A, CORP_B]);
     gate(reg, 11, CORP_A, HERE, [4.0e9, 0.0, 0.0], Some(THERE));
     gate(reg, 22, CORP_B, THERE, [0.0, 0.0, 6.0e9], Some(HERE));
+    // The alliance holds both systems, and a third as its capital.
+    for system in [HERE, THERE, ELSEWHERE] {
+        crate::sov::set_claim(reg.deltas_mut(), system, Some((ALLIANCE, CORP_A)), 1);
+    }
+    full(reg, 11);
+    full(reg, 22);
+}
+
+/// Gate `id` holds its full capacity, settled now.
+fn full(reg: &mut Registry, id: i64) {
+    set_charge(reg, id, CAP, crate::pyutil::filetime_now());
+}
+
+/// Gate `id` holds `gj`, settled at `at`, with the etag unchanged.
+fn set_charge(reg: &mut Registry, id: i64, gj: f64, at: i64) {
+    let counter = cap_row(reg.deltas(), id).map_or(0, |r| r.2);
+    put_cap(reg.deltas_mut(), id, gj, at, counter);
+}
+
+/// The charge gate `id` holds now.
+fn charge(reg: &Registry, id: i64) -> f64 {
+    let g = structure::get(reg.deltas(), id).unwrap();
+    charge_of(reg, &g, crate::pyutil::filetime_now()).0
+}
+
+/// Make `system` the alliance's capital, at once.
+fn capital(reg: &mut Registry, system: i64) {
+    crate::sov_index::set_capital(reg.deltas_mut(), ALLIANCE, system, 1, 0).unwrap();
 }
 
 /// A held hub in `system` with upgrade `ty` Online.
@@ -616,35 +706,44 @@ fn the_gm_command_links_and_unlinks() {
         PyValue::Bytes(b) => String::from_utf8(b).unwrap(),
         o => panic!("{o:?}"),
     };
-    let r = say(slash(&mut reg, Some(ALICE), &["link", "11", "91002"]).unwrap());
+    let r = say(slash(
+        &mut reg,
+        Some(ALICE),
+        &["link", "11", THERE.to_string().as_str()],
+    )
+    .unwrap());
     assert!(r.contains("no gate aimed back"), "{r}");
-    let r = say(slash(&mut reg, Some(ALICE), &["link", "22", "91001"]).unwrap());
+    let r = say(slash(
+        &mut reg,
+        Some(ALICE),
+        &["link", "22", HERE.to_string().as_str()],
+    )
+    .unwrap());
     assert!(r.contains("linked to gate 11"), "{r}");
     assert_eq!(links(reg.deltas()).len(), 1);
     let r = say(slash(&mut reg, Some(ALICE), &["list"]).unwrap());
     assert!(r.contains("gate 11") && r.contains("partner 22"), "{r}");
     // Refused: a system that is its own, a non-gate.
     assert!(
-        say(slash(&mut reg, Some(ALICE), &["link", "11", "91001"]).unwrap())
-            .starts_with("/jbridge")
+        say(slash(
+            &mut reg,
+            Some(ALICE),
+            &["link", "11", HERE.to_string().as_str()]
+        )
+        .unwrap())
+        .starts_with("/jbridge")
     );
     assert!(
-        say(slash(&mut reg, Some(ALICE), &["link", "5", "91002"]).unwrap())
-            .contains("not a jump gate")
+        say(slash(
+            &mut reg,
+            Some(ALICE),
+            &["link", "5", THERE.to_string().as_str()]
+        )
+        .unwrap())
+        .contains("not a jump gate")
     );
     slash(&mut reg, Some(ALICE), &["unlink", "22"]).unwrap();
     assert!(links(reg.deltas()).is_empty());
-}
-
-#[test]
-fn the_seams_for_86_are_open_today() {
-    let mut reg = world();
-    pair(&mut reg);
-    let g = structure::get(reg.deltas(), 11).unwrap();
-    assert!(take_fuel(&mut reg, ALICE, &g).is_ok());
-    assert!(!restricted_hull(&reg, 1));
-    assert!(may_use(&reg, ALICE, &g));
-    assert!(!may_use(&reg, STRANGER, &g));
 }
 
 /// Turns the gate on for this thread and back off on drop, panic or not.
@@ -728,4 +827,325 @@ fn a_jump_without_the_upgrade_is_refused_and_nothing_moves() {
         upgrade(&mut reg, system, JUMP_UPGRADE);
     }
     assert!(jump(&mut reg, ALICE, 11).is_ok());
+}
+
+// -- ANSI-2a: the capacitor, the zone cost, the access rule -------------------------
+
+/// The gate's charge in a test is exact to this.
+const EPS: f64 = 1e-9;
+
+#[test]
+fn charge_grows_from_zero_toward_the_capacity_and_never_past_it() {
+    let tick = 10_000.0;
+    let at = |ms: f64| (ms * tick) as i64;
+    let mut last = 0.0;
+    for ms in [0.0, 1.0e5, 1.0e6, 5.0e6, 2.0e7, 1.0e9] {
+        let c = charge_at(CAP, RECHARGE_MS, 0.0, 0, at(ms));
+        assert!(c >= last, "monotonic at {ms} ms: {c} < {last}");
+        assert!((0.0..=CAP).contains(&c));
+        last = c;
+    }
+    assert_eq!(charge_at(CAP, RECHARGE_MS, 0.0, 0, 0), 0.0);
+    assert!(last > CAP * 0.999, "asymptotically full: {last}");
+    // Full stays full; a time before the settle counts as none.
+    assert!((charge_at(CAP, RECHARGE_MS, CAP, 0, at(1.0e6)) - CAP).abs() < EPS);
+    assert!((charge_at(CAP, RECHARGE_MS, 50.0, 100, 0) - 50.0).abs() < 1e-6);
+    // c0 above the capacity is clamped.
+    assert!((charge_at(CAP, RECHARGE_MS, CAP * 3.0, 0, 0) - CAP).abs() < EPS);
+}
+
+#[test]
+fn charge_at_one_tau_matches_the_formula() {
+    let tau = RECHARGE_MS / 5.0;
+    let c0 = 100.0;
+    let got = charge_at(CAP, RECHARGE_MS, c0, 7, 7 + (tau * 10_000.0) as i64);
+    let want = (1.0 + ((c0 / CAP).sqrt() - 1.0) * (-1.0f64).exp()).powi(2) * CAP;
+    assert!((got - want).abs() < 1e-6, "{got} vs {want}");
+    // A gate with no capacity holds nothing.
+    assert_eq!(charge_at(0.0, RECHARGE_MS, 0.0, 0, 1_000_000_000), 0.0);
+}
+
+#[test]
+fn zone_bounds_and_cost() {
+    assert_eq!(zone_index(Some(0.0)), 0);
+    assert_eq!(zone_index(Some(5.0)), 0, "the bound belongs to its zone");
+    assert_eq!(zone_index(Some(5.01)), 1);
+    assert_eq!(zone_index(Some(10.0)), 1);
+    assert_eq!(zone_index(Some(15.0)), 2);
+    assert_eq!(zone_index(Some(20.0)), 3);
+    assert_eq!(zone_index(Some(25.0)), 4);
+    assert_eq!(zone_index(None), 4, "no capital is the last zone");
+    assert_eq!(zone_index(Some(f64::NAN)), 4);
+    assert_eq!(zone_cost(10.0, MULTS, 0), 10.0);
+    assert_eq!(zone_cost(10.0, MULTS, 3), 40.0);
+    assert_eq!(
+        zone_cost(10.0, MULTS, 9),
+        50.0,
+        "an index past the end clamps"
+    );
+}
+
+/// A jump takes `base x multiplier` of the destination's zone from the gate
+/// and lands the ship.
+#[test]
+fn a_jump_takes_the_zone_cost_and_lands() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    // Capital in HERE: THERE is 7 ly away, zone 2.
+    capital(&mut reg, HERE);
+    set_charge(&mut reg, 11, 100.0, crate::pyutil::filetime_now());
+    assert_eq!(jump(&mut reg, ALICE, 11), Ok(PyValue::Bool(true)));
+    assert!(reg.jumps().contains(ALICE));
+    let want = 100.0 - BASE * MULTS[1];
+    assert!(
+        (charge(&reg, 11) - want).abs() < 0.5,
+        "{}",
+        charge(&reg, 11)
+    );
+    // The far gate's charge is its own.
+    assert!((charge(&reg, 22) - CAP).abs() < EPS);
+}
+
+#[test]
+fn the_zone_follows_the_capital() {
+    let mut reg = world();
+    pair(&mut reg);
+    let now = crate::pyutil::filetime_now();
+    // No capital among three held systems: the last zone.
+    assert_eq!(zone_of(&reg, ALLIANCE, THERE, now), 4);
+    capital(&mut reg, HERE);
+    assert_eq!(zone_of(&reg, ALLIANCE, THERE, now), 1, "7 ly");
+    capital(&mut reg, ELSEWHERE);
+    assert_eq!(zone_of(&reg, ALLIANCE, THERE, now), 4, "23 ly");
+    // A system the centres do not hold: the last zone.
+    assert_eq!(zone_of(&reg, ALLIANCE, 30_960_099, now), 4);
+}
+
+/// Too little charge refuses the jump: the ship stays, nothing is taken.
+#[test]
+fn too_little_charge_refuses_and_costs_nothing() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    capital(&mut reg, HERE);
+    let cost = BASE * MULTS[1];
+    let now = crate::pyutil::filetime_now();
+    set_charge(&mut reg, 11, cost - 1.0, now);
+    let etag = cap_row(reg.deltas(), 11).unwrap().2;
+    assert_eq!(jump(&mut reg, ALICE, 11), Err(notify(NO_CHARGE)));
+    assert!(reg.roster().is_in_space(ALICE));
+    assert!(reg.jumps().is_empty());
+    let (held, at, counter) = cap_row(reg.deltas(), 11).unwrap();
+    assert_eq!((held, at, counter), (cost - 1.0, now, etag), "untouched");
+    // A new gate starts empty: no row, anchored just now.
+    reg.deltas_mut().del(KIND_CHARGE, &cap_key(11));
+    assert!(charge(&reg, 11) < 1.0);
+    assert!(jump(&mut reg, ALICE, 11).is_err());
+}
+
+#[test]
+fn a_gate_recharges_over_time() {
+    let mut reg = world();
+    pair(&mut reg);
+    let long_ago = crate::pyutil::filetime_now() - 3 * 3_600 * 10_000_000;
+    set_charge(&mut reg, 11, 0.0, long_ago);
+    // Three hours on a one-hour recharge time: past 99 percent.
+    assert!(charge(&reg, 11) > CAP * 0.99, "{}", charge(&reg, 11));
+}
+
+#[test]
+fn a_restricted_hull_is_refused_before_any_charge_is_taken() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    assert!(restricted_hull(&reg, SHIP_BANNED));
+    assert!(!restricted_hull(&reg, SHIP));
+    reg.character_mut(ALICE).unwrap().ship_type_id = SHIP_BANNED;
+    let before = cap_row(reg.deltas(), 11);
+    assert_eq!(
+        jump(&mut reg, ALICE, 11),
+        Err(restricted_error(SHIP_BANNED))
+    );
+    assert_eq!(cap_row(reg.deltas(), 11), before);
+    assert!(reg.roster().is_in_space(ALICE));
+    // A hull with no base cost is refused the same way.
+    reg.character_mut(ALICE).unwrap().ship_type_id = SHIP_NO_COST;
+    assert_eq!(
+        jump(&mut reg, ALICE, 11),
+        Err(restricted_error(SHIP_NO_COST))
+    );
+    assert_eq!(cap_row(reg.deltas(), 11), before);
+}
+
+#[test]
+fn without_the_table_nothing_is_restricted_and_every_multiplier_is_one() {
+    let mut reg = world().with_content(std::sync::Arc::new(content(false)));
+    pair(&mut reg);
+    assert!(!restricted_hull(&reg, SHIP_BANNED));
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    capital(&mut reg, ELSEWHERE);
+    let now = crate::pyutil::filetime_now();
+    assert_eq!(cost_of(&reg, ALICE, &g, SHIP, now), Some(BASE));
+}
+
+#[test]
+fn the_access_rule_wants_the_holder_alliance_and_the_profile_setting() {
+    let mut reg = world();
+    pair(&mut reg);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    // A member of the holder alliance, owner group, no profile: in.
+    assert!(may_use(&reg, ALICE, &g));
+    // Outside the alliance: out.
+    assert!(!may_use(&reg, STRANGER, &g));
+    // An alliance member whose corporation is not the owner group, with no
+    // profile at all, is out (the interim rule is the owner group).
+    reg.character_mut(STRANGER).unwrap().corporation_id = CORP_B;
+    ally(&mut reg, &[CORP_B]);
+    assert!(
+        may_use(&reg, STRANGER, &g),
+        "CORP_B is in the owner alliance"
+    );
+    // A holder that is another alliance refuses the owner's pilot.
+    crate::sov::set_claim(reg.deltas_mut(), HERE, Some((ALLIANCE + 1, CORP_X)), 2);
+    assert!(!may_use(&reg, ALICE, &g));
+}
+
+#[test]
+fn the_profile_setting_decides_once_the_owner_has_a_profile() {
+    let mut reg = world();
+    pair(&mut reg);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    assert!(!has_profile(reg.deltas(), &g));
+    assert!(
+        may_use(&reg, ALICE, &g),
+        "no profile: the owner group passes"
+    );
+    // The owner now has a default profile with no activation row: it decides,
+    // and it grants nothing.
+    let pid = crate::structure_profile::ensure_default(&mut reg, CORP_A);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    assert!(has_profile(reg.deltas(), &g));
+    assert!(
+        !may_use(&reg, ALICE, &g),
+        "a profile without the setting refuses"
+    );
+    // A group holding the setting lets its members in, and no one else.
+    let group = crate::owner_groups::create_for(
+        &mut reg,
+        CORP_A,
+        "Invented",
+        "",
+        &[(CORP_A, crate::owner_groups::MEMBER)],
+    );
+    crate::structure_profile::save_settings(
+        reg.deltas_mut(),
+        pid,
+        &[(SETTING_ACTIVATE, group.group_id, 0.0)],
+    );
+    assert!(may_use(&reg, ALICE, &g));
+    assert!(!may_use(&reg, STRANGER, &g));
+}
+
+#[test]
+fn the_info_is_none_for_a_stranger_and_an_instance_for_a_member() {
+    let mut reg = world();
+    pair(&mut reg);
+    capital(&mut reg, HERE);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    let now = crate::pyutil::filetime_now();
+    set_charge(&mut reg, 11, 123.0, now);
+    assert_eq!(info_at(&mut reg, STRANGER, &g, now), PyValue::None);
+    let got = info_at(&mut reg, ALICE, &g, now);
+    assert_eq!(attr(&got, "_valid_ship_type"), PyValue::Bool(true));
+    assert_eq!(attr(&got, "_sim_timestamp"), PyValue::Long(now));
+    let PyValue::Real(c) = attr(&got, "_structure_capacitor") else {
+        panic!("a Real charge");
+    };
+    assert!((c - 123.0).abs() < 0.5, "{c}");
+    // A banned hull is not a valid ship type.
+    reg.character_mut(ALICE).unwrap().ship_type_id = SHIP_BANNED;
+    let got = info_at(&mut reg, ALICE, &g, now);
+    assert_eq!(attr(&got, "_valid_ship_type"), PyValue::Bool(false));
+}
+
+#[test]
+fn the_component_call_answers_through_the_router_shape() {
+    let mut reg = world();
+    pair(&mut reg);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    assert_eq!(locate(&reg, 11), Some(g.system));
+    assert_eq!(locate(&reg, 9_999), None);
+    let call = crate::space_component::CompCall {
+        actor: ALICE,
+        system: HERE,
+        item_id: 11,
+        args: &[],
+        kwargs: &[],
+    };
+    let got = info(&mut reg, &call).unwrap();
+    assert!(matches!(got, PyValue::Instance { .. }), "{got:?}");
+}
+
+#[test]
+fn a_jump_and_the_gm_command_change_the_etag() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    let etag = |reg: &Registry| {
+        slim_keys(reg, &structure::get(reg.deltas(), 11).unwrap())
+            .into_iter()
+            .find(|(k, _)| *k == "component_jumpBridge")
+            .map(|(_, v)| v)
+            .unwrap()
+    };
+    let e0 = etag(&reg);
+    let say = |v: PyValue| match v {
+        PyValue::Bytes(b) => String::from_utf8(b).unwrap(),
+        o => panic!("{o:?}"),
+    };
+    let r = say(slash(&mut reg, Some(ALICE), &["charge", "11", "50"]).unwrap());
+    assert!(r.contains("holds 50.0"), "{r}");
+    let e1 = etag(&reg);
+    assert_ne!(e0, e1, "the GM set changes the etag");
+    assert!((charge(&reg, 11) - 50.0).abs() < 0.5);
+    capital(&mut reg, HERE);
+    set_charge(&mut reg, 11, 100.0, crate::pyutil::filetime_now());
+    assert!(jump(&mut reg, ALICE, g.id).is_ok());
+    assert_ne!(etag(&reg), e1, "a jump changes the etag");
+    // `full`, here, and a bad amount.
+    let _ = reg.roster_mut().leave(ALICE);
+    reg.roster_mut().arrive(Presence::arriving(
+        ALICE,
+        ALICE_SHIP,
+        HERE,
+        Motion::arrived([0.0; 3], [0.0; 3]),
+    ));
+    let r = say(slash(&mut reg, Some(ALICE), &["charge", "here", "full"]).unwrap());
+    assert!(r.contains(&format!("holds {CAP:.1}")), "{r}");
+    assert!(
+        say(slash(&mut reg, Some(ALICE), &["charge", "here", "lots"]).unwrap())
+            .starts_with("/jbridge")
+    );
+    assert!(
+        say(slash(&mut reg, Some(ALICE), &["charge", "5", "1"]).unwrap())
+            .contains("not a jump gate")
+    );
+    // Over the capacity is held at it.
+    let r = say(slash(&mut reg, Some(ALICE), &["charge", "11", "99999"]).unwrap());
+    assert!(r.contains(&format!("holds {CAP:.1}")), "{r}");
+}
+
+#[test]
+fn the_table_parses_its_lines_and_refuses_a_bad_one() {
+    let (id, row) = Bridges::parse_line("35841\t900\t1\t2.5\t3\t4\t5").unwrap();
+    assert_eq!((id, row.restriction_list), (35841, Some(900)));
+    assert_eq!(row.zones, [1.0, 2.5, 3.0, 4.0, 5.0]);
+    let (_, none) = Bridges::parse_line("35841\t-\t1\t1\t1\t1\t1").unwrap();
+    assert_eq!(none.restriction_list, None);
+    assert!(Bridges::parse_line("35841\t900\t1\t2").is_err());
+    assert!(Bridges::parse_line("0\t900\t1\t1\t1\t1\t1").is_err());
+    assert!(Bridges::parse_line("35841\t900\t1\tx\t1\t1\t1").is_err());
+    assert!(Bridges::parse_line("35841\t900\t-1\t1\t1\t1\t1").is_err());
 }

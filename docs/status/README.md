@@ -90,7 +90,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Space-component call seam (beyonce.CallComponentFromClient): the dispatch table the skyhook and merc-den handlers plug into: *built-unproved*, space_component.rs tests; no handlers registered yet
 - [ ] Ansiblex jump gates: *missing*, superseded by the row below (jump_bridge.rs, #85)
 - [ ] Cyno jammers: *built-unproved*, sov_jammer.rs: an online Tenebrex marks its system jammed (pending/on); GetCynoJammerState and the OnCynoJammerChanged push; fci_cyno_jammer green (regress-w29a): the client's jammer state None, then 0 and the icon ON by the push alone; the upgrade requirement is behind JAMMER_NEEDS_UPGRADE, false by default, so a jammer runs without the cyno_jammer upgrade; one-per-system not yet wired into anchoring; refusing a cyno is #88
-- [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; fuel, access and hull rules are #86
+- [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; the gate's capacitor (recharge curve, zone cost from the capital, GM /jbridge charge), holder-alliance and profile access, hull list seam (jump-bridges.tsv, absent until ANSI-2b); fci steps 6-9 written, not run; the Stargate Engine service rule is ANSI-2c
 - [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
@@ -493,7 +493,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Space-component call seam (beyonce.CallComponentFromClient): the dispatch table the skyhook and merc-den handlers plug into: *built-unproved*, space_component.rs tests; no handlers registered yet
 - [ ] Ansiblex jump gates: *missing*, superseded by the row below (jump_bridge.rs, #85)
 - [ ] Cyno jammers: *built-unproved*, sov_jammer.rs: an online Tenebrex marks its system jammed (pending/on); GetCynoJammerState and the OnCynoJammerChanged push; fci_cyno_jammer green (regress-w29a): the client's jammer state None, then 0 and the icon ON by the push alone; the upgrade requirement is behind JAMMER_NEEDS_UPGRADE, false by default, so a jammer runs without the cyno_jammer upgrade; one-per-system not yet wired into anchoring; refusing a cyno is #88
-- [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; fuel, access and hull rules are #86
+- [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; the gate's capacitor (recharge curve, zone cost from the capital, GM /jbridge charge), holder-alliance and profile access, hull list seam (jump-bridges.tsv, absent until ANSI-2b); fci steps 6-9 written, not run; the Stargate Engine service rule is ANSI-2c
 
 </details>
 

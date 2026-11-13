@@ -21,11 +21,28 @@ destination in `extraConfig`).  Read off the client's OWN state:
    ship to the partner's system (session, park with the ego ball, the same
    ship, the partner gate within the jump range), and the same route takes it
    back;
-5. after an `/jbridge unlink` the link is gone from all three answers.
+5. after an `/jbridge unlink` the link is gone from all three answers;
+6. (ANSI-2a, #86) the pair linked again and gate A emptied by `/jbridge charge
+   here 0`, the client's own `jumpbridge.client.jumpBridge.GetJumpBridgeInfo`
+   answers an info object whose `structure_capacitor` is (almost) 0 (fails on
+   `None` or a missing attribute);
+7. a menu jump on the empty gate is refused and the ship stays;
+8. with the gate full, a jump takes `base cost x zone multiplier` off the
+   gate's charge: the base cost is the client's own attribute 6364 of the
+   ship, the multiplier the client's own `component.zoneMultipliers` through
+   `GetCapacitorZoneModifierAndIdx` for its own capital (nothing hard-coded);
+   the charge read again from the origin gate after the way back lies between
+   `before - cost` and that value recharged for the time between the reads;
+9. no traceback from `jumpbridge/` or `spacecomponents/client/ui/jumpbridge/`.
+
+The gates need the pilot's alliance to hold both systems (`/sov set here`) and
+a charge (`/jbridge charge here full`); both are set up before step 1.
 
 No client log traceback may appear.
 
-[A]s: the Ansiblex type's English name is "ansiblex jump gate" (a missing type is
+[A]s: a gate recharges by the ship capacitor's curve (`tau = rechargeRate / 5`),
+so step 6 reads "almost 0" (under 1 GJ) after a moment; `/sov set here` makes
+the alliance the holder (a PRECONDITION otherwise); the Ansiblex type's English name is "ansiblex jump gate" (a missing type is
 a PRECONDITION); `menu.JumpThroughStructureJumpBridge` is the menu entry's
 callable (`menusvc.py:2077`, [V] in the decompiled client); a world that holds
 older gates in the chosen systems is cleaned with `/jbridge unlink` first.
@@ -1555,6 +1572,71 @@ def eoci_main(EOCI_NAME):
                 return True, '%s after %s ms; %s' % (label, text(waited), text(notes))
         return False, '%s: no session change; %s' % (label, text(notes))
 
+    def claim_and_charge(alliance, label):
+        """`/sov set here` for the pilot's alliance (the holder rule of the
+        gate's access) and a full charge for the gate here (a new gate starts
+        empty).  `[A]` the reply of `/sov set` names no refusal."""
+        ok, rep = gm('/sov set here %s' % alliance)
+        precondition('%s: the alliance holds the system (/sov set here)' % label,
+                     bool(ok) and 'not claimable' not in rep and 'usage' not in rep.lower(),
+                     rep[:200])
+        okc, repc = gm('/jbridge charge here full')
+        precondition('%s: the gate here holds a full charge' % label,
+                     bool(okc) and 'holds' in repc, repc[:200])
+
+    def bridge_info(gate_id):
+        """The client's own `GetJumpBridgeInfo(michelle, gateID)`
+        (`jumpBridge.py:131-134`): the answer object, or None."""
+        def go():
+            from jumpbridge.client.jumpBridge import GetJumpBridgeInfo
+            return GetJumpBridgeInfo(get_michelle(), gate_id)
+        ok, v = safe(go)
+        return v if ok else None
+
+    def bridge_cost(gate_id):
+        """`(cost, detail)`: this ship's cost for the gate, the way the
+        client's window works it out (`jumpBridgeContController.
+        _get_your_cost_and_zone`): attribute 6364 of the ship times the
+        multiplier of `GetCapacitorZoneModifierAndIdx(capital, target,
+        component.zoneMultipliers)`.  `(None, why)` when any part is missing."""
+        def go():
+            from jumpbridge.client.jumpBridge import GetJumpBridgeComponent
+            from jumpbridge.common.zone_modifier_util import GetCapacitorZoneModifierAndIdx
+            slim = gate_slim(gate_id)
+            comp = GetJumpBridgeComponent(park_now(), gate_id)
+            sov = get_svc('sov')
+            capital = sov.GetMyCapitalSystem()
+            mult, idx = GetCapacitorZoneModifierAndIdx(
+                capital, slim.targetSolarsystemID, comp.zoneMultipliers)
+            base = dogma_loc().GetAttributeValue(builtin('session').shipid, 6364)
+            return base, mult, idx, capital, list(comp.zoneMultipliers)
+        ok, v = safe(go)
+        if not ok:
+            return None, text(v)[:200]
+        base, mult, idx, capital, mults = v
+        if not base or not mult:
+            return None, 'base %s multiplier %s' % (text(base), text(mult))
+        return float(base) * float(mult), 'base %s x %s (zone %s, capital %s, zones %s)' % (
+            text(base), text(mult), text(idx + 1), text(capital), text(mults))
+
+    def gate_charge_facts(gate_id):
+        """`(capacity, recharge_ms)` of the gate's type, as the window reads them."""
+        def go():
+            slim = gate_slim(gate_id)
+            st = dogma_loc().dogmaStaticMgr
+            return (st.GetTypeAttribute2(slim.typeID, 482),
+                    st.GetTypeAttribute2(slim.typeID, 55))
+        ok, v = safe(go)
+        return v if ok else (None, None)
+
+    def evolved(c0, cap, recharge_ms, dt_filetime):
+        """The ship capacitor's curve, as the window extrapolates it (A7)."""
+        import math
+        tau = recharge_ms / 5.0
+        dt = max(dt_filetime, 0) / 10000.0
+        sq = math.sqrt(max(c0 / cap, 0.0))
+        return (1.0 + (sq - 1.0) * math.exp(-dt / tau)) ** 2 * cap
+
     def eoci_body():
         mark = log_mark()
         try:
@@ -1571,6 +1653,7 @@ def eoci_main(EOCI_NAME):
                               ignore=('_UpdateLensflare',))
 
     def eoci_inner():
+        jb_mark = log_mark()
         tids = type_ids_named('ansiblex jump gate', exact=True) or type_ids_named('ansiblex')
         precondition('the client knows an Ansiblex type', bool(tids), text(tids))
         cands = candidates()
@@ -1589,8 +1672,11 @@ def eoci_main(EOCI_NAME):
         clean_old_gates([sys_a, sys_b])
         precondition('in system A', go_to(sys_a), 'system %s' % text(sys_a))
         gate_a = spawn_gate(tid, 'Fci Gate A ' + uniq(3))
+        precondition('an alliance to hold the systems', bool(alliance), text(alliance))
+        claim_and_charge(alliance, 'system A')
         precondition('in system B', go_to(sys_b), 'system %s' % text(sys_b))
         gate_b = spawn_gate(tid, 'Fci Gate B ' + uniq(3))
+        claim_and_charge(alliance, 'system B')
         if gate_a is None or gate_b is None:
             return
         gm_check('gate A is aimed at system B', '/jbridge link %d %d' % (gate_a, sys_b),
@@ -1658,6 +1744,87 @@ def eoci_main(EOCI_NAME):
         check('and the map no longer lists the pair',
               pairs is not None and not any(set(p) == set([gate_a, gate_b]) for p in pairs),
               text(pairs)[:160])
+
+        # 6. (#86) the pair again, gate A empty: the client's own info call
+        gm_check('B is aimed at A again: linked', '/jbridge link %d %d' % (gate_b, sys_a),
+                 expect=['linked to gate %d' % gate_a])
+        if sess_attr('solarsystemid2') != sys_a or not in_system_park(sys_a):
+            precondition('back in system A', go_to(sys_a), 'system %s' % text(sys_a))
+        got, _w = wait_for(lambda: gate_slim(gate_a) is not None, timeout_ms=PUSH_WAIT_MS)
+        precondition('gate A is in the client\'s park again', bool(got), 'slim items of the park')
+        if not got:
+            return
+        gm_check('gate A is emptied', '/jbridge charge here 0', expect=['holds 0.0'])
+        info = bridge_info(gate_a)
+        cap_now = getattr_safe(info, 'structure_capacitor')
+        check('GetJumpBridgeInfo(A) answers an info object whose structure_capacitor is (almost) 0',
+              info is not None and cap_now is not None and 0 <= cap_now < 1.0,
+              'info %s structure_capacitor %s' % (text(info)[:80], text(cap_now)))
+        check('and says the ship type is valid',
+              getattr_safe(info, 'valid_ship_type') is True, text(getattr_safe(info, 'valid_ship_type')))
+
+        # 7. a menu jump on the empty gate is refused, the ship stays
+        session_gate_open()
+        ok, v = safe(lambda: get_svc('menu').JumpThroughStructureJumpBridge(gate_a))
+        left, _w = wait_for(lambda: sess_attr('solarsystemid2') != sys_a, timeout_ms=8000, step_ms=500)
+        check('a menu jump on the empty gate is refused and the ship stays in the system',
+              (not left) and in_system_park(sys_a),
+              'call %s; system now %s' % (text(v)[:120], text(sess_attr('solarsystemid2'))))
+
+        # 8. full: the jump takes base cost x zone multiplier off the gate
+        gm_check('gate A is full', '/jbridge charge here full', expect=['holds'])
+        cost, why = bridge_cost(gate_a)
+        precondition('the cost of this ship, worked out the window\'s way', cost is not None, why)
+        cap, recharge = gate_charge_facts(gate_a)
+        precondition('the gate type\'s capacity and recharge time', bool(cap) and bool(recharge),
+                     '%s %s' % (text(cap), text(recharge)))
+        info1 = bridge_info(gate_a)
+        c1 = getattr_safe(info1, 'structure_capacitor')
+        t1 = getattr_safe(info1, 'sim_timestamp')
+        precondition('the full gate answers its charge', c1 is not None and t1 is not None,
+                     'charge %s at %s' % (text(c1), text(t1)))
+        if cost is None or not cap or not recharge or c1 is None or t1 is None:
+            return
+        moved, detail = jump_by_menu(gate_a, sys_b, 'A -> B (charged)')
+        check('the jump on the full gate goes through', moved, detail)
+        if not moved:
+            return
+        settled, _w = wait_for(lambda: in_system_park(sys_b), timeout_ms=JUMP_WAIT_MS, step_ms=500)
+        precondition('the partner system\'s park is built', bool(settled), 'park for %s' % text(sys_b))
+        gm('/jbridge charge here full')
+        moved, detail = jump_by_menu(gate_b, sys_a, 'B -> A (charged)')
+        check('and the way back', moved, detail)
+        if not moved:
+            return
+        back, _w = wait_for(lambda: in_system_park(sys_a), timeout_ms=JUMP_WAIT_MS, step_ms=500)
+        precondition('the origin system\'s park is built again', bool(back), 'park for %s' % text(sys_a))
+        got, _w = wait_for(lambda: gate_slim(gate_a) is not None, timeout_ms=PUSH_WAIT_MS)
+        info2 = bridge_info(gate_a)
+        c2 = getattr_safe(info2, 'structure_capacitor')
+        t2 = getattr_safe(info2, 'sim_timestamp')
+        if c2 is not None and t2 is not None and bool(got):
+            tol = 0.005 * cap
+            lower = c1 - cost - tol
+            upper = evolved(max(c1 - cost, 0.0), cap, recharge, t2 - t1) + tol
+            check('the charge fell by base cost x zone multiplier (%s), within 0.5 %% of the capacity'
+                  % why[:120],
+                  lower <= c2 <= upper and c2 < c1,
+                  'before %s after %s cost %s allowed [%s, %s]'
+                  % (fmt(c1, 2), fmt(c2, 2), fmt(cost, 2), fmt(lower, 2), fmt(upper, 2)))
+        else:
+            check('the origin gate answers its charge after the jump', False,
+                  'info %s charge %s' % (text(info2)[:80], text(c2)))
+
+        # 9. no traceback from the jump-bridge client code
+        blob, detail = log_since(jb_mark)
+        if blob is None:
+            check('no traceback from jumpbridge/ or its window', False, 'COULD NOT READ THE LOG (%s)' % detail)
+        else:
+            lines = [ln for ln in log_lines_with(blob, 'umpbridge', 400)
+                     if 'File ' in ln or 'Traceback' in ln or 'Error' in ln]
+            check('no traceback from jumpbridge/ or spacecomponents/client/ui/jumpbridge/',
+                  not lines, '%d line(s): %s' % (len(lines), ' ## '.join(lines[:3])))
+
 
 
     # -- end of the scenario body ------------------------------------------

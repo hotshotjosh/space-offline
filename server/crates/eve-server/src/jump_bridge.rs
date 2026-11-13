@@ -62,12 +62,35 @@
 //! `JUMP_DELAY` and the bind that lands the ship beside the partner gate.
 //! Nothing here moves a ship by itself.
 //!
-//! # Not here (issue #86)
+//! # The charge, the zone cost and the access rule (issue #86, ANSI-2a)
 //!
-//! **Fuel**, the **sov-upgrade gate** and the **access profile setting**
-//! (`SETTING_JUMP_BRIDGE_ACTIVATION`, 34) are #86's. Their seams are
-//! [`may_use`] (today: a member of the gate owner's group, the interim rule),
-//! [`take_fuel`] (today: free) and [`restricted_hull`] (today: none).
+//! **A jump burns no fuel: it draws on the gate's own capacitor** **[V]**
+//! (`spacecomponents/client/ui/jumpbridge/jumpBridgeContController.py:28-29,
+//! 49-63,159-186`; the manual text `CapacitorUsageText`). The gate's capacity
+//! and recharge time are its type's attributes 482 and 55 (A7); the ship's
+//! cost is its hull's attribute 6364 times the multiplier of the **zone of
+//! the destination system**, by its distance from the pilot alliance's
+//! capital (`zone_modifier_util.py`, [`zone_index`]). The charge recharges on
+//! the ship capacitor's curve ([`charge_at`]); a new gate starts at 0.
+//! [`take_charge`] settles it, refuses when the cost is more than it holds
+//! and otherwise stores the rest. The window asks
+//! `GetJumpBridgeInfo` (`jumpBridge.py:131-134`), answered by [`info`] with
+//! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`.
+//! The `jbcap` row (`structure_id -> charge_gj settled_at counter`) holds the
+//! settled charge; the counter is the slim's `component_jumpBridge` etag, so
+//! a change makes the bracket ask again (`jumpBridge.py:56-73`).
+//!
+//! **Access** ([`may_use`], `JumpRestrictionsText`): the pilot's alliance
+//! holds the sovereignty of the gate's system, the structure profile gives
+//! `SETTING_ACTIVATE` (a gate with no profile at all lets its owner group
+//! use it, the interim rule), and the sov upgrade rule holds ([`upgraded`]).
+//! The hull list is the gate type's `restrictionTypeList` from
+//! `deploy/jump-bridges.tsv` ([`Bridges`], written by ANSI-2b), resolved
+//! through `typelists.tsv`; the same file carries the five zone multipliers.
+//! Without the file every multiplier is 1.0 and no hull is listed.
+//!
+//! Not here: the Stargate Engine service module (ANSI-2c, after #41/#42) and
+//! jump fees.
 //!
 //! # `[A]`s
 //!
@@ -77,9 +100,31 @@
 //!   compares with 2,500 m; the server adds [`RANGE_SLACK`]. Falsified by an
 //!   honest jump refused with `NotCloseEnoughToJump` (the `[jbridge] out of
 //!   range` line gives the distance).
-//! - `component_jumpBridge` is 0 and `activationState` is `None`: no charge
-//!   or activation phase exists yet. Falsified by a gate bracket that draws
-//!   nothing or logs on a missing etag.
+//! - `activationState` is `None`: no activation phase exists yet. Falsified
+//!   by a gate bracket that logs on it.
+//! - Without `deploy/jump-bridges.tsv` every zone multiplier is 1.0 and no
+//!   hull is restricted. Falsified by the extracted row (ANSI-2b).
+//! - A gate whose structure has no profile row lets its owner group use it
+//!   (today's interim), so no live gate locks its owners out. Falsified by a
+//!   TQ gate with the default profile refusing its own alliance.
+//! - A hull with no base cost (attribute 6364 absent or 0) is refused as
+//!   restricted. Falsified by a TQ hull with no cost jumping.
+//! - A refusal for an empty capacitor is `CustomNotify` "The Ansiblex does not
+//!   have enough charge": the client has no such key (the autopilot's
+//!   `JumpNotEnoughCharge3` is the old ozone text). Falsified by a TQ capture
+//!   naming a key.
+//! - `_sim_timestamp` is the wall FILETIME the server's clock runs on
+//!   (`pyutil::filetime_now`, which the client's clock is set from), so the
+//!   bracket's extrapolated charge follows ours. Falsified by the bracket's
+//!   charge creeping off the server's by a clock skew. At `--time-scale` above
+//!   1 the recharge runs on game time ([`crate::game_clock`]) while the
+//!   client extrapolates on wall time, so the bar reads low until the next
+//!   ask (O-86b's default).
+//! - Capacity and recharge time absent from the type (no bundle): capacity 0,
+//!   so the gate never holds charge. Falsified by a bundle without them.
+//! - A zone for a destination or capital the centres file does not hold is
+//!   zone 5, as no capital is (`zone_modifier_util.py`). Falsified by a TQ
+//!   system pair the client puts in a lower zone.
 //! - The departure effect is the stargate's (`effects.JumpOut`, `targetID`
 //!   the gate). Falsified by a jump tunnel that never starts, or a client log
 //!   line about the gate ball.
@@ -90,11 +135,13 @@
 //! - A gate removed from space leaves a stale [`KIND`] row; ids are never
 //!   reused, and every reader joins the row to a live structure.
 
+use crate::content::{Boxed, Content, Origin, Sources, TableSpec};
 use crate::delta::Deltas;
 use crate::service::args::Args;
 use crate::service::{Registry, Request, ServiceError};
 use crate::structure::{self, Structure};
 use eve_marshal::PyValue;
+use std::collections::BTreeMap;
 
 /// `structure_id -> destination_system`: where a gate is aimed. Written only
 /// here (`delta_kinds.rs`, coordinator).
@@ -216,6 +263,259 @@ fn group_of(d: &Deltas, corp: i64) -> (bool, i64) {
     crate::alliance::of_corp(d, corp).map_or((false, corp), |a| (true, a))
 }
 
+/// The jump bridge's type attributes **[V]**: the gate's `capacitorCapacity`
+/// and `rechargeRate` (`jumpBridgeContController.py:28-29`), the hull's
+/// `attributeBaseJumpBridgeCapacitorCost` (`dogma/const.py:1425`).
+pub const ATTR_CAPACITY: i64 = 482;
+pub const ATTR_RECHARGE: i64 = 55;
+pub const ATTR_BASE_COST: i64 = 6364;
+
+/// The `jbcap` delta kind: `structure_id -> charge_gj settled_at counter`.
+/// `settled_at` is a FILETIME, `counter` the slim's etag. Written only here.
+pub const KIND_CHARGE: &str = "jbcap";
+
+/// The component the client's calls name (`jumpBridge.py:134`).
+pub const COMPONENT: &str = "structureJumpBridge";
+
+/// The notify text for an empty capacitor **[A]** (module header).
+pub const NO_CHARGE: &str = "The Ansiblex does not have enough charge";
+
+/// The zone bounds in light years, the last being open (`ZONE_DISTANCES`
+/// **[V]**, `zone_modifier_util.py`).
+pub const ZONE_BOUNDS: [f64; 4] = [5.0, 10.0, 15.0, 20.0];
+
+// -- the zone table ------------------------------------------------------------------
+
+/// The file `tools/content_deploy.py` writes (ANSI-2b), in the bundle.
+pub const TABLE_FILE: &str = "deploy/jump-bridges.tsv";
+/// Its header line.
+pub const TABLE_HEADER: &str = "#type_id\trestriction_list\tzone1\tzone2\tzone3\tzone4\tzone5";
+
+/// One gate type's component attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GateRow {
+    /// `restrictionTypeList`: the typelist of excluded hulls, if any.
+    pub restriction_list: Option<i64>,
+    /// `zone1Modifier..zone5Modifier`.
+    pub zones: [f64; 5],
+}
+
+/// The table: gate type -> its row. Empty when the file is absent **[A]**.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Bridges {
+    rows: BTreeMap<i64, GateRow>,
+}
+
+impl Bridges {
+    /// A table of these rows.
+    pub fn new(rows: impl IntoIterator<Item = (i64, GateRow)>) -> Self {
+        Bridges {
+            rows: rows.into_iter().collect(),
+        }
+    }
+
+    /// The type's row.
+    pub fn get(&self, type_id: i64) -> Option<&GateRow> {
+        self.rows.get(&type_id)
+    }
+
+    /// One data line.
+    pub fn parse_line(line: &str) -> Result<(i64, GateRow), String> {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != 7 {
+            return Err(format!("expected 7 columns, found {}", f.len()));
+        }
+        let type_id = f[0]
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .filter(|t| *t > 0)
+            .ok_or("type_id is not a positive type id")?;
+        let list = f[1].trim();
+        let restriction_list = if list.is_empty() || list == "-" || list == "0" {
+            None
+        } else {
+            Some(
+                list.parse::<i64>()
+                    .ok()
+                    .filter(|l| *l > 0)
+                    .ok_or("restriction_list is not a list id")?,
+            )
+        };
+        let mut zones = [1.0; 5];
+        for (i, z) in zones.iter_mut().enumerate() {
+            *z = f[2 + i]
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .ok_or_else(|| format!("zone{} is not a multiplier", i + 1))?;
+        }
+        Ok((
+            type_id,
+            GateRow {
+                restriction_list,
+                zones,
+            },
+        ))
+    }
+}
+
+fn load_table(src: &Sources) -> Result<Boxed, String> {
+    let Some(bundle) = src.bundle else {
+        return Ok(Box::new(Bridges::default()));
+    };
+    src.note(Origin::Bundle);
+    let mut t = Bridges::default();
+    for line in bundle.data_lines(TABLE_FILE, TABLE_HEADER)? {
+        let (id, row) = Bridges::parse_line(&line).map_err(|e| format!("{TABLE_FILE}: {e}"))?;
+        if t.rows.insert(id, row).is_some() {
+            return Err(format!("{TABLE_FILE}: type {id} twice"));
+        }
+    }
+    Ok(Box::new(t))
+}
+
+/// The registration row; the coordinator adds it to `content_tables::TABLES`.
+/// An absent file is an empty table (no restriction, multipliers 1.0 **[A]**).
+pub const TABLE: TableSpec = TableSpec {
+    name: "jump bridges",
+    load: load_table,
+    fixture: || Box::new(Bridges::default()) as Boxed,
+};
+
+static NO_BRIDGES: Bridges = Bridges {
+    rows: BTreeMap::new(),
+};
+
+/// The table in `content`; empty when none is registered.
+pub fn bridges(content: &Content) -> &Bridges {
+    content.try_get::<Bridges>().unwrap_or(&NO_BRIDGES)
+}
+
+// -- the capacitor -------------------------------------------------------------------
+
+/// The gate's charge `now` after holding `c0` GJ at `t0` (FILETIMEs), in a
+/// capacitor of `cap` GJ whose type has recharge time `recharge_ms`: the ship
+/// capacitor's curve **[V]** (`jumpBridgeContController.py:159-173`),
+/// `tau = recharge / 5`, `C = (1 + (sqrt(c0/cap) - 1) * exp(-dt/tau))^2 * cap`
+/// with `dt` in milliseconds (`dgmTauConstant` = 10,000 FILETIME ticks per ms).
+/// `c0` is clamped to `[0, cap]`; a time before `t0` counts as none.
+pub fn charge_at(cap: f64, recharge_ms: f64, c0: f64, t0: i64, now: i64) -> f64 {
+    if cap.is_nan() || cap <= 0.0 || cap.is_infinite() {
+        return 0.0;
+    }
+    let c0 = if c0.is_finite() {
+        c0.clamp(0.0, cap)
+    } else {
+        0.0
+    };
+    let tau = recharge_ms / 5.0;
+    if tau.is_nan() || tau <= 0.0 {
+        return cap;
+    }
+    let dt = now.saturating_sub(t0).max(0) as f64 / 10_000.0;
+    let sq = (c0 / cap).sqrt();
+    let c = (1.0 + (sq - 1.0) * (-dt / tau).exp()).powi(2) * cap;
+    c.clamp(0.0, cap)
+}
+
+/// The zone (0 to 4) of a destination `ly` light years from the capital;
+/// `None` (no capital, or a distance unknown) is the last zone **[V]**
+/// (`zone_modifier_util._GetZoneIndexFromLYDistance`).
+pub fn zone_index(ly: Option<f64>) -> usize {
+    let Some(ly) = ly else {
+        return ZONE_BOUNDS.len();
+    };
+    ZONE_BOUNDS
+        .iter()
+        .position(|bound| ly <= *bound)
+        .unwrap_or(ZONE_BOUNDS.len())
+}
+
+/// A ship's cost: its base cost times the multiplier of zone `idx`.
+pub fn zone_cost(base: f64, mults: [f64; 5], idx: usize) -> f64 {
+    base * mults[idx.min(4)]
+}
+
+/// The gate type's capacity and recharge time, from the type data; `(0, 0)`
+/// when it has neither **[A]**.
+fn gate_stats(content: &Content) -> (f64, f64) {
+    let row = crate::typedata::installed_in(content)
+        .table()
+        .get(TYPE_ANSIBLEX);
+    let at = |a| row.and_then(|r| r.attribute(a)).unwrap_or(0.0);
+    (at(ATTR_CAPACITY), at(ATTR_RECHARGE))
+}
+
+/// A hull's base cost on the bridge (attribute 6364), when it has one.
+pub fn base_cost(content: &Content, ship_type: i64) -> Option<f64> {
+    crate::typedata::installed_in(content)
+        .table()
+        .get(ship_type)
+        .and_then(|r| r.attribute(ATTR_BASE_COST))
+        .filter(|c| *c > 0.0 && c.is_finite())
+}
+
+fn cap_key(id: i64) -> Vec<String> {
+    vec![id.to_string()]
+}
+
+/// The stored row: `(charge, settled_at, counter)`.
+fn cap_row(d: &Deltas, id: i64) -> Option<(f64, i64, i64)> {
+    let v = d.of(KIND_CHARGE).get(&cap_key(id))?;
+    Some((
+        v.first()?.parse().ok()?,
+        v.get(1)?.parse().ok()?,
+        v.get(2).and_then(|c| c.parse().ok()).unwrap_or(0),
+    ))
+}
+
+fn put_cap(d: &mut Deltas, id: i64, charge: f64, at: i64, counter: i64) {
+    d.put(
+        KIND_CHARGE,
+        cap_key(id),
+        vec![charge.to_string(), at.to_string(), counter.to_string()],
+    );
+}
+
+/// When a gate with no row started at 0: its anchoring's end **[A]**.
+fn anchored_at(gate: &Structure) -> Option<i64> {
+    gate.deploy_end.or(gate.deploy_start)
+}
+
+/// The gate's charge at `now`, and its etag. A gate with no row has 0 charge
+/// from its anchoring (`CapacitorUsageText`), or from `now` when it has no
+/// anchoring time.
+pub fn charge_of(reg: &Registry, gate: &Structure, now: i64) -> (f64, i64) {
+    let (cap, recharge) = gate_stats(reg.content());
+    let (c0, t0, counter) =
+        cap_row(reg.deltas(), gate.id).unwrap_or((0.0, anchored_at(gate).unwrap_or(now), 0));
+    let wall = now.saturating_sub(t0).max(0);
+    let game = crate::game_clock::of(reg).elapsed(wall);
+    (
+        charge_at(cap, recharge, c0, t0, t0.saturating_add(game)),
+        counter,
+    )
+}
+
+/// Store `charge` for the gate at `now`, bump its etag and tell the system.
+fn store_charge(reg: &mut Registry, gate: &Structure, charge: f64, now: i64) {
+    let counter = cap_row(reg.deltas(), gate.id).map_or(0, |r| r.2) + 1;
+    put_cap(reg.deltas_mut(), gate.id, charge, now, counter);
+    reg.mark_dirty();
+    crate::structure_space::announce_slim(reg, gate);
+}
+
+/// A gate with no row and no anchoring time gets its row (0 at `now`), so it
+/// does charge from here on.
+fn ensure_row(reg: &mut Registry, gate: &Structure, now: i64) {
+    if cap_row(reg.deltas(), gate.id).is_none() && anchored_at(gate).is_none() {
+        put_cap(reg.deltas_mut(), gate.id, 0.0, now, 0);
+        reg.mark_dirty();
+    }
+}
+
 // -- the seams of #86 --------------------------------------------------------------
 
 /// **OWNER SWITCH (SOV-UPG-2, #80), shipped `false`.** `true`: a gate
@@ -272,26 +572,183 @@ pub fn upgraded(reg: &Registry, gate: &Structure) -> bool {
     )
 }
 
-/// Whether `actor` may use `gate`. **#86 replaces this** with the structure
-/// profile's `SETTING_ACTIVATE` (`structure_profile::has_access`). Today: a
-/// pilot of the gate owner's group, and (SOV-UPG-2) the sov-upgrade gate at
-/// both ends ([`upgraded`]).
+/// Whether the gate's structure has a profile at all: its own, else its
+/// owner's default (the rule `structure_profile::has_access` judges by).
+fn has_profile(d: &Deltas, gate: &Structure) -> bool {
+    crate::structure_profile::profile(d, gate.profile)
+        .filter(|p| p.corp == gate.owner_corp)
+        .or_else(|| crate::structure_profile::default_of(d, gate.owner_corp))
+        .is_some()
+}
+
+/// Whether `actor` may use `gate` (`JumpRestrictionsText`): a pilot of the
+/// alliance that holds the sovereignty of the gate's system, whom the
+/// structure profile's `SETTING_ACTIVATE` lets in (a gate with no profile lets
+/// its owner group **[A]**, module header), and the sov-upgrade gate at both
+/// ends ([`upgraded`]).
 pub fn may_use(reg: &Registry, actor: i64, gate: &Structure) -> bool {
-    reg.character(actor)
-        .is_some_and(|c| same_owner(reg.deltas(), c.corporation_id, gate.owner_corp))
+    let d = reg.deltas();
+    let Some(corp) = reg.character(actor).map(|c| c.corporation_id) else {
+        return false;
+    };
+    let Some(mine) = crate::alliance::of_corp(d, corp) else {
+        return false;
+    };
+    crate::sov::holder(d, gate.system) == Some(mine)
+        && if has_profile(d, gate) {
+            crate::structure_profile::has_access(reg, gate, actor, SETTING_ACTIVATE)
+        } else {
+            same_owner(d, corp, gate.owner_corp)
+        }
         && upgraded(reg, gate)
 }
 
-/// Take the jump's fuel. **#86 fills this in**; free today.
-pub fn take_fuel(_reg: &mut Registry, _actor: i64, _gate: &Structure) -> Result<(), ServiceError> {
-    Ok(())
+/// `actor`'s alliance, if any.
+fn alliance_of(reg: &Registry, actor: i64) -> Option<i64> {
+    let corp = reg.character(actor)?.corporation_id;
+    crate::alliance::of_corp(reg.deltas(), corp)
 }
 
-/// Whether the hull may not use the bridge (the type's `restrictionTypeList`,
-/// `jumpBridge.py:54` / `:93`). The list is not in the content bundle, so no
-/// hull is restricted yet; **#86** names it.
-pub fn restricted_hull(_reg: &Registry, _ship_type: i64) -> bool {
-    false
+/// The zone (0 to 4) a jump to `destination` falls in for `alliance`: the
+/// distance from its capital at `now`, in light years, through the centres
+/// file (`zone_modifier_util.GetCapacitorZoneModifierAndIdx`).
+pub fn zone_of(reg: &Registry, alliance: i64, destination: i64, now: i64) -> usize {
+    let capital = crate::sov_index::capital(reg.deltas(), alliance, now).current;
+    let ly = capital.and_then(|c| {
+        reg.content()
+            .get::<crate::celestial::Centers>()
+            .ly(destination, c)
+    });
+    zone_index(ly)
+}
+
+/// The cost of `ship_type` jumping from `gate` for `actor`, in GJ: its base
+/// cost times the zone multiplier of the partner's system. `None` for a hull
+/// with no base cost.
+pub fn cost_of(
+    reg: &Registry,
+    actor: i64,
+    gate: &Structure,
+    ship_type: i64,
+    now: i64,
+) -> Option<f64> {
+    let base = base_cost(reg.content(), ship_type)?;
+    let there = partner(reg.deltas(), gate)?;
+    let mults = bridges(reg.content())
+        .get(gate.type_id)
+        .map_or([1.0; 5], |r| r.zones);
+    let idx =
+        alliance_of(reg, actor).map_or(ZONE_BOUNDS.len(), |a| zone_of(reg, a, there.system, now));
+    Some(zone_cost(base, mults, idx))
+}
+
+/// Take the jump's cost from the gate's capacitor: settle the charge, refuse
+/// when it is less than the cost, else store what is left. Returns the cost.
+/// Nothing changes on a refusal.
+pub fn take_charge(
+    reg: &mut Registry,
+    actor: i64,
+    gate: &Structure,
+    ship_type: i64,
+    now: i64,
+) -> Result<f64, ServiceError> {
+    ensure_row(reg, gate, now);
+    let Some(cost) = cost_of(reg, actor, gate, ship_type, now) else {
+        return Err(restricted_error(ship_type));
+    };
+    let (charge, _) = charge_of(reg, gate, now);
+    if cost > charge {
+        return Err(notify(NO_CHARGE));
+    }
+    store_charge(reg, gate, charge - cost, now);
+    Ok(cost)
+}
+
+/// `JumpBridgeRestrictedShip`; `shipName` is the hull's name on the client,
+/// the server's own type data names it.
+fn restricted_error(ship_type: i64) -> ServiceError {
+    user_error(
+        RESTRICTED_SHIP,
+        vec![("shipName", crate::pyutil::bstr(&ship_type.to_string()))],
+    )
+}
+
+/// Whether the hull is in the gate type's `restrictionTypeList` (A1, A2),
+/// resolved through `typelists.tsv` and the type's group and category. No list,
+/// no row or an unknown hull: not restricted **[A]**.
+pub fn restricted_hull(reg: &Registry, ship_type: i64) -> bool {
+    let content = reg.content();
+    let Some(list) = bridges(content)
+        .get(TYPE_ANSIBLEX)
+        .and_then(|r| r.restriction_list)
+    else {
+        return false;
+    };
+    let Some(row) = crate::typedata::installed_in(content)
+        .table()
+        .get(ship_type)
+    else {
+        return false;
+    };
+    content
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.typelists.get(&list))
+        .is_some_and(|l| l.contains(ship_type, row.group_id, row.category_id))
+}
+
+/// A hull the gate takes: not restricted and with a base cost.
+fn hull_allowed(reg: &Registry, ship_type: i64) -> bool {
+    !restricted_hull(reg, ship_type) && base_cost(reg.content(), ship_type).is_some()
+}
+
+// -- GetJumpBridgeInfo -----------------------------------------------------------------
+
+/// `space_component::Locate`: the system of a live Ansiblex.
+pub fn locate(reg: &Registry, item: i64) -> Option<i64> {
+    structure::get(reg.deltas(), item)
+        .filter(|g| is_gate(g.type_id))
+        .map(|g| g.system)
+}
+
+/// The answer of `GetJumpBridgeInfo` for `actor` at `now`: `None` unless
+/// [`may_use`], else a `JumpBridgeAuthorizedInfo` with the pilot's hull's
+/// validity, the settled charge and the time it is settled at (A9).
+pub fn info_at(reg: &mut Registry, actor: i64, gate: &Structure, now: i64) -> PyValue {
+    if !may_use(reg, actor, gate) {
+        return PyValue::None;
+    }
+    ensure_row(reg, gate, now);
+    let ship_type = reg.character(actor).map_or(0, |c| c.ship_type_id);
+    let (charge, _) = charge_of(reg, gate, now);
+    crate::pyutil::instance(
+        "jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo",
+        vec![
+            (
+                "_valid_ship_type",
+                PyValue::Bool(hull_allowed(reg, ship_type)),
+            ),
+            ("_structure_capacitor", PyValue::Real(charge)),
+            ("_sim_timestamp", PyValue::Long(now)),
+        ],
+    )
+}
+
+/// `CallComponentFromClient(id, 'structureJumpBridge', 'GetJumpBridgeInfo')`
+/// (`jumpBridge.py:131-134`): [`info_at`] now.
+pub fn info(
+    reg: &mut Registry,
+    call: &crate::space_component::CompCall<'_>,
+) -> Result<PyValue, ServiceError> {
+    let Some(gate) = structure::get(reg.deltas(), call.item_id).filter(|g| is_gate(g.type_id))
+    else {
+        return Ok(PyValue::None);
+    };
+    Ok(info_at(
+        reg,
+        call.actor,
+        &gate,
+        crate::pyutil::filetime_now(),
+    ))
 }
 
 // -- the slim -----------------------------------------------------------------------
@@ -305,6 +762,7 @@ pub fn slim_keys(reg: &Registry, s: &Structure) -> Vec<(&'static str, PyValue)> 
         return Vec::new();
     }
     let partner = partner(reg.deltas(), s);
+    let etag = cap_row(reg.deltas(), s.id).map_or(0, |r| r.2);
     let target = partner
         .as_ref()
         .map_or(PyValue::None, |p| PyValue::Int(p.system));
@@ -318,7 +776,7 @@ pub fn slim_keys(reg: &Registry, s: &Structure) -> Vec<(&'static str, PyValue)> 
     vec![
         ("jumps", PyValue::List(jumps)),
         ("targetSolarsystemID", target),
-        ("component_jumpBridge", PyValue::Int(0)),
+        ("component_jumpBridge", PyValue::Int(etag)),
         ("activationState", PyValue::None),
     ]
 }
@@ -544,13 +1002,8 @@ pub fn jump_through(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Se
         ));
     }
     let ship_type = reg.character(actor).map_or(0, |c| c.ship_type_id);
-    if restricted_hull(reg, ship_type) {
-        // `shipName` is the hull's name on the client; the server has no type
-        // names, so the id stands in until #86 names the list **[A]**.
-        return Err(user_error(
-            RESTRICTED_SHIP,
-            vec![("shipName", crate::pyutil::bstr(&ship_type.to_string()))],
-        ));
+    if !hull_allowed(reg, ship_type) {
+        return Err(restricted_error(ship_type));
     }
     // The client's range gate, repeated: a modified client could skip it.
     if let Some(d) =
@@ -562,7 +1015,7 @@ pub fn jump_through(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Se
             vec![("maxdist", PyValue::Int(MAX_JUMP_DISTANCE as i64))],
         ));
     }
-    take_fuel(reg, actor, &gate)?;
+    take_charge(reg, actor, &gate, ship_type, crate::pyutil::filetime_now())?;
 
     let dest_system = there.system;
     let index = reg
@@ -612,16 +1065,16 @@ pub fn jump_through(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Se
 
 // -- GM: /jbridge ---------------------------------------------------------------------
 
-/// `/jbridge link <gateID> <systemID>`, `/jbridge unlink <gateID>` and
-/// `/jbridge list`: aim a gate by hand (the Upwell anchor flow does it with
-/// `extraConfig`; `/upwell spawn` has none). A GM tool, not a game rule.
+/// `/jbridge link <gateID> <systemID>`, `/jbridge unlink <gateID>`,
+/// `/jbridge list` and `/jbridge charge <gateID|here> <GJ|full>`: aim a gate
+/// by hand (the Upwell anchor flow does it with `extraConfig`; `/upwell spawn`
+/// has none) or set its charge (a test seam). A GM tool, not a game rule.
 pub(crate) fn slash(
     reg: &mut Registry,
-    _actor: Option<i64>,
+    actor: Option<i64>,
     args: &[&str],
 ) -> Result<PyValue, ServiceError> {
-    const USAGE: &str =
-        "/jbridge link <gateID> <systemID> | /jbridge unlink <gateID> | /jbridge list";
+    const USAGE: &str = "/jbridge link <gateID> <systemID> | /jbridge unlink <gateID> | /jbridge list | /jbridge charge <gateID|here> <GJ|full>";
     let say = |s: &str| Ok(crate::pyutil::bstr(s));
     let gate_of = |reg: &Registry, word: Option<&&str>| {
         word.and_then(|w| w.parse::<i64>().ok())
@@ -660,6 +1113,37 @@ pub(crate) fn slash(
             systems.extend(there);
             refresh_slims(reg, &systems);
             say(&format!("gate {} is aimed at nothing", gate.id))
+        }
+        Some("charge") => {
+            let gate = match args.get(1).copied() {
+                Some("here") => actor
+                    .and_then(|a| reg.roster().get(a).map(|p| p.solar_system_id))
+                    .and_then(|sys| {
+                        structure::in_system(reg.deltas(), sys)
+                            .into_iter()
+                            .filter(|s| is_gate(s.type_id))
+                            .min_by_key(|s| s.id)
+                    }),
+                word => gate_of(reg, word.as_ref()),
+            };
+            let Some(gate) = gate else {
+                return say("not a jump gate here; /jbridge list shows the gates");
+            };
+            let (cap, _) = gate_stats(reg.content());
+            let want = match args.get(2).copied() {
+                Some("full") => Some(cap),
+                Some(w) => w.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0),
+                None => None,
+            };
+            let Some(want) = want else {
+                return say(USAGE);
+            };
+            let charge = want.min(cap);
+            store_charge(reg, &gate, charge, crate::pyutil::filetime_now());
+            say(&format!(
+                "gate {} holds {charge:.1} of {cap:.1} GJ",
+                gate.id
+            ))
         }
         Some("list") => {
             let lines: Vec<String> = structure::all(reg.deltas())
