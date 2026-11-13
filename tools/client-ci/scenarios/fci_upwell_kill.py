@@ -8,7 +8,12 @@ Lane strdeath-48.  Two clients: `tools/client-ci.sh run fci_upwell_kill
 --with-second`.  The pilot with the lower character id is A (the shooter),
 the other B (the owner).  Each founds its own corporation (`ensure_alliance`),
 boards a Rifter, undocks and goes to the first null-sec system of the client's
-own map (both read the same list, so both go to the same one).
+own map that has asset safety (both read the same list, so both go to the same
+one).  Pochven is null sec by its security status but has no asset safety, as
+in wormhole space (the client's `assetSafetySvc._IsAssetSafetyDisabledInSystem`,
+`assetSafetySvc.py:78-79` [V]): a kill there drops the hangar instead of
+wrapping it, so no 190 could come.  The candidates leave out every system the
+client's own `idCheckers.IsWormholeSystem` or `IsTriglavianSystem` names.
 
 B spawns an Astrahus (`/upwell spawn astrahus <name>`), docks in it with the
 client's own `structureDocking.Dock`, and sets the shield to 0.97 with
@@ -1431,10 +1436,41 @@ def eoci_main(EOCI_NAME):
                  'victimCorporationID', 'victimShipTypeID', 'finalCharacterID',
                  'finalShipTypeID', 'killBlob')
 
+    def no_asset_safety(system):
+        """The client's own test for a system without asset safety
+        (`assetSafetySvc._IsAssetSafetyDisabledInSystem`: a wormhole or a
+        Triglavian system).  None when the client's checkers cannot be reached."""
+        for mod in ('eve.common.script.sys.idCheckers', 'idCheckers'):
+            ok, m = safe(lambda: __import__(mod, fromlist=['IsWormholeSystem']))
+            if not ok or m is None:
+                continue
+            if not (hasattr(m, 'IsWormholeSystem') and hasattr(m, 'IsTriglavianSystem')):
+                continue
+            ok2, v = safe(lambda: bool(m.IsWormholeSystem(system))
+                          or bool(m.IsTriglavianSystem(system)))
+            if ok2:
+                return v
+        return None
+
     def null_candidates(home):
-        cands = map_systems(
-            lambda row: float(row.securityStatus) < 0.05, limit=40)
-        return [c for c in cands if c != home]
+        """Null-sec systems with asset safety, in the map's order; with no
+        reachable checker, the rows whose `factionID` is not the client's
+        `const.factionTriglavian` (the same test `IsTriglavianSystem` makes)."""
+        trig = const_of('factionTriglavian', None)
+
+        def safe_null(row):
+            if float(row.securityStatus) >= 0.05:
+                return False
+            return trig is None or getattr_safe(row, 'factionID') != trig
+        cands = map_systems(safe_null, limit=200)
+        out = []
+        for c in cands:
+            if c == home or no_asset_safety(c):
+                continue
+            out.append(c)
+            if len(out) >= 40:
+                break
+        return out
 
     def go_to(system):
         for attempt in (1, 2):
@@ -1462,7 +1498,7 @@ def eoci_main(EOCI_NAME):
         return getattr_safe(builtin('session'), name)
 
     def to_null_system():
-        """Undock and go to the first null-sec system of the client's map.
+        """Undock and go to the first null-sec system with asset safety of the client's map.
         `(park, system)` or `(None, None)`."""
         undocked, detail = undock()
         check('undocked into space', undocked, detail)
@@ -1482,6 +1518,26 @@ def eoci_main(EOCI_NAME):
         park, ego = get_ego_ball()
         precondition('the pilot is in space in a null-sec system',
                      park is not None and ego is not None)
+        reached = sess_attr('solarsystemid2')
+        here = reached if reached is not None else cands[0]
+        none_here = no_asset_safety(here)
+        if none_here is None:
+            # The client's checkers cannot be reached: the constant's test
+            # (IsTriglavianSystem's own), and with no constant either, fail.
+            trig = const_of('factionTriglavian', None)
+            ok_r, row = safe(lambda: builtin('cfg').mapSystemCache.get(here, None))
+            if trig is not None and ok_r and row is not None:
+                has_safety = getattr_safe(row, 'factionID') != trig
+                how = 'checker unreachable; factionID vs const.factionTriglavian'
+            else:
+                has_safety = False
+                how = 'checker unreachable and no const.factionTriglavian or map row'
+        else:
+            has_safety = not none_here
+            how = 'IsWormholeSystem or IsTriglavianSystem: %s' % text(none_here)
+        precondition('the system has asset safety (the client\'s own test)',
+                     has_safety,
+                     '%s; reached %s, chosen %s' % (how, text(reached), text(cands[0])))
         if park is None:
             return None, None
         gm_check('GM: out of the station\'s zone', '/tp 20000',
