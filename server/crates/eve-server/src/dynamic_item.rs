@@ -230,12 +230,17 @@ pub fn source_type_of(w: &Registry, item_id: i64, type_id: i64) -> Option<i64> {
 
 /// The process cache of override maps by item id (#71 MUTA-3): item ids are
 /// never reused (the allocator is persisted), and [`put`] drops an item's entry
-/// when its row is replaced, so an entry never goes stale. Only row-backed items are kept; a
-/// dynamic item with no row is answered by [`fallback_row`] each time, so a
-/// row that arrives later is seen. Derived state, nothing persists.
+/// when its row is replaced, so an entry never goes stale. Stored rows are kept
+/// there. A dynamic item with no row is answered from `fallback`, keyed by
+/// type: [`fallback_row`] and [`attributes`] with no rolls read only the
+/// content and the type, never the item id. The row is looked up first on
+/// every read, so a row that arrives later wins. Derived state, nothing
+/// persists; content is fixed for a registry, so the fallback map needs no
+/// invalidation.
 #[derive(Debug, Default)]
 pub struct Cache {
     map: Mutex<HashMap<i64, Arc<Overrides>>>,
+    fallback: Mutex<HashMap<i64, Arc<Overrides>>>,
 }
 
 /// How many items' overrides are kept; beyond it the cache is emptied (one
@@ -266,14 +271,30 @@ fn overrides_checked(w: &Registry, item_id: i64, type_id: i64) -> Option<Arc<Ove
         return Some(Arc::clone(o));
     }
     let content = w.content();
-    let (r, stored) = match row(w, item_id) {
-        Some(r) => (r, true),
-        None => (fallback_row(content, item_id, type_id)?, false),
+    let Some(r) = row(w, item_id) else {
+        // No stored row: the answer depends on the type alone.
+        let fb = &w.ext::<Cache>().fallback;
+        if let Ok(c) = fb.lock()
+            && let Some(o) = c.get(&type_id)
+        {
+            return Some(Arc::clone(o));
+        }
+        let r = fallback_row(content, item_id, type_id)?;
+        let o = Arc::new(Overrides::new(
+            attributes(content, &r, type_id).into_iter().collect(),
+        ));
+        if let Ok(mut c) = fb.lock() {
+            if c.len() >= CACHE_CAP {
+                c.clear();
+            }
+            c.insert(type_id, Arc::clone(&o));
+        }
+        return Some(o);
     };
     let o = Arc::new(Overrides::new(
         attributes(content, &r, type_id).into_iter().collect(),
     ));
-    if stored && let Ok(mut c) = cache.lock() {
+    if let Ok(mut c) = cache.lock() {
         if c.len() >= CACHE_CAP {
             c.clear();
         }
@@ -1199,6 +1220,35 @@ mod fitted_tests {
         put(&mut reg, &r);
         let after = overrides(&reg, &item).expect("rolled");
         assert_ne!(before, after);
+    }
+
+    /// A dynamic item with no row is answered from one shared build per type;
+    /// a row stored afterwards wins on the next read (#253).
+    #[test]
+    fn the_fallback_overrides_are_built_once_and_a_stored_row_wins() {
+        let (mut reg, me, _, _) = world();
+        let a = mint(&mut reg, me, SRC, "1.0");
+        let (b, c) = (a + 1_000_001, a + 1_000_002);
+        assert!(row(&reg, b).is_none() && row(&reg, c).is_none());
+        let first = overrides_of(&reg, b, RES).expect("fallback");
+        let again = overrides_of(&reg, b, RES).expect("fallback");
+        assert!(Arc::ptr_eq(&first, &again), "no rebuild for the same item");
+        let other = overrides_of(&reg, c, RES).expect("fallback");
+        assert!(Arc::ptr_eq(&first, &other), "one build per type");
+        // Values are the no-roll attributes.
+        let want = fallback_row(reg.content(), b, RES).expect("row");
+        let want = attributes(reg.content(), &want, RES);
+        assert_eq!(first.get(attr::POWER), want.get(&attr::POWER).copied());
+        assert_eq!(first.get(attr::CPU), want.get(&attr::CPU).copied());
+        // A row stored for b afterwards wins; c still reads the fallback.
+        let mut r = row(&reg, a).expect("row");
+        r.item_id = b;
+        put(&mut reg, &r);
+        let stored = overrides_of(&reg, b, RES).expect("stored");
+        assert!(!Arc::ptr_eq(&first, &stored));
+        assert_eq!(stored.get(attr::CPU), Some(row_cpu(&reg, a)));
+        let c_again = overrides_of(&reg, c, RES).expect("fallback");
+        assert!(Arc::ptr_eq(&first, &c_again));
     }
 
     /// The loads a hull without a sheet reports come from the roll too.
