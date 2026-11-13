@@ -262,7 +262,12 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTim
     for (system, jam) in changed {
         let to = crate::service::structures::system_audience(reg, system);
         if !to.is_empty() {
-            reg.push(CynoJammerChanged { to, system, jam });
+            // On the clock's queue: `pending` drains only after somebody's
+            // call, so a push made here would wait for any client's next call.
+            reg.schedule(
+                std::time::Duration::ZERO,
+                CynoJammerChanged { to, system, jam },
+            );
         }
     }
 }
@@ -531,5 +536,55 @@ mod tests {
         assert_eq!(changes(&d, &t, true, &mut told), vec![(SYS, Jam::On)]);
         sov_upgrade::put_installed(&mut d, HUB + SYS % 100, &[]);
         assert_eq!(changes(&d, &t, true, &mut told), vec![(SYS, Jam::Off)]);
+    }
+
+    #[test]
+    fn a_jammer_change_on_the_clock_is_scheduled_not_pushed() {
+        let pilot = 1_000_000_777;
+        let mut reg = Registry::new(crate::model::SandboxConfig {
+            characters: vec![crate::model::Character {
+                character_id: pilot,
+                name: "jam pilot".into(),
+                ship_id: pilot + 1_000,
+                solar_system_id: Some(SYS),
+                ..crate::model::Character::default()
+            }],
+            ..crate::model::SandboxConfig::default()
+        });
+        reg.session_opened(crate::session_table::SessionEntry {
+            client_id: 1,
+            session_id: 1,
+            user_id: 1,
+            character_id: Some(pilot),
+        });
+        put(
+            reg.deltas_mut(),
+            1,
+            TYPE_TENEBREX,
+            SYS,
+            State::ShieldVulnerable,
+        );
+        // Also the upgrade, so the test holds if JAMMER_NEEDS_UPGRADE flips.
+        hub_with(
+            reg.deltas_mut(),
+            SYS,
+            true,
+            &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
+        );
+        let _ = reg.take_pending();
+        let _ = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        tick(&mut reg, std::time::Instant::now(), 0);
+        let raw: Vec<_> = reg
+            .take_pending_raw()
+            .into_iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert!(!raw.contains(&"OnCynoJammerChanged"), "{raw:?}");
+        let due: Vec<_> = reg
+            .take_due(std::time::Instant::now())
+            .into_iter()
+            .map(|p| p.to_push().0)
+            .collect();
+        assert_eq!(due, vec!["OnCynoJammerChanged"]);
     }
 }

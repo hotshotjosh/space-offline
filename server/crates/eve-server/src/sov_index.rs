@@ -759,7 +759,9 @@ fn gain(reg: &mut Registry, system_id: i64, which: Index, points: i64) {
     if let Some((before, after)) = add_points(reg.deltas_mut(), system_id, which, points)
         && before != after
     {
-        push_dev_index_changed(reg, system_id);
+        // Both hooks run on the clock (a kill, a mining cycle): what they
+        // push leaves with the tick, not with some client's next call.
+        crate::sov_hub::on_the_clock(reg, |reg| push_dev_index_changed(reg, system_id));
     }
 }
 
@@ -809,6 +811,10 @@ pub fn on_claim_change(reg: &mut Registry, change: &sov::Change) {
 /// A catch-up rollover after N days down decays **one** day here: the days
 /// nobody was on are packet E2's.
 pub fn on_rollover(reg: &mut Registry, _day: &crate::rollover::Day) -> usize {
+    crate::sov_hub::on_the_clock(reg, rollover_body)
+}
+
+fn rollover_body(reg: &mut Registry) -> usize {
     let rows: Vec<(i64, Indices)> = reg
         .deltas()
         .of(KIND)
@@ -835,6 +841,12 @@ pub fn on_rollover(reg: &mut Registry, _day: &crate::rollover::Day) -> usize {
 /// out when the capital moves rather than at the next read. Reads only the
 /// `sovcap` rows, which are few.
 pub fn tick(reg: &mut Registry, _: Instant, now: BlueTime) {
+    // What a settled capital pushes (its notice and the structure rows)
+    // leaves on the clock's queue, in order.
+    crate::sov_hub::on_the_clock(reg, |reg| tick_body(reg, now));
+}
+
+fn tick_body(reg: &mut Registry, now: BlueTime) {
     let due: Vec<i64> = reg
         .deltas()
         .of(KIND_CAPITAL)
@@ -1016,15 +1028,23 @@ mod tests {
                 character_id: Some(who),
             });
         }
-        let _ = reg.take_pending();
+        clear(&mut reg);
         reg
+    }
+
+    /// Forget everything queued, by call and by clock.
+    fn clear(reg: &mut Registry) {
+        let _ = reg.take_pending();
+        let _ = reg.take_due(Instant::now() + std::time::Duration::from_secs(60));
     }
 
     /// Every push queued, as `(event, args, sorted audience)`.
     fn pushes(reg: &mut Registry) -> Vec<(&'static str, Vec<PyValue>, Vec<i64>)> {
-        reg.take_pending()
-            .into_iter()
-            .map(|(_, p)| {
+        let mut all: Vec<_> = reg.take_pending().into_iter().map(|(_, p)| p).collect();
+        let later = Instant::now() + std::time::Duration::from_secs(60);
+        all.extend(reg.take_due(later));
+        all.into_iter()
+            .map(|p| {
                 let (e, a) = p.to_push();
                 let mut to = p.audience().unwrap_or_default();
                 to.sort_unstable();
@@ -1210,7 +1230,7 @@ mod tests {
         assert!(reg.deltas().of(KIND).is_empty());
 
         claim(reg.deltas_mut(), SYSTEM, NOW);
-        let _ = reg.take_pending();
+        clear(&mut reg);
         on_npc_kill(&mut reg, &kill(SYSTEM, Some(PILOT_HERE)));
         on_npc_kill(&mut reg, &kill(SYSTEM, None));
         on_npc_kill(&mut reg, &kill(OTHER_SYSTEM, Some(PILOT_HERE)));
@@ -1231,7 +1251,7 @@ mod tests {
         assert_eq!(indices(reg.deltas(), OTHER_SYSTEM), Indices::default());
 
         // A level crossed tells the system; points stop at the top.
-        let _ = reg.take_pending();
+        clear(&mut reg);
         let m3 = LEVEL_WIDTH as f64 / INDUSTRIAL_POINTS_PER_M3;
         on_mined(&mut reg, SYSTEM, m3);
         let p = pushes(&mut reg);
@@ -1249,6 +1269,76 @@ mod tests {
                 .any(|r| r.name == "sov_military"),
             "kill_hooks::NPC has the military row"
         );
+    }
+
+    /// The clock's queue and `pending` apart: (event names in `pending`, in the clock queue).
+    fn split(reg: &mut Registry) -> (Vec<&'static str>, Vec<&'static str>) {
+        let raw = reg
+            .take_pending_raw()
+            .into_iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        // Due this tick: a push that waited would not be due yet.
+        let due = reg
+            .take_due(Instant::now())
+            .into_iter()
+            .map(|p| p.to_push().0)
+            .collect();
+        (raw, due)
+    }
+
+    #[test]
+    fn a_capital_settled_on_the_clock_is_scheduled_not_pushed() {
+        let mut reg = world();
+        claim(reg.deltas_mut(), SYSTEM, NOW);
+        claim(reg.deltas_mut(), OTHER_SYSTEM, NOW);
+        set_capital(reg.deltas_mut(), ALLIANCE, SYSTEM, NOW, 0).unwrap();
+        set_capital(
+            reg.deltas_mut(),
+            ALLIANCE,
+            OTHER_SYSTEM,
+            NOW,
+            CAPITAL_CHANGE_DELAY,
+        )
+        .unwrap();
+        clear(&mut reg);
+        tick(&mut reg, Instant::now(), NOW + CAPITAL_CHANGE_DELAY);
+        let (raw, due) = split(&mut reg);
+        assert!(!raw.contains(&"OnCapitalSystemChanged"), "{raw:?}");
+        assert!(due.contains(&"OnCapitalSystemChanged"), "{due:?}");
+        assert!(
+            !raw.contains(&"OnSolarSystemSovStructuresUpdated"),
+            "the structure rows are not left on pending: {raw:?}"
+        );
+        assert!(
+            due.contains(&"OnSolarSystemSovStructuresUpdated"),
+            "the structure rows leave on the clock: {due:?}"
+        );
+    }
+
+    #[test]
+    fn an_npc_kill_index_change_is_scheduled() {
+        let mut reg = world();
+        claim(reg.deltas_mut(), SYSTEM, NOW);
+        clear(&mut reg);
+        let kill = crate::kill_hooks::KillEvent {
+            victim_character: 7_000_000_001,
+            victim_ship: 7_000_000_001,
+            ship_type: crate::npc::FIXTURE_RAT.type_id,
+            killer: Some(PILOT_HERE),
+            system: SYSTEM,
+            npc: Some(&crate::npc::FIXTURE_RAT),
+            when: NOW,
+            park: Vec::new(),
+        };
+        // Enough kills to cross one level.
+        let kills = LEVEL_WIDTH / MILITARY_POINTS_PER_NPC + 1;
+        for _ in 0..kills {
+            on_npc_kill(&mut reg, &kill);
+        }
+        let (raw, due) = split(&mut reg);
+        assert!(!raw.contains(&"OnSolarSystemDevIndexChanged"), "{raw:?}");
+        assert!(due.contains(&"OnSolarSystemDevIndexChanged"), "{due:?}");
     }
 
     #[test]
@@ -1275,7 +1365,7 @@ mod tests {
         let mut reg = world();
         claim(reg.deltas_mut(), SYSTEM, NOW);
         add_points(reg.deltas_mut(), SYSTEM, Index::Military, DECAY_PER_DAY / 2).unwrap();
-        let _ = reg.take_pending();
+        clear(&mut reg);
         let day = crate::rollover::Day {
             day: 2,
             days: 1,
@@ -1336,7 +1426,7 @@ mod tests {
             Some(&PyValue::Int(NOW + CAPITAL_CHANGE_DELAY))
         );
         // Before the delay: nothing moves, nothing is pushed.
-        let _ = reg.take_pending();
+        clear(&mut reg);
         tick(&mut reg, Instant::now(), NOW + CAPITAL_CHANGE_DELAY - 1);
         assert!(pushes(&mut reg).is_empty());
         assert!(!is_capital(
@@ -1387,7 +1477,7 @@ mod tests {
         // Losing the capital's claim drops it, and the push says so; the
         // one system left is the capital at once.
         let change = sov::set_claim(reg.deltas_mut(), OTHER_SYSTEM, None, at).unwrap();
-        let _ = reg.take_pending();
+        clear(&mut reg);
         on_claim_change(&mut reg, &change);
         let p = pushes(&mut reg);
         let moved = p
