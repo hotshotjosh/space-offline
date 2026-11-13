@@ -243,9 +243,16 @@ fn call(
     }
 }
 
+/// An attribute of a KeyVal (`0x17` state) or of a new-style object
+/// (`0x23`, state at `header[1]`).
 fn attr(v: &PyValue, name: &str) -> PyValue {
-    let PyValue::Instance { state, .. } = v else {
-        panic!("a KeyVal expected, got {v:?}")
+    let state = match v {
+        PyValue::Instance { state, .. } => &**state,
+        PyValue::ObjectEx { header, .. } => match &**header {
+            PyValue::Tuple(parts) if parts.len() == 2 => &parts[1],
+            other => panic!("a (args, state) header expected, got {other:?}"),
+        },
+        other => panic!("a KeyVal or a new-style object expected, got {other:?}"),
     };
     crate::pyutil::dict_get(state, name.as_bytes())
         .cloned()
@@ -1083,7 +1090,66 @@ fn the_component_call_answers_through_the_router_shape() {
         kwargs: &[],
     };
     let got = info(&mut reg, &call).unwrap();
-    assert!(matches!(got, PyValue::Instance { .. }), "{got:?}");
+    assert!(matches!(got, PyValue::ObjectEx { .. }), "{got:?}");
+}
+
+/// The exact wire shape the client unmarshals: `JumpBridgeAuthorizedInfo`
+/// derives from `object`, so it is tag `0x23` with the header
+/// `((Global(class),), {state})` and empty list and dict streams. The old
+/// shape, an old-style instance (`0x17`), the client refuses as "should be of
+/// class type but is of <type 'type'>".
+#[test]
+fn the_info_is_a_new_style_object_with_the_init_keys() {
+    let mut reg = world();
+    pair(&mut reg);
+    capital(&mut reg, HERE);
+    let g = structure::get(reg.deltas(), 11).unwrap();
+    let now = crate::pyutil::filetime_now();
+    set_charge(&mut reg, 11, 50.0, now);
+    let got = info_at(&mut reg, ALICE, &g, now);
+    let PyValue::ObjectEx {
+        form,
+        header,
+        list,
+        dict,
+    } = &got
+    else {
+        panic!("tag 0x23 expected, got {got:?}")
+    };
+    assert_eq!(*form, eve_marshal::ObjectForm::New);
+    assert!(list.is_empty() && dict.is_empty());
+    let PyValue::Tuple(parts) = &**header else {
+        panic!("{header:?}")
+    };
+    assert_eq!(parts.len(), 2);
+    assert_eq!(
+        parts[0],
+        PyValue::Tuple(vec![PyValue::Global(INFO_CLASS.as_bytes().to_vec())])
+    );
+    assert_eq!(
+        INFO_CLASS,
+        "jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo"
+    );
+    let PyValue::Dict(pairs) = &parts[1] else {
+        panic!("{:?}", parts[1])
+    };
+    let mut keys: Vec<String> = pairs
+        .iter()
+        // Stored `(value, key)` (`pyutil::pypairs`).
+        .map(|(_, k)| match k {
+            PyValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
+            PyValue::Unicode(u) => u.clone(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["_sim_timestamp", "_structure_capacitor", "_valid_ship_type"]
+    );
+    // On the wire: tag 0x23 right after the 5-byte `0x7E` header, not 0x17.
+    let bytes = crate::dumps(&got);
+    assert_eq!(bytes[5] & 0x3f, 0x23, "{:02x?}", &bytes[..8]);
 }
 
 #[test]

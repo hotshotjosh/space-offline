@@ -75,7 +75,8 @@
 //! [`take_charge`] settles it, refuses when the cost is more than it holds
 //! and otherwise stores the rest. The window asks
 //! `GetJumpBridgeInfo` (`jumpBridge.py:131-134`), answered by [`info`] with
-//! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`.
+//! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`, a
+//! new-style object ([`info_at`]).
 //! The `jbcap` row (`structure_id -> charge_gj settled_at counter`) holds the
 //! settled charge; the counter is the slim's `component_jumpBridge` etag, so
 //! a change makes the bracket ask again (`jumpBridge.py:56-73`).
@@ -725,9 +726,23 @@ pub fn locate(reg: &Registry, item: i64) -> Option<i64> {
         .map(|g| g.system)
 }
 
+/// The class of `GetJumpBridgeInfo`'s answer.
+pub const INFO_CLASS: &str =
+    "jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo";
+
 /// The answer of `GetJumpBridgeInfo` for `actor` at `now`: `None` unless
 /// [`may_use`], else a `JumpBridgeAuthorizedInfo` with the pilot's hull's
 /// validity, the settled charge and the time it is settled at (A9).
+///
+/// **New-style, tag `0x23`** ([`crate::pyutil::new_style`]): the class is
+/// `class JumpBridgeAuthorizedInfo(object)`
+/// (`jumpbridge/common/jump_bridge_authorized_info.py:8`) [V]. Sent as an
+/// old-style instance (`0x17`) the client refuses the whole answer with
+/// `UnmarshalError: global object '...JumpBridgeAuthorizedInfo' should be of
+/// class type but is of <type 'type'>` (seen in a client run) and the
+/// window's `ExceptionEater` logs `JumpBridgeContController:Failed to update
+/// ui` (`jumpBridgeContController.py:75-82`) [V]. The state keys are what
+/// `__init__` assigns and the properties read (`:11-25`) [V].
 pub fn info_at(reg: &mut Registry, actor: i64, gate: &Structure, now: i64) -> PyValue {
     if !may_use(reg, actor, gate) {
         return PyValue::None;
@@ -735,8 +750,8 @@ pub fn info_at(reg: &mut Registry, actor: i64, gate: &Structure, now: i64) -> Py
     ensure_row(reg, gate, now);
     let ship_type = reg.character(actor).map_or(0, |c| c.ship_type_id);
     let (charge, _) = charge_of(reg, gate, now);
-    crate::pyutil::instance(
-        "jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo",
+    crate::pyutil::new_style(
+        INFO_CLASS,
         vec![
             (
                 "_valid_ship_type",
