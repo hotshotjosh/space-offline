@@ -1116,6 +1116,79 @@ mod tests {
             .collect()
     }
 
+    /// **A payout sets the queue aside and puts it back as it was** (the
+    /// refilter landing's follow-up): a push already pending keeps its place and
+    /// its audience, and each recipient's own wallet and notification pushes
+    /// are scheduled for that recipient alone.
+    #[test]
+    fn a_payout_leaves_the_queue_ahead_of_it_as_it_was_and_addresses_its_own() {
+        let mut reg = docked();
+        // A push already waiting, a wallet change of Bob's: its name and audience
+        // are the mark.
+        reg.charge(BOB, -1.0, REF_INSURANCE, BOB, RIFTER);
+        let marks = |q: &[(std::time::Duration, Box<dyn crate::notify::Push>)]| {
+            q.iter()
+                .map(|(_, p)| (p.to_push().0, p.audience()))
+                .collect::<Vec<_>>()
+        };
+        let waiting = reg.take_pending_raw();
+        let before = marks(&waiting);
+        assert!(!before.is_empty(), "the marker push is queued");
+        reg.restore_pending(waiting);
+
+        let a0 = balance(&reg, ALICE);
+        on_kill(&mut reg, &loss(ALICE, ALICE_SHIP));
+        assert!(balance(&reg, ALICE) > a0, "the uninsured loss pays Alice");
+
+        // The set-aside queue is back, first and as it was.
+        let after = marks(&reg.take_pending_raw());
+        assert!(
+            after.len() >= before.len(),
+            "the queue lost pushes: {before:?} -> {after:?}"
+        );
+        assert_eq!(
+            after[..before.len()],
+            before[..],
+            "what was pending is first and unchanged"
+        );
+        // Alice's own pushes were scheduled, each for Alice alone.
+        let sent = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(1));
+        assert!(!sent.is_empty(), "the payout scheduled its own pushes");
+        for p in &sent {
+            assert_eq!(p.audience(), Some(vec![ALICE]), "{p:?}");
+        }
+    }
+
+    /// #258 (the refilter landing's follow-up): a removal already queued when a
+    /// payout runs reaches the park once. `pay_out` sets the queue aside raw and
+    /// puts it back, so the drain is the only filter pass; and the payout did run,
+    /// its wallet push scheduled for Alice alone.
+    #[test]
+    fn a_payout_keeps_a_removal_already_queued() {
+        use crate::grid::tests::*;
+        let mut reg = world_with_a_queued_removal();
+        let ev = KillEvent {
+            victim_character: ALICE,
+            victim_ship: ALICE_SHIP,
+            ship_type: 990_999_001,
+            killer: None,
+            system: 0,
+            npc: None,
+            when: crate::pyutil::filetime_now(),
+            park: vec![],
+        };
+        pay_out(&mut reg, &ev, 990_999_001, &[(ALICE, 100.0, true)]);
+        let sent = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(1));
+        assert!(!sent.is_empty(), "the payout ran and scheduled its pushes");
+        for p in &sent {
+            assert_eq!(p.audience(), Some(vec![ALICE]), "{p:?}");
+        }
+        assert!(
+            the_queued_removal_reached_alice(&mut reg),
+            "the removal queued before the payout reaches Alice"
+        );
+    }
+
     /// **A stolen hull splits the policy** (#134): the owner at death is paid
     /// the base, the holder the rest, and the two sum to the policy.
     #[test]
