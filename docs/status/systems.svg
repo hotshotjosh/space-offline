@@ -193,12 +193,13 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="373.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="378.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="383.8" y="109.0" width="4" height="4" class="built"/>
-<rect x="389.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="388.8" y="111.0" width="4" height="2.0" class="part-f"/>
+<rect x="388.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="394.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="393.8" y="111.0" width="4" height="2.0" class="part-f"/>
 <rect x="399.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="398.8" y="111.0" width="4" height="2.0" class="part-f"/>
-<rect x="403.8" y="109.0" width="4" height="4" class="unknown"/>
+<rect x="404.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="403.8" y="111.0" width="4" height="2.0" class="part-f"/>
 <rect x="408.8" y="109.0" width="4" height="4" class="unknown"/>
-<text x="417.8" y="114.0" class="s xs">11/43</text>
+<rect x="413.8" y="109.0" width="4" height="4" class="unknown"/>
+<text x="422.8" y="114.0" class="s xs">11/44</text>
 <text x="16.0" y="130.0" class="t">Industry and mining</text>
 <rect x="198.8" y="125.0" width="4" height="4" class="proved"/>
 <rect x="203.8" y="125.0" width="4" height="4" class="proved"/>

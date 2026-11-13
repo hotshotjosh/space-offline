@@ -51,6 +51,13 @@ use eve_marshal::PyValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
+/// The Evermark corporation (the Paragon store's LP corporation) [V]
+/// (`lpOfferEntry.py:350-361` takes offers with corp 1000419). Its balance is
+/// never turned into ISK: the store sells ship emblem licences, which have no
+/// market group, so no price can rate them ([`split_evermarks`]); the licence
+/// is bought by [`crate::emblem_use`] instead.
+pub const CORP_HERALDRY: i64 = 1_000_419;
+
 /// The most offers one visit redeems: a guard, not a policy. Each round
 /// spends at least one offer's LP, so the loop ends by itself.
 pub const MAX_ROUNDS: usize = 8;
@@ -187,10 +194,28 @@ pub struct Spend {
     pub sale: Option<String>,
     /// Why a round stopped short, if it did.
     pub notes: Vec<String>,
+    /// What the Evermark step did (its note), when the pilot held Evermarks.
+    pub emblem: Option<String>,
+}
+
+/// Take the Evermark balance out of `balances` and return it (0 when none):
+/// the licences it buys cannot be rated as ISK, so the ISK conversion never
+/// sees it.
+pub fn split_evermarks(balances: &mut BTreeMap<i64, i64>) -> i64 {
+    balances.remove(&CORP_HERALDRY).unwrap_or(0)
 }
 
 impl Spend {
     pub fn summary(&self) -> String {
+        let mut text = self.converted();
+        if let Some(e) = &self.emblem {
+            text.push_str("; ");
+            text.push_str(e);
+        }
+        text
+    }
+
+    fn converted(&self) -> String {
         if self.redeemed.is_empty() {
             let mut s = format!("{} LP: nothing worth redeeming", self.lp);
             for n in &self.notes {
@@ -277,6 +302,8 @@ pub fn spend(c: &mut Conn, only: Option<&[i64]>) -> Result<Spend> {
     let mut stores: BTreeMap<i64, Vec<LpOffer>> = BTreeMap::new();
     let mut skip_offers: BTreeSet<(i64, i64)> = BTreeSet::new();
     let mut market: Option<crate::pricing::Prices> = None;
+    // The Evermarks held at the last read (the licence store, not ISK).
+    let mut em = 0;
     for round in 0..MAX_ROUNDS {
         let mut balances = read_balances(&value(
             c,
@@ -284,6 +311,7 @@ pub fn spend(c: &mut Conn, only: Option<&[i64]>) -> Result<Spend> {
             "GetAllMyCharacterWalletLPBalances",
             vec![],
         )?);
+        em = split_evermarks(&mut balances);
         if let Some(only) = only {
             balances.retain(|corp, _| only.contains(corp));
         }
@@ -347,6 +375,15 @@ pub fn spend(c: &mut Conn, only: Option<&[i64]>) -> Result<Spend> {
             }
             Err(e) => return Err(e),
         }
+    }
+    // A licence for the flown hull, shown on it ([`crate::emblem_use`]). A
+    // refusal is a note; only a broken connection is an error.
+    if em > 0 {
+        out.emblem = Some(match crate::emblem_use::run(c, em) {
+            Ok(note) => note,
+            Err(Error::Refused(why) | Error::NotSent(why)) => why,
+            Err(e) => return Err(e),
+        });
     }
     if !out.redeemed.is_empty() {
         out.sale = Some(crate::escort::sell_loot(c)?.summary());
@@ -584,6 +621,18 @@ mod tests {
         ]);
         assert_eq!(read_balances(&v), BTreeMap::from([(CORP_A, 55)]));
         assert!(read_balances(&PyValue::None).is_empty());
+    }
+
+    /// The Evermark balance goes to the licence step, never to the ISK rule.
+    #[test]
+    fn the_heraldry_balance_is_not_converted_to_isk() {
+        let mut b = BTreeMap::from([(CORP_A, 55), (CORP_HERALDRY, 900)]);
+        assert_eq!(split_evermarks(&mut b), 900);
+        assert_eq!(b, BTreeMap::from([(CORP_A, 55)]));
+        assert_eq!(split_evermarks(&mut b), 0);
+        let mut only = BTreeMap::from([(CORP_HERALDRY, 5)]);
+        assert_eq!(split_evermarks(&mut only), 5);
+        assert!(only.is_empty(), "nothing left to convert");
     }
 
     #[test]

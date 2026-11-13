@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**65% proved** (208 of 322) · **92% built** (295 of 322) · 3 parked, not counted.
+**64% proved** (208 of 323) · **92% built** (296 of 323) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -80,6 +80,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Entropic Disintegrators: the player's beam spools its damage: *built-unproved*, pochven/spool.rs (Spools by cycle index, factor, max_timestamp, world tests), modules.rs (spool_step, start_fx, stop_pushes), scenario fci_trig_player written, not run (the repair beam 7166 is excluded from the ramp by effect id)
 - [ ] NPC logistics repair only their own side (same owner corporation; an abyss room as one side): *built-unproved*, npc.rs allies_of filters wards by owner_corp_id; test allies_are_of_the_repairers_own_faction_only
 - [ ] Triglavian and Drifter loot: *built-unproved*, server/crates/eve-server/src/pochven/loot.rs, content/pochven/loot.tsv, tools/client-ci/scenarios/fci_pochven_loot.py
+- [ ] Mission bots earn Evermarks and fly their corp logo: *built-unproved*, bot missioner.rs heraldry pass (packaged items it holds, at most 5e6 ISK), lp_spend.rs keeps Evermarks out of ISK conversion, emblem_use.rs buys the hull's corp-logo licence and sends Display; pure tests; no scenario yet
 
 ### 3.6 Factional warfare and sov
 
@@ -173,7 +174,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 18 | 12 | 0 | 0 | 0 |
-| Bots | 11 | 27 | 3 | 0 | 2 |
+| Bots | 11 | 28 | 3 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 9 | 2 | 0 | 0 | 0 |
@@ -368,7 +369,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 43 proved, 32 open</summary>
+<details><summary><b>Bots</b>: 11 of 44 proved, 33 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets do not honour the reserve yet (#159); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -413,6 +414,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Bots run co-op abyss: *built-unproved*, abyss_run.rs, socket test tests/bots/abyss_run.rs; the bot-abyss client scenario is pending. keys only from drops or the market
 - [ ] Bots run co-op abyss: entrance threat, short gangs, key stacks, stale board: *built-unproved*, abyss_run.rs entrance_verdict (threat = an NPC shooting the leader, or a homing), book_short_gang (a short run and its death are one loss), needs_stack + Op::Stack (StackAll at the dock), Board::purge (OFFER_TTL, GANG_TTL [A]); driver.rs: a no-gate try does not count as a failure; abyss::WaveTable (a test's own wave table in the bundle); socket tests in tests/bots/abyss_run.rs (stack then deploy, waves fought before each gate, no-gate try fails); not yet seen on a client. GANG_TTL and shooting-only threat [A]
 - [ ] Bot corps anchor and live in an Upwell structure (BOT-UPWELL-HOME): *built-unproved*, eve-bot upwell_home.rs (planner, gate, unit tests); tests/bots/upwell_home.rs (socket: board a hauler, warp to a planet, anchor, wait, dock, control; refusal words); brain gate test; soak later
+- [ ] Mission bots earn Evermarks and fly their corp logo: *built-unproved*, bot missioner.rs heraldry pass (packaged items it holds, at most 5e6 ISK), lp_spend.rs keeps Evermarks out of ISK conversion, emblem_use.rs buys the hull's corp-logo licence and sends Display; pure tests; no scenario yet
 
 </details>
 

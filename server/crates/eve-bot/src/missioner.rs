@@ -71,6 +71,16 @@ pub const DIVISION_DISTRIBUTION: i64 = 22;
 /// The agent type that draws from the pool (`agentTypeBasicAgent`) **[V]**.
 pub const AGENT_TYPE_BASIC: i64 = eve_server::mission_pool::TYPE_BASIC;
 
+/// The Evermark agents (type 13): they ask for built items, never a fight
+/// (EM-1) **[V]**.
+pub const AGENT_TYPE_HERALDRY: i64 = eve_server::mission_pool::TYPE_HERALDRY;
+
+/// The most a bot hands a heraldry agent for its Evermarks, in ISK at market
+/// price. **[A]**: a cheap item is a fair price for a logo, a dear one is
+/// worth more sold. Falsified by a bot that never finds a row it may take, or
+/// one that gives up a hull worth more than the logo.
+pub const HERALDRY_MAX_ISK: f64 = 5.0e6;
+
 /// `missionStateAccepted` in a journal row (`mission.rs::mission_state`)
 /// **[V]**.
 pub const MISSION_STATE_ACCEPTED: i64 = 2;
@@ -346,6 +356,46 @@ pub fn read_agents(v: &PyValue) -> Vec<AgentRow> {
             })
         })
         .collect()
+}
+
+/// **The heraldry agents** (type 13) at `station`, by id.
+pub fn heraldry_agents(rows: &[AgentRow], station: i64) -> Vec<AgentRow> {
+    let mut out: Vec<AgentRow> = rows
+        .iter()
+        .filter(|a| a.agent_type == AGENT_TYPE_HERALDRY && a.station == Some(station))
+        .copied()
+        .collect();
+    out.sort_by_key(|a| a.id);
+    out
+}
+
+/// **Whether to turn a heraldry row in**, pure: `want` units asked, the
+/// hangar holds `packaged_units` of them in packaged stacks (all the agent
+/// takes of a stack; a built hull is assembled and does not count here), and
+/// the `want` units are worth `item_value_isk` at market price. Only what the
+/// bot already holds counts -- it never buys to fill a row (nothing from
+/// nowhere) -- and only when it is at most [`HERALDRY_MAX_ISK`]. **[A]**
+/// policy, falsifier on [`HERALDRY_MAX_ISK`].
+pub fn heraldry_take(want: i64, packaged_units: i64, item_value_isk: f64) -> bool {
+    want > 0 && packaged_units >= want && item_value_isk <= HERALDRY_MAX_ISK
+}
+
+/// Units of `type_id` the hangar holds as packaged stacks.
+pub fn packaged_units(rows: &[crate::verbs::ItemRow], type_id: i64) -> i64 {
+    rows.iter()
+        .filter(|r| r.type_id == type_id && !r.singleton)
+        .map(|r| r.quantity)
+        .sum()
+}
+
+/// The server's heraldry row for mission `id`, when the content has one.
+fn heraldry_row(id: Option<i64>) -> Option<eve_server::mission_pool::Mission> {
+    crate::acquire::with_content(|ct| {
+        ct.try_get::<eve_server::mission_pool::Table>()?
+            .mission(id?)
+            .filter(|m| m.template == "Heraldry")
+            .cloned()
+    })
 }
 
 /// **The agents to talk to** at `station` (the module header's rule):
@@ -707,6 +757,16 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
             r.steps.push(complete(c, job.agent, &turn)?);
             continue;
         }
+        // A heraldry job the bot cannot finish (nothing to hand over) is
+        // quit, not read as a courier. [A]
+        if heraldry_row(Some(job.mission)).is_some() {
+            c.agent_button(job.agent, &turn, BUTTON_QUIT)?;
+            r.steps.push(Step::Quit {
+                agent: job.agent,
+                mission: job.mission,
+            });
+            continue;
+        }
         match offer_kind(&keywords(c, job.agent, Some(job.mission))?) {
             Kind::Kill if job.pocket.is_some() && e.level > 0 => {
                 undock(c)?;
@@ -740,6 +800,11 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
         .station_id()
         .ok_or_else(|| Error::NotSent("missions: not docked".to_owned()))?;
     let rows = agents(c)?;
+    for agent in heraldry_agents(&rows, here) {
+        if let Some(step) = heraldry(c, agent.id)? {
+            r.steps.push(step);
+        }
+    }
     let agents: Vec<AgentRow> = match e.agent {
         Some(id) => vec![
             rows.iter()
@@ -835,6 +900,50 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
             format!(": {}", r.summary())
         }
     )))
+}
+
+/// **One heraldry agent** (EM-1, #207): when its row asks for packaged
+/// units the bot already holds, at most [`HERALDRY_MAX_ISK`] of them, accept
+/// and complete it, for Evermarks. An offer the bot cannot fill is left, not
+/// declined (**[A]**; falsified by an agent that stops offering until
+/// declined). `None` when there was nothing to do.
+fn heraldry(c: &mut Conn, agent: i64) -> Result<Option<Step>> {
+    let turn = c.talk_to_agent(agent)?;
+    if turn.action_for(BUTTON_ACCEPT).is_none() {
+        return Ok(None);
+    }
+    let Some(row) = heraldry_row(turn.content_id) else {
+        return Ok(None);
+    };
+    let (Some(type_id), Some(want)) = (row.obj_type, row.obj_qty) else {
+        return Ok(None);
+    };
+    let have = packaged_units(&c.hangar_items()?, type_id);
+    let value = if have >= want && want > 0 {
+        let mut prices = crate::pricing::Prices::read(c)?;
+        prices
+            .mkt_of(c, &[type_id])?
+            .get(&type_id)
+            .map_or(f64::INFINITY, |p| p * want as f64)
+    } else {
+        f64::INFINITY
+    };
+    if !heraldry_take(want, have, value) {
+        return Ok(Some(Step::Skipped {
+            agent,
+            why: "heraldry: nothing to hand over at a fair price",
+        }));
+    }
+    c.agent_button(agent, &turn, BUTTON_ACCEPT)?;
+    let turn = c.talk_to_agent(agent)?;
+    if turn.action_for(BUTTON_COMPLETE).is_none() {
+        c.agent_button(agent, &turn, BUTTON_QUIT)?;
+        return Ok(Some(Step::Skipped {
+            agent,
+            why: "heraldry: the agent would not complete it",
+        }));
+    }
+    complete(c, agent, &turn).map(Some)
 }
 
 /// **In space: the kill under way** (module header, step 2).
@@ -1085,6 +1194,62 @@ mod tests {
     /// The client's own gate (`eveCfg.CanUseAgent` [V]): level 1 is open, and
     /// level L needs a standing of `2(L-1)-1` toward the faction, the corp or
     /// the agent, none under -2.
+    #[test]
+    fn heraldry_agents_are_type_13_at_this_station() {
+        let herald = |id, station| AgentRow {
+            agent_type: AGENT_TYPE_HERALDRY,
+            ..agent(id, 37, 1, station)
+        };
+        let rows = vec![
+            herald(30, STATION),
+            agent(10, DIVISION_SECURITY, 1, STATION),
+            herald(20, ELSEWHERE),
+            herald(5, STATION),
+        ];
+        let ids: Vec<i64> = heraldry_agents(&rows, STATION)
+            .iter()
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(ids, vec![5, 30]);
+        assert!(heraldry_agents(&rows, 1).is_empty());
+        // The ordinary desk never sees them.
+        assert!(
+            candidates(&rows, STATION, 1)
+                .iter()
+                .all(|a| a.agent_type == AGENT_TYPE_BASIC)
+        );
+    }
+
+    #[test]
+    fn heraldry_take_needs_the_packaged_units_and_a_cheap_item() {
+        assert!(heraldry_take(5, 5, 1.0e6));
+        assert!(heraldry_take(5, 9, HERALDRY_MAX_ISK), "the bound is open");
+        assert!(!heraldry_take(5, 4, 1.0), "a unit short");
+        assert!(!heraldry_take(5, 5, HERALDRY_MAX_ISK + 1.0), "too dear");
+        assert!(!heraldry_take(5, 5, f64::INFINITY), "no price");
+        assert!(!heraldry_take(0, 5, 1.0), "a row that asks for nothing");
+        // Only packaged stacks count: an assembled hull is not handed over.
+        let row = |item_id, type_id, quantity, singleton| ItemRow {
+            item_id,
+            type_id,
+            owner_id: 1,
+            location_id: STATION,
+            flag_id: 4,
+            quantity,
+            group_id: 0,
+            category_id: 0,
+            singleton,
+        };
+        let rows = vec![
+            row(1, ODD_GROUP, 3, false),
+            row(2, ODD_GROUP, 1, true),
+            row(3, ODD_GROUP, 4, false),
+            row(4, ODD_GROUP + 1, 99, false),
+        ];
+        assert_eq!(packaged_units(&rows, ODD_GROUP), 7);
+        assert_eq!(packaged_units(&rows, 5), 0);
+    }
+
     #[test]
     fn standings_open_levels_two_to_five_at_the_clients_thresholds() {
         let a = |level| owned(1, level, STATION, None);

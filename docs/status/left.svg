@@ -79,8 +79,9 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="304.8" y="77.0" width="4" height="4" class="built"/>
 <rect x="309.8" y="77.0" width="4" height="4" class="built"/>
 <rect x="314.8" y="77.0" width="4" height="4" class="built"/>
-<rect x="320.3" y="77.5" width="3" height="3" fill="none" class="missing"/>
-<text x="328.8" y="82.0" class="s xs">18</text>
+<rect x="319.8" y="77.0" width="4" height="4" class="built"/>
+<rect x="325.3" y="77.5" width="3" height="3" fill="none" class="missing"/>
+<text x="333.8" y="82.0" class="s xs">19</text>
 <text x="16.0" y="98.0" class="t">3.6 Factional warfare and sov</text>
 <rect x="234.8" y="93.0" width="4" height="4" class="built"/>
 <rect x="239.8" y="93.0" width="4" height="4" class="built"/>
