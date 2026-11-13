@@ -42,11 +42,13 @@
 //!
 //! ## Assumptions
 //!
-//! - **[A]** a refused Display or Clear answers 403. Falsifier: a client
-//!   branch that shows a different message for another code.
-//! - **[A]** a Clear of an empty slot answers 200 and still sends the
-//!   machoNet events (the client waits for them); the event's cosmetic type
-//!   is 0 for a clear. Falsifier: the client rejecting 0.
+//! - **[V]** the client never branches on the refusal's status code: any
+//!   non-200 raises (`shipEmblemsRequestMessenger.py:44-45`) and becomes a
+//!   `RuntimeError` (`fittingsgateway/quasar.py:67-70`). 403 is TQ's code only
+//!   by guess; it is cosmetic.
+//! - **[V]** `OnShipCosmeticChanged` ignores its cosmetic argument
+//!   (`quasar.py:83-86`), so type 0 on a clear cannot be rejected. A Clear of
+//!   an empty slot answers 200 and still sends the events (the client waits).
 //! - **[A]** any slot index from 0 to 4095 is accepted for any licence; the
 //!   licence's `slot_group` is not enforced. Falsifier: a licence of another
 //!   group showing in a slot the client says it does not fit.
@@ -259,12 +261,19 @@ fn slots_of(reg: &Registry, ship: i64) -> Vec<(i64, i64)> {
     if d.is_empty() || reg.store().get(ship).is_none() {
         return Vec::new();
     }
+    let (owner, hull) = reg
+        .store()
+        .get(ship)
+        .map_or((0, 0), |i| (i.owner_id, i.type_id));
     let s = ship.to_string();
     let from = vec![SLOT.to_owned(), s.clone(), String::new()];
+    // A row counts only while the ship's CURRENT owner owns the licence: a
+    // hull given to a pilot without it shows no logo.
     let mut v: Vec<(i64, i64)> = d
         .range(from..)
         .take_while(|(k, _)| k.len() == 3 && k[0] == SLOT && k[1] == s)
         .filter_map(|(k, val)| Some((k[2].parse().ok()?, val.first()?.parse().ok()?)))
+        .filter(|&(_, c)| owns(reg, owner, hull, c))
         .collect();
     v.sort_unstable();
     v
@@ -307,27 +316,37 @@ pub fn prune(reg: &mut Registry) {
     reg.mark_dirty();
 }
 
-/// The slim attribute of the ships among `ids` that show a logo
-/// (`slim_extra::SOURCES`): `cosmeticsItems`, the sorted distinct enabled
-/// types; no entry (no key) for a ship with none.
+/// The slim attribute of the ships among `ids` (`slim_extra::SOURCES`):
+/// `cosmeticsItems`, the sorted distinct enabled types. A ship whose owner
+/// owns an emblem licence for its hull gets `[]` when no slot is enabled, never
+/// a missing key: the client's slim returns `None` for a missing name, and
+/// `CosmeticsLoader.Update` returns on `None` before it resets the logo
+/// paths, so a cleared logo would stay drawn [V `slimItem.py:23-46`,
+/// `spaceObject/ship.py:269-271`, `CosmeticsLoader.py:35-38`]. A ship of an
+/// owner with no licence keeps no key.
 pub fn slim(reg: &Registry, ids: &[i64]) -> SlimExtras {
     if reg.deltas().of(KIND).is_empty() {
         return Vec::new();
     }
     ids.iter()
         .filter_map(|&id| {
+            let it = reg.store().get(id)?;
+            let licensed = [CORPORATION_LOGO, ALLIANCE_LOGO]
+                .iter()
+                .any(|&c| owns(reg, it.owner_id, it.type_id, c));
+            if !licensed {
+                return None;
+            }
             let mut types: Vec<i64> = slots_of(reg, id).into_iter().map(|(_, c)| c).collect();
             types.sort_unstable();
             types.dedup();
-            (!types.is_empty()).then(|| {
-                (
-                    id,
-                    vec![(
-                        "cosmeticsItems",
-                        PyValue::List(types.into_iter().map(PyValue::Int).collect()),
-                    )],
-                )
-            })
+            Some((
+                id,
+                vec![(
+                    "cosmeticsItems",
+                    PyValue::List(types.into_iter().map(PyValue::Int).collect()),
+                )],
+            ))
         })
         .collect()
 }
@@ -555,19 +574,36 @@ mod tests {
             cfg.characters = vec![a, b];
             cfg.catch_all = None;
         });
-        let hull = hull_of(&reg, ALICE);
         let mut content = crate::content::Content::fixture();
-        content.insert("emblem", Licences::parse(&lines(hull)).unwrap());
+        content.insert("emblem", Licences::parse(&lines(FRIGATE)).unwrap());
         reg = reg.with_content(Arc::new(content));
+        for who in [ALICE, BOB] {
+            let at = crate::item::Slot::new(who, STATION, crate::model::FLAG_HANGAR);
+            reg.apply_items(&[crate::item::Edit::Create {
+                type_id: FRIGATE,
+                quantity: 1,
+                to: at,
+            }])
+            .expect("the typedata fixture frigate is a known type");
+        }
         reg
     }
 
+    /// The typedata fixture's invented frigate (category 6).
+    const FRIGATE: i64 = 990_000_001;
+
+    /// `who`'s fixture frigate (not the capsule, whose type is a real id).
     fn ship_of(reg: &Registry, who: i64) -> i64 {
-        reg.character(who).unwrap().ship_id
+        reg.store()
+            .items()
+            .iter()
+            .find(|i| i.owner_id == who && i.type_id == FRIGATE)
+            .expect("the world seeds a frigate per pilot")
+            .item_id
     }
 
-    fn hull_of(reg: &Registry, who: i64) -> i64 {
-        reg.store().get(ship_of(reg, who)).unwrap().type_id
+    fn hull_of(_reg: &Registry, _who: i64) -> i64 {
+        FRIGATE
     }
 
     fn arrive(reg: &mut Registry, who: i64) {
@@ -696,7 +732,11 @@ mod tests {
         let hull = hull_of(&reg, ALICE);
         let ship = ship_of(&reg, ALICE);
         grant(&mut reg, ALICE, hull, CORPORATION_LOGO);
-        assert_eq!(cosmetics_items(&reg, ship), None, "no key when none");
+        assert_eq!(
+            cosmetics_items(&reg, ship),
+            Some(PyValue::List(vec![])),
+            "a licensed ship with no slot carries []"
+        );
         display(&mut reg, ALICE, ship, 0, CORPORATION_LOGO).unwrap();
         assert_eq!(
             cosmetics_items(&reg, ship),
@@ -723,7 +763,8 @@ mod tests {
         );
         assert_eq!(told[1].0, "OnShipCosmeticsChanged");
         clear(&mut reg, ALICE, ship, 0).unwrap();
-        assert_eq!(cosmetics_items(&reg, ship), None);
+        // [] and never a missing key: the client keeps the old logo on `None`.
+        assert_eq!(cosmetics_items(&reg, ship), Some(PyValue::List(vec![])));
         assert_eq!(enabled(&reg, ALICE, ship), PyValue::Dict(vec![]));
     }
 
@@ -760,6 +801,23 @@ mod tests {
     }
 
     #[test]
+    fn a_ship_given_to_a_pilot_without_the_licence_shows_no_logo() {
+        let mut reg = world();
+        let ship = ship_of(&reg, ALICE);
+        grant(&mut reg, ALICE, FRIGATE, CORPORATION_LOGO);
+        display(&mut reg, ALICE, ship, 0, CORPORATION_LOGO).unwrap();
+        reg.apply_items(&[crate::item::Edit::Move {
+            item_id: ship,
+            to: crate::item::Slot::new(BOB, STATION, crate::model::FLAG_HANGAR),
+        }])
+        .expect("moves");
+        assert_eq!(reg.store().get(ship).unwrap().owner_id, BOB);
+        assert_eq!(enabled(&reg, BOB, ship), PyValue::Dict(vec![]));
+        assert_eq!(cosmetics_items(&reg, ship), None, "Bob has no licence");
+        assert_eq!(enabled(&reg, ALICE, ship), PyValue::Dict(vec![]));
+    }
+
+    #[test]
     fn a_destroyed_ship_drops_its_slot_rows() {
         let mut reg = world();
         let hull = hull_of(&reg, ALICE);
@@ -776,7 +834,7 @@ mod tests {
         );
         reg.apply_items(&[crate::item::Edit::Destroy { item_id: ship }])
             .expect("the ship goes");
-        assert_eq!(cosmetics_items(&reg, ship), None, "a gone ship shows none");
+        assert_eq!(cosmetics_items(&reg, ship), None, "a gone ship has no slim");
         prune(&mut reg);
         assert_eq!(
             reg.deltas()

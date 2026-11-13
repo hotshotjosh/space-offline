@@ -312,21 +312,29 @@ mod tests {
     /// actor's own ship only; a call with no ship id is `{}`.
     #[test]
     fn enabled_cosmetics_answer_the_actors_own_ship_slots() {
-        let mut reg = Registry::new(SandboxConfig::default());
-        let ship = reg
-            .store()
-            .items()
-            .iter()
-            .find(|i| i.category_id == 6)
-            .map(|i| (i.item_id, i.owner_id, i.type_id))
-            .expect("the sandbox has a ship");
-        let (ship_id, owner, hull) = ship;
         let mut content = crate::content::Content::fixture();
+        // The typedata fixture's invented frigate, 990_000_001 (category 6).
+        let hull = 990_000_001;
         content.insert(
             "emblem",
             crate::emblem::Licences::parse(&crate::emblem::fixture::lines(hull)).unwrap(),
         );
-        reg = reg.with_content(std::sync::Arc::new(content));
+        let mut reg =
+            Registry::new(SandboxConfig::default()).with_content(std::sync::Arc::new(content));
+        let owner = 1_001;
+        let ship_id = reg
+            .apply_items(&[crate::item::Edit::Create {
+                type_id: hull,
+                quantity: 1,
+                to: crate::item::Slot::new(owner, 600_001, crate::model::FLAG_HANGAR),
+            }])
+            .expect("a known invented type")
+            .iter()
+            .find_map(|c| match c {
+                crate::item::Change::Created { item_id, .. } => Some(*item_id),
+                _ => None,
+            })
+            .expect("created");
         assert!(crate::emblem::grant(&mut reg, owner, hull, 1));
         crate::emblem::display(&mut reg, owner, ship_id, 5, 1).unwrap();
         let ask = |reg: &mut Registry, who: i64, args: &[PyValue]| {

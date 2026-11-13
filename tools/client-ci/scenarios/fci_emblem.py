@@ -22,13 +22,12 @@ balance does not move.  A sets slot 0 through the client's own fitting gateway
 the slot; A undocks and its own ball's slim carries `cosmeticsItems` with 1.
 B undocks and waits on grid, then reads A's ball: its slim carries
 `cosmeticsItems` with 1 (the viewer check, as `fci_skin_viewer`).  A then clears
-the slot; B's view of A's slim loses the key, A's `GetEnabledCosmetics` is empty.
+the slot; B's view of A's slim is `[]`, never a missing key (the client keeps the old logo on None), A's `GetEnabledCosmetics` is empty.
 
 NOT here, for a person (`docs/guides/human-checks.md`): that the logo is drawn on
 the hull (the check here is the client's state, not the pixels).
-[A] a refused Display answers 403; a clear sends `OnShipCosmeticChanged` with
-type 0.  Falsifiers: a client branch on another code; the client rejecting 0
-(the clear then times out after 5 s and the check below fails).
+[V] a refusal's code is never read by the client (any non-200 raises), and
+`OnShipCosmeticChanged` ignores its type, so a clear sends type 0.
 """
 
 EOCI_SCENARIO = 'fci_emblem'
@@ -1480,8 +1479,10 @@ def eoci_main(EOCI_NAME):
                          'loyaltyPointsWalletSvc run', None not in services, text(services))
             if None in services:
                 return
-            offers = corp_logo_offers()
-            precondition('the Paragon store lists corporation-logo licences (a bundle with the '
+            have = owned_types() or []
+            offers = [(o, l) for (o, l) in corp_logo_offers()
+                      if getattr_safe(o, 'typeID') not in have]
+            precondition('the Paragon store lists corporation-logo licences this pilot does not own yet (a bundle with the '
                          'cosmetics/ship-licences.tsv file)', bool(offers),
                          '%d offer(s)' % len(offers))
             if not offers:
@@ -1574,9 +1575,9 @@ def eoci_main(EOCI_NAME):
                                    timeout_ms=240000, step_ms=STEP_MS)
             check('B sees A\'s ball with cosmeticsItems [1] (the viewer check)', bool(got),
                   '%s after %s ms' % (text(slim_cosmetics(park, peer_ball)), text(waited)))
-            got, waited = wait_for(lambda: slim_cosmetics(park, peer_ball) is None,
+            got, waited = wait_for(lambda: slim_cosmetics(park, peer_ball) == [],
                                    timeout_ms=240000, step_ms=STEP_MS)
-            check('B sees the key go when A clears the slot (the slim was re-sent)', bool(got),
+            check('B sees cosmeticsItems == [] when A clears the slot (never a missing key: the client keeps the old logo on None)', bool(got),
                   '%s after %s ms' % (text(slim_cosmetics(park, peer_ball)), text(waited)))
         else:
             sleep_ms(40000)
@@ -1588,9 +1589,9 @@ def eoci_main(EOCI_NAME):
                   ok and bool(v), text(v)[:200])
             check('GetEnabledCosmetics is empty again', enabled_cosmetics(my_ship) == {},
                   text(enabled_cosmetics(my_ship)))
-            got, waited = wait_for(lambda: slim_cosmetics(park, park.ego) is None,
+            got, waited = wait_for(lambda: slim_cosmetics(park, park.ego) == [],
                                    timeout_ms=30000, step_ms=STEP_MS)
-            check('A\'s own slim lost cosmeticsItems', bool(got),
+            check('A\'s own slim has cosmeticsItems == [] after the clear', bool(got),
                   '%s after %s ms' % (text(slim_cosmetics(park, park.ego)), text(waited)))
             sleep_ms(20000)
         no_new_tracebacks('emblem', mark)
