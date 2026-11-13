@@ -126,6 +126,11 @@ impl Licences {
     pub fn is_empty(&self) -> bool {
         self.by_type.is_empty()
     }
+
+    /// `(hull type, cosmetic type)` when `type_id` is an emblem licence type.
+    pub fn get(&self, type_id: i64) -> Option<(i64, i64)> {
+        self.by_type.get(&type_id).copied()
+    }
 }
 
 /// This table's registration row: one line in `content_tables::TABLES`.
@@ -176,7 +181,7 @@ fn table(reg: &Registry) -> &Licences {
 
 /// `(hull type, cosmetic type)` when `type_id` is an emblem licence type.
 pub fn licence_of(reg: &Registry, type_id: i64) -> Option<(i64, i64)> {
-    table(reg).by_type.get(&type_id).copied()
+    table(reg).get(type_id)
 }
 
 // ---- owned licences --------------------------------------------------------------
@@ -279,6 +284,17 @@ fn slots_of(reg: &Registry, ship: i64) -> Vec<(i64, i64)> {
     v
 }
 
+/// True when `ship` has any slot row, whoever owns it now.
+fn has_slot_rows(reg: &Registry, ship: i64) -> bool {
+    let from = vec![SLOT.to_owned(), ship.to_string(), String::new()];
+    let s = ship.to_string();
+    reg.deltas()
+        .of(KIND)
+        .range(from..)
+        .next()
+        .is_some_and(|(k, _)| k.len() == 3 && k[0] == SLOT && k[1] == s)
+}
+
 /// `shipCosmeticsMgr.GetEnabledCosmetics(shipID)` for `actor`: the dict
 /// `{backend_slot: cosmetic_type}`; empty for a ship that is not the actor's.
 pub fn enabled(reg: &Registry, actor: i64, ship: i64) -> PyValue {
@@ -323,7 +339,9 @@ pub fn prune(reg: &mut Registry) {
 /// `CosmeticsLoader.Update` returns on `None` before it resets the logo
 /// paths, so a cleared logo would stay drawn [V `slimItem.py:23-46`,
 /// `spaceObject/ship.py:269-271`, `CosmeticsLoader.py:35-38`]. A ship of an
-/// owner with no licence keeps no key.
+/// owner with no licence keeps no key, unless it has slot rows from a
+/// previous owner: it then gets `[]` so a boarding pilot's client drops the
+/// old logo. The rows stay, so a hull handed back shows the logo again [A].
 pub fn slim(reg: &Registry, ids: &[i64]) -> SlimExtras {
     if reg.deltas().of(KIND).is_empty() {
         return Vec::new();
@@ -334,7 +352,7 @@ pub fn slim(reg: &Registry, ids: &[i64]) -> SlimExtras {
             let licensed = [CORPORATION_LOGO, ALLIANCE_LOGO]
                 .iter()
                 .any(|&c| owns(reg, it.owner_id, it.type_id, c));
-            if !licensed {
+            if !licensed && !has_slot_rows(reg, id) {
                 return None;
             }
             let mut types: Vec<i64> = slots_of(reg, id).into_iter().map(|(_, c)| c).collect();
@@ -813,8 +831,29 @@ mod tests {
         .expect("moves");
         assert_eq!(reg.store().get(ship).unwrap().owner_id, BOB);
         assert_eq!(enabled(&reg, BOB, ship), PyValue::Dict(vec![]));
-        assert_eq!(cosmetics_items(&reg, ship), None, "Bob has no licence");
+        assert_eq!(
+            cosmetics_items(&reg, ship),
+            Some(PyValue::List(vec![])),
+            "Bob has no licence, the old slot row must clear the drawn logo"
+        );
         assert_eq!(enabled(&reg, ALICE, ship), PyValue::Dict(vec![]));
+    }
+
+    #[test]
+    fn a_ship_with_no_slot_row_and_an_unlicensed_owner_has_no_key() {
+        let mut reg = world();
+        let ship = ship_of(&reg, BOB);
+        grant(&mut reg, ALICE, FRIGATE, CORPORATION_LOGO);
+        assert!(!has_slot_rows(&reg, ship));
+        assert_eq!(cosmetics_items(&reg, ship), None);
+    }
+
+    #[test]
+    fn licences_get_answers_the_hull_and_type() {
+        let t = Licences::parse(&["1\t500\t600\t1\t7", "2\t501\t601\t3\t7"]).unwrap();
+        assert_eq!(t.get(500), Some((600, 1)));
+        assert_eq!(t.get(501), None, "not an emblem type");
+        assert_eq!(t.get(502), None);
     }
 
     #[test]
