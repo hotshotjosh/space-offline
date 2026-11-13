@@ -325,6 +325,19 @@ pub fn worst_case_m3(
     one * max_draws as f64
 }
 
+/// A tractor beam's cycle in seconds: a mutated module's roll when it is one
+/// (#71 [I]: latent, no mutated tractor exists today), else the type's.
+fn tractor_seconds(w: &Registry, module_id: i64, type_id: i64) -> f64 {
+    let Some(t) = modules::find_in(w.content(), type_id) else {
+        return 0.0;
+    };
+    let ms = t
+        .effect
+        .and_then(|e| modules::rolled(w, module_id, type_id, e.duration_attribute))
+        .map_or_else(|| t.duration_ms() as f64, f64::round);
+    ms / 1000.0
+}
+
 /// How far a tractor beam moves a wreck this cycle: `velocity x seconds`,
 /// never past `stop` from the ship. `gap` is the centre-to-centre distance
 /// now, `stop` the centre-to-centre distance to stop at.
@@ -395,6 +408,7 @@ fn module_value(
 ) -> Option<f64> {
     crate::dogma::module_attribute(w, ship_id, module_id, attribute)
         .filter(|v| *v != 0.0)
+        .or_else(|| modules::rolled(w, module_id, type_id, attribute))
         .or_else(|| crate::typedata::attribute_in(w.content(), type_id, attribute))
         .or_else(|| modules::find_in(w.content(), type_id).and_then(|t| t.attribute(attribute)))
 }
@@ -755,8 +769,7 @@ fn tractor_cycle(w: &mut Registry, c: &Cycle) {
         ATTR_MAX_TRACTOR_VELOCITY,
     )
     .unwrap_or(0.0);
-    let seconds =
-        modules::find_in(w.content(), c.type_id).map_or(0.0, |t| t.duration_ms() as f64 / 1000.0);
+    let seconds = tractor_seconds(w, c.module_id, c.type_id);
     let step = tractor_step(velocity, seconds, dist, stop);
     if step <= 0.0 {
         // Already home (or a beam with no speed): nothing left to pull.
@@ -1661,5 +1674,43 @@ mod tests {
     fn the_registered_table_is_empty_without_a_bundle() {
         let c = crate::content::Content::fixture();
         assert!(c.try_get::<Table>().is_none() || c.get::<Table>().yields_for(1, 0).is_empty());
+    }
+}
+
+/// MUTA-3b: a fitted mutated salvager or tractor reads its roll, not the
+/// dynamic type's row (#71). [I] none exists today: latent.
+#[cfg(test)]
+mod muta_tests {
+    use super::*;
+    use crate::modules::muta_fixture::{FACTOR, ITEM, registry};
+
+    #[test]
+    fn a_mutated_salvagers_chance_bonus_is_its_roll() {
+        const RESULT: i64 = 981_400_003;
+        let reg = registry(
+            RESULT,
+            None,
+            &[(ATTR_ACCESS_DIFFICULTY_BONUS, 5.0)],
+            &[ATTR_ACCESS_DIFFICULTY_BONUS],
+        );
+        let v = module_value(&reg, 0, ITEM, RESULT, ATTR_ACCESS_DIFFICULTY_BONUS);
+        assert_eq!(v, Some(5.0 * FACTOR));
+    }
+
+    /// The result type is a fixture module's (so a `ModuleType` exists) with
+    /// its own cycle; the roll differs from it.
+    #[test]
+    fn a_mutated_tractors_cycle_is_its_roll() {
+        const TYPE: i64 = 483;
+        let dur = crate::modules::find_in(&crate::content::Content::fixture(), TYPE)
+            .and_then(|t| t.effect)
+            .expect("a fixture module with an effect")
+            .duration_attribute;
+        let reg = registry(TYPE, None, &[(dur, 5_000.0)], &[dur]);
+        let own = modules::find_in(reg.content(), TYPE)
+            .expect("row")
+            .duration_ms() as f64;
+        assert_ne!(own, 5_000.0 * FACTOR, "the roll differs from the type row");
+        assert_eq!(tractor_seconds(&reg, ITEM, TYPE), 5.0 * FACTOR);
     }
 }

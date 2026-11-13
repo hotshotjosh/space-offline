@@ -149,6 +149,7 @@ pub struct Take {
 /// (a drone).
 fn reach(w: &Registry, ship_id: i64, module_id: i64, type_id: i64) -> f64 {
     crate::dogma::module_attribute(w, ship_id, module_id, 54)
+        .or_else(|| modules::rolled(w, module_id, type_id, 54))
         .or_else(|| modules::find_in(w.content(), type_id).and_then(|t| t.attribute(54)))
         .unwrap_or(0.0)
 }
@@ -187,7 +188,12 @@ impl Take {
     /// also when the sheet holds none (the hand-written module rows carry
     /// `miningAmount` alone).
     fn of_module(w: &Registry, ship_id: i64, module_id: i64, type_id: i64) -> Take {
-        let base = Take::of_type(w.content(), type_id);
+        // A mutated module's roll stands in for its type's row (#71 [I]: no
+        // mutated mining laser exists today, so this arm is latent).
+        let base = match crate::dynamic_item::overrides_of(w, module_id, type_id) {
+            Some(o) => Take::of_set(w.content(), &o),
+            None => Take::of_type(w.content(), type_id),
+        };
         // One sheet for the five reads: a cache hit still builds the inputs.
         let sheet = crate::dogma::sheet(w, ship_id);
         let m = |id, fallback: f64| {
@@ -3190,5 +3196,30 @@ mod tests {
         );
         let _ = slash(&mut dev, Some(ALICE), &["off"]).expect("answers");
         assert_eq!(dev.ext::<ForcedSlot>().0, Forced::default());
+    }
+}
+
+/// MUTA-3b: a fitted mutated module's cycle reads its roll, not the dynamic
+/// type's row (#71). [I] no mutated mining laser exists today: latent.
+#[cfg(test)]
+mod muta_tests {
+    use super::*;
+    use crate::modules::muta_fixture::{FACTOR, ITEM, registry};
+
+    const RESULT: i64 = 981_400_003;
+
+    #[test]
+    fn a_mutated_modules_yield_and_reach_are_its_roll() {
+        let reg = registry(
+            RESULT,
+            None,
+            &[(ATTR_MINING_AMOUNT, 5.0), (54, 8_000.0)],
+            &[ATTR_MINING_AMOUNT, 54],
+        );
+        assert_eq!(Take::of_type(reg.content(), RESULT).amount, 0.0);
+        // A ship id with no sheet: the no-sheet path.
+        let take = Take::of_module(&reg, 0, ITEM, RESULT);
+        assert_eq!(take.amount, 5.0 * FACTOR);
+        assert_eq!(reach(&reg, 0, ITEM, RESULT), 8_000.0 * FACTOR);
     }
 }
