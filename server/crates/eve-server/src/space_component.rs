@@ -109,6 +109,12 @@ pub const CALLS: &[Component<'static>] = &[
         crate::merc_den::locate,
         &[("ExtractInfomorphsToShip", crate::merc_den::extract)],
     ),
+    // ANSI-2a (#86): the Ansiblex window's capacitor and access answer.
+    (
+        crate::jump_bridge::COMPONENT,
+        crate::jump_bridge::locate,
+        &[("GetJumpBridgeInfo", crate::jump_bridge::info)],
+    ),
 ];
 
 /// The notify text the client is given when the caller or the item is not in

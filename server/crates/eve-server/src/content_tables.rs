@@ -25,6 +25,7 @@ pub const TABLES: &[TableSpec] = &[
     crate::filament_drops::TABLE,
     crate::hacking_loot::TABLE,
     crate::industry::TABLE,
+    crate::jump_bridge::TABLE,
     crate::ledger::ENTRY_TYPES,
     crate::loyalty::TABLE,
     crate::merc_den::TABLE,

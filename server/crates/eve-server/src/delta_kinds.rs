@@ -329,6 +329,9 @@ pub const KINDS: &[(&str, &str)] = &[
     // ANSI-1 (#85): `structure_id -> destination_system`, where an Ansiblex
     // is aimed; a pair of gates aimed at each other is a link.
     ("jbridge", "jump_bridge"),
+    // ANSI-2a (#86): `structure_id -> charge_gj settled_at counter`, an
+    // Ansiblex's capacitor as last settled; the counter is the slim's etag.
+    ("jbcap", "jump_bridge"),
     // U2-UPWELL: `p corp id -> name desc default`, `next -> n`, `rf corp ->
     // weekday hour`: a corporation's structure profiles and its default
     // reinforcement time.
