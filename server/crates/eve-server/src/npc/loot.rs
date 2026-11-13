@@ -62,8 +62,13 @@ pub const CLONE_TAG_KIND: &str = "clone-tag";
 /// `[A]` R7: tag tiers, `clamp(bounty decile / 2, 0, TAG_TIERS - 1)`.
 pub const TAG_TIERS: usize = 5;
 
-/// The equipment pools (R7's T1/meta kinds).
-pub const EQUIPMENT_KINDS: &[&str] = &["weapon", "tank", "prop", "ewar"];
+/// The equipment pools (R7's T1/meta kinds). `"utility"` is empty until #129.
+///
+/// `[A]` kinds equally likely: each piece draws a kind uniformly among the
+/// kinds that have rows, then a type within it, so a kind with few rows is
+/// not starved by one with many. Falsified by a soak where bots still lack
+/// tank or prop parts.
+pub const EQUIPMENT_KINDS: &[&str] = &["weapon", "tank", "prop", "ewar", "utility"];
 
 /// **Whether `loot_from`'s pools can ever draw this row**, ignoring size
 /// (see [`droppable`]). It mirrors the pool draws' kind, tier and cap
@@ -169,7 +174,8 @@ fn draw<T: Copy>(s: &mut Stream, from: &[T]) -> Option<T> {
 /// it **before** a draw, so an unreachable row never eats a roll.
 ///
 /// - equipment: between the type's min and max distinct pieces from the
-///   faction's weapon, tank, prop and ewar pools at its size, metaLevel at
+///   faction's weapon, tank, prop, ewar and utility pools, each piece a
+///   kind drawn uniformly among the non-empty ones at its size, metaLevel at
 ///   most [`tier_cap`];
 /// - ammo: one stack, [`AMMO_CHANCE`], [`AMMO_PER_SIZE`] × size;
 /// - commander: one faction module, [`FACTION_CHANCE`];
@@ -221,20 +227,32 @@ pub fn loot_from(
     };
     let mut out = Vec::new();
 
-    let mut kit = pool(
-        EQUIPMENT_KINDS,
-        &[Tier::Base, row.tier],
-        true,
-        Some(tier_cap(row.tier)),
-    );
+    let mut kit: Vec<Vec<i64>> = EQUIPMENT_KINDS
+        .iter()
+        .map(|k| {
+            pool(
+                &[k],
+                &[Tier::Base, row.tier],
+                true,
+                Some(tier_cap(row.tier)),
+            )
+        })
+        .collect();
     let (lo, hi) = d.equipment;
     let n = s.range(u64::from(lo), u64::from(hi.max(lo)) + 1);
     for _ in 0..n {
-        if kit.is_empty() {
+        let open: Vec<usize> = (0..kit.len()).filter(|&i| !kit[i].is_empty()).collect();
+        if open.is_empty() {
             break;
         }
-        let i = s.range(0, kit.len() as u64) as usize;
-        out.push((kit.swap_remove(i), 1));
+        let k = open[s.range(0, open.len() as u64) as usize];
+        let i = s.range(0, kit[k].len() as u64) as usize;
+        let t = kit[k].swap_remove(i);
+        // A type listed in two kinds drops once.
+        for p in &mut kit {
+            p.retain(|&x| x != t);
+        }
+        out.push((t, 1));
     }
 
     let (a, b) = AMMO_PER_SIZE;
@@ -866,6 +884,115 @@ mod tests {
         for id in MIN_NPC_ID..MIN_NPC_ID + 50 {
             let k = &crate::npc::ANGEL_HIJACKER;
             assert_eq!(loot_in(&w, k, id, 30_000_001), loot(k, id));
+        }
+    }
+
+    /// A table of invented base rows at size 1 for the pirate faction:
+    /// `(kind, count)` pairs, ids `base + k` per kind (`base` a million apart
+    /// per kind index, so the id names its kind).
+    fn kind_world(counts: &[(&str, i64)]) -> (Table, NpcTypeRow) {
+        let mut t = Table::default();
+        for (n, (kind, count)) in counts.iter().enumerate() {
+            for k in 0..*count {
+                t.loot.push(Loot {
+                    faction_id: PIRATE,
+                    size: 1,
+                    kind: (*kind).to_owned(),
+                    tier: Tier::Base,
+                    type_id: 990_000_000 + (n as i64) * 1_000_000 + k,
+                    meta_level: None,
+                });
+            }
+        }
+        (t, type_row(990_900_001, "belt", "Frigate", Tier::Base))
+    }
+
+    fn one_piece(t: &Table, r: &NpcTypeRow, id: i64) -> Vec<i64> {
+        let d = Drop {
+            row: r,
+            equipment: (1, 1),
+            sec: 1.0,
+        };
+        loot_from(t, d, 17, MIN_NPC_ID + id, |_| true)
+            .into_iter()
+            .map(|(ty, _)| ty)
+            .filter(|ty| (990_000_000..999_000_000).contains(ty))
+            .collect()
+    }
+
+    #[test]
+    fn each_kind_is_drawn_about_equally_from_uneven_pools() {
+        let (t, r) = kind_world(&[("weapon", 40), ("tank", 2), ("prop", 3), ("ewar", 50)]);
+        let mut seen = [0u32; 4];
+        for id in 0..4000i64 {
+            for ty in one_piece(&t, &r, id) {
+                seen[((ty - 990_000_000) / 1_000_000) as usize] += 1;
+            }
+        }
+        for (k, n) in seen.iter().enumerate() {
+            assert!(
+                (800..=1200).contains(n),
+                "kind {k} drawn {n} times: {seen:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_kind_with_no_rows_is_never_picked_and_no_piece_is_lost() {
+        // "utility" and "prop" hold no rows; two pieces are always found.
+        let (t, r) = kind_world(&[("weapon", 5), ("tank", 5)]);
+        for id in 0..300i64 {
+            let d = Drop {
+                row: &r,
+                equipment: (2, 2),
+                sec: 1.0,
+            };
+            let got = loot_from(&t, d, 17, MIN_NPC_ID + id, |_| true);
+            let kit: Vec<i64> = got
+                .iter()
+                .map(|(ty, _)| *ty)
+                .filter(|ty| (990_000_000..992_000_000).contains(ty))
+                .collect();
+            assert_eq!(kit.len(), 2, "NPC {id}: {got:?}");
+        }
+        // Fewer rows than pieces: every row drops, none twice, no panic.
+        let (t, r) = kind_world(&[("weapon", 1), ("tank", 1)]);
+        let d = Drop {
+            row: &r,
+            equipment: (5, 5),
+            sec: 1.0,
+        };
+        let got = loot_from(&t, d, 17, MIN_NPC_ID, |_| true);
+        assert_eq!(
+            got.iter()
+                .filter(|(ty, _)| (990_000_000..992_000_000).contains(ty))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn a_type_in_two_kinds_drops_once() {
+        let (mut t, r) = kind_world(&[("weapon", 1), ("tank", 1)]);
+        // The tank's one type is also a weapon row.
+        let shared = 990_000_000 + 1_000_000;
+        t.loot.push(Loot {
+            faction_id: PIRATE,
+            size: 1,
+            kind: "weapon".to_owned(),
+            tier: Tier::Base,
+            type_id: shared,
+            meta_level: None,
+        });
+        for id in 0..300i64 {
+            let d = Drop {
+                row: &r,
+                equipment: (3, 3),
+                sec: 1.0,
+            };
+            let got = loot_from(&t, d, 17, MIN_NPC_ID + id, |_| true);
+            let n = got.iter().filter(|(ty, _)| *ty == shared).count();
+            assert!(n <= 1, "NPC {id} dropped {shared} {n} times");
         }
     }
 }
