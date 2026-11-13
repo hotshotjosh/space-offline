@@ -1597,12 +1597,16 @@ def eoci_main(EOCI_NAME):
             rbp = get_michelle().GetRemotePark()
             fok, fv = safe(lambda: rbp.CmdFollowBall(npc_id, 7500))
             safe(lambda: rbp.CmdSetSpeedFraction(1.0))
-            seen = {'at': last_at, 'd': dist_to(park, npc_id)}
+            seen = {'at': last_at, 'd': dist_to(park, npc_id), 'v': 0.0, 't': now_ms() or 0}
             def gone():
                 at = ball_pos(park, npc_id)
                 if at is not None:
                     seen['at'] = at
                     seen['d'] = dist_to(park, npc_id)
+                    seen['t'] = now_ms() or 0
+                    nb = park.GetBall(npc_id)
+                    seen['v'] = (getattr_safe(nb, 'vx', 0.0) ** 2 + getattr_safe(nb, 'vy', 0.0) ** 2
+                                 + getattr_safe(nb, 'vz', 0.0) ** 2) ** 0.5
                 # a lost Tempest ends the wait; the survived check below reports it
                 return npc_id not in park.slimItems or \
                     getattr_safe(sess, 'shipid') != hull_ship
@@ -1626,14 +1630,24 @@ def eoci_main(EOCI_NAME):
             if not dead:
                 break
             fresh = [w for w, _s in wreck_balls(park) if w not in before]
+            # a wreck's slim can arrive before its ball: give the balls a few seconds
+            wait_for(lambda: all(ball_pos(park, w) is not None for w in fresh), timeout_ms=5000)
+            # the last live poll of the battleship may be stale by the time since that poll;
+            # allow what it could have flown in that time on top of WRECK_NEAR_M
+            lag_s = max(0, (now_ms() or 0) - seen['t']) / 1000.0
+            radius = WRECK_NEAR_M + seen['v'] * lag_s
             near = []
+            gaps = []
             for w in fresh:
                 at = ball_pos(park, w)
-                if at is not None and last_at is not None and apart(at, last_at) <= WRECK_NEAR_M:
+                gap = apart(at, last_at) if at is not None and last_at is not None else None
+                gaps.append(fmt(gap, 0) if gap is not None else 'no position')
+                if gap is not None and gap <= radius:
                     near.append(w)
             if not near:
                 check('kill %d: a wreck appears where it died' % (n + 1), False,
-                      '%d new wreck(s), none near' % len(fresh))
+                      '%d new wreck(s), none within %s m of the last poll (%s m/s, %s s old): %s'
+                      % (len(fresh), fmt(radius, 0), fmt(seen['v'], 0), fmt(lag_s, 1), text(gaps)))
                 continue
             wreck = near[0]
             ok, loot = safe(lambda: get_svc('invCache').GetInventoryFromId(wreck).List())
