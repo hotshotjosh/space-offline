@@ -103,7 +103,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "entity",
-        usage: "/entity deploy <qty> <typeID>",
+        usage: "/entity deploy <qty> <typeID> | /entity siege <structureID>|off",
         run: entity,
     },
     Command {
@@ -863,7 +863,8 @@ fn setstanding(
 }
 
 // `/entity deploy <qty> <typeID>`: a hostile NPC in space beside
-// the caller. `crate::npc` has the evidence and the refusals.
+// the caller; `/entity siege <structureID>|off` orders the deployed NPCs
+// against an Upwell structure. `crate::npc` has the evidence and the refusals.
 fn entity(reg: &mut Registry, actor: Option<i64>, args: &[&str]) -> Result<PyValue, ServiceError> {
     Ok(crate::npc::entity_slash(reg, actor, args))
 }
