@@ -405,7 +405,7 @@ fn send(w: &mut Registry, character: i64, at: Shown, start: bool, now: BlueTime)
         )
     };
     let buffs = crate::dbuff::applied(w, ship);
-    let dynamic = crate::dynamic_item::fitted(w, ship);
+    let dynamic = crate::dynamic_item::dynamic_of(w, &new.modules);
     let changes =
         crate::dbuff::attribute_changes_inputs_rolled(table, ship, &old, &new, &buffs, &dynamic);
     let in_space = w.roster().get(character).is_some_and(|p| p.ship_id == ship);

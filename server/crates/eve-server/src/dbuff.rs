@@ -1141,7 +1141,7 @@ fn changes_for(w: &Registry, ship: i64, old: &[Applied], new: &[Applied]) -> Vec
     {
         return Vec::new();
     }
-    let dynamic = crate::dynamic_item::fitted(w, ship);
+    let dynamic = crate::dynamic_item::dynamic_of(w, &inputs.modules);
     attribute_changes_rolled(table, ship, &inputs, old, new, &dynamic)
 }
 
@@ -2283,6 +2283,84 @@ type\t{REP_T}\t{G_OTHER}\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=100.0;{A_MOD
         assert_eq!(changed(&c, 1, A_MOD), Some((100.0, 110.0)));
         assert_eq!(changed(&c, 2, A_MOD), Some((100.0, 110.0)));
         assert_eq!(changed(&c, ALICE_SHIP, A_MOD), None, "not the hull");
+    }
+
+    /// #71 MUTA-3b, end to end: `changes_for` starts a fitted mutated module
+    /// from its stored roll (invented: source 100, rolled to 3 x that).
+    #[test]
+    fn changes_for_reads_a_fitted_mutated_modules_roll() {
+        use crate::modules::muta_fixture::{FACTOR, MUTATOR, SOURCE};
+        const RESULT: i64 = 981_400_003;
+        const SHIP: i64 = 981_400_030;
+        const MODULE: i64 = 981_400_031;
+        let text = format!(
+            "{}type\t{SOURCE}\t{G_GUN}\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=100.0\tSource\n\
+             type\t{RESULT}\t{G_GUN}\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=50.0\tResult\n",
+            typedata_rows()
+        );
+        let mut content = crate::content::Content::fixture();
+        content.insert(
+            crate::typedata::TABLE.name,
+            crate::typedata::Installed::build(
+                crate::typedata::Table::parse(&text).expect("parses"),
+            ),
+        );
+        content.insert(
+            "mutators",
+            crate::mutator_data::Mutators::parse(
+                &[format!("{MUTATOR}\t{A_MOD}\t{FACTOR}\t{FACTOR}\t1")],
+                &[format!("{MUTATOR}\t{RESULT}\t{SOURCE}")],
+            )
+            .expect("mutators parse"),
+        );
+        let mut reg =
+            Registry::new(SandboxConfig::default()).with_content(std::sync::Arc::new(content));
+        let owner = reg.config().characters[0].character_id;
+        let mut items = reg.store().items().to_vec();
+        for (id, type_id, group, cat, flag, loc) in [
+            (
+                SHIP,
+                HULL_T,
+                25,
+                crate::typedata::CATEGORY_SHIP,
+                crate::model::FLAG_HANGAR,
+                0,
+            ),
+            (MODULE, RESULT, G_GUN, 7, 27, SHIP),
+        ] {
+            items.push(crate::item::Item {
+                item_id: id,
+                type_id,
+                owner_id: owner,
+                location_id: loc,
+                flag_id: flag,
+                quantity: 1,
+                group_id: group,
+                category_id: cat,
+                singleton: true,
+            });
+        }
+        reg.apply_snapshot(crate::store::Snapshot {
+            items,
+            next_item_id: MODULE + 100,
+            ..crate::store::Snapshot::default()
+        });
+        crate::dynamic_item::put(
+            &mut reg,
+            &crate::dynamic_item::Row {
+                item_id: MODULE,
+                source_type: SOURCE,
+                mutator_type: MUTATOR,
+                creator: 0,
+                created_at: 0,
+                rolls: vec![(A_MOD, 0.5)],
+            },
+        );
+        let b = one(C_LOC, crate::dogma::op::POST_PERCENT, 10.0);
+        let c = changes_for(&reg, SHIP, &[], &[b]);
+        let (o, n) = changed(&c, MODULE, A_MOD).expect("the module moved");
+        assert_eq!(o, 100.0 * FACTOR);
+        assert!((n - 100.0 * FACTOR * 1.1).abs() < 1e-9, "{n}");
     }
 
     /// #71 MUTA-3b: a mutated module's rolled attribute is what a buff moves,
