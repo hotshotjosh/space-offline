@@ -55,7 +55,8 @@
 //!
 //! Wormhole space and Pochven have no asset safety (the client's own rule,
 //! `assetSafetySvc._IsAssetSafetyDisabledInSystem`): [`applies_in`] is false
-//! there and the caller keeps the older harbour move.
+//! there. An unanchor keeps the older harbour move; a kill drops the hangar
+//! into the wreck ([`drop_plan`]).
 //!
 //! # [A]s (falsifier in each)
 //!
@@ -363,9 +364,63 @@ pub fn wrap_structure(
         put(reg.deltas_mut(), &w);
         reg.mark_dirty();
         crate::service::structures::safety::tell_created(reg, &w);
+        crate::structure_notify::items_to_safety(reg, s, w.owner, w.created);
         out.wraps.push(id);
     }
     out
+}
+
+/// Where there is no asset safety (wormhole space, Pochven) the hangar of a
+/// dead structure drops into its wreck: the client says the items are
+/// ejected (loc 538341 **[V]**). Each item stored in `structure_id` that
+/// `keep` does not name moves to `Slot(owner, wreck_id, FLAG_IN_WRECK)` when
+/// [`crate::combat::survives`] rolls it in at `chance`, else it is destroyed
+/// with everything under it. A copy of combat.rs `contents_plan` (combat.rs
+/// is a hot file, so it is not exported); keep the two in step. It differs
+/// on purpose: each item keeps **its own** owner in the wreck slot (not the
+/// victim's), there is no `wreck: None` branch (the caller guards it), and no
+/// `inside` list comes back, so the killmail built by `killmail.rs` does not
+/// list these items. **[A]** that omission; falsifier: a TQ J-space
+/// structure killmail that lists hangar items. A future per-flag rule in
+/// `contents_plan` (charges, BPCs) must be copied here by hand.
+///
+/// **[A]** the rate is the ship-death roll ([`crate::combat::drop_chance`]);
+/// falsifier: a TQ structure kill in J-space whose dropped share differs.
+/// **[A]** an assembled hull in the hangar rolls like any other item;
+/// falsifier: a TQ wreck that always or never holds the hulls.
+pub fn drop_plan(
+    reg: &Registry,
+    structure_id: i64,
+    wreck_id: i64,
+    chance: f64,
+    keep: &dyn Fn(i64) -> bool,
+) -> Vec<Edit> {
+    let store = reg.store();
+    let top: Vec<(i64, i64)> = store
+        .contents_of(structure_id)
+        .filter(|i| !keep(i.item_id))
+        .map(|i| (i.item_id, i.owner_id))
+        .collect();
+    let mut edits = Vec::new();
+    for (item_id, owner) in top {
+        if crate::combat::survives(structure_id, item_id, chance) {
+            edits.push(Edit::Move {
+                item_id,
+                to: Slot::new(owner, wreck_id, crate::combat::FLAG_IN_WRECK),
+            });
+            continue;
+        }
+        let mut under = vec![item_id];
+        let mut open = vec![item_id];
+        while let Some(container) = open.pop() {
+            for i in store.contents_of(container) {
+                under.push(i.item_id);
+                open.push(i.item_id);
+            }
+        }
+        edits.extend(under.into_iter().map(|item_id| Edit::Destroy { item_id }));
+    }
+    edits
 }
 
 /// The name the Assets tab shows.

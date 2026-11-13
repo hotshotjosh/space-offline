@@ -432,3 +432,62 @@ fn the_client_reads_the_report_with_a_null_victim_and_opens_it_by_its_own_hash()
     );
     assert_eq!(nothing, PyValue::None);
 }
+
+const J_SPACE: i64 = 31_990_005;
+
+fn hangar_item(reg: &mut Registry, owner: i64, at: i64) -> i64 {
+    crate::asset_safety::tests::store_item(reg, owner, at)
+}
+
+fn the_wreck(reg: &Registry) -> i64 {
+    let wrecks: Vec<_> = reg.combat().wrecks().copied().collect();
+    assert_eq!(wrecks.len(), 1, "{wrecks:?}");
+    wrecks[0].wreck_id
+}
+
+#[test]
+fn a_structure_dead_in_wormhole_space_drops_its_hangar_in_the_wreck() {
+    let (mut reg, id) = world();
+    let items: Vec<i64> = (0..40).map(|_| hangar_item(&mut reg, BOSS, id)).collect();
+    let mut s = structure::get(reg.deltas(), id).unwrap();
+    s.system = J_SPACE;
+    crate::structure_combat::destroy(&mut reg, &s, Some(FOE), crate::pyutil::filetime_now());
+    let wreck = the_wreck(&reg);
+    let mut in_wreck = 0;
+    for item in items {
+        if let Some(i) = reg.store().get(item) {
+            assert_eq!(
+                i.location_id, wreck,
+                "{item} is in the wreck, not the harbour"
+            );
+            assert_eq!(i.flag_id, crate::combat::FLAG_IN_WRECK);
+            in_wreck += 1;
+        }
+    }
+    assert!(in_wreck > 0, "the roll keeps some");
+    assert!(in_wreck < 40, "the roll loses some");
+    assert!(
+        crate::asset_safety::of_owner(reg.deltas(), BOSS).is_empty(),
+        "no wrap in J-space"
+    );
+}
+
+#[test]
+fn a_flying_ship_whose_item_is_in_the_hangar_does_not_drop() {
+    let (mut reg, id) = world();
+    let hull = hangar_item(&mut reg, BOSS, id);
+    let cargo = hangar_item(&mut reg, BOSS, hull);
+    reg.character_mut(BOSS).expect("boss").ship_id = hull;
+    let mut s = structure::get(reg.deltas(), id).unwrap();
+    s.system = J_SPACE;
+    crate::structure_combat::destroy(&mut reg, &s, Some(FOE), crate::pyutil::filetime_now());
+    let wreck = the_wreck(&reg);
+    let at = reg.store().get(hull).map(|i| i.location_id);
+    assert!(at.is_some(), "the pilot's ship is kept, not destroyed");
+    assert_ne!(at, Some(wreck), "the pilot's ship is not in the wreck");
+    assert_eq!(
+        reg.store().get(cargo).map(|i| i.location_id),
+        Some(hull),
+        "its cargo stays in it"
+    );
+}

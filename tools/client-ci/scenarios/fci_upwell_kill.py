@@ -34,10 +34,15 @@ fires.  Then:
    arrives for this structure and the client's own formatter (`Format`)
    formats it without raising.
 5. No traceback in either client log.
+6. B: a notification of the client's `notificationTypeStructureItemsToAssetSafety`
+   (190) arrives for this structure (a spare hull B made in the hangar was
+   wrapped) and the client's own formatter formats it.
+7. B: `assetSafety.GetItemsInSafetyForCharacter()` has a row, not among the
+   ones read before the kill, whose `solarSystemID` is the system.
 
 NOT here: the shooter's own 184 (the GM damage that makes the structure
 hull-vulnerable already told the managers; `fci_upwell_timers` step 5 proves
-the 184 with the shooter); asset safety of a hangar (`fci_upwell_safety`);
+the 184 with the shooter); delivery and the fee of a wrap (`fci_upwell_safety`);
 what a dead structure drops (owner decision O-14, default: nothing).
 
 [A]s: the mark (shield 0.97) is read from `park.GetDamageState` by the
@@ -1729,6 +1734,20 @@ def eoci_main(EOCI_NAME):
                   'structureid %s after %s ms' % (text(sess_attr('structureid')), text(waited)))
             if not docked:
                 return
+            # A spare hull in the hangar: it goes into asset safety with the
+            # structure's death (the active ship goes with the pilot).
+            gm_check('GM: a spare Rifter in the structure hangar', '/createitem "Rifter" 1')
+            def safety_rows_now():
+                oc = get_svc('objectCaching')
+                safe(lambda: oc.InvalidateCachedMethodCall(
+                    'structureAssetSafety', 'GetItemsInSafetyForCharacter'))
+                ok_r, v = safe(lambda: builtin('sm').GetService(
+                    'assetSafety').GetItemsInSafetyForCharacter())
+                return [r for r in list(v)] if ok_r else None
+            rows_before = safety_rows_now()
+            precondition("B's safety rows can be read before the kill",
+                         rows_before is not None)
+            wraps_before = set(r['assetWrapID'] for r in (rows_before or []))
             gm_check('/upwell damage marks the shield for the shooter',
                      '/upwell damage %d %s 1 1' % (sid, MARK_SHIELD), expect=['state'])
             note, waited = wait_for(lambda: note_for(
@@ -1741,6 +1760,27 @@ def eoci_main(EOCI_NAME):
                 ok_f, why_f = client_formats(
                     nc.notificationTypeStructureDestroyed, nid, sender, data)
                 check("4. the client's own formatter formats it", ok_f, why_f)
+            safe_note, waited = wait_for(lambda: note_for(
+                seen, nc.notificationTypeStructureItemsToAssetSafety, sid), timeout_ms=60000,
+                step_ms=2000)
+            check('6. a StructureItemsToAssetSafety (190) notification for it arrives',
+                  bool(safe_note),
+                  'seen types %s after %s ms' % (text([x[0] for x in seen]), text(waited)))
+            if safe_note:
+                nid, sender, data = safe_note
+                ok_f, why_f = client_formats(
+                    nc.notificationTypeStructureItemsToAssetSafety, nid, sender, data)
+                check("6. the client's own formatter formats the 190", ok_f, why_f)
+
+            def safety_row_here():
+                rows = safety_rows_now()
+                if rows is None:
+                    return None
+                return [r for r in rows if r['solarSystemID'] == system
+                        and r['assetWrapID'] not in wraps_before] or None
+            rows7, _w = wait_for(safety_row_here, timeout_ms=30000)
+            check("7. assetSafety.GetItemsInSafetyForCharacter has a NEW row in the system",
+                  bool(rows7), '%d row(s)' % len(rows7 or []))
             out, waited = wait_for(lambda: not sess_attr('structureid'), timeout_ms=60000)
             check('2. session.structureid is None (put out)', bool(out),
                   'structureid %s' % text(sess_attr('structureid')))

@@ -29,6 +29,7 @@ pub const STRUCTURE_ONLINE: i64 = 185;
 pub const STRUCTURE_LOST_SHIELDS: i64 = 186;
 pub const STRUCTURE_LOST_ARMOR: i64 = 187;
 pub const STRUCTURE_DESTROYED: i64 = 188;
+pub const STRUCTURE_ITEMS_TO_ASSET_SAFETY: i64 = 190;
 pub const STRUCTURES_REINFORCEMENT_CHANGED: i64 = 209;
 
 /// `const.typeCorporation` **[V]** (`inventorycommon/const.py`).
@@ -253,6 +254,57 @@ pub fn destroyed(reg: &Registry, s: &Structure) -> Data {
         Value::Bool(s.upkeep == Some(crate::structure::Upkeep::Abandoned)),
     ));
     d
+}
+
+/// 190 `StructureItemsMovedToSafety.MakeData` **[V]** (`structures.py:403-420`
+/// and the class around it): the base data, the minimum and full waits
+/// (ticks) with the timestamps they end at, `isCorpOwned`, `structureLink`
+/// (`<a href="showinfo:TYPE//ID">NAME</a>`, `linkUtil.py:8-18`) and
+/// `newStationID`, the NPC station the wrap goes to by itself. The waits are
+/// the world's rules, counted from `created`.
+///
+/// **[A]** the sender is the owner corporation of the structure; falsifier:
+/// the notification window naming another sender. **[A]** a corporation's
+/// wrap is told to the managers of that corporation ([`tell_corp`]);
+/// falsifier: a TQ director who does not get it. A person's wrap goes to that
+/// person.
+pub fn items_to_safety(reg: &mut Registry, s: &Structure, wrap_owner: i64, created: i64) {
+    let rules = reg.config().rules;
+    let minimum = rules.safety_manual_secs.saturating_mul(SECOND);
+    let full = rules.safety_auto_secs.saturating_mul(SECOND);
+    let corp_owned = reg.corporations().get(wrap_owner).is_some();
+    let station = crate::structure_dock::nearest_station(reg, s.system).map_or(0, |r| r.station_id);
+    let link = format!(
+        "<a href=\"showinfo:{}//{}\">{}</a>",
+        s.type_id, s.id, s.name
+    );
+    let mut d = base_data(s);
+    d.extend(data([
+        ("assetSafetyDurationMinimum", Value::Int(minimum)),
+        (
+            "assetSafetyMinimumTimestamp",
+            Value::Int(created.saturating_add(minimum)),
+        ),
+        ("assetSafetyDurationFull", Value::Int(full)),
+        (
+            "assetSafetyFullTimestamp",
+            Value::Int(created.saturating_add(full)),
+        ),
+        ("isCorpOwned", Value::Bool(corp_owned)),
+        ("structureLink", Value::Text(link)),
+        ("newStationID", Value::Int(station)),
+    ]));
+    if corp_owned {
+        tell_corp(reg, wrap_owner, STRUCTURE_ITEMS_TO_ASSET_SAFETY, d);
+    } else {
+        notif::notify_from(
+            reg,
+            wrap_owner,
+            STRUCTURE_ITEMS_TO_ASSET_SAFETY,
+            s.owner_corp,
+            d,
+        );
+    }
 }
 
 /// What `structure_space::react` owes the managers for the events one
@@ -555,5 +607,74 @@ mod tests {
         let n = got(&reg, DIRECTOR);
         assert_eq!(n.len(), 1);
         assert_eq!(val(&n[0].data, "allianceID"), &Value::Int(FACTION));
+    }
+
+    #[test]
+    fn a_wrap_sends_its_owner_one_190_with_the_formatter_keys() {
+        use crate::asset_safety::tests::{BOSS, FOE, HARBOUR, PAL, unanchor, world};
+        let (mut reg, id, corp) = world();
+        let _ = unanchor(&mut reg, id, corp);
+        let s = structure::get(reg.deltas(), id).unwrap();
+        let rules = reg.config().rules;
+        let w = crate::asset_safety::of_owner(reg.deltas(), FOE);
+        assert_eq!(w.len(), 1);
+        let created = w[0].created;
+        let of_190 = |reg: &Registry, who: i64| -> Vec<notif::Notification> {
+            got(reg, who)
+                .into_iter()
+                .filter(|n| n.type_id == STRUCTURE_ITEMS_TO_ASSET_SAFETY)
+                .collect()
+        };
+        let mine = of_190(&reg, FOE);
+        assert_eq!(mine.len(), 1, "one 190 for the person's wrap");
+        let n = &mine[0];
+        assert_eq!(n.sender, s.owner_corp, "the sender is the owner corp");
+        let mut keys: Vec<&str> = n.data.iter().map(|(k, _)| k.as_str()).collect();
+        keys.sort_unstable();
+        let mut want = [
+            "structureID",
+            "structureShowInfoData",
+            "solarsystemID",
+            "structureTypeID",
+            "assetSafetyDurationMinimum",
+            "assetSafetyMinimumTimestamp",
+            "assetSafetyDurationFull",
+            "assetSafetyFullTimestamp",
+            "isCorpOwned",
+            "structureLink",
+            "newStationID",
+        ];
+        want.sort_unstable();
+        assert_eq!(keys, want, "exactly the formatter's keys");
+        assert_eq!(val(&n.data, "isCorpOwned"), &Value::Bool(false));
+        assert_eq!(val(&n.data, "structureID"), &Value::Int(id));
+        let min = rules.safety_manual_secs * crate::asset_safety::SECOND;
+        let full = rules.safety_auto_secs * crate::asset_safety::SECOND;
+        assert_eq!(val(&n.data, "assetSafetyDurationMinimum"), &Value::Int(min));
+        assert_eq!(val(&n.data, "assetSafetyDurationFull"), &Value::Int(full));
+        assert_eq!(
+            val(&n.data, "assetSafetyMinimumTimestamp"),
+            &Value::Int(created + min)
+        );
+        assert_eq!(
+            val(&n.data, "assetSafetyFullTimestamp"),
+            &Value::Int(created + full)
+        );
+        assert_eq!(
+            val(&n.data, "structureLink"),
+            &Value::Text(format!(
+                "<a href=\"showinfo:{}//{id}\">{}</a>",
+                s.type_id, s.name
+            ))
+        );
+        assert_eq!(val(&n.data, "newStationID"), &Value::Int(HARBOUR));
+        // The corporation's wrap is told to its managers, flagged corp-owned.
+        let boss = of_190(&reg, BOSS);
+        assert_eq!(boss.len(), 2, "his own wrap and the corporation's");
+        assert!(
+            boss.iter()
+                .any(|n| val(&n.data, "isCorpOwned") == &Value::Bool(true))
+        );
+        assert!(of_190(&reg, PAL).is_empty());
     }
 }

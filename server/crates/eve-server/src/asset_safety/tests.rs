@@ -643,3 +643,33 @@ fn a_failed_delivery_in_one_world_does_not_delay_the_same_wrap_id_in_another() {
     );
     assert!(of_owner(a.deltas(), BOSS).is_empty());
 }
+
+/// A kept item stays put; a surviving one moves to the wreck, a lost one is
+/// destroyed with what is inside it. Chance one and zero are certain.
+#[test]
+fn drop_plan_moves_all_at_chance_one_and_destroys_all_at_zero() {
+    let (mut reg, id, _corp) = world();
+    let a = store_item(&mut reg, BOSS, id);
+    let inside = store_item(&mut reg, BOSS, a);
+    let b = store_item(&mut reg, FOE, id);
+    let kept = store_item(&mut reg, BOSS, id);
+    let wreck = 777_001;
+    let keep = |i: i64| i == kept;
+    let all = drop_plan(&reg, id, wreck, 1.0, &keep);
+    assert_eq!(all.len(), 2, "{all:?}");
+    for (item, owner) in [(a, BOSS), (b, FOE)] {
+        assert!(
+            all.contains(&Edit::Move {
+                item_id: item,
+                to: Slot::new(owner, wreck, crate::combat::FLAG_IN_WRECK),
+            }),
+            "{item} moves under its own owner"
+        );
+    }
+    let none = drop_plan(&reg, id, wreck, 0.0, &keep);
+    assert_eq!(none.len(), 3, "{none:?}");
+    for item in [a, inside, b] {
+        assert!(none.contains(&Edit::Destroy { item_id: item }), "{item}");
+    }
+    assert!(!none.contains(&Edit::Destroy { item_id: kept }));
+}

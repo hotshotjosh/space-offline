@@ -497,9 +497,15 @@ pub fn hit(w: &mut Registry, v: Volley, now: BlueTime) {
 /// 1. the managers get the 188;
 /// 2. the killmail, with the corporation as victim, and the 141;
 /// 3. [`crate::structure_dock::evacuate`]: docked pilots are put out at the
-///    structure, hangars go to asset safety (wormhole space: the harbour);
-/// 4. the hull's wreck, empty and `abandoned` **[A]** (falsifier: a TQ loot
-///    from one that flags a suspect), and the structure's item destroyed;
+///    structure, hangars go to asset safety; in wormhole space and Pochven
+///    (no asset safety) the hangar is rolled into the wreck first
+///    ([`crate::asset_safety::drop_plan`]) and only a pilot's active ship
+///    goes to the harbour. **[A]** the killmail (built by `killmail.rs`,
+///    outside this lane) lists none of those hangar items; falsifier: a TQ
+///    J-space structure killmail that lists hangar items;
+/// 4. the hull's wreck, `abandoned` **[A]** (falsifier: a TQ loot from one
+///    that flags a suspect), holding the J-space and Pochven hangar drop and
+///    otherwise empty, and the structure's item destroyed;
 ///    what a dead structure drops (fitted modules, a quantum core) is owner
 ///    decision O-14 **[A]**, default none (falsifier: TQ wrecks that hold
 ///    loot);
@@ -522,7 +528,10 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     // The structure's own bays (fuel, deed, ammo, fighters, moon material,
     // service slots) go down with it; evacuation wraps the hangars only [I].
     // The set is the bay flags only: fitting (U6) must extend it (fitted
-    // slots, rigs, the quantum core) per O-14 [A].
+    // slots, rigs, the quantum core) per O-14 [A]. [A] Until then a fitted
+    // item located here would be rolled into a J-space wreck by `drop_plan`,
+    // where TQ always destroys rigs; U6 must extend `is_bay_flag` or filter
+    // the plan by flag. Falsifier: a TQ J-space wreck that holds rigs.
     let bays: Vec<Edit> = w
         .store()
         .contents_of(s.id)
@@ -536,6 +545,66 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     };
     if let Some(e) = refused {
         crate::errln!("[structure] the bays of {} were refused: {e:?}", s.id);
+    }
+    // The wreck first: nothing can be moved into an id the same plan mints,
+    // and it is owned by the corporation, shown to nobody's item list.
+    let mut wreck = None;
+    if let Some(type_id) = crate::combat::wreck_type_in(w.content(), s.type_id) {
+        let create = [Edit::Create {
+            type_id,
+            quantity: 1,
+            to: Slot::new(s.owner_corp, s.system, crate::combat::FLAG_IN_SPACE),
+        }];
+        match apply_on_the_clock_to(w, &[], &create) {
+            Ok(changes) => {
+                wreck = changes
+                    .iter()
+                    .find_map(|ch| match ch {
+                        crate::item::Change::Created { item_id, .. } => Some(*item_id),
+                        _ => None,
+                    })
+                    .map(|wreck_id| crate::combat::Wreck {
+                        wreck_id,
+                        type_id,
+                        solar_system_id: s.system,
+                        position: s.pos,
+                        ship_id: s.id,
+                        owner_id: s.owner_corp,
+                        corp_id: s.owner_corp,
+                        fleet_id: None,
+                        abandoned: true,
+                        expires_at: now.saturating_add(crate::combat::WRECK_LIFETIME),
+                    });
+            }
+            Err(e) => crate::errln!("[structure] the wreck of {} was refused: {e:?}", s.id),
+        }
+    }
+    // Where there is no asset safety (wormhole space, Pochven) the hangar
+    // drops into the wreck, rolled like a ship's cargo; a pilot's active
+    // ship is left for `evacuate`, which sends it to the harbour with them.
+    if !crate::asset_safety::applies_in(w, s.system) && wreck.is_none() {
+        // [A] No wreck type for this hull, or the wreck was refused: nothing
+        // can drop, so `evacuate` keeps the older harbour move for the
+        // hangar. Falsifier: a TQ J-space kill with no wreck that loses
+        // the hangar.
+        crate::errln!(
+            "[structure] no wreck for {} in no-safety space: the hangar goes to the harbour",
+            s.id
+        );
+    }
+    if let Some(wreck_id) = wreck.map(|wr| wr.wreck_id)
+        && !crate::asset_safety::applies_in(w, s.system)
+    {
+        let ships: std::collections::BTreeSet<i64> =
+            w.config().characters.iter().map(|c| c.ship_id).collect();
+        let chance = crate::combat::drop_chance(w, Some(s.system));
+        let plan =
+            crate::asset_safety::drop_plan(w, s.id, wreck_id, chance, &|i| ships.contains(&i));
+        if !plan.is_empty()
+            && let Err(e) = apply_on_the_clock_to(w, &[], &plan)
+        {
+            crate::errln!("[structure] the drop of {} was refused: {e:?}", s.id);
+        }
     }
     // Evacuation pushes (the ejected pilot's mid-session `SetState` whose
     // ego is this hull, the guests' frames) onto `pending`, which only a
@@ -570,39 +639,6 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     // in space now and must get the batch that removes the hull (as
     // `finish_unanchor` reads its audience after `evacuate`).
     let audience = crate::structure_space::in_space(w, s.system);
-    // The wreck first: nothing can be moved into an id the same plan mints,
-    // and it is owned by the corporation, shown to nobody's item list.
-    let mut wreck = None;
-    if let Some(type_id) = crate::combat::wreck_type_in(w.content(), s.type_id) {
-        let create = [Edit::Create {
-            type_id,
-            quantity: 1,
-            to: Slot::new(s.owner_corp, s.system, crate::combat::FLAG_IN_SPACE),
-        }];
-        match apply_on_the_clock_to(w, &[], &create) {
-            Ok(changes) => {
-                wreck = changes
-                    .iter()
-                    .find_map(|ch| match ch {
-                        crate::item::Change::Created { item_id, .. } => Some(*item_id),
-                        _ => None,
-                    })
-                    .map(|wreck_id| crate::combat::Wreck {
-                        wreck_id,
-                        type_id,
-                        solar_system_id: s.system,
-                        position: s.pos,
-                        ship_id: s.id,
-                        owner_id: s.owner_corp,
-                        corp_id: s.owner_corp,
-                        fleet_id: None,
-                        abandoned: true,
-                        expires_at: now.saturating_add(crate::combat::WRECK_LIFETIME),
-                    });
-            }
-            Err(e) => crate::errln!("[structure] the wreck of {} was refused: {e:?}", s.id),
-        }
-    }
     if w.store().get(s.id).is_some() {
         let corp = crate::service::structures::corp_audience(w, s.owner_corp);
         if let Err(e) = apply_on_the_clock_to(w, &corp, &[Edit::Destroy { item_id: s.id }]) {
