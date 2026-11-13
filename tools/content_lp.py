@@ -56,6 +56,10 @@ OFFERS_HEADER = tuple("table_id offer_id type_id qty lp_cost isk_cost req_items"
 OVERRIDES_HEADER = tuple("table_id type_id action lp_cost isk_cost why".split())
 ACTIONS = ("add", "remove", "price")
 EMBLEM_HEADER = tuple("kind id lp_cost why".split())
+#: `cosmetics/ship-licences.tsv` (#207, EM-3): the server grants these as
+#: entitlements instead of items; one row per `shipcosmeticlicenses` row.
+LICENCES_FILE = "cosmetics/ship-licences.tsv"
+LICENCES_HEADER = tuple("licence_id type_id ship_type_id cosmetic_type slot_group".split())
 EMBLEM_KINDS = ("group", "category")
 #: The heraldry corporation, whose LP is Evermarks [V `C:appConst.py:638`,
 #: `CORP_HERALDRY`]. Its offer tables sell the ship emblem licences.
@@ -533,6 +537,19 @@ def gather(ctx):
     return got
 
 
+def licence_rows(records):
+    """`LICENCES_HEADER` tuples, by licence id, from `{licence id: record}`
+    (the `shipcosmeticlicenses` rows). Pure: the tests feed invented records."""
+    return sorted((int(k), int(r["shipCosmeticLicenseTypeID"]), int(r["shipTypeID"]),
+                   int(r["cosmeticType"]), int(r["slotGroup"]))
+                  for k, r in records.items())
+
+
+def _licence_rows(ctx):
+    fsd = _content()._imp("fsd")  # noqa: SLF001
+    return licence_rows(fsd.rows(ctx.client, "shipcosmeticlicenses"))
+
+
 def section(ctx):
     problems = []
     rows, classes = derive_offers(*gather(ctx), problems=problems)
@@ -543,8 +560,12 @@ def section(ctx):
         by[cls] = by.get(cls, 0) + 1
     ctx.note("agents/lp-offers.tsv: tables %s"
              % ", ".join("%s %d" % kv for kv in sorted(by.items())))
+    lic = _licence_rows(ctx)
+    ctx.note("%s: %d licences" % (LICENCES_FILE, len(lic)))
     return [("agents/lp-offers.tsv", OFFERS_HEADER, rows,
-             [_content().fsdbin("npccorporations"), _content().fsdbin("types")])]
+             [_content().fsdbin("npccorporations"), _content().fsdbin("types")]),
+            (LICENCES_FILE, LICENCES_HEADER, lic,
+             [_content().fsdbin("shipcosmeticlicenses")])]
 
 
 # --- the client-backed check (counts live only here, plan §1.6) --------------------
@@ -555,6 +576,11 @@ def check(ctx):
     skipped = []
     rows, classes = derive_offers(*data, problems=skipped)
     bad = []
+    fresh = _licence_rows(ctx)
+    have = list(content.read_rows(ctx.path(LICENCES_FILE)))
+    if have != [content.encode_row(r).split("\t") for r in fresh]:
+        bad.append("%s: differs from a fresh derive (%d vs %d rows)"
+                   % (LICENCES_FILE, len(have), len(fresh)))
     got = list(content.read_rows(ctx.path("agents/lp-offers.tsv")))
     if got != [content.encode_row(r).split("\t") for r in rows]:
         bad.append("agents/lp-offers.tsv: differs from a fresh derive (%d vs %d rows)"

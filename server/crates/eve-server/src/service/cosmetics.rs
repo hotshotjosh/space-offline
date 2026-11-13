@@ -56,7 +56,14 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // protobuf and is where the "Could not fetch owned ship cosmetic
         // licenses" timeout comes from; `fittingsgateway/quasar.py` is
         // this one, and it is plain machoNet.
-        "GetEnabledCosmetics" => Ok(PyValue::Dict(vec![])),
+        //
+        // EM-3 (#207): the licence gateway now answers (`crate::emblem`), so
+        // this is the pilot's own ship's enabled slots; a ship that is not
+        // the actor's, and a call with no actor, answer `{}`.
+        "GetEnabledCosmetics" => Ok(match (actor, ar.int(0)) {
+            (Some(a), Some(ship)) => crate::emblem::enabled(reg, a, ship),
+            _ => PyValue::Dict(vec![]),
+        }),
         // The character's SKIN licences. **Both failure modes of
         // `None` at once**, which is what made this one worth doing
         // before anyone opened the window again.
@@ -299,6 +306,47 @@ mod tests {
             ask(&mut reg, "GetLicencedSkinsForShipType", friend),
             PyValue::List(vec![])
         );
+    }
+
+    /// EM-3 (#207): the enabled slots answer from `crate::emblem`, for the
+    /// actor's own ship only; a call with no ship id is `{}`.
+    #[test]
+    fn enabled_cosmetics_answer_the_actors_own_ship_slots() {
+        let mut reg = Registry::new(SandboxConfig::default());
+        let ship = reg
+            .store()
+            .items()
+            .iter()
+            .find(|i| i.category_id == 6)
+            .map(|i| (i.item_id, i.owner_id, i.type_id))
+            .expect("the sandbox has a ship");
+        let (ship_id, owner, hull) = ship;
+        let mut content = crate::content::Content::fixture();
+        content.insert(
+            "emblem",
+            crate::emblem::Licences::parse(&crate::emblem::fixture::lines(hull)).unwrap(),
+        );
+        reg = reg.with_content(std::sync::Arc::new(content));
+        assert!(crate::emblem::grant(&mut reg, owner, hull, 1));
+        crate::emblem::display(&mut reg, owner, ship_id, 5, 1).unwrap();
+        let ask = |reg: &mut Registry, who: i64, args: &[PyValue]| {
+            let req = Request {
+                service: "shipCosmeticsMgr",
+                method: "GetEnabledCosmetics",
+                args,
+                kwargs: &[],
+                bind_params: None,
+                actor: Some(who),
+            };
+            dispatch(reg, &req).unwrap()
+        };
+        let want = PyValue::Dict(vec![(PyValue::Int(5), PyValue::Int(1))]);
+        assert_eq!(ask(&mut reg, owner, &[PyValue::Int(ship_id)]), want);
+        assert_eq!(
+            ask(&mut reg, owner + 1, &[PyValue::Int(ship_id)]),
+            PyValue::Dict(vec![])
+        );
+        assert_eq!(ask(&mut reg, owner, &[]), PyValue::Dict(vec![]));
     }
 
     fn req_of<'a>(args: &'a [PyValue], kwargs: &'a [(PyValue, PyValue)]) -> Request<'a> {

@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (208 of 317) · **91% built** (290 of 317) · 3 parked, not counted.
+**65% proved** (208 of 319) · **92% built** (292 of 319) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -69,6 +69,8 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Mutated item Show Info and inventory tooltip: *built-unproved*, fci_dynamic_info; GetDynamicItemInfo carries characterID (creator, None when 0) for the Show Info header (ci-1110)
 - [ ] Fitted mutated module stats agree with the fitting window: *built-unproved*, dogma::Overrides, dynamic_item::fitted, fci_mutaplasmid_fit
 - [ ] Paragon store (Evermarks) sells ship emblem licences: *built-unproved*, tools/content_lp.py heraldry class; content/agents/emblem-prices.tsv (prices by hull group [A]); test_content_lp.py; the bundle sells every licence; client proof comes with EM-3's scenario
+- [ ] Ship emblem licences owned and shown on the hull: *built-unproved*, server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem written, not yet run
+- [ ] Another pilot sees your emblem: *built-unproved*, emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it, not yet run
 - [ ] Proving Grounds: *missing*, owner: after abyss
 - [ ] Pochven: *built-unproved*, pochven.rs (region model: membership from the bundle, Krai, Home/Internal/Border, k-space reach) with pochven/tests.rs; tools/client-ci/scenarios/fci_pochven_gate.py written, not yet run; fci_pochven_gate green on 11-08. Lanes PV-1..PV-12 follow (rules the client shows, wormholes, filaments, NPCs, disintegrator, sites, loot, guards, bots, Drifters); see parity-pochven.md
 - [ ] Triglavian NPC types in the NPC table: class, owner and wreck per type: *built-unproved*, tools/content_pochven.py (the pochven section, 176 types in the bundle), pochven/npc.rs merged by npc_data; tests; fci_abyss_waves, fci_abyss_loot, fci_abyss_run and fci_pochven_gate green on the new bundle (ci-1108j); no scenario of its own yet
@@ -167,7 +169,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 30 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
-| Market and wallet | 18 | 9 | 0 | 0 | 0 |
+| Market and wallet | 18 | 11 | 0 | 0 | 0 |
 | Bots | 11 | 27 | 3 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
@@ -328,7 +330,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 18 of 27 proved, 9 open</summary>
+<details><summary><b>Market and wallet</b>: 18 of 29 proved, 11 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
 - [ ] The wallet journal's Type column names every entry type, from the content bundle's table: *built-unproved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run
@@ -356,6 +358,8 @@ Closed by default; each line says how much of the system is proved.
 - [ ] A multi-stack sell is all or nothing on the wallet: a short fee refuses the batch with nothing placed: *built-unproved*, service/market.rs plan_sell/ensure_sell_wallet/apply_sell (single sells and settle_sell/settle_list through sell_one); tests a_multisell_short_on_its_second_fee_places_nothing, a_corp_multisell_short_on_its_second_fee_places_nothing, earlier_proceeds_pay_a_later_fee_and_a_lines_own_do_not, two_lines_of_one_type_share_a_bid_as_if_sold_one_by_one
 - [x] Certificates and ship masteries: *client-proved*, no server code: the client computes them from its own certificates.static and skillMgr2.GetSkills (certificateSvc.py); fci_char_certs; a GM /giveskill does not refresh them until relog (#214); fci_char_certs green 11-07 (regress-1107s1)
 - [ ] Paragon store (Evermarks) sells ship emblem licences: *built-unproved*, tools/content_lp.py heraldry class; content/agents/emblem-prices.tsv (prices by hull group [A]); test_content_lp.py; the bundle sells every licence; client proof comes with EM-3's scenario
+- [ ] Ship emblem licences owned and shown on the hull: *built-unproved*, server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem written, not yet run
+- [ ] Another pilot sees your emblem: *built-unproved*, emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it, not yet run
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 
 </details>

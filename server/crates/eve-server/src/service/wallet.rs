@@ -289,6 +289,10 @@ fn offer_keyval(corp: i64, o: &crate::loyalty::Offer) -> PyValue {
 /// ISK and the required items, and create `n × qty` of the product in the
 /// station hangar. All or nothing; `false` refuses.
 ///
+/// A product that is a ship emblem licence (`crate::emblem::licence_of`)
+/// creates no item: it grants the pilot the entitlement, one at a time, and
+/// refuses one the pilot owns already (EM-3, #207).
+///
 /// [A], each falsified by a Tranquility store that differs: the character
 /// must be docked (any station); required items come from that station's
 /// hangar, packaged stacks only, lowest item id first.
@@ -319,6 +323,10 @@ fn take_offer(reg: &mut Registry, me: i64, corp: i64, offer_id: i64, n: i64) -> 
         return false;
     };
     if crate::loyalty::balance(reg, me, corp) < lp || balance < isk as f64 {
+        return false;
+    }
+    let licence = crate::emblem::licence_of(reg, o.type_id);
+    if licence.is_some_and(|(hull, cos)| n != 1 || crate::emblem::owns(reg, me, hull, cos)) {
         return false;
     }
     let hangar = Slot::new(me, station, crate::model::FLAG_HANGAR);
@@ -358,13 +366,18 @@ fn take_offer(reg: &mut Registry, me: i64, corp: i64, offer_id: i64, n: i64) -> 
             return false;
         }
     }
-    edits.push(Edit::Create {
-        type_id: o.type_id,
-        quantity: qty,
-        to: hangar,
-    });
-    if reg.apply_items(&edits).is_err() {
+    if licence.is_none() {
+        edits.push(Edit::Create {
+            type_id: o.type_id,
+            quantity: qty,
+            to: hangar,
+        });
+    }
+    if !edits.is_empty() && reg.apply_items(&edits).is_err() {
         return false;
+    }
+    if let Some((hull, cos)) = licence {
+        crate::emblem::grant(reg, me, hull, cos);
     }
     crate::loyalty::adjust(reg, me, corp, -lp, crate::loyalty::CHANGE_STORE);
     if isk > 0 {
@@ -3666,6 +3679,72 @@ mod tests {
             .collect();
         assert!(names.contains(&"OnLPChange"), "{names:?}");
         assert!(names.contains(&"OnAccountChange"), "{names:?}");
+    }
+
+    /// EM-3 (#207): a licence product creates no item, grants the entitlement
+    /// once, queues the `GrantedNotice`, and a second purchase is falsy and
+    /// moves no LP.
+    #[test]
+    fn a_licence_offer_grants_an_entitlement_not_an_item() {
+        use crate::emblem::fixture::{HULL, LIC_CORP};
+        let offer = format!("{LP_TABLE}\t{LP_OFFER}\t{LIC_CORP}\t1\t300\t0\t");
+        let corp = format!("{LP_CORP}\t\t\t\t\t\t0\t0\t0\t\t\t{LP_TABLE}\tLPC\tStore");
+        let t = crate::loyalty::Table::parse(&[offer], &[corp]).expect("parses");
+        let mut c = crate::content::Content::fixture();
+        c.insert("loyalty", t);
+        let mut reg = world().with_content(std::sync::Arc::new(c));
+        crate::loyalty::adjust(
+            &mut reg,
+            ALICE,
+            LP_CORP,
+            1_000,
+            crate::loyalty::CHANGE_MISSION,
+        );
+        let items = reg.store().items().len();
+        let _ = crate::gateway_out::take(&mut reg);
+
+        assert_eq!(take(&mut reg, ALICE, 1), PyValue::Bool(true));
+        assert_eq!(crate::loyalty::balance(&reg, ALICE, LP_CORP), 700);
+        assert_eq!(reg.store().items().len(), items, "no item was created");
+        assert!(crate::emblem::owns(&reg, ALICE, HULL, 1));
+        assert!(!crate::emblem::owns(&reg, BOB, HULL, 1));
+        let queued = crate::gateway_out::take(&mut reg);
+        assert_eq!(queued.len(), 1, "one GrantedNotice");
+        assert!(queued[0].0.ends_with("corplogo.GrantedNotice"));
+
+        assert_eq!(
+            take(&mut reg, ALICE, 1),
+            PyValue::Bool(false),
+            "owned already"
+        );
+        assert_eq!(
+            crate::loyalty::balance(&reg, ALICE, LP_CORP),
+            700,
+            "no LP moved"
+        );
+        assert_eq!(
+            take(&mut reg, BOB, 1),
+            PyValue::Bool(false),
+            "Bob has no LP"
+        );
+        crate::loyalty::adjust(
+            &mut reg,
+            BOB,
+            LP_CORP,
+            1_000,
+            crate::loyalty::CHANGE_MISSION,
+        );
+        assert_eq!(
+            take(&mut reg, BOB, 2),
+            PyValue::Bool(false),
+            "one at a time"
+        );
+        assert_eq!(crate::loyalty::balance(&reg, BOB, LP_CORP), 1_000);
+        assert_eq!(
+            take(&mut reg, BOB, 1),
+            PyValue::Bool(true),
+            "each pilot their own"
+        );
     }
 
     /// The LP store is a station window: `Character::station_id` stays set

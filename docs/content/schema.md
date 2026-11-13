@@ -189,6 +189,7 @@ comment exactly as shown.
 | `store/types.tsv` | L1 NES-BACKEND (`content_store.py`) | L1 (`nes`: the item types the store delivers) |
 | `skins/licenses.tsv` | L2 SKINS (`content_skins.py`, the `skins` section) | L2 (`skins`: licence types and their item types) |
 | `skins/skins.tsv` | L2 SKINS (`content_skins.py`) | L2 (`skins`: the hulls a SKIN fits) |
+| `cosmetics/ship-licences.tsv` | #207 EM-3 (`content_lp.py`, the `lp` section) | `emblem` (`emblem::Licences`: the licence types a purchase grants as entitlements) |
 | `facwar/systems.tsv` | FW-3 (`content_facwar.py`, the `facwar` section) | `facwar` (`facwar::Table`: the warzone territory list) |
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
 | `mining/geodes.tsv` | L6A GEODES (`content_geodes.py`, the `geodes` section) | L6A (`eve-mod-econ` `geode`: the geode crate types) |
@@ -1806,6 +1807,34 @@ Invented example rows:
 990801	990821	100	-1	0	0.1	Fixture SKIN A
 100	1	0	990898
 ```
+
+### `cosmetics/ship-licences.tsv` (#207, EM-3)
+
+- **Writer:** `tools/content_lp.py`, the `lp` section of `content.py`: one row per row of the client's `shipcosmeticlicenses` (`findings/pyd-schemas.tsv`), by `licence_id`.
+- **Readers:** `eve-server` `emblem::TABLE` (`emblem::Licences`). Optional: with none, no offer is a licence and the Paragon store hands out items as any other store. The server keeps only emblem rows (`cosmetic_type` 1 corporation logo, 2 alliance logo [V `shipcosmetics/common/const.py:11-12`]).
+- **Key:** `licence_id`; the server keys by `type_id`.
+- **Stable client ids and delta keys (ruling 4):** delta kind `emblem` keys by hull type and cosmetic type, `own char ship_type cosmetic_type -> 1` and `slot ship_item backend_slot -> cosmetic_type`; no licence id and no licence type id is persisted.
+
+```
+#licence_id	type_id	ship_type_id	cosmetic_type	slot_group
+```
+
+| column | type | meaning |
+|---|---|---|
+| `licence_id` | `i64` | the key of the client's `shipCosmeticLicenses` table (`licenseID`) |
+| `type_id` | `i64` | `shipCosmeticLicenseTypeID`: the licence's item type (group 4471), the product of a Paragon offer |
+| `ship_type_id` | `i64` | `shipTypeID`: the hull it is for |
+| `cosmetic_type` | `i64` | `cosmeticType`: 1 corporation logo, 2 alliance logo |
+| `slot_group` | `i64` | `slotGroup`; carried, not enforced by the server [A] |
+
+Invented example rows:
+
+```
+1	981400001	981500001	1	0
+2	981400002	981500001	2	0
+```
+
+- A purchase of a licence product (`take_offer`) grants the entitlement instead of creating an item, and refuses a licence the pilot owns.
 
 ### `mining/geodes.tsv` (L6A GEODES)
 

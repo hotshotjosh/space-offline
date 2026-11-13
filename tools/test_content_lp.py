@@ -290,6 +290,23 @@ class Heraldry(unittest.TestCase):
         self.assertEqual("\t".join(L.EMBLEM_HEADER), "kind\tid\tlp_cost\twhy")
 
 
+class Licences(unittest.TestCase):
+    """EM-3: `cosmetics/ship-licences.tsv` carries every licence row, by id."""
+
+    def test_rows_are_every_record_by_licence_id(self):
+        rec = lambda t, h, c, g: {"shipCosmeticLicenseTypeID": t, "shipTypeID": h,
+                                  "cosmeticType": c, "slotGroup": g}
+        rows = L.licence_rows({7: rec(990402, 990201, 2, 1), 3: rec(990401, 990201, 1, 0),
+                               9: rec(990403, 990202, 3, 0)})
+        self.assertEqual(rows, [(3, 990401, 990201, 1, 0), (7, 990402, 990201, 2, 1),
+                                (9, 990403, 990202, 3, 0)])
+
+    def test_the_header_is_schema_md_s_line(self):
+        self.assertEqual("\t".join(L.LICENCES_HEADER),
+                         "licence_id\ttype_id\tship_type_id\tcosmetic_type\tslot_group")
+        self.assertEqual(L.LICENCES_FILE, "cosmetics/ship-licences.tsv")
+
+
 class Prices(unittest.TestCase):
     def test_lp_times_r_plus_isk_plus_req_is_p_ref(self):
         value, req = 7.3e6, 1.1e6

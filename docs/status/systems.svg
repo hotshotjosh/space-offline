@@ -150,7 +150,9 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="318.8" y="93.0" width="4" height="4" class="built"/>
 <rect x="323.8" y="93.0" width="4" height="4" class="built"/>
 <rect x="328.8" y="93.0" width="4" height="4" class="built"/>
-<text x="337.8" y="98.0" class="s xs">18/27</text>
+<rect x="333.8" y="93.0" width="4" height="4" class="built"/>
+<rect x="338.8" y="93.0" width="4" height="4" class="built"/>
+<text x="347.8" y="98.0" class="s xs">18/29</text>
 <text x="16.0" y="114.0" class="t">Bots</text>
 <rect x="198.8" y="109.0" width="4" height="4" class="proved"/>
 <rect x="203.8" y="109.0" width="4" height="4" class="proved"/>
