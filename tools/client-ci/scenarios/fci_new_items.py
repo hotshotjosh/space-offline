@@ -1401,8 +1401,12 @@ def eoci_main(EOCI_NAME):
         return safe(lambda: Inventory.OpenOrShow(
             invID=('StationShips', station), usePrimary=True))
 
+    def get_uicore():
+        # the client imports it (invWindow.py:21 `from carbonui.uicore import uicore`)
+        return __import__('carbonui.uicore', fromlist=['uicore']).uicore
+
     def close_inventories(Inventory):
-        ok, wnds = safe(lambda: list(uicore.registry.GetWindowsByClass(Inventory)))  # noqa: F821
+        ok, wnds = safe(lambda: list(get_uicore().registry.GetWindowsByClass(Inventory)))
         n = 0
         if ok:
             for w in wnds:
@@ -1479,7 +1483,7 @@ def eoci_main(EOCI_NAME):
         # 4. the tree dot
         open_ship_hangar(Inventory, station)
         sleep_ms(1000)
-        ok, wnd = safe(lambda: uicore.registry.GetWindowByClass(Inventory))  # noqa: F821
+        ok, wnd = safe(lambda: get_uicore().registry.GetWindowByClass(Inventory))
         if not precondition('the inventory window is open again', ok and wnd is not None, text(wnd)):
             return
         by_id = getattr_safe(wnd, 'treeEntryByID') or {}
