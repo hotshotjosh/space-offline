@@ -1399,12 +1399,14 @@ def eoci_main(EOCI_NAME):
 
     def wait_healing(predicate, timeout_ms, step_ms=1000):
         # wait_for that also sends /heal me every HEAL_EVERY_MS; returns (value, waited_ms, heals)
-        st = {'heals': 0, 'last': time.time()}
+        # heals counts replies that say 'healed' (/heal answers as a raised CustomInfo)
+        st = {'heals': 0, 'last': now_ms() or 0}
         def tick():
-            if (time.time() - st['last']) * 1000.0 >= HEAL_EVERY_MS:
-                st['last'] = time.time()
-                st['heals'] += 1
-                gm('/heal me')
+            t = now_ms() or 0
+            if t - st['last'] >= HEAL_EVERY_MS:
+                st['last'] = t
+                if 'healed' in gm('/heal me')[1].lower():
+                    st['heals'] += 1
             return predicate()
         value, waited = wait_for(tick, timeout_ms=timeout_ms, step_ms=step_ms)
         return value, waited, st['heals']
@@ -1590,16 +1592,26 @@ def eoci_main(EOCI_NAME):
                   text([a_[1] for a_ in acts][:3]))
             if not any(a_[0] for a_ in acts):
                 break
-            ok, detail = approach(park, npc_id, 15000, timeout_ms=60000)
-            say('kill %d: approach %s: %s' % (n + 1, 'reached' if ok else 'not reached', text(detail)))
-            seen = {'at': last_at}
+            # follow and full throttle without blocking: the heal wait below runs at once, so
+            # the approach is healed too; the distance is reported at the end of the fight
+            rbp = get_michelle().GetRemotePark()
+            fok, fv = safe(lambda: rbp.CmdFollowBall(npc_id, 7500))
+            safe(lambda: rbp.CmdSetSpeedFraction(1.0))
+            seen = {'at': last_at, 'd': dist_to(park, npc_id)}
             def gone():
                 at = ball_pos(park, npc_id)
                 if at is not None:
                     seen['at'] = at
-                return npc_id not in park.slimItems
-            dead, waited, heals = wait_healing(gone, KILL_WAIT_MS)
+                    seen['d'] = dist_to(park, npc_id)
+                # a lost Tempest ends the wait; the survived check below reports it
+                return npc_id not in park.slimItems or \
+                    getattr_safe(sess, 'shipid') != hull_ship
+            _stop, waited, heals = wait_healing(gone, KILL_WAIT_MS)
+            dead = npc_id not in park.slimItems
             last_at = seen['at']
+            detail = 'follow %s; last distance %s m' % (
+                'sent' if fok else 'raised ' + text(fv), fmt(seen['d'], 0))
+            say('kill %d: %s' % (n + 1, detail))
             alive = getattr_safe(sess, 'shipid') == hull_ship
             precondition('kill %d: the Tempest survived the fight' % (n + 1), alive,
                          'session.shipid %s, the Tempest %s, %d heal(s)' % (
