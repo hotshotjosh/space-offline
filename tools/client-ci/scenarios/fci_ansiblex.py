@@ -1616,7 +1616,13 @@ def eoci_main(EOCI_NAME):
         if not ok:
             return None, text(v)[:200], None
         base, mult, idx, capital, mults = v
-        if not base or not mult:
+        # A multiplier of 0.0 is a value, not a gap: the window prices a zone
+        # from the gate type's own `zone1Modifier..zone5Modifier`
+        # (`jumpbridge/client/jumpBridge.py:29`) [V], and a client run read
+        # 0.0 for zone 1, 2.3 ly from the capital, in the client's log line
+        # `JumpBridge._GetCapacitorZoneModifier 2.32448402584, 0, 0.0`
+        # (`zone_modifier_util.py:24`) [V].  Step 8 then expects no charge.
+        if not base or mult is None:
             return None, 'base %s multiplier %s' % (text(base), text(mult)), None
         return float(base) * float(mult), 'base %s x %s (zone %s, capital %s, zones %s)' % (
             text(base), text(mult), text(idx + 1), text(capital), text(mults)), float(base)
@@ -1810,15 +1816,20 @@ def eoci_main(EOCI_NAME):
         if c2 is not None and t2 is not None and bool(got):
             # [A] until ANSI-2b writes deploy/jump-bridges.tsv the server prices every
             # zone at 1.0; falsifier: the table present and the first form never matching.
-            def band(k):
-                lo = c1 - k - 0.01 * k
-                hi = evolved(max(c1 - k, 0.0), cap, recharge, t2 - t1) + 0.01 * k
+            # A zone multiplier of 0.0 makes the zone form "no charge" (the
+            # charge stays, within 1 % of the base cost, plus recharge); with
+            # the table the server must then take nothing in that zone.
+            def band(k, slack):
+                lo = c1 - k - slack
+                hi = evolved(max(c1 - k, 0.0), cap, recharge, t2 - t1) + slack
                 return lo, hi, lo <= c2 <= hi
-            lo, hi, by_client = band(cost)
-            lo1, hi1, by_base = band(base)
-            check('the charge fell by base cost x zone multiplier (%s), or by the base cost alone '
-                  'while the server has no zone table (ANSI-2b), within 1 %% of the cost' % why[:120],
-                  (by_client or by_base) and c2 < c1,
+            free_zone = cost == 0
+            lo, hi, by_client = band(cost, 0.01 * (base if free_zone else cost))
+            lo1, hi1, by_base = band(base, 0.01 * base)
+            check('the charge fell by base cost x zone multiplier (%s; no charge when that is 0), '
+                  'or by the base cost alone while the server has no zone table (ANSI-2b), '
+                  'within 1 %% of the base cost' % why[:120],
+                  (by_client and (free_zone or c2 < c1)) or (by_base and c2 < c1),
                   'before %s after %s; zone cost %s allowed [%s, %s]%s; base cost %s allowed [%s, %s]%s'
                   % (fmt(c1, 2), fmt(c2, 2), fmt(cost, 2), fmt(lo, 2), fmt(hi, 2),
                      ' MATCH' if by_client else '', fmt(base, 2), fmt(lo1, 2), fmt(hi1, 2),
