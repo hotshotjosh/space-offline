@@ -1409,10 +1409,11 @@ def eoci_main(EOCI_NAME):
                     lambda: all(skills.MySkillLevel(t) >= l for t, l in need), timeout_ms=30000)
                 check('the client skill cache shows the granted levels (skillMgr2.GetSkills)',
                       bool(got), text(need))
-                # A GM grant does not scatter OnSkillsChanged: call the client's handler.
-                certs.OnSkillsChanged()
+                # The grant schedules OnServerSkillsChanged, so the client clears
+                # its own certificate cache; no handler call here.
+                got, _w = wait_for(lambda: target.GetLevel() >= 1, timeout_ms=15000)
                 check('the certificate reaches level >= 1 from the served skills',
-                      target.GetLevel() >= 1, text(target.GetLevel()))
+                      bool(got), text(target.GetLevel()))
                 check('GetMyCertificates now lists it',
                       target.certificateID in certs.GetMyCertificates())
                 ship = getattr_safe(builtin('session'), 'shipid')

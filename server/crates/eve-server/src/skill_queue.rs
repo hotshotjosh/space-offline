@@ -457,6 +457,23 @@ fn skills_changed_push(
     })
 }
 
+/// Tell this character's client that its skills changed, from outside the
+/// training clock (a GM grant or reset). `type_ids` names the entries to
+/// carry; an empty list is allowed and sends an empty dict.
+///
+/// Scheduled, not pushed: it must reach the client after the pooled
+/// `OnSkillForcedRefresh` reset: the reset makes skillsvc refetch, so the
+/// certificate cache that `OnSkillsChanged` clears re-reads fresh skills.
+pub(crate) fn tell_skills_changed(reg: &mut Registry, character_id: i64, type_ids: &[i64]) {
+    let push =
+        skills_changed_push(reg, character_id, type_ids).unwrap_or(crate::skill::SkillsChanged {
+            character_id,
+            entries: Vec::new(),
+            time_stamp: crate::pyutil::filetime_now(),
+        });
+    reg.schedule(Duration::ZERO, push);
+}
+
 /// **The world clock's hook**: every level whose end time has passed is
 /// trained, and its pilot told.
 ///

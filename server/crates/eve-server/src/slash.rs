@@ -617,7 +617,12 @@ fn whoami(
 // Both push `OnSkillForcedRefresh` for the same reason
 // `purchase_skills` does: the client's skill caches are only
 // reset by that event, so a grant the client never re-reads is a
-// grant nobody can see.
+// grant nobody can see. They also schedule an `OnServerSkillsChanged`
+// (after the reset), which makes the client scatter `OnSkillsChanged`
+// so the certificate cache clears. A giveskill carries its entry; a
+// removal or a reset carries an empty dict, never
+// `OnServerSkillsRemoved`, whose `del myskills[id]` raises KeyError
+// after the reset.
 fn skill_command(
     reg: &mut Registry,
     cmd: &str,
@@ -636,6 +641,7 @@ fn skill_command(
         let n = s.len();
         reg.mark_dirty();
         reg.push(crate::skill::ForcedRefresh);
+        crate::skill_queue::tell_skills_changed(reg, actor, &[]);
         return Ok(bstr(&format!("reset to the {n} starter skills")));
     }
     let Some(first) = args.first() else {
@@ -674,6 +680,11 @@ fn skill_command(
     };
     reg.mark_dirty();
     reg.push(crate::skill::ForcedRefresh);
+    if cmd == "removeskill" {
+        crate::skill_queue::tell_skills_changed(reg, actor, &[]);
+    } else {
+        crate::skill_queue::tell_skills_changed(reg, actor, &[type_id]);
+    }
     Ok(bstr(&format!("{line}.")))
 }
 
@@ -960,5 +971,62 @@ mod tests {
                 && format!("{p:?}").contains(&format!("to: Some([{char_id}])"))
         });
         assert!(to_char, "the item change goes to the char: {pushes:?}");
+    }
+
+    /// A fixture world and the id of one fixture skill.
+    fn skill_world() -> (Registry, i64, i64) {
+        let c = std::sync::Arc::new(crate::content::Content::fixture());
+        let type_id = crate::skill::all_in(&c).next().expect("a skill").type_id;
+        let reg = Registry::new(crate::model::SandboxConfig::default()).with_content(c);
+        let ch = reg.config().characters[0].character_id;
+        (reg, ch, type_id)
+    }
+
+    fn due_pushes(reg: &mut Registry) -> Vec<(&'static str, Vec<PyValue>)> {
+        reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(1))
+            .into_iter()
+            .map(|p| p.to_push())
+            .collect()
+    }
+
+    fn dict_len(v: &PyValue) -> usize {
+        match v {
+            PyValue::Dict(d) => d.len(),
+            other => panic!("not a dict: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_giveskill_also_schedules_the_changed_skill_entry() {
+        let (mut reg, ch, type_id) = skill_world();
+        reg.take_pending_raw();
+        giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "2"]).unwrap();
+        let now: Vec<&str> = reg
+            .take_pending_raw()
+            .iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert_eq!(now, ["OnSkillForcedRefresh"]);
+        let due = due_pushes(&mut reg);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].0, "OnServerSkillsChanged");
+        assert_eq!(dict_len(&due[0].1[0]), 1, "{:?}", due[0]);
+    }
+
+    #[test]
+    fn a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed() {
+        let (mut reg, ch, type_id) = skill_world();
+        giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "2"]).unwrap();
+        due_pushes(&mut reg);
+        removeskill(&mut reg, Some(ch), &[&type_id.to_string()]).unwrap();
+        let due = due_pushes(&mut reg);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].0, "OnServerSkillsChanged");
+        assert_eq!(dict_len(&due[0].1[0]), 0, "{:?}", due[0]);
+        givestarterskills(&mut reg, Some(ch), &[]).unwrap();
+        let due = due_pushes(&mut reg);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].0, "OnServerSkillsChanged");
+        assert_eq!(dict_len(&due[0].1[0]), 0, "{:?}", due[0]);
     }
 }
