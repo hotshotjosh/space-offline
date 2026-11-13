@@ -2754,6 +2754,37 @@ mod tests {
         assert_eq!((spot.system, spot.position), (AWAY, [4.0, 5.0, 6.0]));
     }
 
+    /// A rescue pilot (origin row, ship parked in a void system) whose hold
+    /// ends: the row is the origin still, and so after a restart.
+    #[test]
+    fn a_rescue_pilot_released_in_a_void_system_keeps_the_origin_row() {
+        let mut reg = place_both(HOME, Some(two_systems()));
+        let void = crate::celestial::VOID_SYSTEMS.start + 1;
+        reg.roster_mut().leave(ALICE);
+        reg.roster_mut()
+            .arrive(crate::space_state::Presence::arriving(
+                ALICE,
+                ALICE_SHIP,
+                void,
+                crate::space_state::Motion::arrived([1.0, 1.0, 1.0], [0.0; 3]),
+            ));
+        let origin = crate::logoff_spot::Spot {
+            ship_id: ALICE_SHIP,
+            system: AWAY,
+            position: [4.0, 5.0, 6.0],
+        };
+        crate::logoff_spot::set(&mut reg, ALICE, origin);
+        let _ = logged_off(&mut reg, ALICE, T0);
+        tick(&mut reg, T0 + LOGOFF_MINIMUM);
+        assert!(reg.roster().get(ALICE).is_none(), "released");
+        assert_eq!(crate::logoff_spot::get(&reg, ALICE), Some(origin));
+        let snap = reg.to_snapshot();
+        let mut fresh = place_both(HOME, Some(two_systems()));
+        fresh.roster_mut().leave(ALICE);
+        fresh.apply_snapshot(snap);
+        assert_eq!(crate::logoff_spot::take(&mut fresh, ALICE), Some(origin));
+    }
+
     #[test]
     fn an_undock_after_a_restore_is_ordinary() {
         let mut reg = released(HOME, [7_000.0, 0.0, 0.0]);

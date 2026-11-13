@@ -66,6 +66,15 @@ pub fn record(w: &mut Registry, c: i64) {
         clear(w, c);
         return;
     };
+    // #243: a pilot in a void system with a row already is a rescue pilot
+    // (`abyss::rescue`, the row is the run's origin) or a pod waiting out its
+    // delay (the row is the pod's). Either row is the one to keep; a void row
+    // for the real hull would lose the origin.
+    if crate::celestial::VOID_SYSTEMS.contains(&p.solar_system_id)
+        && w.deltas().of(KIND).contains_key(&key(c))
+    {
+        return;
+    }
     let [x, y, z] = p.motion.position;
     w.deltas_mut().put(
         KIND,
