@@ -601,7 +601,21 @@ pub fn attribute_changes(
     old: &[Applied],
     new: &[Applied],
 ) -> Vec<Change> {
-    let run = |applied: &[Applied]| crate::dogma::evaluate_with(table, inputs, applied);
+    attribute_changes_rolled(table, ship, inputs, old, new, &[])
+}
+
+/// [`attribute_changes`] with the rolled attribute sets of the ship's mutated
+/// modules (`dynamic`, as `dynamic_item::fitted` lists them; #71): the engine
+/// then starts a mutated module from its roll, as the sheet does.
+pub fn attribute_changes_rolled(
+    table: &Table,
+    ship: i64,
+    inputs: &Inputs,
+    old: &[Applied],
+    new: &[Applied],
+    dynamic: &[(i64, std::sync::Arc<crate::dogma::Overrides>)],
+) -> Vec<Change> {
+    let run = |applied: &[Applied]| crate::dogma::evaluate_dynamic(table, inputs, applied, dynamic);
     let (Some(before), Some(after), Some(base)) = (run(old), run(new), run(&[])) else {
         return Vec::new();
     };
@@ -665,9 +679,22 @@ pub fn attribute_changes_inputs(
     new: &Inputs,
     buffs: &[Applied],
 ) -> Vec<Change> {
+    attribute_changes_inputs_rolled(table, ship, old, new, buffs, &[])
+}
+
+/// [`attribute_changes_inputs`] with the rolled attribute sets of the ship's
+/// mutated modules (`dynamic`; #71).
+pub fn attribute_changes_inputs_rolled(
+    table: &Table,
+    ship: i64,
+    old: &Inputs,
+    new: &Inputs,
+    buffs: &[Applied],
+    dynamic: &[(i64, std::sync::Arc<crate::dogma::Overrides>)],
+) -> Vec<Change> {
     let (Some(before), Some(after)) = (
-        crate::dogma::evaluate_with(table, old, buffs),
-        crate::dogma::evaluate_with(table, new, buffs),
+        crate::dogma::evaluate_dynamic(table, old, buffs, dynamic),
+        crate::dogma::evaluate_dynamic(table, new, buffs, dynamic),
     ) else {
         return Vec::new();
     };
@@ -1114,7 +1141,8 @@ fn changes_for(w: &Registry, ship: i64, old: &[Applied], new: &[Applied]) -> Vec
     {
         return Vec::new();
     }
-    attribute_changes(table, ship, &inputs, old, new)
+    let dynamic = crate::dynamic_item::fitted(w, ship);
+    attribute_changes_rolled(table, ship, &inputs, old, new, &dynamic)
 }
 
 #[cfg(test)]
@@ -2255,6 +2283,59 @@ type\t{REP_T}\t{G_OTHER}\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=100.0;{A_MOD
         assert_eq!(changed(&c, 1, A_MOD), Some((100.0, 110.0)));
         assert_eq!(changed(&c, 2, A_MOD), Some((100.0, 110.0)));
         assert_eq!(changed(&c, ALICE_SHIP, A_MOD), None, "not the hull");
+    }
+
+    /// #71 MUTA-3b: a mutated module's rolled attribute is what a buff moves,
+    /// not the dynamic type's row (invented override 200 against the row's 100).
+    #[test]
+    fn a_buff_moves_a_mutated_modules_rolled_value() {
+        const ROLLED: f64 = 200.0;
+        let t = engine_table();
+        let b = one(C_LOC, crate::dogma::op::POST_PERCENT, 10.0);
+        let dynamic: crate::dogma::Dynamic = vec![(
+            1,
+            std::sync::Arc::new(crate::dogma::Overrides::new(vec![(A_MOD, ROLLED)])),
+        )];
+        let c = attribute_changes_rolled(&t, ALICE_SHIP, &engine_inputs(), &[], &[b], &dynamic);
+        let (o, n) = changed(&c, 1, A_MOD).expect("the module moved");
+        assert_eq!(o, ROLLED);
+        assert!((n - ROLLED * 1.1).abs() < 1e-9, "{n}");
+        assert_eq!(changed(&c, 2, A_MOD), Some((100.0, 110.0)), "a plain one");
+    }
+
+    /// The same for the diff over two inputs (an effect beacon or a booster).
+    #[test]
+    fn an_input_change_moves_a_mutated_modules_rolled_value() {
+        const ROLLED: f64 = 200.0;
+        const BOOSTER_T: i64 = 990_492_021;
+        const MAIN: i64 = 990_492_911;
+        let text = format!(
+            "{}type\t{BOOSTER_T}\t303\t20\t1\t1\t0.1\t0.0\t0.0\t1.0\t0\t{MAIN}\t\
+             1087=1.0;177=10.0\tFixture Booster\n\
+             effect\t{MAIN}\t0\t0\t0\t0\t0\t0\t0\tfixtureMain\t\t1\t0\n\
+             modifier\t{MAIN}\tshipID\tLocationModifier\t{A_MOD}\t177\t6\t\t\n",
+            typedata_rows()
+        );
+        let t = crate::typedata::Table::parse(&text).expect("parses");
+        let with = Inputs {
+            boosters: vec![crate::dogma::BoosterInput {
+                type_id: BOOSTER_T,
+                side_effects: vec![],
+            }],
+            ..engine_inputs()
+        };
+        let none = engine_inputs();
+        let dynamic: crate::dogma::Dynamic = vec![(
+            1,
+            std::sync::Arc::new(crate::dogma::Overrides::new(vec![(A_MOD, ROLLED)])),
+        )];
+        let plain = attribute_changes_inputs(&t, ALICE_SHIP, &none, &with, &[]);
+        assert_eq!(changed(&plain, 1, A_MOD), Some((100.0, 110.0)));
+        let c = attribute_changes_inputs_rolled(&t, ALICE_SHIP, &none, &with, &[], &dynamic);
+        let (o, n) = changed(&c, 1, A_MOD).expect("the module moved");
+        assert_eq!(o, ROLLED);
+        assert!((n - ROLLED * 1.1).abs() < 1e-9, "{n}");
+        assert_eq!(changed(&c, 2, A_MOD), Some((100.0, 110.0)), "a plain one");
     }
 
     /// **Location-group modifier**: the modules of one group.

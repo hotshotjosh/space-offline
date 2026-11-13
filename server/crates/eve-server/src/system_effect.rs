@@ -405,7 +405,9 @@ fn send(w: &mut Registry, character: i64, at: Shown, start: bool, now: BlueTime)
         )
     };
     let buffs = crate::dbuff::applied(w, ship);
-    let changes = crate::dbuff::attribute_changes_inputs(table, ship, &old, &new, &buffs);
+    let dynamic = crate::dynamic_item::fitted(w, ship);
+    let changes =
+        crate::dbuff::attribute_changes_inputs_rolled(table, ship, &old, &new, &buffs, &dynamic);
     let in_space = w.roster().get(character).is_some_and(|p| p.ship_id == ship);
     if in_space {
         let speed = changes
@@ -493,6 +495,10 @@ mod tests {
     const EFFECT: i64 = 99_310;
     const IN_SYSTEM: i64 = 990_001;
     const ELSEWHERE: i64 = 990_999;
+    use crate::modules::muta_fixture::{FACTOR, MUTATOR, SOURCE};
+    /// An invented mutated module type (group 55) and the item of it.
+    const RESULT: i64 = 981_400_003;
+    const MUTATED: i64 = 981_400_020;
 
     /// A world with a one-hull table and a beacon of one category 7 effect
     /// (x0.5 on max velocity) and one that is not category 7, with the
@@ -502,6 +508,8 @@ mod tests {
             "attribute\t37\t0.0\tmaxVelocity\n\
              attribute\t99411\t0.0\tinvented\n\
              type\t{HULL}\t25\t6\t1\t1\t1000.0\t100.0\t1000000.0\t30.0\t0\t\t37=400.0\tHull\n\
+             type\t{SOURCE}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t64=7.0\tSource\n\
+             type\t{RESULT}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t64=10.0\tResult\n\
              type\t990101\t920\t2\t1\t1\t0.0\t0.0\t0.0\t0.0\t0\t{EFFECT},99311\t99411=0.5\tBeacon\n\
              effect\t{EFFECT}\t7\t0\t0\t0\t0\t0\t0\tbeaconEffect\t\n\
              effect\t99311\t0\t0\t0\t0\t0\t0\t0\tpassiveEffect\t\n\
@@ -509,6 +517,14 @@ mod tests {
              modifier\t{EFFECT}\tshipID\tLocationGroupModifier\t64\t99411\t4\t\t55\n"
         );
         let mut content = crate::content::Content::fixture();
+        content.insert(
+            "mutators",
+            crate::mutator_data::Mutators::parse(
+                &[format!("{MUTATOR}\t64\t{FACTOR}\t{FACTOR}\t1")],
+                &[format!("{MUTATOR}\t{RESULT}\t{SOURCE}")],
+            )
+            .expect("mutators parse"),
+        );
         content.insert(
             crate::typedata::TABLE.name,
             crate::typedata::Installed::build(
@@ -682,5 +698,60 @@ mod tests {
         tick(&mut reg, Instant::now(), t);
         let record = *reg.combat().ship(SHIP).expect("the record is kept");
         assert_eq!(*record.profile(), honest);
+    }
+
+    /// MUTA-3b: the beacon moves a fitted mutated module from its rolled
+    /// value (invented: the type row says 10, the roll is 3 x 7), not from the
+    /// dynamic type's row (#71).
+    #[test]
+    fn a_beacon_moves_a_mutated_modules_rolled_attribute() {
+        let (mut reg, pilot) = world();
+        let mut items = reg.store().items().to_vec();
+        items.push(crate::item::Item {
+            item_id: MUTATED,
+            type_id: RESULT,
+            owner_id: pilot,
+            location_id: SHIP,
+            flag_id: 27,
+            quantity: 1,
+            group_id: 55,
+            category_id: 7,
+            singleton: true,
+        });
+        reg.apply_snapshot(crate::store::Snapshot {
+            items,
+            next_item_id: MUTATED + 100,
+            ..crate::store::Snapshot::default()
+        });
+        crate::dynamic_item::put(
+            &mut reg,
+            &crate::dynamic_item::Row {
+                item_id: MUTATED,
+                source_type: SOURCE,
+                mutator_type: MUTATOR,
+                creator: 0,
+                created_at: 0,
+                rolls: vec![(64, 0.5)],
+            },
+        );
+        reg.modules_mut().set_online(MUTATED, true);
+        let t = 133_000_000_000_000_000;
+        reg.character_mut(pilot).expect("pilot").ship_id = SHIP;
+        fly(&mut reg, pilot, IN_SYSTEM);
+        tick(&mut reg, Instant::now(), t);
+        let sent = pushes(&mut reg);
+        let moved = sent
+            .iter()
+            .find(|(n, a)| {
+                *n == "OnModuleAttributeChange"
+                    && a.contains(&PyValue::Int(MUTATED))
+                    && a.contains(&PyValue::Int(64))
+            })
+            .expect("the mutated module's attribute is pushed");
+        assert!(moved.1.contains(&PyValue::Real(7.0 * FACTOR)), "{moved:?}");
+        assert!(
+            moved.1.contains(&PyValue::Real(7.0 * FACTOR * 0.5)),
+            "{moved:?}"
+        );
     }
 }
