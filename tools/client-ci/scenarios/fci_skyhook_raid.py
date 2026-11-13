@@ -1423,17 +1423,30 @@ def eoci_main(EOCI_NAME):
 
     last_tr = []
 
+    def park_in(system):
+        """The ballpark of `system` with an ego ball, or None (michelle.py:311-318 [V]:
+        a new park per system, made after the session change)."""
+        mich = get_michelle()
+        p = mich.GetBallpark() if mich is not None else None
+        if p is None or getattr_safe(p, 'solarsystemID') != system or not getattr_safe(p, 'ego'):
+            return None
+        return p
+
     def go_to(system):
         for attempt in (1, 2):
             ok, reply = gm('/tr me %d' % system)
             got, _w = wait_for(
                 lambda: getattr_safe(builtin('session'), 'solarsystemid2') == system,
                 timeout_ms=45000, step_ms=500)
-            del last_tr[:]
-            last_tr.append('attempt %d: /tr me %d -> %s; now in %s' % (
-                attempt, system, text(reply)[:160],
-                text(getattr_safe(builtin('session'), 'solarsystemid2'))))
+            parked = None
             if got:
+                parked, _w = wait_for(lambda: park_in(system), timeout_ms=45000, step_ms=500)
+            del last_tr[:]
+            last_tr.append('attempt %d: /tr me %d -> %s; now in %s; park %s' % (
+                attempt, system, text(reply)[:160],
+                text(getattr_safe(builtin('session'), 'solarsystemid2')),
+                'yes' if parked else 'no'))
+            if got and parked:
                 return True
             sleep_ms(10000)
         return False
@@ -1602,9 +1615,9 @@ def eoci_main(EOCI_NAME):
         precondition('the client has sovereigntyResourceSvc', svc is not None)
         if svc is None:
             return
-        mich = get_michelle()
-        park = mich.GetBallpark()
-        precondition('A has a ballpark', park is not None)
+        park = park_in(system)
+        precondition("A has the claimed system's ballpark (solarsystemID == system)",
+                     park is not None)
         if park is None:
             return
         reagent_planet = None
@@ -1723,16 +1736,17 @@ def eoci_main(EOCI_NAME):
         if system is None:
             return
         precondition('B went to the claimed system', go_to(system), ' | '.join(last_tr))
-        mich = get_michelle()
-        park = mich.GetBallpark()
-        precondition('B has a ballpark', park is not None)
+        park = park_in(system)
+        precondition("B has the claimed system's ballpark (solarsystemID == system)",
+                     park is not None)
         if park is None:
             return
-        silo, waited = wait_for(lambda: silo_slims(park), timeout_ms=STEP_WAIT_MS, step_ms=2000)
+        silo, waited = wait_for(lambda: silo_slims(park_in(system) or park), timeout_ms=STEP_WAIT_MS, step_ms=2000)
         precondition("a silo ball stands in B's park (A opened a window)", bool(silo),
                      '%d silo slim(s) after %s ms' % (len(silo or []), text(waited)))
         if not silo:
             return
+        park = park_in(system) or park
         silo_id = silo[0][0]
         sky_id = slim_flag(park, silo_id, 'parentID')
         link = link_of(park, silo_id)
