@@ -260,18 +260,23 @@ fn item_attr(w: &Registry, item_id: i64, type_id: i64, attribute: i64) -> Option
         .or_else(|| type_attr(w, type_id, attribute))
 }
 
-/// Hit points of a module type (a type-level read: a mutated item's own roll
-/// is [`module_hp_of`]).
-pub fn module_hp(w: &Registry, type_id: i64) -> f64 {
-    type_attr(w, type_id, ATTR_HP)
+/// Hit points of a module item: the mutated item's own when it is one, else
+/// its type's.
+fn hp_at(w: &Registry, item_id: i64, type_id: i64) -> f64 {
+    item_attr(w, item_id, type_id, ATTR_HP)
         .filter(|h| *h > 0.0)
         .unwrap_or(DEFAULT_MODULE_HP)
 }
 
-/// Hit points of a module item: the roll's when it is mutated, else its
-/// type's.
+/// Hit points of a module item.
 pub fn module_hp_of(w: &Registry, item: &crate::item::Item) -> f64 {
-    item_attr(w, item.item_id, item.type_id, ATTR_HP)
+    hp_at(w, item.item_id, item.type_id)
+}
+
+/// Hit points of a module type; tests only (production reads the item).
+#[cfg(test)]
+fn type_hp(w: &Registry, type_id: i64) -> f64 {
+    type_attr(w, type_id, ATTR_HP)
         .filter(|h| *h > 0.0)
         .unwrap_or(DEFAULT_MODULE_HP)
 }
@@ -631,6 +636,9 @@ fn refuse_overload(w: &Registry, f: &Fitted) -> Result<i64, ServiceError> {
     if burnt_out(w, f.module) {
         return Err(notify("That module is too damaged to overload."));
     }
+    // [V] the client reads it off the item, not the type
+    // (`shipmodulebutton.py:472`, `GetAttributeValue(itemID, requiredThermoDynamicsSkill)`),
+    // so a roll counts; unlike the required skills (static type's).
     let need = item_attr(w, f.module, f.type_id, ATTR_REQUIRED_THERMO).unwrap_or(0.0) as i64;
     if thermo_level(w, f.pilot) < need {
         return Err(user_error(
@@ -1182,9 +1190,7 @@ fn begin_repair(
         return Ok(Begun::Nothing);
     }
     refuse_repair(w, &f)?;
-    let hp = item_attr(w, f.module, f.type_id, ATTR_HP)
-        .filter(|h| *h > 0.0)
-        .unwrap_or(DEFAULT_MODULE_HP);
+    let hp = hp_at(w, f.module, f.type_id);
     let units = paste_needed(damage, hp);
     let stacks = paste_stacks(w, f.pilot, f.ship);
     if stacks.iter().map(|(_, q)| *q).sum::<i64>() < units {

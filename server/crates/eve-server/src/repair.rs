@@ -218,7 +218,7 @@ fn line(reg: &Registry, item_id: i64, h: Hurt) -> Option<Line> {
         });
         profile.armor_hp + profile.hp
     } else {
-        crate::overheat::module_hp(reg, item.type_id)
+        crate::overheat::module_hp_of(reg, item)
     };
     // A mutated item's own type carries no price (#263): price it from the type
     // it was made from. [A] the retail shop quotes the source's price;
@@ -726,7 +726,7 @@ mod tests {
     fn mutated_world() -> Registry {
         world_with(|content| {
             let rows = format!(
-                "{}type\t{SRC_T}\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t\t\tInvented Source\n\
+                "{}type\t{SRC_T}\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t\t9=10.0\tInvented Source\n\
                  type\t{SRC_T2}\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t\t\tInvented Source Two\n\
                  type\t{RES_T}\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t\t\tInvented Result\n",
                 crate::typedata::FIXTURE,
@@ -736,7 +736,10 @@ mod tests {
             content.insert(
                 "mutators",
                 crate::mutator_data::Mutators::parse(
-                    &[format!("{MUT_T}\t30\t0.8\t1.2\t0")],
+                    &[
+                        format!("{MUT_T}\t30\t0.8\t1.2\t0"),
+                        format!("{MUT_T}\t9\t3.0\t3.0\t1"),
+                    ],
                     &[
                         format!("{MUT_T}\t{RES_T}\t{SRC_T}"),
                         format!("{MUT_T}\t{RES_T}\t{SRC_T2}"),
@@ -795,6 +798,30 @@ mod tests {
         assert_eq!(module_unit(&reg, MOD_B), plain);
     }
 
+    /// MUTA-3b: the quote divides by the mutated item's own hit points (the
+    /// roll, 3 x the source's 10), the same number heat damage builds against.
+    #[test]
+    fn a_mutated_modules_quote_divides_by_its_rolled_hit_points() {
+        let mut reg = mutated_world();
+        fit_typed(&mut reg, MOD_B, RES_T);
+        crate::dynamic_item::put(
+            &mut reg,
+            &crate::dynamic_item::Row {
+                item_id: MOD_B,
+                source_type: SRC_T,
+                mutator_type: MUT_T,
+                creator: ALICE,
+                created_at: 0,
+                rolls: vec![(9, 0.5)],
+            },
+        );
+        damaged_modules(&mut reg, &[MOD_B]);
+        let hp = 30.0;
+        let item = reg.item(MOD_B).expect("fitted").clone();
+        assert_eq!(crate::overheat::module_hp_of(&reg, &item), hp);
+        assert!((module_unit(&reg, MOD_B) * hp - COST_MULTIPLIER * SRC_PRICE).abs() < 1e-6);
+    }
+
     #[test]
     fn a_mutated_module_is_priced_from_its_own_rows_source() {
         let mut reg = mutated_world();
@@ -830,7 +857,7 @@ mod tests {
         let mut reg = mutated_world();
         fit_module(&mut reg);
         damaged_modules(&mut reg, &[MOD_A]);
-        let hp = crate::overheat::module_hp(&reg, SHIELD_EXT);
+        let hp = crate::overheat::module_hp_of(&reg, reg.item(MOD_A).expect("fitted"));
         assert!((module_unit(&reg, MOD_A) * hp - COST_MULTIPLIER * 2000.0).abs() < 1e-6);
     }
 }

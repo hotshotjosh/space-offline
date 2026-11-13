@@ -1083,7 +1083,7 @@ fn a_mutated_modules_heat_numbers_are_its_roll() {
         singleton: true,
     };
     // The type row names none of them: the type-level read is the default.
-    assert_eq!(module_hp(&reg, RESULT), DEFAULT_MODULE_HP);
+    assert_eq!(type_hp(&reg, RESULT), DEFAULT_MODULE_HP);
     assert_eq!(module_hp_of(&reg, &item), MODULE_HP * FACTOR);
     assert!(is_mining(&reg, ITEM, RESULT));
     assert_eq!(
