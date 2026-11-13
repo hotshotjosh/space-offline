@@ -442,7 +442,8 @@ fn world_with(content: Content) -> Registry {
         celestials: crate::celestial::Catalogue::parse(&format!(
             "star\t{STAR}\t9000\t1000\t0\t0\t0\t{SYSTEM}\t0\t0\n\
              planet\t{PLANET_POWER}\t9001\t100\t1\t0\t0\t{SYSTEM}\t0\t0\n\
-             planet\t{PLANET_LAND}\t9002\t100\t2\t0\t0\t{SYSTEM}\t0\t0\n"
+             planet\t{PLANET_LAND}\t9002\t100\t2\t0\t0\t{SYSTEM}\t0\t0\n\
+             #system\t{SYSTEM}\t9400\t{REGION}\n"
         )),
         ..crate::model::SandboxConfig::default()
     })
@@ -1835,4 +1836,206 @@ fn a_corporation_leaving_the_holder_alliance_re_simulates_when_told() {
     );
     // A corporation with no skyhook changes nothing.
     corp_membership_changed(&mut reg, OTHER_CORP);
+}
+
+// ---------------------------------------------------------------------------
+// SOV-UPG-3: the distribution ids an upgrade type names
+// ---------------------------------------------------------------------------
+
+/// Invented attribute families: faction `9_500` reads ten slots from `9_100`,
+/// the universal list from `9_200`. Type `9_201` names three non-zero ids for
+/// the faction (slots 0, 2 and 3; slot 1 is zero) and two universal ones.
+const FAC: i64 = 9_500;
+/// An invented region whose pirate is `FAC`, and the system's region.
+const REGION: i64 = 9_300;
+const BY_FACTION: [(i64, i64); 1] = [(FAC, 9_100)];
+const UNIVERSAL: i64 = 9_200;
+
+fn dist_content() -> Content {
+    let mut c = dist_content_rows();
+    let mut npc = crate::npc_data::Table::fixture();
+    npc.regions.insert(
+        REGION,
+        vec![crate::npc_data::RegionPirate {
+            faction_id: FAC,
+            weight: 1.0,
+            rule: crate::npc_data::Rule::Override,
+        }],
+    );
+    c.insert("npc_data", npc);
+    c
+}
+
+fn dist_content_rows() -> Content {
+    content_with(
+        "type\t9201\t4768\t17\t1\t1\t0.0\t0.0\t0.0\t0.0\t0\t\t\
+         9100=11.0;9101=0.0;9102=12.0;9103=13.0;9200=21.0;9201=22.0\tInvented Array\n\
+         type\t9202\t4768\t17\t1\t1\t0.0\t0.0\t0.0\t0.0\t0\t\t9200=31.0\tInvented Universal\n",
+    )
+}
+
+#[test]
+fn distributions_returns_the_non_zero_ids_in_slot_order() {
+    let c = dist_content();
+    assert_eq!(
+        distributions_with(&c, 9_201, Some(FAC), &BY_FACTION, UNIVERSAL),
+        [11, 12, 13]
+    );
+}
+
+#[test]
+fn a_type_with_no_faction_values_falls_back_to_the_universal_list() {
+    let c = dist_content();
+    assert_eq!(
+        distributions_with(&c, 9_202, Some(FAC), &BY_FACTION, UNIVERSAL),
+        [31]
+    );
+    assert_eq!(
+        distributions_with(&c, 9_201, Some(9_999), &BY_FACTION, UNIVERSAL),
+        [21, 22],
+        "a faction with no map entry"
+    );
+    assert_eq!(
+        distributions_with(&c, 9_201, None, &BY_FACTION, UNIVERSAL),
+        [21, 22]
+    );
+    assert!(distributions_with(&c, 9_203, Some(FAC), &BY_FACTION, UNIVERSAL).is_empty());
+}
+
+#[test]
+fn no_typedata_table_means_no_distributions() {
+    // A content without the typedata table must not panic.
+    assert!(distributions(&Content::default(), 9_201, Some(FAC)).is_empty());
+}
+
+#[test]
+fn an_online_array_has_one_live_site_per_distribution_and_an_offline_one_none() {
+    let mut reg = world_with(dist_content());
+    let now = fuel_clock();
+    let tiers = |reg: &Registry, pirate: Option<i64>| {
+        online_site_tiers_with(
+            reg.deltas(),
+            table(reg.content()),
+            reg.content(),
+            pirate,
+            SYSTEM,
+            &BY_FACTION,
+            UNIVERSAL,
+        )
+    };
+    configure(
+        &mut reg,
+        HUB,
+        ALICE,
+        &[ITEM_A],
+        &[(9_201, true)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    assert_eq!(tiers(&reg, Some(FAC)), [("ga".to_owned(), 1, 3)]);
+    assert_eq!(
+        tiers(&reg, None),
+        [("ga".to_owned(), 1, 2)],
+        "universal list"
+    );
+    configure(
+        &mut reg,
+        HUB,
+        ALICE,
+        &[],
+        &[(9_201, false)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    assert!(tiers(&reg, Some(FAC)).is_empty());
+}
+
+#[test]
+fn a_type_without_attributes_keeps_the_row_count_and_one_with_other_families_gets_none() {
+    // No distribution attribute at all: cap `u32::MAX`, the row's own count.
+    let mut reg = world();
+    let now = fuel_clock();
+    configure(
+        &mut reg,
+        HUB,
+        ALICE,
+        &[ITEM_A],
+        &[(9_201, true)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    let got = online_site_tiers_with(
+        reg.deltas(),
+        table(reg.content()),
+        reg.content(),
+        Some(FAC),
+        SYSTEM,
+        &BY_FACTION,
+        UNIVERSAL,
+    );
+    assert_eq!(got, [("ga".to_owned(), 1, u32::MAX)]);
+    // A type that carries only another faction's family: no sites for this one.
+    let mut reg = world_with(dist_content());
+    configure(
+        &mut reg,
+        HUB,
+        ALICE,
+        &[ITEM_A],
+        &[(9_201, true)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    let other = [(FAC, 9_100), (9_501, 9_300)];
+    let got = online_site_tiers_with(
+        reg.deltas(),
+        table(reg.content()),
+        reg.content(),
+        Some(9_501),
+        SYSTEM,
+        &other,
+        9_900,
+    );
+    assert_eq!(got, [("ga".to_owned(), 1, 0)]);
+}
+
+/// The pirate lookup end to end: the system's region names the pirate, whose
+/// family sets the cap (three ids here); a region with no pirate has none.
+#[test]
+fn the_live_caps_follow_the_systems_region_pirate() {
+    let mut reg = world_with(dist_content());
+    let now = fuel_clock();
+    configure(
+        &mut reg,
+        HUB,
+        ALICE,
+        &[ITEM_A],
+        &[(9_201, true)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    let live = crate::population::live_upgrades_with(&reg, SYSTEM, &BY_FACTION, UNIVERSAL);
+    assert_eq!(live, [("ga".to_owned(), 1, 3)]);
+    // Without a pirate in the region the universal list (two ids) applies.
+    let mut reg2 = world_with({
+        let mut c = dist_content();
+        c.insert("npc_data", crate::npc_data::Table::fixture());
+        c
+    });
+    configure(
+        &mut reg2,
+        HUB,
+        ALICE,
+        &[ITEM_A],
+        &[(9_201, true)],
+        production_bay(),
+        now,
+    )
+    .unwrap();
+    let live = crate::population::live_upgrades_with(&reg2, SYSTEM, &BY_FACTION, UNIVERSAL);
+    assert_eq!(live, [("ga".to_owned(), 1, 2)]);
 }

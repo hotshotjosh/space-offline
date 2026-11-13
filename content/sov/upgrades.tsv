@@ -29,12 +29,12 @@ type_id	power	workforce	fuel_type	fuel_per_hour	startup	exclusive_group	power_ou
 81619	150	1800	81143	8	80	cyno_suppression	0	0	cyno_jammer	[A] cynosural suppression: a service upgrade, heavy on workforce; falsifier: owner balance ruling
 81621	110	1400	81143	6	60	logistics_network	0	0	jump_bridge	[A] advanced logistics network: a service upgrade, heavy on workforce; falsifier: owner balance ruling
 81623	200	2200	81143	10	120	supercap_facilities	0	0	-	[A] supercapital construction facilities: a service upgrade, heavy on workforce; falsifier: owner balance ruling
-82492	60	800	81143	4	25	threat	0	0	sites:3	[A] minor threat detection tier 3, one threat array at a time; falsifier: owner balance ruling
-82496	70	900	81143	4	30	threat	0	0	sites:4	[A] major threat detection tier 1, shares the threat group with the minor ones; falsifier: owner balance ruling
-82497	100	1300	81143	6	45	threat	0	0	sites:5	[A] major threat detection tier 2, shares the threat group with the minor ones; falsifier: owner balance ruling
-82498	140	1800	81143	8	70	threat	0	0	sites:6	[A] major threat detection tier 3, shares the threat group with the minor ones; falsifier: owner balance ruling
-82499	25	300	81143	2	10	threat	0	0	sites:1	[A] minor threat detection tier 1, one threat array at a time; falsifier: owner balance ruling
-82500	40	500	81143	3	15	threat	0	0	sites:2	[A] minor threat detection tier 2, one threat array at a time; falsifier: owner balance ruling
+82492	60	800	81143	4	25	threat	0	0	sites:3	[A] minor threat detection tier 3, one threat array at a time; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
+82496	70	900	81143	4	30	threat	0	0	sites:4	[A] major threat detection tier 1, shares the threat group with the minor ones; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
+82497	100	1300	81143	6	45	threat	0	0	sites:5	[A] major threat detection tier 2, shares the threat group with the minor ones; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
+82498	140	1800	81143	8	70	threat	0	0	sites:6	[A] major threat detection tier 3, shares the threat group with the minor ones; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
+82499	25	300	81143	2	10	threat	0	0	sites:1	[A] minor threat detection tier 1, one threat array at a time; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
+82500	40	500	81143	3	15	threat	0	0	sites:2	[A] minor threat detection tier 2, one threat array at a time; the tier is detection speed (client text: higher arrays detect new anomalies faster); falsifier: owner balance ruling
 82579	30	400	81144	2	10	ore_tritanium	0	0	-	[A] tritanium prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling
 82580	45	600	81144	3	15	ore_isogen	0	0	-	[A] isogen prospecting tier 2: modest power and workforce, burns ice; falsifier: owner balance ruling
 82581	30	400	81144	2	10	ore_isogen	0	0	-	[A] isogen prospecting tier 1: modest power and workforce, burns ice; falsifier: owner balance ruling

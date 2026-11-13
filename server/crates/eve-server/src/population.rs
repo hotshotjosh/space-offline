@@ -424,9 +424,11 @@ pub struct Inputs<'a> {
     /// its completion. Derived at read time from the stored completion, so
     /// a restart at another scale re-derives every pending refill.
     pub clock: crate::game_clock::GameClock,
-    /// SOV-UPG-2: whether the system's hub has the sov upgrade of this
-    /// exclusive group and tier Online; gates the `sovupg:` rows.
-    pub online: &'a dyn Fn(&str, u32) -> bool,
+    /// SOV-UPG-2/3: `None` when the system's hub does not have the sov upgrade of
+    /// this exclusive group and tier Online, else `Some(n)`: the upgrade keeps its
+    /// first `n` slots live (SOV-UPG-3: one per distribution id). Gates the
+    /// `sovupg:` rows.
+    pub online: &'a dyn Fn(&str, u32) -> Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -692,18 +694,19 @@ impl Prepared {
     /// pilots coming and going never renumber another slot. At most
     /// `escalation::FIRST_SLOT`.
     pub fn slots(&self, seed: u64, system: i64, pilots: usize) -> Vec<SlotRef> {
-        self.slots_with(seed, system, pilots, &|_, _| false)
+        self.slots_with(seed, system, pilots, &|_, _| None)
     }
 
     /// [`Prepared::slots`] where `online(group, tier)` says whether the system's
-    /// hub has that sov upgrade Online (SOV-UPG-2): a row of band
-    /// `sovupg:<group>:<tier>` has slots only then.
+    /// hub has that sov upgrade Online (SOV-UPG-2) and how many of its slots are
+    /// live (SOV-UPG-3): a row of band `sovupg:<group>:<tier>` has its slots
+    /// `k < n` only then.
     pub fn slots_with(
         &self,
         seed: u64,
         system: i64,
         pilots: usize,
-        online: &dyn Fn(&str, u32) -> bool,
+        online: &dyn Fn(&str, u32) -> Option<u32>,
     ) -> Vec<SlotRef> {
         let Some(sys) = self.systems.get(&system) else {
             return Vec::new();
@@ -760,10 +763,10 @@ impl Prepared {
             .enumerate()
             .filter_map(|(index, cands)| {
                 // One live tier per position: the group is exclusive.
-                let (row, k) = cands.into_iter().find(|(row, _)| {
+                let (row, k) = cands.into_iter().find(|(row, k)| {
                     self.upgrade
                         .get(row)
-                        .is_none_or(|(group, tier)| online(group, *tier))
+                        .is_none_or(|(group, tier)| online(group, *tier).is_some_and(|n| *k < n))
                 })?;
                 Some(SlotRef { row, k, index })
             })
@@ -1039,35 +1042,67 @@ fn make(c: &Content) -> Boxed {
     Box::new(Population::new(prep))
 }
 
-/// The system's slots with its hub's Online sov upgrades counted, at no pilots.
-pub fn slots_online(reg: &Registry, system: i64) -> Vec<SlotRef> {
-    let live = crate::sov_upgrade::online_site_tiers(
+/// The live cap of each of `system`'s Online sov upgrades (SOV-UPG-3), once per
+/// system: `(group, tier, cap)`. The cap is the number of distribution ids the
+/// upgrade names for the system's pirate; a type with no distribution attribute at
+/// all keeps the row's own count [A].
+fn live_upgrades(reg: &Registry, system: i64) -> Vec<(String, u32, u32)> {
+    use crate::sov_upgrade::{DIST_BY_FACTION, DIST_UNIVERSAL};
+    live_upgrades_with(reg, system, &DIST_BY_FACTION, DIST_UNIVERSAL)
+}
+
+/// [`live_upgrades`] with the attribute bases given (tests use invented ones).
+pub(crate) fn live_upgrades_with(
+    reg: &Registry,
+    system: i64,
+    by_faction: &[(i64, i64)],
+    universal: i64,
+) -> Vec<(String, u32, u32)> {
+    // The region is the catalogue's (`SystemRow.region_id`), the same source as
+    // `Prepared`'s universe region [I]: both come from the bundle's system rows.
+    let pirate = reg
+        .content()
+        .try_get::<crate::npc_data::Table>()
+        .and_then(|n| n.pirate(reg.celestials(), system));
+    crate::sov_upgrade::online_site_tiers_with(
         reg.deltas(),
         crate::sov_upgrade::table(reg.content()),
+        reg.content(),
+        pirate,
         system,
-    );
+        by_faction,
+        universal,
+    )
+}
+
+/// `Some(cap)` for the upgrade `(group, tier)` when it is Online in `live`.
+fn cap_of(live: &[(String, u32, u32)], group: &str, tier: u32) -> Option<u32> {
+    live.iter()
+        .find(|(g, t, _)| g == group && *t == tier)
+        .map(|(_, _, cap)| *cap)
+}
+
+/// The system's slots with its hub's Online sov upgrades counted, at no pilots.
+pub fn slots_online(reg: &Registry, system: i64) -> Vec<SlotRef> {
+    let live = live_upgrades(reg, system);
     reg.ext::<Population>()
         .prepared()
         .slots_with(reg.world().seed, system, 0, &|group, tier| {
-            live.iter().any(|(g, t)| g == group && *t == tier)
+            cap_of(&live, group, tier)
         })
 }
 
 /// [`Prepared::sites`] on the registry's world, at `now`.
 pub fn sites(reg: &Registry, system: i64, now: BlueTime) -> Resolved {
     // Once per system, not once per upgrade row.
-    let live = crate::sov_upgrade::online_site_tiers(
-        reg.deltas(),
-        crate::sov_upgrade::table(reg.content()),
-        system,
-    );
+    let live = live_upgrades(reg, system);
     let w = Inputs {
         seed: reg.world().seed,
         birth: reg.world().birth,
         celestials: reg.celestials(),
         deltas: reg.deltas().of(KIND),
         clock: crate::game_clock::of(reg),
-        online: &|group, tier| live.iter().any(|(g, t)| g == group && *t == tier),
+        online: &|group, tier| cap_of(&live, group, tier),
     };
     let pilots = reg.roster().in_system(system).len();
     reg.ext::<Population>().prep.sites(&w, system, pilots, now)
@@ -1430,7 +1465,7 @@ mod tests {
             celestials: cat,
             deltas,
             clock,
-            online: &|_, _| false,
+            online: &|_, _| None,
         };
         p.sites(&w, system, 0, now)
     }
@@ -2130,7 +2165,7 @@ mod tests {
                 celestials: &Catalogue::parse(""),
                 deltas: &Rows::new(),
                 clock: crate::game_clock::GameClock::REAL,
-                online: &|_, _| false,
+                online: &|_, _| None,
             },
             31_990_001,
             0,
@@ -2324,7 +2359,7 @@ mod tests {
                     celestials: &Catalogue::parse(""),
                     deltas: &Rows::new(),
                     clock: crate::game_clock::GameClock::REAL,
-                    online: &|_, _| false,
+                    online: &|_, _| None,
                 },
                 system,
                 0,
@@ -2367,7 +2402,7 @@ mod tests {
                 celestials: &Catalogue::parse(""),
                 deltas: &deltas,
                 clock: crate::game_clock::GameClock::REAL,
-                online: &|_, _| false,
+                online: &|_, _| None,
             },
             NULL_SYS,
             0,
@@ -2455,9 +2490,9 @@ mod tests {
         let text = format!(
             "{HEADER}\n\
              su_plain\tnull\t24\tanomaly\t1\t2\t600\t172800\tx\n\
-             su_t1\tsovupg:threat:1\t24\tanomaly\t1\t2\t600\t172800\tx\n\
+             su_t1\tsovupg:threat:1\t24\tanomaly\t1\t2\t900\t172800\tx\n\
              su_t2\tsovupg:threat:2\t24\tanomaly\t2\t2\t600\t172800\tx\n\
-             su_t3\tsovupg:threat:3\t24\tanomaly\t3\t2\t600\t172800\tx\n"
+             su_t3\tsovupg:threat:3\t24\tanomaly\t3\t2\t300\t172800\tx\n"
         );
         let (raw, _) = crate::authored::parse(&text, HEADER).expect("the header");
         let ups = raw
@@ -2479,7 +2514,11 @@ mod tests {
         )
     }
 
-    fn su_keys(p: &Prepared, system: i64, online: &dyn Fn(&str, u32) -> bool) -> Vec<String> {
+    fn su_keys(
+        p: &Prepared,
+        system: i64,
+        online: &dyn Fn(&str, u32) -> Option<u32>,
+    ) -> Vec<String> {
         p.slots_with(SEED, system, 0, online)
             .iter()
             .map(|s| p.rows()[s.row].key.clone())
@@ -2512,17 +2551,17 @@ mod tests {
     #[test]
     fn a_sovupg_row_has_slots_only_while_its_upgrade_is_online() {
         let p = su_prep();
-        assert_eq!(su_keys(&p, NULL_SYS, &|_, _| false), ["su_plain"]);
+        assert_eq!(su_keys(&p, NULL_SYS, &|_, _| None), ["su_plain"]);
         assert_eq!(
             p.slots(SEED, NULL_SYS, 0).len(),
             1,
             "no predicate, no upgrade rows"
         );
-        let t1 = |g: &str, t: u32| g == "threat" && t == 1;
+        let t1 = |g: &str, t: u32| (g == "threat" && t == 1).then_some(u32::MAX);
         assert_eq!(su_keys(&p, NULL_SYS, &t1), ["su_plain", "su_t1"]);
-        let t2 = |g: &str, t: u32| g == "threat" && t == 2;
+        let t2 = |g: &str, t: u32| (g == "threat" && t == 2).then_some(u32::MAX);
         assert_eq!(su_keys(&p, NULL_SYS, &t2), ["su_plain", "su_t2", "su_t2"]);
-        let other = |g: &str, t: u32| g == "other" && t == 1;
+        let other = |g: &str, t: u32| (g == "other" && t == 1).then_some(u32::MAX);
         assert_eq!(su_keys(&p, NULL_SYS, &other), ["su_plain"]);
     }
 
@@ -2531,14 +2570,14 @@ mod tests {
     #[test]
     fn a_floor_slot_keeps_its_index_across_an_upgrade_toggle() {
         let p = su_prep();
-        let numbered = |online: &dyn Fn(&str, u32) -> bool| -> Vec<(String, u32, usize)> {
+        let numbered = |online: &dyn Fn(&str, u32) -> Option<u32>| -> Vec<(String, u32, usize)> {
             p.slots_with(SEED, NULL_SYS, 12, online)
                 .iter()
                 .map(|s| (p.rows()[s.row].key.clone(), s.k, s.index))
                 .collect()
         };
-        let off = numbered(&|_, _| false);
-        let on = numbered(&|g, t| g == "threat" && t == 2);
+        let off = numbered(&|_, _| None);
+        let on = numbered(&|g, t| (g == "threat" && t == 2).then_some(u32::MAX));
         let floor_off = floor_for(12) as usize;
         assert!(off.len() >= floor_off, "the floor fills slots: {off:?}");
         assert!(on.len() > off.len(), "{off:?} {on:?}");
@@ -2554,20 +2593,24 @@ mod tests {
     #[test]
     fn an_exclusive_group_reserves_its_largest_tier_not_the_sum() {
         let p = su_prep();
-        let numbered = |pilots: usize, online: &dyn Fn(&str, u32) -> bool| {
+        let numbered = |pilots: usize, online: &dyn Fn(&str, u32) -> Option<u32>| {
             p.slots_with(SEED, NULL_SYS, pilots, online)
                 .iter()
                 .map(|s| (p.rows()[s.row].key.clone(), s.k, s.index))
                 .collect::<Vec<_>>()
         };
-        let off = numbered(40, &|_, _| false);
+        let off = numbered(40, &|_, _| None);
         let first_floor = off.iter().find(|s| s.1 > 0 && s.0 == "su_plain");
         assert_eq!(
             first_floor.map(|s| s.2),
             Some(1 + 3),
             "plain row, then the group's 3 reserved positions: {off:?}"
         );
-        let tier = |t: u32| numbered(40, &move |g, x| g == "threat" && x == t);
+        let tier = |t: u32| {
+            numbered(40, &move |g, x| {
+                (g == "threat" && x == t).then_some(u32::MAX)
+            })
+        };
         let (t1, t2, t3) = (tier(1), tier(2), tier(3));
         // A tier's sites sit at the start of the group's block, so a switch
         // moves none of the plain row's or the floor's sites.
@@ -2596,7 +2639,7 @@ mod tests {
     #[test]
     fn population_slots_stop_below_the_escalation_band() {
         let p = su_prep();
-        let all = |_: &str, _: u32| true;
+        let all = |_: &str, _: u32| Some(u32::MAX);
         for pilots in [0, 12, 80, 150, 300, 5000] {
             let slots = p.slots_with(SEED, NULL_SYS, pilots, &all);
             assert!(
@@ -2615,7 +2658,7 @@ mod tests {
     fn a_pochven_system_never_draws_a_sovupg_row() {
         let p = su_prep();
         assert!(
-            su_keys(&p, P1, &|_, _| true)
+            su_keys(&p, P1, &|_, _| Some(u32::MAX))
                 .iter()
                 .all(|k| !k.starts_with("su_"))
         );
@@ -2626,7 +2669,7 @@ mod tests {
     #[test]
     fn sites_grow_with_the_upgrade_and_not_without_it() {
         let p = su_prep();
-        let run = |online: &dyn Fn(&str, u32) -> bool| {
+        let run = |online: &dyn Fn(&str, u32) -> Option<u32>| {
             p.sites(
                 &Inputs {
                     seed: SEED,
@@ -2641,8 +2684,8 @@ mod tests {
                 birth(),
             )
         };
-        let off = run(&|_, _| false);
-        let on = run(&|g, t| g == "threat" && t == 2);
+        let off = run(&|_, _| None);
+        let on = run(&|g, t| (g == "threat" && t == 2).then_some(u32::MAX));
         assert_eq!(on.sites.len(), off.sites.len() + 2, "{off:?} {on:?}");
         let extra: Vec<_> = on
             .sites
@@ -2651,5 +2694,76 @@ mod tests {
             .collect();
         assert_eq!(extra.len(), 2);
         assert!(off.stale.is_empty() && on.stale.is_empty());
+    }
+
+    /// SOV-UPG-3: `Some(n)` keeps only the first `n` of a row's slots, and the
+    /// other slots keep their index whatever `n` is.
+    #[test]
+    fn an_upgrade_keeps_only_its_first_n_slots() {
+        let p = su_prep();
+        let with = |n: u32| {
+            p.slots_with(SEED, NULL_SYS, 12, &|g, t| {
+                (g == "threat" && t == 3).then_some(n)
+            })
+        };
+        let key = |p: &Prepared, s: &SlotRef| p.rows()[s.row].key.clone();
+        let count = |n: u32| with(n).iter().filter(|s| key(&p, s) == "su_t3").count();
+        assert_eq!(count(0), 0);
+        assert_eq!(count(1), 1);
+        assert_eq!(count(2), 2);
+        assert_eq!(count(3), 3);
+        assert_eq!(count(u32::MAX), 3, "never more than the row reserves");
+        let (two, three) = (with(2), with(3));
+        for s in &two {
+            assert!(three.contains(s), "{s:?} moved");
+        }
+    }
+
+    /// A cap names the live count (0 = none); a group or tier not Online is `None`.
+    #[test]
+    fn the_cap_helper_reads_the_live_count() {
+        let live = vec![("threat".to_owned(), 2, 0), ("threat".to_owned(), 3, 4)];
+        assert_eq!(cap_of(&live, "threat", 2), Some(0));
+        assert_eq!(cap_of(&live, "threat", 3), Some(4));
+        assert_eq!(cap_of(&live, "threat", 1), None);
+        assert_eq!(cap_of(&live, "other", 3), None);
+    }
+
+    /// The tier sets the speed: with every tier's slot completed at the same
+    /// time, the row with the shorter `respawn_s` refills first (invented
+    /// seconds 900 / 600 / 300 in `su_table`).
+    #[test]
+    fn a_higher_tier_row_refills_sooner() {
+        let p = su_prep();
+        let t0 = birth() + 5 * BLUE_PER_SECOND;
+        let state_at = |tier: u32, secs: i64| {
+            let key = format!("su_t{tier}");
+            let row = p.rows().iter().position(|r| r.key == key).unwrap();
+            let rows = done_row(&p, NULL_SYS, row, 0, t0);
+            let r = p.sites(
+                &Inputs {
+                    seed: SEED,
+                    birth: birth(),
+                    celestials: &Catalogue::parse(""),
+                    deltas: &rows,
+                    clock: crate::game_clock::GameClock::REAL,
+                    online: &|_, t| (t == tier).then_some(u32::MAX),
+                },
+                NULL_SYS,
+                0,
+                t0 + secs * BLUE_PER_SECOND,
+            );
+            assert!(r.stale.is_empty(), "{:?}", r.stale);
+            r.sites
+                .iter()
+                .find(|s| s.row == row && s.k == 0)
+                .map(|s| s.state)
+                .unwrap()
+        };
+        assert_eq!(state_at(3, 400), State::Live, "300 s has passed");
+        assert_eq!(state_at(2, 400), State::Done, "600 s has not");
+        assert_eq!(state_at(1, 700), State::Done, "900 s has not");
+        assert_eq!(state_at(2, 700), State::Live);
+        assert_eq!(state_at(1, 1000), State::Live);
     }
 }

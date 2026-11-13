@@ -32,11 +32,17 @@ table has no single upgrade above the system's power, so B cannot be "big" alone
 5. the hub's fuel record shows A's consumption as `burned_per_hour` (fails when
    burns are not set);
 6. `UninstallUpgrade((hub, typeB))` -> only A and the fillers are left;
-8. (SOV-UPG-2, #80) with A, a threat-detection upgrade (chosen by the site-distribution
-   attribute 1695 or its name, not by group 4768, which holds the Exploration Detector too), ONLINE, the Agency's
-   `GetCombatAnomalyInstances` lists more combat anomalies for the system than it did before
-   step 1 (fails when the upgrade changes nothing; the sites come from the `sovupg:` rows of
-   the population table, which the server's sov-upgrade gate opens);
+8. (SOV-UPG-3) with A, a threat-detection upgrade (chosen by the site-distribution
+   attribute 1695 or its name, not by group 4768, which holds the Exploration Detector too), ONLINE:
+   the client reads A's ten per-faction `attributeDistributionID{Faction}01..10` (1695 + 10*f + i,
+   six factions, `dogmaStaticMgr.GetTypeAttribute2`, the call `jumpBridgeContController.py:28`
+   uses) and counts the non-zero ones, `n_f` per faction [V dogma/const.py:317-376];
+   PRECONDITION every `n_f` is above zero; then the Agency's `GetCombatAnomalyInstances`
+   lists exactly some `n_f` more combat anomalies for the system than before step 1 (the
+   server draws by the system's pirate, so any faction's `n_f` is accepted; fails when the
+   upgrade changes nothing, or adds the old tier count); `/sov upgrade here clear`, and the
+   list returns to the step-1 count. Expected values come from the client's own data at run
+   time, nothing is hard-coded;
 7. no traceback from `sovereignty/upgrades/` or `ui/shared/sov/`.
 
 Assumptions, each with its falsifier ([A]):
@@ -1455,7 +1461,7 @@ def eoci_main(EOCI_NAME):
                 return getattr_safe(r, 'itemID')
         return None
 
-    ATTR_DISTRIBUTION_ANGEL01 = 1695   # attributeDistributionIDAngel01 (dogma/const.py:317-371)
+    ATTR_DISTRIBUTION_ANGEL01 = 1695   # attributeDistributionIDAngel01 (dogma/const.py:317-376)
 
     def is_threat_upgrade(type_id):
         """A threat-detection upgrade (SOV-UPG-2): the type carries a site-distribution
@@ -1480,6 +1486,26 @@ def eoci_main(EOCI_NAME):
             if k == system:
                 rows = v[k]
         return (len(rows) if isinstance(rows, (list, tuple)) else 0), shape(v)
+
+    DIST_FACTIONS = 6   # Angel, Blood, Guristas, Rogue Drone, Sansha, Serpentis [V dogma/const.py:317-376]
+    DIST_SLOTS = 10
+
+    def distribution_counts(type_id):
+        """`[n_f]`, the non-zero `attributeDistributionID{Faction}01..10` of the type for each
+        of the six factions, read in the client (None where unreadable)."""
+        loc = dogma_loc()
+        if loc is None:
+            return None
+        counts = []
+        for f in range(DIST_FACTIONS):
+            n = 0
+            for i in range(DIST_SLOTS):
+                ok, v = safe(lambda: loc.dogmaStaticMgr.GetTypeAttribute2(
+                    type_id, ATTR_DISTRIBUTION_ANGEL01 + DIST_SLOTS * f + i))
+                if ok and v:
+                    n += 1
+            counts.append(n)
+        return counts
 
     def eoci_body():
         mark = log_mark()
@@ -1761,18 +1787,39 @@ def eoci_main(EOCI_NAME):
         check('UninstallUpgrade removes B and leaves A',
               ok and left == base_want, '%s %s' % (text(left), text(err) if not ok else ''))
 
-        # 8. A is ONLINE and the site population runs: the Agency lists more
-        # combat anomalies here than before step 1 (the population re-reads a live
-        # system every minute, so wait for it).
+        # 8. (SOV-UPG-3) A is ONLINE: the Agency lists one more combat anomaly per
+        # distribution id A names, read from the client's own dogma data (the
+        # population re-reads a live system every minute, so wait for it).
+        counts = distribution_counts(a.type_id)
+        precondition('A names a distribution in every faction family (client dogma)',
+                     bool(counts) and all(n > 0 for n in counts), 'counts %s' % text(counts))
+        wanted = sorted(set(counts or []))
         after = {}
+        if not (counts and all(n > 0 for n in counts)):
+            gm('/sov upgrade here clear')
+            gm('/sov set here none')
+            return
 
         def grew():
             n, _why = anomaly_count(system)
             after['n'] = n
-            return n is not None and before_n is not None and n > before_n
+            return (n is not None and before_n is not None
+                    and (n - before_n) in wanted)
         grown, _w = wait_for(grew, timeout_ms=150000, step_ms=5000)
-        check('an Online anomaly-detection upgrade adds combat anomalies to the Agency list',
-              bool(grown), 'before %s after %s' % (text(before_n), text(after.get('n'))))
+        check('an Online threat array adds one combat anomaly per distribution it names',
+              bool(grown), 'before %s after %s expected a rise of one of %s'
+              % (text(before_n), text(after.get('n')), text(wanted)))
+
+        # 8c. clearing the upgrades takes the sites away again.
+        gm('/sov upgrade here clear')
+
+        def back():
+            n, _why = anomaly_count(system)
+            after['back'] = n
+            return n is not None and n == before_n
+        returned, _w = wait_for(back, timeout_ms=150000, step_ms=5000)
+        check('clearing the upgrades returns the Agency list to its step-1 count',
+              bool(returned), 'before %s now %s' % (text(before_n), text(after.get('back'))))
 
         gm('/sov set here none')
         # 7. no traceback from the upgrade code.

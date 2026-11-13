@@ -500,9 +500,103 @@ pub fn upgrade_online(d: &Deltas, t: &UpgradeTable, system: i64, want: Want) -> 
         })
 }
 
-/// Every `(exclusive group, tier)` a held hub in `system` has Online, computed
-/// once: [`upgrade_online`]'s [`Want::Site`] for all of them.
-pub fn online_site_tiers(d: &Deltas, t: &UpgradeTable, system: i64) -> Vec<(String, u32)> {
+/// `attributeDistributionID{Faction}01`, the first of ten per-faction slots, for the
+/// six pirate factions: Angel 500011, Blood Raiders 500012, Guristas 500010, Rogue
+/// Drones 500025, Sansha 500019, Serpentis 500020 [V] dogma/const.py:317-376,
+/// appConst.py:577-603.
+pub const DIST_BY_FACTION: [(i64, i64); 6] = [
+    (500011, 1695),
+    (500012, 1705),
+    (500010, 1715),
+    (500025, 1725),
+    (500019, 1735),
+    (500020, 1745),
+];
+/// `attributeDistributionID01`, the first of ten universal slots [V]
+/// dogma/const.py:307-316.
+pub const DIST_UNIVERSAL: i64 = 1755;
+/// Slots per attribute family [V] dogma/const.py:307-376.
+pub const DIST_SLOTS: i64 = 10;
+
+/// The non-zero values of the ten attributes from `base`, in slot order.
+fn distribution_slots(content: &Content, type_id: i64, base: i64) -> Vec<i64> {
+    let Some(td) = content.try_get::<crate::typedata::Installed>() else {
+        return Vec::new();
+    };
+    let Some(row) = td.table().get(type_id) else {
+        return Vec::new();
+    };
+    (0..DIST_SLOTS)
+        .filter_map(|i| row.attribute(base + i))
+        .map(|v| v as i64)
+        .filter(|v| *v != 0)
+        .collect()
+}
+
+/// [`distributions`] with the attribute bases given: `by_faction` maps a faction id
+/// to its family's first attribute id, `universal` is the family used when the faction
+/// has no map entry or the type has no value in its family.
+pub(crate) fn distributions_with(
+    content: &Content,
+    type_id: i64,
+    faction: Option<i64>,
+    by_faction: &[(i64, i64)],
+    universal: i64,
+) -> Vec<i64> {
+    let own = faction
+        .and_then(|f| by_faction.iter().find(|(id, _)| *id == f))
+        .map(|(_, base)| distribution_slots(content, type_id, *base))
+        .unwrap_or_default();
+    if own.is_empty() {
+        distribution_slots(content, type_id, universal)
+    } else {
+        own
+    }
+}
+
+/// The distribution ids an upgrade type names for `faction` (its ten per-faction
+/// attributes, non-zero, slot order), else its universal list. Empty without a bundle.
+/// [I] the per-faction family is chosen by the system's faction, as the hub's server does
+/// (`radius_dungeon_distribution/static_data_loader.py:64`, `get_distributions_for_faction`).
+pub fn distributions(content: &Content, type_id: i64, faction: Option<i64>) -> Vec<i64> {
+    distributions_with(content, type_id, faction, &DIST_BY_FACTION, DIST_UNIVERSAL)
+}
+
+/// Every `(exclusive group, tier, live cap)` a held hub in `system` has Online, computed
+/// once: [`upgrade_online`]'s [`Want::Site`] for all of them. The cap is how many sites
+/// the upgrade keeps live: one per distribution id it names for `pirate`. A type that names
+/// none for this faction but carries a distribution family (some other faction's, or the
+/// universal one) has cap 0, no sites; a type with no distribution attribute at all (or no
+/// bundle) has cap `u32::MAX`: the population row's own count [A] (falsifier: an owner
+/// wanting no sites without data).
+pub fn online_site_tiers(
+    d: &Deltas,
+    t: &UpgradeTable,
+    content: &Content,
+    pirate: Option<i64>,
+    system: i64,
+) -> Vec<(String, u32, u32)> {
+    online_site_tiers_with(
+        d,
+        t,
+        content,
+        pirate,
+        system,
+        &DIST_BY_FACTION,
+        DIST_UNIVERSAL,
+    )
+}
+
+/// [`online_site_tiers`] with the attribute bases given (see [`distributions_with`]).
+pub(crate) fn online_site_tiers_with(
+    d: &Deltas,
+    t: &UpgradeTable,
+    content: &Content,
+    pirate: Option<i64>,
+    system: i64,
+    by_faction: &[(i64, i64)],
+    universal: i64,
+) -> Vec<(String, u32, u32)> {
     let Some(h) = sov_hub::hub(d, system) else {
         return Vec::new();
     };
@@ -512,8 +606,20 @@ pub fn online_site_tiers(d: &Deltas, t: &UpgradeTable, system: i64) -> Vec<(Stri
     installed(d, h.hub_id)
         .into_iter()
         .filter(|i| i.state == Power::Online)
-        .filter_map(|i| t.get(i.type_id))
-        .filter_map(|r| Some((r.group.clone(), r.tier?)))
+        .filter_map(|i| Some((i.type_id, t.get(i.type_id)?)))
+        .filter_map(|(ty, r)| {
+            let named = distributions_with(content, ty, pirate, by_faction, universal).len() as u32;
+            let any = by_faction
+                .iter()
+                .map(|(_, base)| *base)
+                .chain([universal])
+                .any(|base| !distribution_slots(content, ty, base).is_empty());
+            let cap = match (named, any) {
+                (0, false) => u32::MAX,
+                (n, _) => n,
+            };
+            Some((r.group.clone(), r.tier?, cap))
+        })
         .collect()
 }
 

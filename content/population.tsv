@@ -78,13 +78,26 @@ pochven_ore_anom	pochven	27	anomaly	2	*	3600	259200	[A] Triglavian ore anomalies
 # `sites:<tier>` in content/sov/upgrades.tsv; `sov_upgrade::upgrade_online`). One tier
 # is live at a time (the group is exclusive). Appended, so no earlier slot moves.
 # [V] the six threat levels (minor and major, tiers 1-3): `sovereignty/upgrades/const.py:2624-2629`.
-# [A] that a level adds N combat anomalies from this table; falsifier: the client's
-# per-type site distribution attributes (`attributeDistributionID*`, dogma/const.py:317-371)
-# name which dungeons a threat array spawns and how many: the rows would then be driven by
-# those, not by the tier (follow-up issue draft in the SOV-UPG-2 r2 report).
-sovupg_threat_t1	sovupg:threat:1	24	anomaly	1	3	1200	259200	[A] a minor threat array adds one combat anomaly: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
-sovupg_threat_t2	sovupg:threat:2	24	anomaly	2	3,4	1200	259200	[A] a minor threat array adds two combat anomalies: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
-sovupg_threat_t3	sovupg:threat:3	24	anomaly	3	3,4	1200	259200	[A] a minor threat array adds three combat anomalies: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
-sovupg_threat_t4	sovupg:threat:4	24	anomaly	4	4,5	1200	259200	[A] a major threat array adds four combat anomalies: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
-sovupg_threat_t5	sovupg:threat:5	24	anomaly	5	4,5	1200	259200	[A] a major threat array adds five combat anomalies: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
-sovupg_threat_t6	sovupg:threat:6	24	anomaly	6	4,5	1200	259200	[A] a major threat array adds six combat anomalies: falsified by an owner balance ruling or by attributeDistributionID* naming other sites
+# [I] what a threat array spawns: the type's non-zero `attributeDistributionID*` of the
+# system's pirate faction (ten per faction, dogma/const.py:307-376; else its universal
+# list), read from the bundle at run time; the per-faction family is chosen by the system's
+# pirate as the hub's server does (static_data_loader.py:64). [A] one live site per
+# distribution id (falsifier: a TQ system with one array showing another steady number of
+# its anomalies). So `band` = the upgrade, the live count = the type's distribution count
+# (`sov_upgrade::distributions`), and `count` is only the reserve ceiling: 6, the old
+# reserve, so no deployed world's floor anomalies change site id [A] (falsifier: a build
+# whose arrays fill more than six slots; the live count is then clipped to 6). A type that
+# names a family but none for this faction has no sites; a type with no distribution
+# attribute at all uses the row's count [A] (falsifier: an owner wanting no sites without
+# data).
+# [V] tier = detection speed, not count: Minor arrays detect modest hostiles, Major the
+# toughest, and arrays 2 and 3 detect new anomalies faster (client localisation text).
+# [A] which dungeons: difficulty 1-3 for Minor, 4-5 for Major (falsifier: a TQ capture
+# naming other sites). [A] the respawn seconds, falling with the tier inside a strength
+# (falsifier: an owner balance ruling or TQ timing). Same-system placement only [A].
+sovupg_threat_t1	sovupg:threat:1	24	anomaly	6	1,2,3	2400	259200	[A] a minor threat array tier 1 keeps one site per distribution it names and respawns each in 2400 s (the slowest of its strength) (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
+sovupg_threat_t2	sovupg:threat:2	24	anomaly	6	1,2,3	1800	259200	[A] a minor threat array tier 2 keeps one site per distribution it names and respawns each in 1800 s, faster than the lower tier of its strength (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
+sovupg_threat_t3	sovupg:threat:3	24	anomaly	6	1,2,3	1200	259200	[A] a minor threat array tier 3 keeps one site per distribution it names and respawns each in 1200 s, faster than the lower tier of its strength (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
+sovupg_threat_t4	sovupg:threat:4	24	anomaly	6	4,5	3600	259200	[A] a major threat array tier 1 keeps one site per distribution it names and respawns each in 3600 s (the slowest of its strength) (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
+sovupg_threat_t5	sovupg:threat:5	24	anomaly	6	4,5	2700	259200	[A] a major threat array tier 2 keeps one site per distribution it names and respawns each in 2700 s, faster than the lower tier of its strength (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
+sovupg_threat_t6	sovupg:threat:6	24	anomaly	6	4,5	1800	259200	[A] a major threat array tier 3 keeps one site per distribution it names and respawns each in 1800 s, faster than the lower tier of its strength (client text: higher tiers detect new anomalies faster): falsified by an owner balance ruling or a TQ system showing other timings
