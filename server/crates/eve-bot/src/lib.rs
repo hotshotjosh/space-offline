@@ -98,6 +98,7 @@ pub mod driver;
 pub mod drone_use;
 pub mod earnings;
 pub mod effects;
+pub mod emblem_use;
 pub mod escort;
 pub mod escort_board;
 pub mod ess_guard;
