@@ -288,12 +288,13 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="253.8" y="189.0" width="4" height="4" class="built"/>
 <rect x="258.8" y="189.0" width="4" height="4" class="built"/>
 <rect x="263.8" y="189.0" width="4" height="4" class="built"/>
-<rect x="269.3" y="189.5" width="3" height="3" fill="none" class="part-o"/><rect x="268.8" y="191.0" width="4" height="2.0" class="part-f"/>
+<rect x="268.8" y="189.0" width="4" height="4" class="built"/>
 <rect x="274.3" y="189.5" width="3" height="3" fill="none" class="part-o"/><rect x="273.8" y="191.0" width="4" height="2.0" class="part-f"/>
-<rect x="279.3" y="189.5" width="3" height="3" fill="none" class="missing"/>
+<rect x="279.3" y="189.5" width="3" height="3" fill="none" class="part-o"/><rect x="278.8" y="191.0" width="4" height="2.0" class="part-f"/>
 <rect x="284.3" y="189.5" width="3" height="3" fill="none" class="missing"/>
 <rect x="289.3" y="189.5" width="3" height="3" fill="none" class="missing"/>
-<text x="297.8" y="194.0" class="s xs">10/19</text>
+<rect x="294.3" y="189.5" width="3" height="3" fill="none" class="missing"/>
+<text x="302.8" y="194.0" class="s xs">10/20</text>
 <text x="16.0" y="210.0" class="t">Factional warfare</text>
 <rect x="198.8" y="205.0" width="4" height="4" class="proved"/>
 <rect x="203.8" y="205.0" width="4" height="4" class="proved"/>

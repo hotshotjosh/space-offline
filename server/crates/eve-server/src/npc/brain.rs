@@ -1207,7 +1207,15 @@ pub(super) fn apply(
                 ball: id,
                 fraction: 1.0,
             };
-            let at = w.roster().by_ship(t).map(|p| p.motion.position);
+            // A besieged structure is no roster ship: its surface point.
+            let at = w
+                .roster()
+                .by_ship(t)
+                .map(|p| p.motion.position)
+                .or_else(|| {
+                    let me = w.roster().get(id)?.motion.position;
+                    crate::structure_combat::surface_point(w, me, t)
+                });
             (
                 vec![
                     Action::FollowBall {
@@ -1299,6 +1307,12 @@ pub(super) fn apply(
             return;
         }
         Intent::Scram { target, at } => {
+            // **[A]** a structure is immune to NPC ewar; falsified by a TQ
+            // structure that is scrammed, webbed or neuted by a rat.
+            if w.roster().by_ship(target).is_none() && crate::structure_combat::is_target(w, target)
+            {
+                return;
+            }
             if let Some(e) = super::behaviour_of(w, npc).scram
                 && crate::npc_ewar::pay(w, npc, &crate::npc_data::dogma::CAP_SCRAM, at)
             {
@@ -1307,6 +1321,12 @@ pub(super) fn apply(
             return;
         }
         Intent::Web { target, at } => {
+            // **[A]** a structure is immune to NPC ewar; falsified by a TQ
+            // structure that is scrammed, webbed or neuted by a rat.
+            if w.roster().by_ship(target).is_none() && crate::structure_combat::is_target(w, target)
+            {
+                return;
+            }
             if let Some(e) = super::behaviour_of(w, npc).web
                 && crate::npc_ewar::pay(w, npc, &crate::npc_data::dogma::CAP_WEB, at)
             {
@@ -1315,6 +1335,12 @@ pub(super) fn apply(
             return;
         }
         Intent::Neut { target, at } => {
+            // **[A]** a structure is immune to NPC ewar; falsified by a TQ
+            // structure that is scrammed, webbed or neuted by a rat.
+            if w.roster().by_ship(target).is_none() && crate::structure_combat::is_target(w, target)
+            {
+                return;
+            }
             if let Some(e) = Behaviour::of(w, k.type_id).neut
                 && crate::npc_ewar::pay(w, npc, &crate::npc_data::dogma::CAP_NEUT, at)
             {
@@ -1603,6 +1629,29 @@ fn rep_guid(guid: &str) -> Option<&'static str> {
 /// One volley through P2.2b's own path, so the victim's bars, rings and
 /// combat log move exactly as they do in PvP.
 fn shoot(w: &mut Registry, npc: &Npc, target: i64, at: BlueTime, now: BlueTime, mult: f64) {
+    // An Upwell structure under siege (`/entity siege`): the volley goes
+    // through the structure's own path, which takes the bars, tells the
+    // owner and tallies the killmail. **[A]** full volleys, no tracking:
+    // falsified by a TQ structure that is missed by a rat; the gun's
+    // disruptors do not apply to a fixed target.
+    if w.roster().by_ship(target).is_none() && crate::structure_combat::is_target(w, target) {
+        let volley = crate::drone_skills::scaled(npc.kind.volley(), mult);
+        crate::structure_combat::hit(
+            w,
+            crate::structure_combat::Volley {
+                shooter: npc.id,
+                attacker_ship: npc.id,
+                weapon_type: npc.kind.type_id,
+                target,
+                damage: volley,
+                hit_quality: crate::combat::HIT_QUALITY,
+                banked: false,
+                at,
+            },
+            now,
+        );
+        return;
+    }
     let Some(victim) = w.roster().by_ship(target).copied() else {
         return;
     };

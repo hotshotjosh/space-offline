@@ -23,7 +23,7 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/createitem` | `/createitem <type\|id> [quantity]` |
 | `/dynamicitem` | `/dynamicitem <source type> <mutator type> [roll 0..1]` |
 | `/setstanding` | `/setstanding <fromID> <me\|characterID> <value>` |
-| `/entity` | `/entity deploy <qty> <typeID>` |
+| `/entity` | `/entity deploy <qty> <typeID> \| /entity siege <structureID>\|off` |
 | `/npcclear` | `/npcclear [radius <km>\|system] [spawned\|rats\|wrecks\|all]` |
 | `/missioncomplete` | `/missioncomplete <agentID\|all>` |
 | `/settle` | `/settle [park <career> \| <game hours> [name] \| sweep]` |
@@ -62,6 +62,8 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/hurt` | `/hurt <armour %> <hull %> [me\|characterID\|shipID]` |
 | `/suicide` | `/suicide` |
 | `/cwatch` | `/cwatch [status\|clear] [characterID]` |
+
+`/entity siege` orders the NPCs you deployed with `/entity deploy` in your system to besiege an Upwell structure in that system (`off` lifts the order); belt rats and the law never obey. It says how many are beyond 20 km of the structure's surface, which they do not notice. The owner gets one under-attack notification naming the NPC's corporation. Any GM session may use it, as it may use `deploy`.
 
 Three more commands come from the modules of `eve-offline-server` (the server the
 tools start by default); the bare `eve-server` does not have them. They are not

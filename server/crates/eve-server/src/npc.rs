@@ -829,6 +829,9 @@ pub struct Npcs {
     /// The NPCs a GM's `/entity deploy` made, so `/npcclear` can take back
     /// only those. Not persisted, like `belts`.
     gm_spawned: std::collections::BTreeSet<i64>,
+    /// NPC id -> the Upwell structure a GM ordered it to besiege
+    /// (`/entity siege`). Not persisted.
+    sieges: BTreeMap<i64, i64>,
 }
 
 impl Npcs {
@@ -840,6 +843,23 @@ impl Npcs {
     /// Whether `/entity deploy` made this NPC (and it is still live).
     pub fn is_gm_spawned(&self, id: i64) -> bool {
         self.gm_spawned.contains(&id)
+    }
+
+    /// Order `npc` to besiege `structure`, or (`None`) lift the order.
+    pub fn set_siege(&mut self, npc: i64, structure: Option<i64>) {
+        match structure {
+            Some(s) => {
+                self.sieges.insert(npc, s);
+            }
+            None => {
+                self.sieges.remove(&npc);
+            }
+        }
+    }
+
+    /// The structure `npc` was ordered to besiege.
+    pub fn siege_of(&self, npc: i64) -> Option<i64> {
+        self.sieges.get(&npc).copied()
     }
 
     /// The belt spawns (`crate::belts::tick_belts` is the writer).
@@ -865,6 +885,7 @@ impl Npcs {
 
     pub fn remove(&mut self, id: i64) -> Option<Npc> {
         self.gm_spawned.remove(&id);
+        self.sieges.remove(&id);
         self.live.remove(&id)
     }
 
@@ -965,7 +986,8 @@ pub fn tick(w: &mut Registry, now: BlueTime) {
 
 /// **TICK-1: whether `system` has nobody to fight**: no pilot in space
 /// ([`crate::tick_budget::Class`] below hot) and nothing in the roster but
-/// NPCs, so every NPC's view has no candidates.
+/// NPCs, so every NPC's view has no candidates (a besieger's has its
+/// structure, which [`idle_alone`] answers for).
 fn nobody_here(w: &Registry, system: i64) -> bool {
     crate::tick_budget::class_of(w, system) != crate::tick_budget::Class::Hot
         && w.roster()
@@ -1002,7 +1024,9 @@ fn behaviour_of(w: &Registry, npc: &Npc) -> Behaviour {
 /// NPC and no intent, `reaim` returns (no target), and `view_of` only reads,
 /// so skipping the NPC changes nothing.
 fn idle_alone(w: &Registry, npc: &Npc, now: BlueTime) -> bool {
-    idle_with(npc, &behaviour_of(w, npc), now)
+    // A besieger has a structure to look at, whoever is or is not here; one
+    // whose structure is gone has nothing to look at and idles as any rat.
+    !siege_live(w, npc.id) && idle_with(npc, &behaviour_of(w, npc), now)
 }
 
 /// [`idle_alone`] over a given behaviour (the pure half, tested against
@@ -1083,6 +1107,61 @@ pub(crate) struct RunStats {
     pub fell_back: bool,
 }
 
+/// **A besieger's view** (`/entity siege`): an NPC (never the law) holding a
+/// siege order, whose structure is a fixed target in its system, sees the
+/// ships that have acted on it and that structure, and nobody else. The
+/// structure's candidate sits at its surface point nearest the NPC
+/// ([`crate::structure_combat::surface_point`]), so every range the brain
+/// reads is the surface gap. A besieger with no order, or whose structure is
+/// gone, unanchored or elsewhere, sees what it always saw.
+///
+/// **[A]** a besieger ignores bystanders until hit; falsified by a TQ
+/// structure attacker that turns on a passing ship. **[A]** it engages the
+/// structure from inside [`AGGRESSION_RANGE`] of its surface (the ordinary
+/// notice radius); falsified by a GM wish that besiegers come from further.
+fn with_siege(w: &Registry, npc: &Npc, me: [f64; 3], mut c: Vec<Candidate>) -> Vec<Candidate> {
+    if npc.law.is_some() {
+        return c;
+    }
+    let Some(sid) = w.npcs().siege_of(npc.id) else {
+        return c;
+    };
+    // An order outlives its structure as a passive one: the NPC keeps to
+    // the ships that act on it, as a besieger does, and does not turn back
+    // into an ordinary hostile rat.
+    c.retain(|x| x.aggressor);
+    let Some(t) = crate::structure_combat::fixed_target(w, sid) else {
+        return c;
+    };
+    if t.system != npc.solar_system_id {
+        return c;
+    }
+    // A ship that has acted on it comes first: with one in view the
+    // structure is left out, so a held lock on the structure is let go and
+    // `best` takes the top threat whatever the type's switch timer.
+    if !c.is_empty() {
+        return c;
+    }
+    c.push(Candidate {
+        ship_id: sid,
+        position: crate::structure_combat::surface_point_of(&t, me),
+        is_capsule: false,
+        locking_me: false,
+        lock_delay: blue(crate::targeting::acquisition_delay(w, npc.id, sid)),
+        signature: t.signature,
+        aggressor: false,
+        threat: 0.0,
+    });
+    c
+}
+
+/// Whether `npc` holds a siege order whose structure is still there.
+fn siege_live(w: &Registry, npc: i64) -> bool {
+    w.npcs()
+        .siege_of(npc)
+        .is_some_and(|s| crate::structure_combat::fixed_target(w, s).is_some())
+}
+
 /// One roster entry of a system, with what [`view_of`] asks about it that
 /// does not depend on which NPC is looking.
 struct SceneRow {
@@ -1122,7 +1201,7 @@ fn view_in(w: &Registry, scene: &[SceneRow], npc: &Npc, now: BlueTime) -> Option
     let lockers = w.locks().targeters_of(npc.id);
     let ledger = w.ext::<crate::npc_threat::Threat>();
     let mut by_type: std::collections::BTreeMap<i64, (BlueTime, f64)> = Default::default();
-    let candidates = scene
+    let candidates: Vec<Candidate> = scene
         .iter()
         .filter_map(|r| {
             let p = &r.p;
@@ -1166,6 +1245,7 @@ fn view_in(w: &Registry, scene: &[SceneRow], npc: &Npc, now: BlueTime) -> Option
             })
         })
         .collect();
+    let candidates = with_siege(w, npc, me, candidates);
     let lock_held = npc
         .target
         .is_some_and(|t| w.locks().targets_of(npc.id).contains(&t));
@@ -1216,6 +1296,10 @@ struct Plan {
     /// The threat ledger's revision when it was planned (NPC-THREAT): a write
     /// since makes the plan stale.
     threat_rev: u64,
+    /// Whether its siege structure was there when it was planned: a
+    /// structure that died in the apply loop changes what a besieger sees
+    /// without touching the roster.
+    siege_live: bool,
     /// The view, kept to compare with [`view_of`] in debug builds.
     #[cfg(debug_assertions)]
     view: Option<View>,
@@ -1239,6 +1323,7 @@ fn plan_one(
     Plan {
         input: *npc,
         threat_rev: w.ext::<crate::npc_threat::Threat>().revision(),
+        siege_live: siege_live(w, npc.id),
         reads_allies: view
             .as_ref()
             .is_some_and(|v| v.behaviour.assist.is_some() && npc.law.is_none()),
@@ -1354,6 +1439,7 @@ fn run_planned(
                 || cover_marks(w) != cover0
                 || w.ext::<crate::npc_threat::Threat>().revision() != p.threat_rev
                 || (bars_dirty && p.reads_allies)
+                || p.siege_live != siege_live(w, id)
         });
         let decided = match plan {
             Some(p) if !stale => {
@@ -1441,7 +1527,15 @@ fn reaim(w: &mut Registry, npc: &Npc) {
         return;
     }
     let Some(t) = npc.target else { return };
-    let Some(at) = w.roster().by_ship(t).map(|p| p.motion.position) else {
+    let Some(at) = w
+        .roster()
+        .by_ship(t)
+        .map(|p| p.motion.position)
+        .or_else(|| {
+            let me = w.roster().get(npc.id)?.motion.position;
+            crate::structure_combat::surface_point(w, me, t)
+        })
+    else {
         return;
     };
     if let Some(p) = w.roster_mut().get_mut(npc.id) {
@@ -1472,7 +1566,7 @@ fn view_at(w: &Registry, npc: &Npc, now: BlueTime, wall: f64) -> Option<View> {
     let lockers = w.locks().targeters_of(npc.id);
     let ledger = w.ext::<crate::npc_threat::Threat>();
     let mut by_type: std::collections::BTreeMap<i64, (BlueTime, f64)> = Default::default();
-    let candidates = w
+    let candidates: Vec<Candidate> = w
         .roster()
         .in_system(npc.solar_system_id)
         .into_iter()
@@ -1524,6 +1618,7 @@ fn view_at(w: &Registry, npc: &Npc, now: BlueTime, wall: f64) -> Option<View> {
             })
         })
         .collect();
+    let candidates = with_siege(w, npc, me, candidates);
     let lock_held = npc
         .target
         .is_some_and(|t| w.locks().targets_of(npc.id).contains(&t));
@@ -1918,8 +2013,14 @@ pub fn derive_owned(w: &Registry, type_id: i64, owner: i64) -> Option<&'static N
 /// The type is [`resolve`]'s: a bundle's entity with `--content` and
 /// `--typedata`, the invented [`FIXTURE_RAT`] with neither.
 pub fn entity_slash(w: &mut Registry, actor: Option<i64>, args: &[&str]) -> PyValue {
-    const USAGE: &str = "usage: /entity deploy <quantity> <typeID>";
+    const USAGE: &str =
+        "usage: /entity deploy <quantity> <typeID> | /entity siege <structureID>|off";
     let bstr = crate::pyutil::bstr;
+    if let [verb, what] = args
+        && verb.eq_ignore_ascii_case("siege")
+    {
+        return siege_slash(w, actor, what);
+    }
     let (qty, type_id) = match args {
         [verb, qty, type_id, ..] if verb.eq_ignore_ascii_case("deploy") => {
             match (qty.parse::<i64>(), type_id.parse::<i64>()) {
@@ -1971,6 +2072,61 @@ pub fn entity_slash(w: &mut Registry, actor: Option<i64>, args: &[&str]) -> PyVa
         kind.name,
         names.join(", ")
     ))
+}
+
+/// `/entity siege <structureID>|off`: order the GM-deployed NPCs in the
+/// caller's system to besiege an Upwell structure there, or lift the order.
+/// Only [`Npcs::is_gm_spawned`] NPCs take it; a belt rat, a site NPC and the
+/// law never do (ordinary rats do not attack structures).
+fn siege_slash(w: &mut Registry, actor: Option<i64>, what: &str) -> PyValue {
+    let bstr = crate::pyutil::bstr;
+    let Some(actor) = actor else {
+        return bstr("you must be in space");
+    };
+    let Some(sys) = w.roster().get(actor).map(|p| p.solar_system_id) else {
+        return bstr("you must be in space");
+    };
+    let target = if what.eq_ignore_ascii_case("off") {
+        None
+    } else {
+        let Ok(id) = what.parse::<i64>() else {
+            return bstr("usage: /entity siege <structureID>|off");
+        };
+        match crate::structure_combat::fixed_target(w, id) {
+            Some(t) if t.system == sys => Some(id),
+            _ => return bstr(&format!("no structure {id} in this system")),
+        }
+    };
+    let ids: Vec<i64> = w
+        .npcs()
+        .iter()
+        .filter(|n| n.solar_system_id == sys && n.law.is_none())
+        .filter(|n| w.npcs().is_gm_spawned(n.id))
+        .map(|n| n.id)
+        .collect();
+    // A besieger notices a structure only within AGGRESSION_RANGE of its
+    // surface; say how many of the ordered are further off.
+    let far = target.map_or(0, |t| {
+        ids.iter()
+            .filter(|id| {
+                w.roster()
+                    .get(**id)
+                    .and_then(|p| crate::structure_combat::surface_gap(w, p.motion.position, t))
+                    .is_some_and(|g| g > AGGRESSION_RANGE)
+            })
+            .count()
+    });
+    for id in &ids {
+        w.npcs_mut().set_siege(*id, target);
+    }
+    match target {
+        Some(t) => bstr(&format!(
+            "{} NPCs ordered to besiege {t}, {far} of them beyond {} km of its surface",
+            ids.len(),
+            AGGRESSION_RANGE / 1000.0
+        )),
+        None => bstr(&format!("{} NPCs released from their siege", ids.len())),
+    }
 }
 
 /// Whether a GM command that resets state may act for `actor`: a bot gets
@@ -2105,6 +2261,9 @@ pub fn npcclear_slash(
 mod par_tests;
 
 #[cfg(test)]
+mod siege_tests;
+
+#[cfg(test)]
 mod threat_tests;
 
 #[cfg(test)]
@@ -2120,7 +2279,7 @@ mod tests {
     pub(super) const BOB_SHIP: i64 = 100_000_002;
     const CAROL_SHIP: i64 = 100_000_003;
     const RIFTER: i64 = 587;
-    const SYSTEM: i64 = 30_000_001;
+    pub(super) const SYSTEM: i64 = 30_000_001;
 
     /// Alice, Bob and Carol in Rifters at the one station; `in_space` of
     /// them undocked into the system with their parks bound, every push

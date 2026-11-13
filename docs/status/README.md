@@ -56,6 +56,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Structure combat: *built-unproved*, structure_combat::hit takes turret (combat.rs UnitPlan::Structure), missile (missile.rs) and drone (drones.rs) volleys; crimewatch::aggression_on_structure and attack_refusal by the client's CanAttackFreely (crimewatchSvc.py:419-453); killmail::on_structure_volley; layers, damage limit, overflow, under-fire window [A]; fci_upwell_shoot steps 1-6 written, not run; drone engage range is measured to the structure's surface (drones.rs, #45)
 - [ ] Structure destruction: wreck, killmail with a corporation victim, docked pilots put out, 188 and 141 notices, locks dropped: *built-unproved*, structure_combat::destroy; killmail::on_kill_structure; notifications::on_structure_kill; fci_upwell_kill written (--with-second)
 - [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written; no 184 when no pilot fired (a GM /upwell damage), because charID None raises in the client formatter (#47)
+- [ ] GM-ordered NPCs besiege a structure: /entity siege <structureID>|off sends the GM-deployed NPCs in the system to shoot it, and the owner gets the 184 naming the NPC's corporation: *built-unproved*, npc.rs Npcs::sieges, with_siege (a besieger sees the ships that hit it and the structure), entity_slash siege; npc/brain.rs shoot routes a structure to structure_combat::hit, Follow and reaim steer at structure_combat::surface_point, Scram/Web/Neut skip a structure; npc/siege_tests.rs; fci_npc_siege written, not yet run; a besieger turns on a ship that shoots it, whatever its type; a besieger ignores bystanders until hit, fires full volleys with no tracking, engages from 20 km of the surface, and structures are immune to NPC ewar [A]; ordinary rats never attack structures. Follow-up of the NPC-shooter 184; an order outlives its structure as a passive one
 - [ ] Asset safety: *partial*, asset_safety.rs: one wrap per owner at unanchor, the Assets tab, delivery after the manual wait, the auto-move after the long wait, the fee (waits and fee [A] world settings); wormhole space keeps the harbour move on an unanchor, but a structure killed there or in Pochven drops its hangar into the wreck at the ship-death roll (built-unproved, unit-tested); the wrap sends its owner the 190 (built-unproved; fci_upwell_kill checks 6-7 are written, not yet run); fci_upwell_safety green (regress-w28a); a structure killed in known space wraps through evacuate
 - [ ] War headquarters: *missing*, no war HQ code
 
@@ -177,7 +178,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 9 | 2 | 0 | 0 | 0 |
 | Sovereignty | 4 | 9 | 1 | 1 | 0 |
-| Upwell structures | 10 | 4 | 2 | 3 | 0 |
+| Upwell structures | 10 | 5 | 2 | 3 | 0 |
 | Factional warfare | 3 | 1 | 1 | 2 | 0 |
 | Missions and exploration | 33 | 8 | 0 | 1 | 0 |
 | Tools and remote clients | 8 | 6 | 3 | 2 | 0 |
@@ -501,7 +502,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Upwell structures</b>: 10 of 19 proved, 9 open</summary>
+<details><summary><b>Upwell structures</b>: 10 of 20 proved, 10 open</summary>
 
 - [x] Structure browser and profiles: *client-proved*, fci_upwell_profiles W10
 - [x] Anchor, see, warp to, rename, decommission: *client-proved*, fci_upwell_anchor W10. Green in the rerun at head after wave 10
@@ -518,6 +519,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Structure combat: *built-unproved*, structure_combat::hit takes turret (combat.rs UnitPlan::Structure), missile (missile.rs) and drone (drones.rs) volleys; crimewatch::aggression_on_structure and attack_refusal by the client's CanAttackFreely (crimewatchSvc.py:419-453); killmail::on_structure_volley; layers, damage limit, overflow, under-fire window [A]; fci_upwell_shoot steps 1-6 written, not run; drone engage range is measured to the structure's surface (drones.rs, #45)
 - [ ] Structure destruction: wreck, killmail with a corporation victim, docked pilots put out, 188 and 141 notices, locks dropped: *built-unproved*, structure_combat::destroy; killmail::on_kill_structure; notifications::on_structure_kill; fci_upwell_kill written (--with-second)
 - [ ] Under-attack notification (184) with the shooter: *built-unproved*, structure_notify::under_attack; Fire::note_shooter; fci_upwell_timers step 5 written; no 184 when no pilot fired (a GM /upwell damage), because charID None raises in the client formatter (#47)
+- [ ] GM-ordered NPCs besiege a structure: /entity siege <structureID>|off sends the GM-deployed NPCs in the system to shoot it, and the owner gets the 184 naming the NPC's corporation: *built-unproved*, npc.rs Npcs::sieges, with_siege (a besieger sees the ships that hit it and the structure), entity_slash siege; npc/brain.rs shoot routes a structure to structure_combat::hit, Follow and reaim steer at structure_combat::surface_point, Scram/Web/Neut skip a structure; npc/siege_tests.rs; fci_npc_siege written, not yet run; a besieger turns on a ship that shoots it, whatever its type; a besieger ignores bystanders until hit, fires full volleys with no tracking, engages from 20 km of the surface, and structures are immune to NPC ewar [A]; ordinary rats never attack structures. Follow-up of the NPC-shooter 184; an order outlives its structure as a passive one
 - [ ] Asset safety: *partial*, asset_safety.rs: one wrap per owner at unanchor, the Assets tab, delivery after the manual wait, the auto-move after the long wait, the fee (waits and fee [A] world settings); wormhole space keeps the harbour move on an unanchor, but a structure killed there or in Pochven drops its hangar into the wreck at the ship-death roll (built-unproved, unit-tested); the wrap sends its owner the 190 (built-unproved; fci_upwell_kill checks 6-7 are written, not yet run); fci_upwell_safety green (regress-w28a); a structure killed in known space wraps through evacuate
 - [ ] War headquarters: *missing*, no war HQ code
 - [ ] POS (old starbases): *missing*, posMgr answers without towers (#204); anchoring, fuel, shields and moon cycles not built. Not planned

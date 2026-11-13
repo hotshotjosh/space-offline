@@ -184,6 +184,8 @@ fci_upwell_anchor --with-second -- --character Alice --character Bob
 fci_upwell_timers
 # str-combat-l1 + strshoot-46 (#44, #45, #46): a spawned Astrahus is locked from a Rifter in null sec, its bars read full then half after /upwell damage (steps 1-2); two autocannons empty the shield, it reinforces and then takes nothing, a Tristan's drones hurt it (steps 3-6); missiles are Rust-tested only; one client; written, not yet run
 fci_upwell_shoot -- --dev
+# npc-siege: three GM-deployed NPCs ordered with /entity siege shoot a shield-vulnerable Astrahus (shield below 1.0), the director gets a 184 that the client formats; one client; written, not yet run
+fci_npc_siege -- --dev
 # strdeath-48 (#48): a spawned Astrahus shot dead by a second corporation: the ball leaves and a wreck appears, a killmail with a null victim character, the docked owner put out, the 188 notification; two clients; written, not yet run
 fci_upwell_kill --with-second -- --dev --character Alice --character Bob
 # w27-safety (#49): a structure's hull into asset safety by the Assets route, the Asset Safety row, early delivery refused, the Move Timer step then delivery with the fee, the long wait moved by the tick

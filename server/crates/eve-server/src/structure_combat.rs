@@ -406,6 +406,30 @@ pub fn surface_gap(w: &Registry, from: [f64; 3], id: i64) -> Option<f64> {
     Some((crate::space_state::distance(from, t.position) - t.radius).max(0.0))
 }
 
+/// **[I]** the point of structure `id`'s surface nearest `from`: the centre
+/// moved toward `from` by the radius, so `distance(from, point)` is
+/// [`surface_gap`]. `from` itself when it is inside the radius. What an NPC
+/// steers at and measures its range to. Falsifier: a besieger that stops
+/// short of, or inside, the gap its guns reach. `None` if `id` is not a fixed
+/// target.
+pub fn surface_point(w: &Registry, from: [f64; 3], id: i64) -> Option<[f64; 3]> {
+    Some(surface_point_of(&fixed_target(w, id)?, from))
+}
+
+/// [`surface_point`] of a [`FixedTarget`] already read.
+pub fn surface_point_of(t: &FixedTarget, from: [f64; 3]) -> [f64; 3] {
+    let d = crate::space_state::distance(from, t.position);
+    if d <= t.radius {
+        return from;
+    }
+    let k = t.radius / d;
+    [
+        t.position[0] + (from[0] - t.position[0]) * k,
+        t.position[1] + (from[1] - t.position[1]) * k,
+        t.position[2] + (from[2] - t.position[2]) * k,
+    ]
+}
+
 /// What a structure keeps when its hull is gone, until death exists (#48):
 /// a fraction that is not zero, so it stays shootable and nothing divides by
 /// it.
