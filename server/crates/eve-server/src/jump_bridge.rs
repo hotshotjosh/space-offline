@@ -76,7 +76,8 @@
 //! and otherwise stores the rest. The window asks
 //! `GetJumpBridgeInfo` (`jumpBridge.py:131-134`), answered by [`info`] with
 //! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`, a
-//! new-style object ([`info_at`]).
+//! new-style object ([`info_at`]); mid-jump it is `None`
+//! ([`quiet_in_transit`]).
 //! The `jbcap` row (`structure_id -> charge_gj settled_at counter`) holds the
 //! settled charge; the counter is the slim's `component_jumpBridge` etag, so
 //! a change makes the bracket ask again (`jumpBridge.py:56-73`).
@@ -779,6 +780,40 @@ pub fn info(
         &gate,
         crate::pyutil::filetime_now(),
     ))
+}
+
+/// Whether `CallComponentFromClient(item, component, method)` from `actor`
+/// is a `GetJumpBridgeInfo` asked mid-jump about a gate in the system the
+/// jumper's session still names, which the router answers `None` before its
+/// in-space check (`space_component::call_in`).
+///
+/// **Why.** A jump takes the pilot out of the roster at once
+/// ([`jump_through`]) while the session, and the client's park with the gate's
+/// window, stay in the origin until the session change
+/// (`jump::Jumps::session_system`). The window refreshes in that gap
+/// (`get_jump_bridge_info` -> `jumpBridge.GetJumpBridgeInfo`, decompiled
+/// `jumpBridgeContController.py:104-106`) [V]; the
+/// router's `CustomNotify` then lands in its `ExceptionEater`
+/// (`jumpBridgeContController.py:75-82`) as `JumpBridgeContController:Failed
+/// to update ui` [V] (seen at both menu jumps of a client run). `None` is what
+/// the window reads as "no access" without a traceback
+/// (`jumpBridgeContController.py:88-89`) [V]. Only this read-only method and
+/// only a gate in the session's system: a `None` for another component's call
+/// is a failure of its own (see `space_component`), and any other gate keeps
+/// the refusal.
+pub fn quiet_in_transit(
+    reg: &Registry,
+    actor: i64,
+    item: i64,
+    component: &str,
+    method: &str,
+) -> bool {
+    component == COMPONENT
+        && method == "GetJumpBridgeInfo"
+        && reg
+            .jumps()
+            .session_system(actor)
+            .is_some_and(|s| locate(reg, item) == Some(s))
 }
 
 // -- the slim -----------------------------------------------------------------------

@@ -1153,6 +1153,30 @@ fn the_info_is_a_new_style_object_with_the_init_keys() {
 }
 
 #[test]
+fn only_the_info_of_a_pilot_mid_jump_is_quiet() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    let info = "GetJumpBridgeInfo";
+    assert!(!quiet_in_transit(&reg, ALICE, 11, COMPONENT, info));
+    jump(&mut reg, ALICE, 11).unwrap();
+    // Departing: the session still names the origin, where gate 11 is.
+    assert!(quiet_in_transit(&reg, ALICE, 11, COMPONENT, info));
+    // The partner gate is not in the session's system; an unknown item is nowhere.
+    assert!(!quiet_in_transit(&reg, ALICE, 22, COMPONENT, info));
+    assert!(!quiet_in_transit(&reg, ALICE, 9_999, COMPONENT, info));
+    assert!(!quiet_in_transit(
+        &reg,
+        ALICE,
+        11,
+        COMPONENT,
+        "SomethingElse"
+    ));
+    assert!(!quiet_in_transit(&reg, ALICE, 11, "otherComponent", info));
+    assert!(!quiet_in_transit(&reg, STRANGER, 11, COMPONENT, info));
+}
+
+#[test]
 fn a_jump_and_the_gm_command_change_the_etag() {
     let mut reg = world();
     pair(&mut reg);
