@@ -299,7 +299,7 @@ fn has_slot_rows(reg: &Registry, ship: i64) -> bool {
 /// `{backend_slot: cosmetic_type}`; empty for a ship that is not the actor's.
 pub fn enabled(reg: &Registry, actor: i64, ship: i64) -> PyValue {
     let mine = reg.store().get(ship).is_some_and(|i| i.owner_id == actor);
-    PyValue::Dict(if mine {
+    crate::pyutil::dict_kv(if mine {
         slots_of(reg, ship)
             .into_iter()
             .map(|(s, c)| (PyValue::Int(s), PyValue::Int(c)))
@@ -454,10 +454,11 @@ impl crate::notify::Push for Event {
 /// The two machoNet events to the pilot (after the answer), and a fresh slim
 /// of the ship to its grid when the pilot is flying it, so viewers redraw.
 fn announce(reg: &mut Registry, actor: i64, ship: i64, slot: i64, cosmetic: i64) {
-    let now: Vec<(PyValue, PyValue)> = slots_of(reg, ship)
-        .into_iter()
-        .map(|(s, c)| (PyValue::Int(s), PyValue::Int(c)))
-        .collect();
+    let now = crate::pyutil::dict_kv(
+        slots_of(reg, ship)
+            .into_iter()
+            .map(|(s, c)| (PyValue::Int(s), PyValue::Int(c))),
+    );
     reg.push_later(
         EVENT_DELAY,
         Event {
@@ -475,7 +476,7 @@ fn announce(reg: &mut Registry, actor: i64, ship: i64, slot: i64, cosmetic: i64)
         Event {
             to: actor,
             name: "OnShipCosmeticsChanged",
-            args: vec![PyValue::Int(ship), PyValue::Dict(now)],
+            args: vec![PyValue::Int(ship), now],
         },
     );
     if reg.roster().get(actor).is_some_and(|p| p.ship_id == ship) {
@@ -762,7 +763,7 @@ mod tests {
         );
         assert_eq!(
             enabled(&reg, ALICE, ship),
-            PyValue::Dict(vec![(PyValue::Int(0), PyValue::Int(1))])
+            crate::pyutil::dict_kv([(PyValue::Int(0), PyValue::Int(1))])
         );
         assert_eq!(enabled(&reg, BOB, ship), PyValue::Dict(vec![]), "not Bob's");
         // The two machoNet events follow, to the pilot only.
@@ -779,11 +780,44 @@ mod tests {
                 vec![PyValue::Int(ship), PyValue::Int(0), PyValue::Int(1)]
             )
         );
-        assert_eq!(told[1].0, "OnShipCosmeticsChanged");
+        assert_eq!(
+            told[1],
+            (
+                "OnShipCosmeticsChanged",
+                vec![
+                    PyValue::Int(ship),
+                    crate::pyutil::dict_kv([(PyValue::Int(0), PyValue::Int(1))])
+                ]
+            ),
+            "the event dict is {{slot: type}} too"
+        );
         clear(&mut reg, ALICE, ship, 0).unwrap();
         // [] and never a missing key: the client keeps the old logo on `None`.
         assert_eq!(cosmetics_items(&reg, ship), Some(PyValue::List(vec![])));
         assert_eq!(enabled(&reg, ALICE, ship), PyValue::Dict(vec![]));
+    }
+
+    /// The client reads `{backend_slot: cosmetic_type}` (`quasar.py:41-45`);
+    /// `PyValue::Dict` stores value-then-key, so a swapped pair answered
+    /// `{1: 64}` (fci_emblem).
+    #[test]
+    fn display_into_backend_slot_64_answers_slot_to_type() {
+        let mut reg = world();
+        let hull = hull_of(&reg, ALICE);
+        let ship = ship_of(&reg, ALICE);
+        grant(&mut reg, ALICE, hull, CORPORATION_LOGO);
+        display(&mut reg, ALICE, ship, 64, CORPORATION_LOGO).unwrap();
+        let got = enabled(&reg, ALICE, ship);
+        let kv: Vec<(i64, i64)> = got
+            .dict_as_kv()
+            .unwrap()
+            .into_iter()
+            .map(|(k, v)| match (k, v) {
+                (PyValue::Int(k), PyValue::Int(v)) => (*k, *v),
+                _ => panic!("not ints"),
+            })
+            .collect();
+        assert_eq!(kv, vec![(64, 1)]);
     }
 
     #[test]
@@ -906,7 +940,7 @@ mod tests {
         };
         assert_eq!(
             enabled(&w.read().unwrap(), ALICE, ship),
-            PyValue::Dict(vec![(PyValue::Int(3), PyValue::Int(1))])
+            crate::pyutil::dict_kv([(PyValue::Int(3), PyValue::Int(1))])
         );
         // Not Bob's ship, not the alliance licence, not a malformed body.
         for (body, who) in [

@@ -348,7 +348,7 @@ mod tests {
             };
             dispatch(reg, &req).unwrap()
         };
-        let want = PyValue::Dict(vec![(PyValue::Int(5), PyValue::Int(1))]);
+        let want = crate::pyutil::dict_kv([(PyValue::Int(5), PyValue::Int(1))]);
         assert_eq!(ask(&mut reg, owner, &[PyValue::Int(ship_id)]), want);
         assert_eq!(
             ask(&mut reg, owner + 1, &[PyValue::Int(ship_id)]),

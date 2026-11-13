@@ -223,8 +223,8 @@ Missions and exploration	Missions and which agents a standing opens	client-prove
 Missions and exploration	LP store	client-proved	fci_lpstore W10			
 Missions and exploration	Heraldry agents: deliver built items for Evermarks	client-proved	mission_pool.rs heraldry kind; mission.rs consume test; fci_em_heraldry green on 11-08 (ci-1108b)	#207		
 Market and wallet	Paragon store (Evermarks) sells ship emblem licences	built-unproved	tools/content_lp.py heraldry class; content/agents/emblem-prices.tsv (prices by hull group [A]); test_content_lp.py; the bundle sells every licence; client proof comes with EM-3's scenario	#207	3.5	
-Market and wallet	Ship emblem licences owned and shown on the hull	built-unproved	server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem written, not yet run	#207	3.5	
-Market and wallet	Another pilot sees your emblem	built-unproved	emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it, not yet run	#207	3.5	
+Market and wallet	Ship emblem licences owned and shown on the hull	built-unproved	server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem ran 27/28 on 11-13, GetEnabledCosmetics the one fail (slot and type swapped), now fixed; rerun pending	#207	3.5	
+Market and wallet	Another pilot sees your emblem	built-unproved	emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it; fci_emblem ran 27/28 on 11-13, the one fail now fixed, rerun pending	#207	3.5	
 Missions and exploration	Escalations	client-proved	fci_y_escal W10			
 Missions and exploration	Hacking	client-proved	fci_hacking_board W10, fci_hacking_can W10			
 Missions and exploration	Probing a signature and warping to it	client-proved	fci_probe_site W10			
