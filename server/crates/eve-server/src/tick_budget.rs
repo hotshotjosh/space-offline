@@ -195,6 +195,11 @@ pub const RULES: &[StageRule] = &[
         "returns at once while no beacon table is loaded and nobody was told; with a bundle every tick walks the occupied systems, a map lookup each, and reads a roster entry only for a character in a beacon system",
     ),
     r(
+        "sov_effect",
+        Rule::Every,
+        "returns at once while no claimed hub has an Online dbuff upgrade and nobody is held; else three revision reads, one map lookup per occupied system and one holds check per pilot in a generator system; the sov rows are re-read only when they change",
+    ),
+    r(
         "cloak",
         Rule::Every,
         "cloaked ships only; the table is empty (a fast return) while nobody is",

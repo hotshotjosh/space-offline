@@ -104,6 +104,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::dynamic_item::CACHE,
     // SYS-3: which pilots have been told their system's effect beacon.
     crate::system_effect::SLOT,
+    // SOV-UPG-4: which pilots a sov generator holds, and the claimed systems with one.
+    crate::sov_effect::SLOT,
     // BOOST: the soonest booster expiry, so the clock's stage is one comparison.
     crate::boosters::SLOT,
     // Lane shutdown: the /shutdown countdown and the server's stop handle.

@@ -137,6 +137,14 @@ pub const STAGES: &[Stage] = &[
         phase: 0,
         run: crate::system_effect::tick,
     },
+    // SOV-UPG-4: an Online generator's dbuffs held on every pilot in its
+    // system; before `dbuff` and `combat`, so a held buff is on the sheet first.
+    Stage {
+        name: "sov_effect",
+        every: 1,
+        phase: 0,
+        run: crate::sov_effect::tick,
+    },
     Stage {
         name: "tackle",
         every: 1,

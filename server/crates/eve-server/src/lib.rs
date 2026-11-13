@@ -333,6 +333,7 @@ pub mod bot_panel;
 pub mod compression;
 pub mod dev_mode;
 pub mod pilotless;
+pub mod sov_effect;
 pub mod space_component;
 pub mod space_state;
 pub mod stance;
