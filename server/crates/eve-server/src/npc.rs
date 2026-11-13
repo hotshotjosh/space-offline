@@ -3422,6 +3422,7 @@ mod idle_skip {
 
     fn assist() -> Assist {
         Assist {
+            effect_id: 990_002,
             armor: true,
             amount: 7.0,
             period: 10_000_000,

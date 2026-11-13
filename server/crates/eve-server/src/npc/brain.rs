@@ -147,6 +147,10 @@ pub struct Behaviour {
 /// A remote repairer, in the brain's units (K-RATAI).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Assist {
+    /// The repairing effect's typedata id ([`crate::npc_data::RemoteRep::effect_id`]),
+    /// resolved with the rest of the behaviour from the type's profile
+    /// ([`Behaviour::of`]); the beam's guid is looked up from it.
+    pub effect_id: i64,
     pub armor: bool,
     pub amount: f64,
     /// The cycle in blue ticks, never zero.
@@ -202,6 +206,7 @@ impl Behaviour {
                 .remote_rep
                 .filter(|r| r.amount > 0.0 && ticks(r.period_ms) > 0 && r.range > 0.0)
                 .map(|r| Assist {
+                    effect_id: r.effect_id,
                     armor: r.armor,
                     amount: r.amount,
                     period: ticks(r.period_ms),
@@ -462,6 +467,10 @@ pub enum Intent {
         ally: i64,
         armor: bool,
         amount: f64,
+        /// The repairing effect's id and the cycle, from the behaviour's
+        /// [`Assist`]: the beam needs no profile lookup.
+        effect_id: i64,
+        period: BlueTime,
     },
     /// The repair beam to `ally` ends (PV-6, #228): the repairs stopped, went
     /// to someone else, or a cycle did not run.
@@ -717,6 +726,8 @@ fn assist(n: &mut Npc, view: &View, out: &mut Vec<Intent>) {
             ally,
             armor: a.armor,
             amount: a.amount,
+            effect_id: a.effect_id,
+            period: a.period,
         });
     }
 }
@@ -1315,6 +1326,8 @@ pub(super) fn apply(
             ally,
             armor,
             amount,
+            effect_id,
+            period,
         } => {
             let effects: &[i64] = if armor {
                 &crate::npc_data::dogma::CAP_ASSIST_ARMOR
@@ -1323,7 +1336,7 @@ pub(super) fn apply(
             };
             if crate::npc_ewar::pay(w, npc, effects, now) {
                 crate::combat::self_repair(w, ally, armor, amount, now);
-                assist_fx(w, npc, ally, now);
+                assist_fx(w, npc, effect_id, period, ally, now);
             }
             return;
         }
@@ -1466,33 +1479,26 @@ pub(super) fn gun_fx(
 /// departed NPC's ball removal ends its activations on the client
 /// (`DoBallRemove` -> `RemoveAllBallActivations`, `fxSequencer.py:521-522` [V]).
 ///
-/// Resolved from the loaded tables: the type's remote repairer
-/// ([`crate::npc_data::RemoteRep::effect_id`]), its typedata guid, and the
-/// cycle in milliseconds. A type with no such guid sends nothing.
-fn assist_fx(w: &mut Registry, npc: &Npc, ally: i64, now: BlueTime) {
-    let (Some(td), Some(nd)) = (
-        w.content().try_get::<crate::typedata::Installed>(),
-        w.content().try_get::<crate::npc_data::Table>(),
-    ) else {
+/// Resolved from the stored effect id ([`Assist::effect_id`]) and its typedata
+/// guid; the cycle in milliseconds is the stored period. A type with no such
+/// guid sends nothing.
+fn assist_fx(
+    w: &mut Registry,
+    npc: &Npc,
+    effect_id: i64,
+    period: BlueTime,
+    ally: i64,
+    now: BlueTime,
+) {
+    let Some(td) = w.content().try_get::<crate::typedata::Installed>() else {
         return;
     };
-    let Some(rep) = nd
-        .profile(td.table(), npc.kind.type_id)
-        .and_then(|p| p.remote_rep)
-    else {
+    let Some(guid) = td.table().effect(effect_id).and_then(|e| rep_guid(&e.guid)) else {
         return;
     };
-    let Some(guid) = td
-        .table()
-        .effect(rep.effect_id)
-        .and_then(|e| rep_guid(&e.guid))
-    else {
-        return;
-    };
-    let period_ms = rep.period_ms as i64;
-    let until = now
-        .saturating_add(ticks(rep.period_ms))
-        .saturating_add(ASSIST_BEAM_SLACK);
+    // Whole ms, as the old `period_ms as i64`.
+    let period_ms = period / BLUE_PER_MS;
+    let until = now.saturating_add(period).saturating_add(ASSIST_BEAM_SLACK);
     let Some(live) = w.npcs_mut().get_mut(npc.id) else {
         return;
     };
@@ -2289,6 +2295,37 @@ type\t990300001\t99111\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t10\t114=2.0;475=1000.0
                 pr.delay_chance
             )
         );
+        // The remote repairer's numbers, effect id included, come from the profile.
+        let rr = crate::npc_data::RemoteRep {
+            effect_id: 990_003,
+            armor: true,
+            amount: 11.0,
+            period_ms: 4_000.0,
+            chance: 0.5,
+            threshold: 0.6,
+            range: 9_000.0,
+            max_targets: 2,
+        };
+        let with_rr = crate::npc_data::Profile {
+            remote_rep: Some(rr),
+            ..p
+        };
+        let a = Behaviour::from_profile(&with_rr)
+            .assist
+            .expect("a remote repairer");
+        assert_eq!(
+            a,
+            Assist {
+                effect_id: 990_003,
+                armor: true,
+                amount: 11.0,
+                period: 4_000 * ms,
+                chance: 0.5,
+                threshold: 0.6,
+                range: 9_000.0,
+                max_targets: 2,
+            }
+        );
         let off = crate::npc_data::Profile {
             target_switch: false,
             self_rep: None,
@@ -2608,6 +2645,7 @@ type\t990310001\t99111\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t2192\t482=40.0;55=4000
         format!(
             "\
 effect\t6741\t1\t0\t51\t990001\t0\t0\t0\tfixtureRemoteRep\t{guid}\t0
+effect\t990002\t1\t0\t51\t990001\t0\t0\t0\tfixtureStoredRep\teffects.FixtureRepStored\t0
 type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=400000.0;990001={cost};2491=6000.0;2492=18000.0;84=55.0\tFixture Repairer
 "
         )
@@ -2637,11 +2675,18 @@ type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=4000
 
     /// One assist cycle of `repairer` on `ally` at `now`.
     fn cycle_at(reg: &mut Registry, repairer: i64, ally: i64, now: BlueTime) {
+        cycle_with(reg, repairer, ally, 6741, now); // the fixture rows' effect
+    }
+
+    /// [`cycle_at`] with the effect id the intent carries.
+    fn cycle_with(reg: &mut Registry, repairer: i64, ally: i64, effect_id: i64, now: BlueTime) {
         let me = *reg.npcs().get(repairer).expect("live");
         let assist = Intent::Assist {
             ally,
             armor: true,
             amount: 5.0,
+            effect_id,
+            period: 6_000 * BLUE_PER_MS,
         };
         apply(reg, &me, assist, now, &mut Vec::new());
     }
@@ -2699,6 +2744,20 @@ type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=4000
         // An effect with no guid draws nothing.
         let (_, _, fx) = assist_cycles("", 1);
         assert!(fx.is_empty(), "{fx:?}");
+    }
+
+    /// The cycle uses the effect id the intent carries and does not read the
+    /// profile: the type's profile says 6741 (guid `FixtureRepBeam`), the intent
+    /// says 990002 (guid `FixtureRepStored`), and the beam names the intent's.
+    #[test]
+    fn the_cycle_uses_the_stored_effect_id_not_the_profile() {
+        use eve_marshal::PyValue::Bytes;
+        let (mut reg, repairer, ally) = repairer_world("effects.FixtureRepBeam", 5.0);
+        let now = crate::pyutil::filetime_now();
+        cycle_with(&mut reg, repairer, ally, 990_002, now);
+        let fx = fx_pushed(&mut reg);
+        assert_eq!(fx.len(), 1, "{fx:?}");
+        assert_eq!(fx[0].1[5], Bytes(b"effects.FixtureRepStored".to_vec()));
     }
 
     #[test]
@@ -3351,6 +3410,7 @@ type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=4000
     fn assist_behaviour(armor: bool, max_targets: usize, chance: f64) -> Behaviour {
         Behaviour {
             assist: Some(Assist {
+                effect_id: 990_002,
                 armor,
                 amount: 7.0,
                 period: ASSIST_PERIOD,
@@ -3405,7 +3465,9 @@ type\t990300003\t99112\t11\t0\t1\t1.0\t0.0\t1.0\t1.0\t10\t6741\t482=40.0;55=4000
         assert!(out.contains(&Intent::Assist {
             ally: 2,
             armor: true,
-            amount: 7.0
+            amount: 7.0,
+            effect_id: 990_002,
+            period: ASSIST_PERIOD,
         }));
         // A shield repairer looks at the shield, and a hull with none is
         // never repaired by it.
