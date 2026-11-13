@@ -1322,16 +1322,16 @@ mod tests {
         );
         use crate::notify::Push;
         let silo = by_id(reg.deltas(), SK).unwrap().silo;
-        let adds_silo = |p: &Box<dyn Push>| matches!(p.grid(), crate::grid::GridRole::Spawns { adds, .. } if adds.contains(&silo));
+        let adds_silo = |p: &dyn Push| matches!(p.grid(), crate::grid::GridRole::Spawns { adds, .. } if adds.contains(&silo));
         let pending = reg.take_pending_raw();
         assert!(
-            !pending.iter().any(|(_, p)| adds_silo(p)),
+            !pending.iter().any(|(_, p)| adds_silo(p.as_ref())),
             "nothing waits for somebody's call"
         );
         let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(60));
         assert!(
             due.iter()
-                .any(|p| adds_silo(p) && p.audience().is_some_and(|t| t.contains(&ALICE))),
+                .any(|p| adds_silo(p.as_ref()) && p.audience().is_some_and(|t| t.contains(&ALICE))),
             "the clock sends the silo's ball to the pilot"
         );
     }

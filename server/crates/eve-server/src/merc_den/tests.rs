@@ -1365,12 +1365,13 @@ fn a_den_removed_on_the_clock_is_scheduled_not_pushed() {
         .expect("destroyed");
     tick(&mut reg, std::time::Instant::now(), 0);
     assert!(by_id(reg.deltas(), id).is_none(), "the row is gone");
-    let removes = |p: &Box<dyn Push>| matches!(p.grid(), crate::grid::GridRole::Removes(ids) if ids.contains(&id));
+    let removes =
+        |p: &dyn Push| matches!(p.grid(), crate::grid::GridRole::Removes(ids) if ids.contains(&id));
     let pending = reg.take_pending_raw();
     assert!(
         pending
             .iter()
-            .all(|(_, p)| p.to_push().0 != "OnMyMercenaryDenRemoved" && !removes(p)),
+            .all(|(_, p)| p.to_push().0 != "OnMyMercenaryDenRemoved" && !removes(p.as_ref())),
         "nothing waits for somebody's call"
     );
     let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(60));
@@ -1379,7 +1380,10 @@ fn a_den_removed_on_the_clock_is_scheduled_not_pushed() {
         .find(|p| p.to_push().0 == "OnMyMercenaryDenRemoved")
         .expect("the clock sends it");
     assert!(told.audience().is_some_and(|t| t.contains(&ALICE)));
-    let gone = due.iter().find(|p| removes(p)).expect("the ball goes too");
+    let gone = due
+        .iter()
+        .find(|p| removes(p.as_ref()))
+        .expect("the ball goes too");
     assert!(gone.audience().is_some_and(|t| t.contains(&ALICE)));
 }
 
