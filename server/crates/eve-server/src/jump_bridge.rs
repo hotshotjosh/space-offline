@@ -492,7 +492,7 @@ pub fn charge_of(reg: &Registry, gate: &Structure, now: i64) -> (f64, i64) {
     let (c0, t0, counter) =
         cap_row(reg.deltas(), gate.id).unwrap_or((0.0, anchored_at(gate).unwrap_or(now), 0));
     let wall = now.saturating_sub(t0).max(0);
-    let game = crate::game_clock::of(reg).elapsed(wall);
+    let game = wall.saturating_mul(i64::from(crate::game_clock::of(reg).scale()));
     (
         charge_at(cap, recharge, c0, t0, t0.saturating_add(game)),
         counter,
