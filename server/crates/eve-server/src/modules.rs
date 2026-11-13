@@ -141,11 +141,17 @@ pub struct Effect {
     pub warp_safe: Option<bool>,
 }
 
-/// A fitted module's value for `attribute` from its mutaplasmid roll (#71):
+/// A fitted module's value for `attribute` from the mutated item's own
+/// attribute set (#71: the source's rows, the result's, then the rolls):
 /// `None` for a module that is not a mutated item. The dynamic type's row
 /// holds none of the rolled values, so a reader that falls back to the type
 /// asks here first.
-pub(crate) fn rolled(w: &Registry, module_id: i64, type_id: i64, attribute: i64) -> Option<f64> {
+pub(crate) fn own_attribute(
+    w: &Registry,
+    module_id: i64,
+    type_id: i64,
+    attribute: i64,
+) -> Option<f64> {
     crate::dynamic_item::overrides_of(w, module_id, type_id).and_then(|o| o.get(attribute))
 }
 
@@ -164,7 +170,7 @@ fn repeat_allowed(disallow: Option<f64>, repeat: i64) -> i64 {
 /// Activation` when it is a mutated item (#71), else its type's.
 fn repeat_of(w: &Registry, module_id: i64, t: &ModuleType, repeat: i64) -> i64 {
     repeat_allowed(
-        rolled(w, module_id, t.type_id, ATTR_DISALLOW_REPEATING)
+        own_attribute(w, module_id, t.type_id, ATTR_DISALLOW_REPEATING)
             .or_else(|| t.attribute(ATTR_DISALLOW_REPEATING)),
         repeat,
     )
@@ -1737,6 +1743,7 @@ fn spool_pair(w: &Registry, r: &Running) -> (f64, f64) {
         sheet
             .as_ref()
             .and_then(|s| s.module(r.module_id, id))
+            .or_else(|| own_attribute(w, r.module_id, r.type_id, id))
             .or_else(|| t.as_ref().and_then(|t| t.attribute(id)))
             .unwrap_or(default)
     };
@@ -2323,8 +2330,7 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
                     // A cycle's worth, not one round: a gun that takes two
                     // and has one left cannot fire and must stop, not cycle
                     // on throwing nothing.
-                    let rate = t
-                        .attribute(attr::CHARGE_RATE)
+                    let rate = charge_rate_of(w, r.module_id, &t)
                         .map_or(1, |x| (x.round() as i64).max(1));
                     loaded(w.store(), r.ship_id, m.flag_id).is_some_and(|c| c.quantity >= rate)
                 })
@@ -3131,8 +3137,16 @@ pub(crate) fn energy_error(w: &Registry, type_id: i64, need: f64, got: f64) -> S
     ServiceError::Raise(eve_proto::user_error("NotEnoughEnergy", d))
 }
 
+/// `chargeRate` of a fitted module: its own attribute set's when it is a
+/// mutated item, else its type's.
+fn charge_rate_of(w: &Registry, module_id: i64, t: &ModuleType) -> Option<f64> {
+    own_attribute(w, module_id, t.type_id, attr::CHARGE_RATE)
+        .or_else(|| t.attribute(attr::CHARGE_RATE))
+}
+
 /// A fitted module's attribute `a`: the dogma sheet's modified value when it
-/// is not zero, else the type's own, else the module row's.
+/// is not zero, else a mutated item's own, else the type's own, else the
+/// module row's.
 pub(crate) fn module_attr(
     w: &Registry,
     ship_id: i64,
@@ -3142,6 +3156,7 @@ pub(crate) fn module_attr(
 ) -> Option<f64> {
     crate::dogma::module_attribute(w, ship_id, module_id, a)
         .filter(|v| *v != 0.0)
+        .or_else(|| own_attribute(w, module_id, type_id, a))
         .or_else(|| crate::typedata::attribute_in(w.content(), type_id, a))
         .or_else(|| find_in(w.content(), type_id).and_then(|t| t.attribute(a)))
 }
@@ -3564,7 +3579,7 @@ fn duration_ms(w: &Registry, ship_id: i64, module_id: i64, t: &ModuleType) -> i6
     t.effect
         .and_then(|e| {
             crate::dogma::module_attribute(w, ship_id, module_id, e.duration_attribute)
-                .or_else(|| rolled(w, module_id, t.type_id, e.duration_attribute))
+                .or_else(|| own_attribute(w, module_id, t.type_id, e.duration_attribute))
         })
         .map_or_else(|| t.duration_ms(), |ms| ms.round() as i64)
 }
@@ -3573,7 +3588,7 @@ fn duration_ms(w: &Registry, ship_id: i64, module_id: i64, t: &ModuleType) -> i6
 /// High Speed Maneuvering, ...) when there is a sheet.
 fn capacitor_need(w: &Registry, ship_id: i64, module_id: i64, type_id: i64) -> f64 {
     crate::dogma::module_attribute(w, ship_id, module_id, attr::CAPACITOR_NEED)
-        .or_else(|| rolled(w, module_id, type_id, attr::CAPACITOR_NEED))
+        .or_else(|| own_attribute(w, module_id, type_id, attr::CAPACITOR_NEED))
         .or_else(|| find_in(w.content(), type_id).map(|t| t.capacitor_need()))
         .unwrap_or(0.0)
 }
@@ -3615,11 +3630,11 @@ fn budget(
         let (cpu, power) = sheet.load(&inputs, Some(module_id));
         let need_cpu = sheet
             .module(module_id, attr::CPU)
-            .or_else(|| rolled(w, module_id, type_id, attr::CPU))
+            .or_else(|| own_attribute(w, module_id, type_id, attr::CPU))
             .unwrap_or(t.cpu());
         let need_power = sheet
             .module(module_id, attr::POWER)
-            .or_else(|| rolled(w, module_id, type_id, attr::POWER))
+            .or_else(|| own_attribute(w, module_id, type_id, attr::POWER))
             .unwrap_or(t.power());
         return refuse_over(
             type_id,
@@ -3640,12 +3655,13 @@ fn budget(
             && m.is_online(i.item_id)
     }) {
         if let Some(o) = find_in(w.content(), i.type_id) {
-            cpu += rolled(w, i.item_id, i.type_id, attr::CPU).unwrap_or_else(|| o.cpu());
-            power += rolled(w, i.item_id, i.type_id, attr::POWER).unwrap_or_else(|| o.power());
+            cpu += own_attribute(w, i.item_id, i.type_id, attr::CPU).unwrap_or_else(|| o.cpu());
+            power +=
+                own_attribute(w, i.item_id, i.type_id, attr::POWER).unwrap_or_else(|| o.power());
         }
     }
-    let need_cpu = rolled(w, module_id, type_id, attr::CPU).unwrap_or_else(|| t.cpu());
-    let need_power = rolled(w, module_id, type_id, attr::POWER).unwrap_or_else(|| t.power());
+    let need_cpu = own_attribute(w, module_id, type_id, attr::CPU).unwrap_or_else(|| t.cpu());
+    let need_power = own_attribute(w, module_id, type_id, attr::POWER).unwrap_or_else(|| t.power());
     refuse_over(
         type_id,
         (cpu, need_cpu, h.cpu_output),
@@ -4338,9 +4354,7 @@ fn fire_rounds(
     // `chargeRate`, rounds per cycle [V]. A gun that takes charges and does
     // not name a rate is a crystal user (the laser): **[A]** a crystal is
     // not used up -- it degrades, which is not modelled.
-    let rate = t
-        .attribute(attr::CHARGE_RATE)
-        .map_or(0, |r| r.round() as i64);
+    let rate = charge_rate_of(w, module_id, &t).map_or(0, |r| r.round() as i64);
     let Some(charge) = loaded(w.store(), ship_id, item.flag_id).cloned() else {
         return if ancillary {
             Ok(Fire {
@@ -4520,7 +4534,7 @@ pub fn load_ammo(
 /// A fitted module's `reloadTime` (1795), milliseconds: its roll when it is a
 /// mutated item (#71), else its type's.
 fn reload_ms_of(w: &Registry, module_id: i64, module_type_id: i64) -> i64 {
-    rolled(w, module_id, module_type_id, attr::RELOAD_TIME)
+    own_attribute(w, module_id, module_type_id, attr::RELOAD_TIME)
         .or_else(|| {
             find_in(w.content(), module_type_id).and_then(|t| t.attribute(attr::RELOAD_TIME))
         })

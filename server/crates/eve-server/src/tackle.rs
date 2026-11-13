@@ -155,7 +155,7 @@ impl Data for Live {
         // 12569, §1.2); without a sheet, a mutated module's own roll (#71),
         // then the type's own value [A] (§2).
         crate::dogma::module_attribute(w, r.ship_id, r.module_id, attribute_id)
-            .or_else(|| crate::modules::rolled(w, r.module_id, r.type_id, attribute_id))
+            .or_else(|| crate::modules::own_attribute(w, r.module_id, r.type_id, attribute_id))
             .or_else(|| {
                 crate::modules::find_in(w.content(), r.type_id)
                     .and_then(|t| t.attribute(attribute_id))

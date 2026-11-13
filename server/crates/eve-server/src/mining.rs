@@ -149,7 +149,7 @@ pub struct Take {
 /// (a drone).
 fn reach(w: &Registry, ship_id: i64, module_id: i64, type_id: i64) -> f64 {
     crate::dogma::module_attribute(w, ship_id, module_id, 54)
-        .or_else(|| modules::rolled(w, module_id, type_id, 54))
+        .or_else(|| modules::own_attribute(w, module_id, type_id, 54))
         .or_else(|| modules::find_in(w.content(), type_id).and_then(|t| t.attribute(54)))
         .unwrap_or(0.0)
 }
@@ -168,8 +168,10 @@ impl Take {
         }
     }
 
-    /// A mutated drone's rolled set (#224); an attribute the set does not
-    /// name reads 0, as [`Take::of_type`] does for a type without it.
+    /// A mutated item's attribute set (#224). An attribute the set does not
+    /// name reads the table's default (a missing crit or waste attribute is
+    /// the dogma default, where [`Take::of_type`] reads 0); the set holds the
+    /// source's whole row, so only a source that lacks one differs.
     fn of_set(content: &crate::content::Content, o: &crate::dogma::Overrides) -> Take {
         let t = crate::typedata::installed_in(content);
         let a = |id| o.get(id).unwrap_or_else(|| t.table().default_value(id));

@@ -333,7 +333,7 @@ fn tractor_seconds(w: &Registry, module_id: i64, type_id: i64) -> f64 {
     };
     let ms = t
         .effect
-        .and_then(|e| modules::rolled(w, module_id, type_id, e.duration_attribute))
+        .and_then(|e| modules::own_attribute(w, module_id, type_id, e.duration_attribute))
         .map_or_else(|| t.duration_ms() as f64, f64::round);
     ms / 1000.0
 }
@@ -408,7 +408,7 @@ fn module_value(
 ) -> Option<f64> {
     crate::dogma::module_attribute(w, ship_id, module_id, attribute)
         .filter(|v| *v != 0.0)
-        .or_else(|| modules::rolled(w, module_id, type_id, attribute))
+        .or_else(|| modules::own_attribute(w, module_id, type_id, attribute))
         .or_else(|| crate::typedata::attribute_in(w.content(), type_id, attribute))
         .or_else(|| modules::find_in(w.content(), type_id).and_then(|t| t.attribute(attribute)))
 }

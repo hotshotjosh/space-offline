@@ -136,3 +136,51 @@ fn the_no_sheet_online_check_reads_the_roll() {
     reg.modules_mut().set_online(ITEM, false);
     assert!(budget(&reg, 9_999, 603, ITEM + 1, 377).is_ok());
 }
+
+/// The no-sheet type fallbacks of `module_attr`, `spool_pair` and
+/// `chargeRate` read the mutated item's own set first.
+#[test]
+fn a_mutated_modules_other_no_sheet_reads_are_its_roll() {
+    use crate::pochven::spool::{ATTR_MAX, ATTR_PER_CYCLE};
+    const MAX_GROUP_ACTIVE: i64 = 763;
+    let reg = registry(
+        RESULT,
+        None,
+        &[
+            (MAX_GROUP_ACTIVE, 2.0),
+            (ATTR_PER_CYCLE, 2.0),
+            (ATTR_MAX, 5.0),
+            (attr::CHARGE_RATE, 2.0),
+        ],
+        &[
+            MAX_GROUP_ACTIVE,
+            ATTR_PER_CYCLE,
+            ATTR_MAX,
+            attr::CHARGE_RATE,
+        ],
+    );
+    assert_eq!(
+        module_attr(&reg, 0, ITEM, RESULT, MAX_GROUP_ACTIVE),
+        Some(2.0 * FACTOR)
+    );
+    let t = ModuleType {
+        type_id: RESULT,
+        attributes: &[],
+        ..module(483)
+    };
+    assert_eq!(charge_rate_of(&reg, ITEM, &t), Some(2.0 * FACTOR));
+    let r = Running {
+        character_id: 0,
+        ship_id: 0,
+        module_id: ITEM,
+        type_id: RESULT,
+        effect: t.effect.expect("an effect"),
+        target_id: None,
+        started: 0,
+        period: 1,
+        repeat: 1,
+        cycles: 1,
+        stop_at: None,
+    };
+    assert_eq!(spool_pair(&reg, &r), (2.0 * FACTOR, 5.0 * FACTOR));
+}

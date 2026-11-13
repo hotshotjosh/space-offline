@@ -1288,7 +1288,7 @@ fn reconcile_ship(w: &mut Registry, ship: i64, now: BlueTime, d: &dyn Data) {
 /// when it is a mutated item (#71), else its type's.
 fn turret_base(w: &Registry, ship: i64, module: i64, type_id: i64, attribute: i64) -> Option<f64> {
     crate::dogma::module_attribute(w, ship, module, attribute)
-        .or_else(|| crate::modules::rolled(w, module, type_id, attribute))
+        .or_else(|| crate::modules::own_attribute(w, module, type_id, attribute))
         .or_else(|| crate::typedata::attribute_in(w.content(), type_id, attribute))
         .or_else(|| {
             crate::modules::find_in(w.content(), type_id).and_then(|t| t.attribute(attribute))
