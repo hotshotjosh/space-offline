@@ -1741,12 +1741,19 @@ def eoci_main(EOCI_NAME):
                      park is not None)
         if park is None:
             return
-        silo, waited = wait_for(lambda: silo_slims(park_in(system) or park), timeout_ms=STEP_WAIT_MS, step_ms=2000)
+        def silo_now():
+            p = park_in(system)
+            return silo_slims(p) if p is not None else []
+
+        silo, waited = wait_for(silo_now, timeout_ms=STEP_WAIT_MS, step_ms=2000)
         precondition("a silo ball stands in B's park (A opened a window)", bool(silo),
                      '%d silo slim(s) after %s ms' % (len(silo or []), text(waited)))
         if not silo:
             return
-        park = park_in(system) or park
+        park = park_in(system)
+        if park is None:
+            precondition("B's ballpark is still the claimed system's", False, 'park changed')
+            return
         silo_id = silo[0][0]
         sky_id = slim_flag(park, silo_id, 'parentID')
         link = link_of(park, silo_id)
@@ -1786,7 +1793,7 @@ def eoci_main(EOCI_NAME):
         precondition('the client has linkWithShip.InitiateLink', InitiateLink is not None)
         if InitiateLink is None:
             return
-        ok, v = try_call(InitiateLink, mich, silo_id)
+        ok, v = try_call(InitiateLink, get_michelle(), silo_id)
         say('InitiateLink: %s %s' % (text(ok), text(v)[:160]))
         shipid = getattr_safe(builtin('session'), 'shipid')
 
