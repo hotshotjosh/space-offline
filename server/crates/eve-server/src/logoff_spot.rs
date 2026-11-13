@@ -53,6 +53,23 @@ pub fn get(w: &Registry, c: i64) -> Option<Spot> {
     .then_some(spot)
 }
 
+/// Whether `c`'s ship is in a void system while his row names a system
+/// outside the void bands: the row is a run's origin (an origin is never
+/// void, `stranded_pod` relies on the same), and nothing may replace or clear
+/// it before the pilot is sent home.
+pub fn holds_origin(w: &Registry, c: i64) -> bool {
+    let in_void = w
+        .roster()
+        .get(c)
+        .is_some_and(|p| crate::celestial::VOID_SYSTEMS.contains(&p.solar_system_id));
+    in_void
+        && w.deltas()
+            .of(KIND)
+            .get(&key(c))
+            .and_then(|r| parse(r))
+            .is_some_and(|s| !crate::celestial::VOID_SYSTEMS.contains(&s.system))
+}
+
 /// Write down where `c`'s ship is now. **No roster entry means clear**: a
 /// held ship killed in the hold has no place to come back to.
 pub fn record(w: &mut Registry, c: i64) {
@@ -66,13 +83,9 @@ pub fn record(w: &mut Registry, c: i64) {
         clear(w, c);
         return;
     };
-    // #243: a pilot in a void system with a row already is a rescue pilot
-    // (`abyss::rescue`, the row is the run's origin) or a pod waiting out its
-    // delay (the row is the pod's). Either row is the one to keep; a void row
-    // for the real hull would lose the origin.
-    if crate::celestial::VOID_SYSTEMS.contains(&p.solar_system_id)
-        && w.deltas().of(KIND).contains_key(&key(c))
-    {
+    // #243: a rescue pilot (`abyss::rescue`) in a void system holds the run's
+    // origin as his row; a void row for the real hull would lose it.
+    if holds_origin(w, c) {
         return;
     }
     let [x, y, z] = p.motion.position;

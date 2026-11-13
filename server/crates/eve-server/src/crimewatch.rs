@@ -1470,7 +1470,9 @@ pub fn reclaim(w: &mut Registry, character_id: i64) -> bool {
         cw.rejoining.insert(character_id);
         // The ship never left: a rejoin, not a restore. (An abyssal run's
         // origin row is not a restore either; it is the way home.)
-        if !crate::abyss::in_run(w, character_id) {
+        if !crate::abyss::in_run(w, character_id)
+            && !crate::logoff_spot::holds_origin(w, character_id)
+        {
             crate::logoff_spot::clear(w, character_id);
         }
     }
@@ -1522,7 +1524,7 @@ pub fn release_holds(w: &mut Registry, now: BlueTime) {
                 "[crimewatch] character {c}: hold dropped, the pilot has a session again; the ship stays"
             );
             w.combat_mut().crimewatch_mut().abyss_noted.remove(&c);
-            if !crate::abyss::in_run(w, c) {
+            if !crate::abyss::in_run(w, c) && !crate::logoff_spot::holds_origin(w, c) {
                 crate::logoff_spot::clear(w, c);
             }
             continue;
@@ -1544,7 +1546,8 @@ pub fn release_holds(w: &mut Registry, now: BlueTime) {
         }
         w.combat_mut().crimewatch_mut().abyss_noted.remove(&c);
         crate::outln!("[crimewatch] character {c}: log-off hold over, ship leaves space");
-        // Where it is now is where the pilot comes back (no roster entry,
+        // Where it is now is where the pilot comes back, except a void
+        // system's origin row, which `record` keeps (no roster entry,
         // a killed ship, clears the row). A warp still running settles here.
         crate::logoff_spot::record(w, c);
         if let Some(ship) = w.character(c).map(|ch| ch.ship_id) {
@@ -2754,10 +2757,8 @@ mod tests {
         assert_eq!((spot.system, spot.position), (AWAY, [4.0, 5.0, 6.0]));
     }
 
-    /// A rescue pilot (origin row, ship parked in a void system) whose hold
-    /// ends: the row is the origin still, and so after a restart.
-    #[test]
-    fn a_rescue_pilot_released_in_a_void_system_keeps_the_origin_row() {
+    /// A rescue pilot: origin row, ship parked in a void system.
+    fn rescue_pilot() -> (Registry, crate::logoff_spot::Spot) {
         let mut reg = place_both(HOME, Some(two_systems()));
         let void = crate::celestial::VOID_SYSTEMS.start + 1;
         reg.roster_mut().leave(ALICE);
@@ -2774,15 +2775,72 @@ mod tests {
             position: [4.0, 5.0, 6.0],
         };
         crate::logoff_spot::set(&mut reg, ALICE, origin);
+        (reg, origin)
+    }
+
+    fn row_system(reg: &Registry) -> Option<String> {
+        reg.deltas()
+            .of(crate::logoff_spot::KIND)
+            .get(&vec![ALICE.to_string()])
+            .and_then(|r| r.get(1).cloned())
+    }
+
+    /// A rescue pilot whose hold ends: the row is the origin still, and so
+    /// after a restart.
+    #[test]
+    fn a_rescue_pilot_released_in_a_void_system_keeps_the_origin_row() {
+        let (mut reg, origin) = rescue_pilot();
         let _ = logged_off(&mut reg, ALICE, T0);
         tick(&mut reg, T0 + LOGOFF_MINIMUM);
         assert!(reg.roster().get(ALICE).is_none(), "released");
+        assert_eq!(row_system(&reg), Some(AWAY.to_string()));
         assert_eq!(crate::logoff_spot::get(&reg, ALICE), Some(origin));
         let snap = reg.to_snapshot();
         let mut fresh = place_both(HOME, Some(two_systems()));
         fresh.roster_mut().leave(ALICE);
         fresh.apply_snapshot(snap);
         assert_eq!(crate::logoff_spot::take(&mut fresh, ALICE), Some(origin));
+    }
+
+    #[test]
+    fn a_rescue_pilot_who_reconnects_in_the_hold_keeps_the_origin_row() {
+        let (mut reg, _) = rescue_pilot();
+        let _ = logged_off(&mut reg, ALICE, T0);
+        assert!(reclaim(&mut reg, ALICE));
+        assert_eq!(row_system(&reg), Some(AWAY.to_string()));
+    }
+
+    #[test]
+    fn a_rescue_pilot_with_a_session_at_the_release_keeps_the_origin_row() {
+        let (mut reg, _) = rescue_pilot();
+        let _ = logged_off(&mut reg, ALICE, T0);
+        reg.session_opened(crate::session_table::SessionEntry {
+            client_id: 10_000_000_001,
+            session_id: 10_000_000_001,
+            user_id: 1,
+            character_id: None,
+        });
+        reg.session_selected_character(10_000_000_001, ALICE);
+        tick(&mut reg, T0 + LOGOFF_MINIMUM);
+        assert_eq!(row_system(&reg), Some(AWAY.to_string()));
+    }
+
+    /// A void row (no origin) is rewritten at the release, as anywhere.
+    #[test]
+    fn a_void_row_is_not_an_origin_and_moves_with_the_ship() {
+        let (mut reg, _) = rescue_pilot();
+        let void = crate::celestial::VOID_SYSTEMS.start + 1;
+        crate::logoff_spot::clear(&mut reg, ALICE);
+        let _ = logged_off(&mut reg, ALICE, T0);
+        assert_eq!(row_system(&reg), Some(void.to_string()));
+        reg.roster_mut()
+            .get_mut(ALICE)
+            .expect("held")
+            .motion
+            .position = [9.0, 0.0, 0.0];
+        tick(&mut reg, T0 + LOGOFF_MINIMUM);
+        let row = reg.deltas().of(crate::logoff_spot::KIND)[&vec![ALICE.to_string()]].clone();
+        assert_eq!(row[2], "9");
     }
 
     #[test]
