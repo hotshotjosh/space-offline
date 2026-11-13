@@ -35,6 +35,9 @@ pub const STRUCTURES_REINFORCEMENT_CHANGED: i64 = 209;
 pub const TYPE_CORPORATION: i64 = 2;
 /// `const.typeAlliance` **[V]**.
 pub const TYPE_ALLIANCE: i64 = 16159;
+/// `const.typeFaction` **[V]** (`inventorycommon/const.py:1502`): the link type
+/// the 184 formatter uses when the aggressor's alliance id is a faction.
+pub const TYPE_FACTION: i64 = 30;
 
 /// `('showinfo', typeID, id)`, the link tuple the formatters build.
 pub fn show_info(type_id: i64, id: i64) -> Value {
@@ -151,17 +154,33 @@ pub fn lost_layer(reg: &mut Registry, s: &Structure, to: State, now: i64) {
 /// 184 `StructureUnderAttack.MakeData` **[V]** (`structures.py:152-171`): the
 /// bars as percentages (`100 * fraction`, Real), the aggressor's `charID`,
 /// `corpName`, `corpLinkData` ('showinfo', 2, corp), `allianceID` and, when
-/// it is set, `allianceName` and `allianceLinkData` ('showinfo', 16159, id).
+/// it is set, `allianceName` and `allianceLinkData` ('showinfo', 16159, id), or
+/// ('showinfo', 30, id) when the id is an NPC faction.
 /// `shooter` is the roster key of the last volley
 /// ([`crate::structure_combat::Fire::take_last_shooter`]); damage nobody
-/// fired (a GM command) sends no 184 at all **[V]**: a `charID` of None makes
-/// the client's formatter raise (`_GetByMessageID ... int() NoneType`, the
-/// 2026-11-10 client-CI shoot run's `client.log:34670`), so there is nothing
-/// to send for a volley with no pilot behind it.
+/// fired (a GM command) sends no 184 **[V]**: a `charID` of None makes the
+/// client's formatter raise (`_GetByMessageID ... int() NoneType`, the
+/// 2026-11-10 client-CI shoot run's `client.log:34670`). An NPC's volley sends
+/// one with its owner corp as `charID` **[A1]** and its faction as
+/// `allianceID` **[A2]**.
+///
+/// **[A1]** TQ's `charID` for an NPC aggressor is the NPC's owner corp.
+/// Falsifier: a TQ 184 for an NPC attack. The label half is settled **[V]**:
+/// the body label reads `cfg.eveowners.Get(charID)` and links with that
+/// owner's own type, so a corp id renders as the corp's name and link
+/// (`localization/propertyHandlers/characterPropertyHandler.py`).
+///
+/// **[A2]** The NPC corp's faction is the aggressor alliance. Falsifier: a TQ
+/// 184 whose `allianceID` is None for a rat attack.
 pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) -> bool {
     let (sh, ar, hu) = s.damage.unwrap_or((1.0, 1.0, 1.0));
     let who = shooter.and_then(|k| reg.pilot(k));
-    let Some(char_id) = who.as_ref().and_then(|p| p.char_id) else {
+    let Some(p) = who.as_ref() else {
+        return false;
+    };
+    // The NPC shape (`npc::pilot_of`): no character, owner is the corp.
+    let npc = p.char_id.is_none() && p.owner_id == p.corporation_id;
+    let Some(char_id) = p.char_id.or(npc.then_some(p.corporation_id)) else {
         return false;
     };
     let mut d = base_data(s);
@@ -171,27 +190,52 @@ pub fn under_attack(reg: &mut Registry, s: &Structure, shooter: Option<i64>) -> 
         ("hullPercentage", Value::Real(100.0 * hu)),
         ("charID", Value::Int(char_id)),
     ]));
-    let corp = who.as_ref().map(|p| p.corporation_id);
-    let corp_name = corp
-        .and_then(|c| reg.corporations().get(c).map(|c| c.name.clone()))
+    let corp = p.corporation_id;
+    let (mut corp_name, mut alliance, mut alliance_name) = (None, p.alliance_id, None);
+    if npc && let Some(t) = reg.content().try_get::<crate::npc_data::Table>() {
+        corp_name = t.corporations.get(&corp).map(|c| c.name.clone());
+        let faction = t
+            .corporations
+            .get(&corp)
+            .and_then(|c| c.faction_id)
+            .or_else(|| {
+                t.factions
+                    .values()
+                    .find(|f| f.owner() == corp)
+                    .map(|f| f.faction_id)
+            });
+        if let Some(f) = faction {
+            alliance = Some(f);
+            alliance_name = Some(
+                t.factions
+                    .get(&f)
+                    .map(|r| r.name.clone())
+                    .unwrap_or_default(),
+            );
+        }
+    }
+    let corp_name = corp_name
+        .or_else(|| reg.corporations().get(corp).map(|c| c.name.clone()))
         .unwrap_or_default();
     d.extend(data([
         ("corpName", Value::Text(corp_name)),
-        (
-            "corpLinkData",
-            corp.map_or(Value::None, |c| show_info(TYPE_CORPORATION, c)),
-        ),
+        ("corpLinkData", show_info(TYPE_CORPORATION, corp)),
     ]));
-    let alliance = who.as_ref().and_then(|p| p.alliance_id);
     d.push((
         "allianceID".to_owned(),
         alliance.map_or(Value::None, Value::Int),
     ));
     if let Some(a) = alliance {
-        let name = crate::alliance::name_of(reg.deltas(), a).unwrap_or_default();
+        let (name, ty) = match alliance_name {
+            Some(n) => (n, TYPE_FACTION),
+            None => (
+                crate::alliance::name_of(reg.deltas(), a).unwrap_or_default(),
+                TYPE_ALLIANCE,
+            ),
+        };
         d.extend(data([
             ("allianceName", Value::Text(name)),
-            ("allianceLinkData", show_info(TYPE_ALLIANCE, a)),
+            ("allianceLinkData", show_info(ty, a)),
         ]));
     }
     tell(reg, s, STRUCTURE_UNDER_ATTACK, d);
@@ -417,5 +461,99 @@ mod tests {
         let n = got(&reg, DIRECTOR);
         assert_eq!(n.len(), 1, "exactly one 184");
         assert_eq!(val(&n[0].data, "charID"), &Value::Int(OTHER));
+    }
+
+    #[test]
+    fn first_aggression_by_an_npc_sends_a_184_naming_its_corp() {
+        // An empty NPC table: no faction row, so no alliance.
+        let mut c = crate::content::Content::fixture();
+        c.insert("npc_data", crate::npc_data::Table::default());
+        let mut reg = world().with_content(std::sync::Arc::new(c));
+        let mut s = structure_at(State::ShieldVulnerable);
+        s.notified = true;
+        structure::put(reg.deltas_mut(), &s);
+        let npc = crate::npc::spawn(&mut reg, &crate::npc::FIXTURE_RAT, 31, [0.0; 3]).unwrap();
+        reg.ext_mut::<crate::structure_combat::Fire>()
+            .note_shooter(s.id, npc);
+        on_events(&mut reg, &s, &[Event::FirstAggressed], T0);
+        let n = got(&reg, DIRECTOR);
+        assert_eq!(n.len(), 1);
+        assert_eq!(n[0].type_id, STRUCTURE_UNDER_ATTACK);
+        assert_eq!(
+            val(&n[0].data, "charID"),
+            &Value::Int(crate::npc::FIXTURE_CORP)
+        );
+        assert_eq!(val(&n[0].data, "allianceID"), &Value::None);
+        let row = structure::get(reg.deltas(), s.id).expect("the row");
+        assert!(row.notified, "no retry on the next volley");
+    }
+
+    #[test]
+    fn an_npc_shooters_faction_rides_as_the_alliance() {
+        const FACTION: i64 = 599_901;
+        let mut t = crate::npc_data::Table::default();
+        t.corporations.insert(
+            crate::npc::FIXTURE_CORP,
+            crate::npc_data::Corporation {
+                corp_id: crate::npc::FIXTURE_CORP,
+                faction_id: Some(FACTION),
+                ..Default::default()
+            },
+        );
+        t.factions.insert(
+            FACTION,
+            crate::npc_data::Faction {
+                faction_id: FACTION,
+                name: "Invented Faction".to_owned(),
+                ..Default::default()
+            },
+        );
+        let mut c = crate::content::Content::fixture();
+        c.insert("npc_data", t);
+        let mut reg = world().with_content(std::sync::Arc::new(c));
+        let s = structure_at(State::ShieldVulnerable);
+        structure::put(reg.deltas_mut(), &s);
+        let npc = crate::npc::spawn(&mut reg, &crate::npc::FIXTURE_RAT, 31, [0.0; 3]).unwrap();
+        reg.ext_mut::<crate::structure_combat::Fire>()
+            .note_shooter(s.id, npc);
+        on_events(&mut reg, &s, &[Event::FirstAggressed], T0);
+        let n = got(&reg, DIRECTOR);
+        assert_eq!(n.len(), 1);
+        assert_eq!(val(&n[0].data, "allianceID"), &Value::Int(FACTION));
+        assert_eq!(
+            val(&n[0].data, "allianceName"),
+            &Value::Text("Invented Faction".to_owned())
+        );
+        assert_eq!(
+            val(&n[0].data, "allianceLinkData"),
+            &show_info(TYPE_FACTION, FACTION)
+        );
+    }
+
+    #[test]
+    fn an_npc_corp_with_no_row_finds_its_faction_by_owner() {
+        const FACTION: i64 = 599_902;
+        let mut t = crate::npc_data::Table::default();
+        t.factions.insert(
+            FACTION,
+            crate::npc_data::Faction {
+                faction_id: FACTION,
+                corporation_id: crate::npc::FIXTURE_CORP,
+                name: "Invented Owner Faction".to_owned(),
+                ..Default::default()
+            },
+        );
+        let mut c = crate::content::Content::fixture();
+        c.insert("npc_data", t);
+        let mut reg = world().with_content(std::sync::Arc::new(c));
+        let s = structure_at(State::ShieldVulnerable);
+        structure::put(reg.deltas_mut(), &s);
+        let npc = crate::npc::spawn(&mut reg, &crate::npc::FIXTURE_RAT, 31, [0.0; 3]).unwrap();
+        reg.ext_mut::<crate::structure_combat::Fire>()
+            .note_shooter(s.id, npc);
+        on_events(&mut reg, &s, &[Event::FirstAggressed], T0);
+        let n = got(&reg, DIRECTOR);
+        assert_eq!(n.len(), 1);
+        assert_eq!(val(&n[0].data, "allianceID"), &Value::Int(FACTION));
     }
 }
