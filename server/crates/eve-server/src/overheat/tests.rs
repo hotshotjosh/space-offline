@@ -1054,3 +1054,40 @@ fn a_beacon_that_moves_the_heat_capacity_changes_the_rack() {
     assert_eq!(hot.capacity, HEAT_CAP * BEACON_CAPACITY_X);
     assert_eq!(hot.dissipation, plain.dissipation, "nothing else moved");
 }
+
+/// MUTA-3b: a mutated module's hit points, mining flag and Thermodynamics
+/// need are its own roll, not the dynamic type's row (#71).
+#[test]
+fn a_mutated_modules_heat_numbers_are_its_roll() {
+    use crate::modules::muta_fixture::{FACTOR, ITEM, registry};
+    const RESULT: i64 = 981_400_003;
+    let reg = registry(
+        RESULT,
+        None,
+        &[
+            (ATTR_HP, MODULE_HP),
+            (ATTR_MINING_AMOUNT, 5.0),
+            (ATTR_REQUIRED_THERMO, 2.0),
+        ],
+        &[ATTR_HP, ATTR_MINING_AMOUNT, ATTR_REQUIRED_THERMO],
+    );
+    let item = crate::item::Item {
+        item_id: ITEM,
+        type_id: RESULT,
+        owner_id: ALICE,
+        location_id: SHIP,
+        flag_id: HI,
+        quantity: 1,
+        group_id: 53,
+        category_id: 7,
+        singleton: true,
+    };
+    // The type row names none of them: the type-level read is the default.
+    assert_eq!(module_hp(&reg, RESULT), DEFAULT_MODULE_HP);
+    assert_eq!(module_hp_of(&reg, &item), MODULE_HP * FACTOR);
+    assert!(is_mining(&reg, ITEM, RESULT));
+    assert_eq!(
+        item_attr(&reg, ITEM, RESULT, ATTR_REQUIRED_THERMO),
+        Some(2.0 * FACTOR)
+    );
+}

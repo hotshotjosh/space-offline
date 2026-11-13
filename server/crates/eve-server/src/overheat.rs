@@ -251,15 +251,33 @@ fn type_attr(w: &Registry, type_id: i64, attribute: i64) -> Option<f64> {
     type_row(w, type_id)?.attribute(attribute)
 }
 
-/// Hit points of a module type.
+/// A module's own attribute: its mutaplasmid roll when it is a mutated item
+/// (#71), else its type's. The dynamic type's row holds none of the rolled
+/// values, so a reader that skips the roll sees the wrong number.
+fn item_attr(w: &Registry, item_id: i64, type_id: i64, attribute: i64) -> Option<f64> {
+    crate::dynamic_item::overrides_of(w, item_id, type_id)
+        .and_then(|o| o.get(attribute))
+        .or_else(|| type_attr(w, type_id, attribute))
+}
+
+/// Hit points of a module type (a type-level read: a mutated item's own roll
+/// is [`module_hp_of`]).
 pub fn module_hp(w: &Registry, type_id: i64) -> f64 {
     type_attr(w, type_id, ATTR_HP)
         .filter(|h| *h > 0.0)
         .unwrap_or(DEFAULT_MODULE_HP)
 }
 
-fn is_mining(w: &Registry, type_id: i64) -> bool {
-    type_attr(w, type_id, ATTR_MINING_AMOUNT).is_some_and(|a| a > 0.0)
+/// Hit points of a module item: the roll's when it is mutated, else its
+/// type's.
+pub fn module_hp_of(w: &Registry, item: &crate::item::Item) -> f64 {
+    item_attr(w, item.item_id, item.type_id, ATTR_HP)
+        .filter(|h| *h > 0.0)
+        .unwrap_or(DEFAULT_MODULE_HP)
+}
+
+fn is_mining(w: &Registry, item_id: i64, type_id: i64) -> bool {
+    item_attr(w, item_id, type_id, ATTR_MINING_AMOUNT).is_some_and(|a| a > 0.0)
 }
 
 /// A fitted module's attribute as the ship's dogma sheet has it (SYS-4):
@@ -407,9 +425,7 @@ pub fn module_damage(w: &Registry, module_id: i64) -> f64 {
 /// Whether a module is burnt out: its damage has reached its hit points.
 pub fn burnt_out(w: &Registry, module_id: i64) -> bool {
     let d = module_damage(w, module_id);
-    d > 0.0
-        && w.item(module_id)
-            .is_some_and(|i| d >= module_hp(w, i.type_id))
+    d > 0.0 && w.item(module_id).is_some_and(|i| d >= module_hp_of(w, i))
 }
 
 /// **`ModuleTooDamagedToBeOnlined`**, the backstop of the client's own check
@@ -597,7 +613,7 @@ fn refuse_overload(w: &Registry, f: &Fitted) -> Result<i64, ServiceError> {
     let Some(effect) = overload_effect(w, f.type_id) else {
         return Err(notify("That module cannot be overloaded."));
     };
-    if is_mining(w, f.type_id) {
+    if is_mining(w, f.module, f.type_id) {
         return Err(notify("That module cannot be overloaded."));
     }
     if !in_space(w, f) {
@@ -615,7 +631,7 @@ fn refuse_overload(w: &Registry, f: &Fitted) -> Result<i64, ServiceError> {
     if burnt_out(w, f.module) {
         return Err(notify("That module is too damaged to overload."));
     }
-    let need = type_attr(w, f.type_id, ATTR_REQUIRED_THERMO).unwrap_or(0.0) as i64;
+    let need = item_attr(w, f.module, f.type_id, ATTR_REQUIRED_THERMO).unwrap_or(0.0) as i64;
     if thermo_level(w, f.pilot) < need {
         return Err(user_error(
             "DontHaveThermoDynamicsSkill",
@@ -936,7 +952,7 @@ fn settle(w: &mut Registry, ship: i64, now: i64, via: Via) {
                     c.singleton
                         && !crate::item::is_loaded_charge(c)
                         && Rack::of_flag(c.flag_id).is_some_and(|(r, _)| r == rack)
-                        && !is_mining(w, c.type_id)
+                        && !is_mining(w, c.item_id, c.type_id)
                 })
                 .filter_map(|c| {
                     let (_, slot) = Rack::of_flag(c.flag_id)?;
@@ -1013,7 +1029,7 @@ fn settle(w: &mut Registry, ship: i64, now: i64, via: Via) {
         let Some(item) = w.item(h.module).cloned() else {
             continue;
         };
-        let hp = module_hp(w, item.type_id);
+        let hp = module_hp_of(w, &item);
         let before = module_damage(w, h.module);
         if before >= hp {
             continue;
@@ -1166,7 +1182,9 @@ fn begin_repair(
         return Ok(Begun::Nothing);
     }
     refuse_repair(w, &f)?;
-    let hp = module_hp(w, f.type_id);
+    let hp = item_attr(w, f.module, f.type_id, ATTR_HP)
+        .filter(|h| *h > 0.0)
+        .unwrap_or(DEFAULT_MODULE_HP);
     let units = paste_needed(damage, hp);
     let stacks = paste_stacks(w, f.pilot, f.ship);
     if stacks.iter().map(|(_, q)| *q).sum::<i64>() < units {
