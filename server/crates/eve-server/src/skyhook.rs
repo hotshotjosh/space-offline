@@ -1059,8 +1059,9 @@ pub fn finish_build(reg: &mut Registry, id: i64, now: u64) -> Option<Skyhook> {
 /// The clock stage `skyhook` (every 4 ticks, phase 1; `CADENCE_OK`): builds
 /// whose time is up finish. Keyed on stored times, so a late run does what
 /// an early one would.
+/// Scheduled, not pushed: `pending` drains only after a client's call, as structure_space's clock pushes do (#44).
 pub fn tick(reg: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTime) {
-    tick_at(reg, now());
+    crate::sov_hub::on_the_clock(reg, |reg| tick_at(reg, now()));
 }
 
 /// [`tick`] at `now`.

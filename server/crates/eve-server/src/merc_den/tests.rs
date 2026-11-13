@@ -1354,6 +1354,35 @@ fn a_den_whose_skyhook_is_destroyed_is_disabled() {
 // Removal
 // ---------------------------------------------------------------------------
 
+/// The clock stage's pushes leave on the clock, as structure_space's clock pushes do (#44): `pending` drains
+/// only after a client's call.
+#[test]
+fn a_den_removed_on_the_clock_is_scheduled_not_pushed() {
+    let mut reg = world();
+    let id = launched(&mut reg);
+    let _ = reg.take_pending_raw();
+    reg.apply_items_quiet(&[Edit::Destroy { item_id: id }])
+        .expect("destroyed");
+    tick(&mut reg, std::time::Instant::now(), 0);
+    assert!(by_id(reg.deltas(), id).is_none(), "the row is gone");
+    let removes = |p: &Box<dyn Push>| matches!(p.grid(), crate::grid::GridRole::Removes(ids) if ids.contains(&id));
+    let pending = reg.take_pending_raw();
+    assert!(
+        pending
+            .iter()
+            .all(|(_, p)| p.to_push().0 != "OnMyMercenaryDenRemoved" && !removes(p)),
+        "nothing waits for somebody's call"
+    );
+    let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(60));
+    let told = due
+        .iter()
+        .find(|p| p.to_push().0 == "OnMyMercenaryDenRemoved")
+        .expect("the clock sends it");
+    assert!(told.audience().is_some_and(|t| t.contains(&ALICE)));
+    let gone = due.iter().find(|p| removes(p)).expect("the ball goes too");
+    assert!(gone.audience().is_some_and(|t| t.contains(&ALICE)));
+}
+
 #[test]
 fn a_den_whose_item_is_gone_is_removed_and_the_owner_told() {
     let mut reg = world();

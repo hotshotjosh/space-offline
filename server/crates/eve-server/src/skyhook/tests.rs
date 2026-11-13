@@ -825,6 +825,36 @@ fn the_stage_finishes_a_build_only_when_its_time_is_up() {
     );
 }
 
+/// The clock stage's pushes leave on the clock, as structure_space's clock pushes do (#44): `pending` drains
+/// only after a client's call.
+#[test]
+fn a_build_finishing_on_the_clock_is_scheduled_not_pushed() {
+    let (mut reg, ..) = world();
+    at_spot(&mut reg, ALICE, P_POWER, 1_000.0);
+    // Launched at second 1, so its build time is long past `now()`.
+    let id = launch_one_at(&mut reg, ALICE, ALICE_ITEM, 1).unwrap();
+    let _ = reg.take_pending_raw();
+    tick(&mut reg, std::time::Instant::now(), 0);
+    assert!(by_id(reg.deltas(), id).unwrap().built(), "the build ended");
+    let pending: Vec<_> = reg
+        .take_pending_raw()
+        .iter()
+        .map(|(_, p)| p.to_push().0)
+        .collect();
+    assert!(
+        !pending
+            .iter()
+            .any(|n| *n == "OnSkyhookFirstActivation" || *n == "DoDestinyUpdate"),
+        "nothing waits for somebody's call: {pending:?}"
+    );
+    let due = crate::sov_hub::fixture::due(&mut reg);
+    let first = due
+        .iter()
+        .find(|(n, ..)| *n == "OnSkyhookFirstActivation")
+        .expect("the clock sends it");
+    assert!(first.2.as_ref().is_some_and(|t| t.contains(&ALICE)));
+}
+
 // ---------------------------------------------------------------------------
 // What counts toward the hub
 // ---------------------------------------------------------------------------

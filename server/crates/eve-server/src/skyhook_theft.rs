@@ -533,8 +533,9 @@ fn blank(id: i64, n: u32, start: u64, end: u64) -> Raid {
 
 /// The clock stage `skyhook_theft` (every 20 ticks): opens and closes
 /// windows, schedules the next, runs the links.
+/// Scheduled, not pushed: `pending` drains only after a client's call, as structure_space's clock pushes do (#44).
 pub fn tick(reg: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTime) {
-    tick_at(reg, skyhook::now());
+    crate::sov_hub::on_the_clock(reg, |reg| tick_at(reg, skyhook::now()));
 }
 
 /// [`tick`] at `now`.
@@ -1297,6 +1298,42 @@ mod tests {
         // Run again: nothing more is said.
         tick_at(&mut reg, NOW + 20);
         assert_eq!(notices(&mut reg), Vec::<String>::new());
+    }
+
+    /// The clock stage's pushes leave on the clock, as structure_space's clock pushes do (#44): `pending`
+    /// drains only after a client's call.
+    #[test]
+    fn a_window_opening_on_the_clock_is_scheduled_not_pushed() {
+        let mut reg = world();
+        stand(&mut reg, SK, P_REAGENT, 0, 5);
+        tick_at(&mut reg, NOW);
+        // A window that began past the grace before the wall clock.
+        let mut r = by_id(reg.deltas(), SK).expect("a row");
+        r.start = skyhook::now() - skyhook::VULN_GRACE_S - 5;
+        r.end = r.start + RAID_WINDOW_S;
+        put(reg.deltas_mut(), &r);
+        set_window(&mut reg, SK, r.start, r.end);
+        place_at(&mut reg, ALICE, [0.0; 3]);
+        let _ = reg.take_pending_raw();
+        tick(&mut reg, std::time::Instant::now(), 0);
+        assert!(
+            by_id(reg.deltas(), SK).unwrap().silo != 0,
+            "the silo stands"
+        );
+        use crate::notify::Push;
+        let silo = by_id(reg.deltas(), SK).unwrap().silo;
+        let adds_silo = |p: &Box<dyn Push>| matches!(p.grid(), crate::grid::GridRole::Spawns { adds, .. } if adds.contains(&silo));
+        let pending = reg.take_pending_raw();
+        assert!(
+            !pending.iter().any(|(_, p)| adds_silo(p)),
+            "nothing waits for somebody's call"
+        );
+        let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(60));
+        assert!(
+            due.iter()
+                .any(|p| adds_silo(p) && p.audience().is_some_and(|t| t.contains(&ALICE))),
+            "the clock sends the silo's ball to the pilot"
+        );
     }
 
     #[test]

@@ -1388,8 +1388,9 @@ fn skyhook_works(reg: &Registry, den: &Den) -> bool {
 /// RE §7.6); a den follows its skyhook on and off; infomorphs are settled; a
 /// change of stage is told to the owner. Keyed on stored times, so a late run
 /// does what an early one would have.
+/// Scheduled, not pushed: `pending` drains only after a client's call, as structure_space's clock pushes do (#44).
 pub fn tick(reg: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTime) {
-    tick_at(reg, now());
+    crate::sov_hub::on_the_clock(reg, |reg| tick_at(reg, now()));
 }
 
 /// [`tick`] at `now`.
