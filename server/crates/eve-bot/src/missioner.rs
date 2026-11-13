@@ -71,8 +71,9 @@ pub const DIVISION_DISTRIBUTION: i64 = 22;
 /// The agent type that draws from the pool (`agentTypeBasicAgent`) **[V]**.
 pub const AGENT_TYPE_BASIC: i64 = eve_server::mission_pool::TYPE_BASIC;
 
-/// The Evermark agents (type 13): they ask for built items, never a fight
-/// (EM-1) **[V]**.
+/// The Evermark agents (type 13): they ask for built items, never a fight.
+/// **[V]** `mission_pool::TYPE_HERALDRY` (EM-1; the pool draws heraldry rows
+/// for it whatever its division, `Table::key`).
 pub const AGENT_TYPE_HERALDRY: i64 = eve_server::mission_pool::TYPE_HERALDRY;
 
 /// The most a bot hands a heraldry agent for its Evermarks, in ISK at market
@@ -380,12 +381,32 @@ pub fn heraldry_take(want: i64, packaged_units: i64, item_value_isk: f64) -> boo
     want > 0 && packaged_units >= want && item_value_isk <= HERALDRY_MAX_ISK
 }
 
-/// Units of `type_id` the hangar holds as packaged stacks.
-pub fn packaged_units(rows: &[crate::verbs::ItemRow], type_id: i64) -> i64 {
+/// Units of `type_id` the station's hangar holds as packaged stacks: all the
+/// agent takes (`mission::heraldry_stock`: the hangar flag, the agent's
+/// station). **[A]** The bot cannot tell an item it bought for its own fit
+/// from loot, so a packaged stack of the asked type is fair game; falsified by
+/// a bot that undocks without a module it bought because it turned it in.
+pub fn packaged_units(rows: &[crate::verbs::ItemRow], type_id: i64, station: i64) -> i64 {
     rows.iter()
-        .filter(|r| r.type_id == type_id && !r.singleton)
+        .filter(|r| {
+            r.type_id == type_id
+                && !r.singleton
+                && r.flag_id == eve_server::model::FLAG_HANGAR
+                && r.location_id == station
+        })
         .map(|r| r.quantity)
         .sum()
+}
+
+/// `Ok(None)` for a refusal (`Refused` or `NotSent`), the value for `Ok`, and
+/// the error for a broken connection: a refusal at a heraldry agent never
+/// ends the desk visit nor wedges the journal.
+fn soft<T>(r: Result<T>) -> Result<Option<T>> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(Error::Refused(_) | Error::NotSent(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// The server's heraldry row for mission `id`, when the content has one.
@@ -754,11 +775,28 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
     for job in journal(c)?.into_iter().filter(|j| j.accepted) {
         let turn = c.talk_to_agent(job.agent)?;
         if turn.action_for(BUTTON_COMPLETE).is_some() {
-            r.steps.push(complete(c, job.agent, &turn)?);
+            let done = complete(c, job.agent, &turn);
+            if heraldry_row(Some(job.mission)).is_some() {
+                // A refused Complete of a heraldry job is quit, so it cannot
+                // wedge every later visit.
+                match soft(done)? {
+                    Some(step) => r.steps.push(step),
+                    None => {
+                        soft(c.agent_button(job.agent, &turn, BUTTON_QUIT))?;
+                        r.steps.push(Step::Quit {
+                            agent: job.agent,
+                            mission: job.mission,
+                        });
+                    }
+                }
+            } else {
+                r.steps.push(done?);
+            }
             continue;
         }
         // A heraldry job the bot cannot finish (nothing to hand over) is
-        // quit, not read as a courier. [A]
+        // quit, not read as a courier. [A] Needs the mission table in the
+        // content; without it the job is read as before.
         if heraldry_row(Some(job.mission)).is_some() {
             c.agent_button(job.agent, &turn, BUTTON_QUIT)?;
             r.steps.push(Step::Quit {
@@ -800,9 +838,19 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
         .station_id()
         .ok_or_else(|| Error::NotSent("missions: not docked".to_owned()))?;
     let rows = agents(c)?;
-    for agent in heraldry_agents(&rows, here) {
-        if let Some(step) = heraldry(c, agent.id)? {
-            r.steps.push(step);
+    let herald = heraldry_agents(&rows, here);
+    if !herald.is_empty() {
+        // One hangar read for every heraldry agent of the visit.
+        let hangar = c.hangar_items()?;
+        for agent in herald {
+            let step = match soft(heraldry(c, agent.id, &hangar, here))? {
+                Some(step) => step,
+                None => Some(Step::Skipped {
+                    agent: agent.id,
+                    why: "heraldry: the agent refused",
+                }),
+            };
+            r.steps.extend(step);
         }
     }
     let agents: Vec<AgentRow> = match e.agent {
@@ -907,7 +955,12 @@ pub fn desk(c: &mut Conn, e: &Errand<'_>) -> Result<Report> {
 /// and complete it, for Evermarks. An offer the bot cannot fill is left, not
 /// declined (**[A]**; falsified by an agent that stops offering until
 /// declined). `None` when there was nothing to do.
-fn heraldry(c: &mut Conn, agent: i64) -> Result<Option<Step>> {
+fn heraldry(
+    c: &mut Conn,
+    agent: i64,
+    hangar: &[crate::verbs::ItemRow],
+    here: i64,
+) -> Result<Option<Step>> {
     let turn = c.talk_to_agent(agent)?;
     if turn.action_for(BUTTON_ACCEPT).is_none() {
         return Ok(None);
@@ -918,7 +971,7 @@ fn heraldry(c: &mut Conn, agent: i64) -> Result<Option<Step>> {
     let (Some(type_id), Some(want)) = (row.obj_type, row.obj_qty) else {
         return Ok(None);
     };
-    let have = packaged_units(&c.hangar_items()?, type_id);
+    let have = packaged_units(hangar, type_id, here);
     let value = if have >= want && want > 0 {
         let mut prices = crate::pricing::Prices::read(c)?;
         prices
@@ -929,10 +982,7 @@ fn heraldry(c: &mut Conn, agent: i64) -> Result<Option<Step>> {
         f64::INFINITY
     };
     if !heraldry_take(want, have, value) {
-        return Ok(Some(Step::Skipped {
-            agent,
-            why: "heraldry: nothing to hand over at a fair price",
-        }));
+        return Ok(None);
     }
     c.agent_button(agent, &turn, BUTTON_ACCEPT)?;
     let turn = c.talk_to_agent(agent)?;
@@ -1191,9 +1241,6 @@ mod tests {
         }
     }
 
-    /// The client's own gate (`eveCfg.CanUseAgent` [V]): level 1 is open, and
-    /// level L needs a standing of `2(L-1)-1` toward the faction, the corp or
-    /// the agent, none under -2.
     #[test]
     fn heraldry_agents_are_type_13_at_this_station() {
         let herald = |id, station| AgentRow {
@@ -1246,10 +1293,36 @@ mod tests {
             row(3, ODD_GROUP, 4, false),
             row(4, ODD_GROUP + 1, 99, false),
         ];
-        assert_eq!(packaged_units(&rows, ODD_GROUP), 7);
-        assert_eq!(packaged_units(&rows, 5), 0);
+        assert_eq!(packaged_units(&rows, ODD_GROUP, STATION), 7);
+        assert_eq!(packaged_units(&rows, 5, STATION), 0);
+        assert_eq!(
+            packaged_units(&rows, ODD_GROUP, ELSEWHERE),
+            0,
+            "other station"
+        );
+        let mut other_flag = rows.clone();
+        other_flag[0].flag_id = 5;
+        assert_eq!(
+            packaged_units(&other_flag, ODD_GROUP, STATION),
+            4,
+            "not hangar"
+        );
     }
 
+    #[test]
+    fn a_refusal_at_a_heraldry_agent_is_soft_a_broken_connection_is_not() {
+        assert_eq!(soft(Ok(3)).unwrap(), Some(3));
+        assert_eq!(soft::<i32>(Err(Error::Refused("x".into()))).unwrap(), None);
+        assert_eq!(soft::<i32>(Err(Error::NotSent("x".into()))).unwrap(), None);
+        let io = std::io::Error::other("gone");
+        assert!(soft::<i32>(Err(Error::Io(io))).is_err());
+        // The desk turns a refused heraldry visit into a skipped step and
+        // goes on to the basic agents (its loop has no early return there).
+    }
+
+    /// The client's own gate (`eveCfg.CanUseAgent` [V]): level 1 is open, and
+    /// level L needs a standing of `2(L-1)-1` toward the faction, the corp or
+    /// the agent, none under -2.
     #[test]
     fn standings_open_levels_two_to_five_at_the_clients_thresholds() {
         let a = |level| owned(1, level, STATION, None);

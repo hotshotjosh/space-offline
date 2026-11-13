@@ -27,9 +27,10 @@ use crate::plexer::{LP_STORE, LpOffer, read_offers};
 use crate::{Conn, Error, Result};
 use eve_marshal::PyValue;
 use eve_server::emblem::{CORPORATION_LOGO, Licences};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const GET_ALL: &str = "eve_public.entitlement.character.GetAllRequest";
 const DISPLAY: &str = "eve_public.cosmetic.ship.logo.DisplayRequest";
@@ -41,6 +42,29 @@ pub const SLOT: i64 = 0;
 
 /// How long the gateway may take to answer one request.
 const TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long a missing gateway is left alone.
+const NO_GATEWAY_BACKOFF: Duration = Duration::from_secs(600);
+
+/// What this process has done, so a paid desk visit costs nothing once the
+/// logo is up: `(pilot, ship)` pairs whose logo is shown, `(pilot, ship)` ->
+/// the Evermarks with which no licence was found (nothing to try again below
+/// that), and when the gateway was last missing. Per process, never persisted.
+static SHOWN: Mutex<BTreeSet<(i64, i64)>> = Mutex::new(BTreeSet::new());
+static BROKE: Mutex<BTreeMap<(i64, i64), i64>> = Mutex::new(BTreeMap::new());
+static GATEWAY_DOWN: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Whether the step has nothing to do for `(pilot, ship)` holding `em`.
+fn settled(pilot: i64, ship: i64, em: i64) -> bool {
+    lock(&SHOWN).contains(&(pilot, ship))
+        || lock(&BROKE)
+            .get(&(pilot, ship))
+            .is_some_and(|tried| em <= *tried)
+}
 
 fn put_varint(out: &mut Vec<u8>, mut v: u64) {
     while v >= 0x80 {
@@ -198,6 +222,12 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
     let (Some(ship), Some(pilot)) = (c.session().ship_id(), c.session().char_id()) else {
         return Ok("[em] not flying a ship".to_owned());
     };
+    if settled(pilot, ship, em) {
+        return Ok("[em] nothing to do".to_owned());
+    }
+    if lock(&GATEWAY_DOWN).is_some_and(|t| t.elapsed() < NO_GATEWAY_BACKOFF) {
+        return Ok("[em] no gateway".to_owned());
+    }
     let Some(hull) = c
         .hangar_items()?
         .iter()
@@ -212,6 +242,7 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
     };
     let addr = SocketAddr::new(peer.ip(), eve_server::gateway::PORT);
     let Ok(mut gw) = GatewayClient::connect(addr, TIMEOUT) else {
+        *lock(&GATEWAY_DOWN) = Some(Instant::now());
         return Ok("[em] no gateway".to_owned());
     };
     let have = match gw.send(pilot, GET_ALL, &[]) {
@@ -226,6 +257,7 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
             vec![PyValue::Int(CORP_HERALDRY)],
         )?;
         let Some(offer) = pick(&read_offers(&store), &lic, hull, em) else {
+            lock(&BROKE).insert((pilot, ship), em);
             return Ok(format!("[em] no licence for hull {hull} within {em} EM"));
         };
         let took = value(
@@ -242,7 +274,10 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
         }
     }
     match gw.send(pilot, DISPLAY, &display_body(ship, SLOT)) {
-        Ok((200, _)) => Ok(format!("[em] licence {hull} enabled")),
+        Ok((200, _)) => {
+            lock(&SHOWN).insert((pilot, ship));
+            Ok(format!("[em] licence {hull} enabled"))
+        }
         Ok((status, _)) => Ok(format!("[em] Display answered {status}")),
         Err(_) => Ok("[em] no gateway".to_owned()),
     }
@@ -324,6 +359,58 @@ mod tests {
         let mut no_attr = display_body(5, 0);
         no_attr.truncate(6);
         assert_eq!(ask(&no_attr), 400);
+    }
+
+    /// Once the logo is shown, or no licence was found at this balance, the
+    /// step does nothing for that ship until the balance grows.
+    #[test]
+    fn the_step_runs_once_per_ship_until_the_balance_grows() {
+        let (pilot, ship) = (981_701, 981_702);
+        assert!(!settled(pilot, ship, 500));
+        lock(&BROKE).insert((pilot, ship), 500);
+        assert!(settled(pilot, ship, 500) && settled(pilot, ship, 100));
+        assert!(!settled(pilot, ship, 501), "more Evermarks, try again");
+        lock(&SHOWN).insert((pilot, ship));
+        assert!(settled(pilot, ship, 9_999), "shown: never again");
+        assert!(!settled(pilot, ship + 1, 9_999), "another ship");
+    }
+
+    #[test]
+    fn the_server_displays_the_logo_it_is_sent() {
+        use eve_server::emblem::{enabled, grant};
+        const WHO: i64 = 981_001;
+        const STATION: i64 = 981_002;
+        const FRIGATE: i64 = 990_000_001;
+        let mut content = eve_server::content::Content::fixture();
+        content.insert("emblem", Licences::parse(&lines(FRIGATE)).unwrap());
+        let mut reg =
+            eve_server::service::Registry::new(eve_server::model::SandboxConfig::default())
+                .with_content(Arc::new(content));
+        let at = eve_server::item::Slot::new(WHO, STATION, eve_server::model::FLAG_HANGAR);
+        reg.apply_items(&[eve_server::item::Edit::Create {
+            type_id: FRIGATE,
+            quantity: 1,
+            to: at,
+        }])
+        .expect("the fixture hull is a known type");
+        let ship = reg
+            .store()
+            .items()
+            .iter()
+            .find(|i| i.owner_id == WHO && i.type_id == FRIGATE)
+            .expect("the hull")
+            .item_id;
+        assert!(grant(&mut reg, WHO, FRIGATE, CORPORATION_LOGO));
+        let reg = Arc::new(RwLock::new(reg));
+        let g = Ground::Server(reg.clone());
+        let r = eve_server::emblem::gateway(DISPLAY, &display_body(ship, SLOT), WHO, &g)
+            .expect("answered");
+        assert_eq!(r.status, 200);
+        let w = reg.read().unwrap();
+        assert_eq!(
+            enabled(&w, WHO, ship),
+            PyValue::Dict(vec![(PyValue::Int(0), PyValue::Int(CORPORATION_LOGO))])
+        );
     }
 
     #[test]

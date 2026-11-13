@@ -378,7 +378,9 @@ pub fn spend(c: &mut Conn, only: Option<&[i64]>) -> Result<Spend> {
     }
     // A licence for the flown hull, shown on it ([`crate::emblem_use`]). A
     // refusal is a note; only a broken connection is an error.
-    if em > 0 {
+    // A militia's spend (`only` without the Evermark corporation) is not asked
+    // to; its pilot's logo is left alone.
+    if em > 0 && only.is_none_or(|o| o.contains(&CORP_HERALDRY)) {
         out.emblem = Some(match crate::emblem_use::run(c, em) {
             Ok(note) => note,
             Err(Error::Refused(why) | Error::NotSent(why)) => why,
