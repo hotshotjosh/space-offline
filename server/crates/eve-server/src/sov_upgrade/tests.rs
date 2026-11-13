@@ -1449,6 +1449,7 @@ fn needs(power: u64, workforce: u64, fuel: Option<(u32, u32)>, group: &str) -> R
         group: group.to_owned(),
         services: BTreeSet::new(),
         tier: None,
+        effects: Vec::new(),
     }
 }
 
@@ -1636,7 +1637,7 @@ fn the_gm_line_adds_lists_and_clears() {
 
 #[test]
 fn the_enables_column_parses_services_and_a_site_tier() {
-    let (s, t) = parse_enables("cyno_jammer, jump_bridge").unwrap();
+    let (s, t, _) = parse_enables("cyno_jammer, jump_bridge").unwrap();
     assert_eq!(
         s,
         BTreeSet::from(["cyno_jammer".to_owned(), "jump_bridge".to_owned()])
@@ -1644,9 +1645,12 @@ fn the_enables_column_parses_services_and_a_site_tier() {
     assert_eq!(t, None);
     assert_eq!(
         parse_enables("sites:4").unwrap(),
-        (BTreeSet::new(), Some(4))
+        (BTreeSet::new(), Some(4), Vec::new())
     );
-    assert_eq!(parse_enables("-").unwrap(), (BTreeSet::new(), None));
+    assert_eq!(
+        parse_enables("-").unwrap(),
+        (BTreeSet::new(), None, Vec::new())
+    );
     for bad in ["sites:0", "sites:x", "sites:1,sites:2", "teleport", "sites"] {
         assert!(parse_enables(bad).is_err(), "{bad}");
     }
@@ -2038,4 +2042,90 @@ fn the_live_caps_follow_the_systems_region_pirate() {
     .unwrap();
     let live = crate::population::live_upgrades_with(&reg2, SYSTEM, &BY_FACTION, UNIVERSAL);
     assert_eq!(live, [("ga".to_owned(), 1, 2)]);
+}
+
+// ---------------------------------------------------------------------------
+// System effects (SOV-UPG-4); invented collections 990_433 and 990_437
+// ---------------------------------------------------------------------------
+
+#[test]
+fn enables_reads_dbuff_tokens_in_column_order() {
+    let (services, tier, effects) =
+        parse_enables("cyno_jammer,dbuff:990433=12.5,dbuff:990437=-3").expect("parses");
+    assert_eq!(services, BTreeSet::from(["cyno_jammer".to_owned()]));
+    assert_eq!(tier, None);
+    assert_eq!(effects, [(990_433, 12_500), (990_437, -3_000)]);
+}
+
+#[test]
+fn enables_refuses_a_bad_dbuff_token() {
+    for bad in [
+        "dbuff:0=1",
+        "dbuff:x=1",
+        "dbuff:990433=",
+        "dbuff:990433=nan",
+        "dbuff:990433=5000",
+        "dbuff:990433=1,dbuff:990433=2",
+    ] {
+        let e = parse_enables(bad).expect_err(bad);
+        assert!(e.contains("dbuff"), "{bad}: {e}");
+    }
+}
+
+#[test]
+fn online_effects_needs_a_claimed_hub_and_an_online_upgrade() {
+    const EFFECT: i64 = 9_207;
+    let mut c = content_with("");
+    let mut row = needs(0, 0, None, "gx");
+    row.effects = vec![(990_433, 7_000)];
+    c.insert("sov upgrades", UpgradeTable::new(vec![(EFFECT, row)]).0);
+    let mut reg = world_with(c);
+    let t = table(reg.content()).clone();
+    let put = |reg: &mut Registry, state, online| {
+        put_installed(
+            reg.deltas_mut(),
+            HUB,
+            &[Installed {
+                type_id: EFFECT,
+                online,
+                state,
+            }],
+        );
+    };
+    put(&mut reg, Power::Online, true);
+    assert_eq!(
+        online_effects(reg.deltas(), &t, SYSTEM),
+        Some((HUB, vec![(990_433, 7.0)]))
+    );
+    assert_eq!(online_effects(reg.deltas(), &t, SYSTEM + 1), None);
+    put(&mut reg, Power::Low, true);
+    assert_eq!(online_effects(reg.deltas(), &t, SYSTEM), None);
+    put(&mut reg, Power::Offline, false);
+    assert_eq!(online_effects(reg.deltas(), &t, SYSTEM), None);
+    put(&mut reg, Power::Online, true);
+    sov::set_claim(reg.deltas_mut(), SYSTEM, None, 2);
+    assert_eq!(online_effects(reg.deltas(), &t, SYSTEM), None);
+}
+
+#[test]
+fn online_effects_keeps_the_larger_value_of_a_collection_two_upgrades_name() {
+    let (a, b) = (9_208, 9_209);
+    let mut c = content_with("");
+    let mut ra = needs(0, 0, None, "gx");
+    ra.effects = vec![(990_433, 7_000), (990_437, 1_000)];
+    let mut rb = needs(0, 0, None, "gy");
+    rb.effects = vec![(990_433, -9_000)];
+    c.insert("sov upgrades", UpgradeTable::new(vec![(a, ra), (b, rb)]).0);
+    let mut reg = world_with(c);
+    let t = table(reg.content()).clone();
+    let on = |type_id| Installed {
+        type_id,
+        online: true,
+        state: Power::Online,
+    };
+    put_installed(reg.deltas_mut(), HUB, &[on(a), on(b)]);
+    assert_eq!(
+        online_effects(reg.deltas(), &t, SYSTEM),
+        Some((HUB, vec![(990_433, -9.0), (990_437, 1.0)]))
+    );
 }

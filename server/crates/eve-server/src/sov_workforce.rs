@@ -795,6 +795,7 @@ mod tests {
             group: "invented".to_owned(),
             services: BTreeSet::new(),
             tier: None,
+            effects: Vec::new(),
         };
         c.insert("sov upgrades", UpgradeTable::new(vec![(UPGRADE, row)]).0);
         c

@@ -43,7 +43,13 @@ table has no single upgrade above the system's power, so B cannot be "big" alone
    upgrade changes nothing, or adds the old tier count); `/sov upgrade here clear`, and the
    list returns to the step-1 count. Expected values come from the client's own data at run
    time, nothing is hard-coded;
-7. no traceback from `sovereignty/upgrades/` or `ui/shared/sov/`.
+9. (SOV-UPG-4) a Stability Generator (its group read from the client, chosen by the buff-bar slot whose hint text is
+   its name, `buffBarConst.BUFF_SLOT_HINTS`), ONLINE: every collection of
+   `buffBarConst.DBUFFS_BY_SLOT[slot]` is in `dbuffClient.incomingDbuffTracker` with a None
+   expiry within 10 s, one ship attribute (shield capacity, armor HP, lock range or scan
+   resolution by generator) moved up; `/sov upgrade here clear` and the collections are gone
+   and the attribute is back (fails with a server that holds nothing);
+7. (runs last, after 8 and 9) no traceback from `sovereignty/upgrades/`, `ui/shared/sov/`, `dbuff/` or `shipHud/buffButtons`.
 
 Assumptions, each with its falsifier ([A]):
 - `/createitem <type> 1` puts the item in the ship's cargo when in space;
@@ -1821,14 +1827,112 @@ def eoci_main(EOCI_NAME):
         check('clearing the upgrades returns the Agency list to its step-1 count',
               bool(returned), 'before %s now %s' % (text(before_n), text(after.get('back'))))
 
+        # 9. (SOV-UPG-4) A Stability Generator, ONLINE, holds its dbuff collections on the
+        # pilot's ship: the buff bar's slot (the one whose hint text is the generator's
+        # name [V buffBarConst.py:241-244]) shows every collection of that slot with no
+        # timer, one ship attribute moves the way the slot says, and clearing releases it.
+        # Everything is read from the client's own data; no ids in this file.
+        bbc = __import__('eve.common.script.mgt.buffBarConst', fromlist=['DBUFFS_BY_SLOT'])
+        dgc = __import__('dogma.const', fromlist=['attributeShieldCapacity'])
+        locl = __import__('localization')
+        GEN_GROUP = getattr_safe(__import__('inventorycommon.const', fromlist=['x']),
+                                 'groupSovHubSystemEffectGeneratorUpgrades')   # [V inventorycommon/const.py:1115]
+        precondition('the client names the generator upgrade group', GEN_GROUP is not None,
+                     text(GEN_GROUP))
+        okp, budget9, wf9, _v9 = hub_budget()
+        gens = [d for d in defs if getattr_safe(et, 'GetGroupID') is not None
+                and et.GetGroupID(d.type_id) == GEN_GROUP
+                and d.power <= budget9 and (d.workforce or 0) <= wf9
+                and d.startup_cost < REAGENTS // 2]
+        slot_of = {}
+        for nm in dir(bbc):
+            if nm.startswith('Slot_SovSystemModifier'):
+                ok_h, hint = safe(lambda: locl.GetByLabel(bbc.BUFF_SLOT_HINTS[getattr(bbc, nm)]))
+                if ok_h:
+                    slot_of[text(hint)] = getattr(bbc, nm)
+        gen = None
+        for d in gens:
+            if text(et.GetName(d.type_id)) in slot_of:
+                gen = d
+                break
+        precondition('GetDefinitions gave a Stability Generator that fits, and the buff bar has '
+                     'a slot named after it', gen is not None,
+                     '%d generator(s), %d slot hint(s)' % (len(gens), len(slot_of)))
+        if gen is not None:
+            slot = slot_of[text(et.GetName(gen.type_id))]
+            cols = list(bbc.DBUFFS_BY_SLOT[slot])
+            # direction only: the attribute the slot's first named collection moves.
+            attr_by_slot = {'Gamma': 'attributeShieldCapacity', 'Plasma': 'attributeArmorHP',
+                            'Electric': 'attributeMaxTargetRange', 'Exotic': 'attributeScanResolution'}
+            attr_id = None
+            for word, an in attr_by_slot.items():
+                if word.lower() in text(et.GetEnglishName(gen.type_id)).lower():
+                    attr_id = getattr_safe(dgc, an)
+            precondition('the generator names one of the four slots and the client knows its attribute',
+                         attr_id is not None, text(et.GetEnglishName(gen.type_id)))
+            if attr_id is not None:
+                gm('/sov reagents here %d %d' % (gen.fuel_type_id, REAGENTS))
+                godma9 = get_svc('godma')
+
+                def ship_attr9():
+                    sess9 = builtin('session')
+                    ok_a, v_a = safe(lambda: godma9.GetStateManager().GetAttributeValueByID(
+                        sess9.shipid, attr_id))
+                    return float(v_a) if ok_a and v_a is not None else None
+
+                def held9():
+                    ok_i, cur = safe(lambda: dict(get_svc('dbuffClient').incomingDbuffTracker.incomingDbuffs))
+                    return cur if ok_i else None
+
+                attr_before = ship_attr9()
+                item_g = create_one(gen)
+                ok9, res9 = safe_pair(lambda: svc.SaveUpgradeConfiguration(
+                    hub_id, [item_g], [(gen.type_id, True)]))
+                got9 = [(x.upgrade_type_id, x.power_state) for x in res9] if ok9 else res9
+                check('the generator reads ONLINE', ok9 and got9 == [(gen.type_id, ONLINE)], text(got9))
+
+                def every_held():
+                    cur = held9()
+                    return (cur is not None and all(c in cur and cur[c][1] is None for c in cols))
+                held_ok, _w = wait_for(every_held, timeout_ms=10000, step_ms=500)
+                check('every collection of the generator\'s slot is on the buff bar with no timer',
+                      bool(held_ok), 'want %s have %s' % (text(cols), text(held9())))
+                attr_after = {}
+
+                def moved():
+                    attr_after['v'] = ship_attr9()
+                    return (attr_before is not None and attr_after['v'] is not None
+                            and attr_after['v'] > attr_before)
+                up, _w = wait_for(moved, timeout_ms=10000, step_ms=500)
+                check('the ship attribute the slot names moved up',
+                      bool(up), 'before %s after %s' % (text(attr_before), text(attr_after.get('v'))))
+                gm('/sov upgrade here clear')
+
+                def released():
+                    cur = held9()
+                    return cur is not None and not [c for c in cols if c in cur]
+                gone, _w = wait_for(released, timeout_ms=10000, step_ms=500)
+                check('clearing the upgrades takes the collections off the buff bar',
+                      bool(gone), text(held9()))
+                back9 = {}
+
+                def restored():
+                    back9['v'] = ship_attr9()
+                    return back9['v'] is not None and attr_before is not None \
+                        and abs(back9['v'] - attr_before) < 1e-6 * max(1.0, abs(attr_before))
+                rest, _w = wait_for(restored, timeout_ms=10000, step_ms=500)
+                check('the ship attribute is back at its value before the generator',
+                      bool(rest), 'before %s now %s' % (text(attr_before), text(back9.get('v'))))
+
         gm('/sov set here none')
         # 7. no traceback from the upgrade code.
         blob, _detail = log_since(mark)
         blob = blob or ''
         frames = [ln.strip()[:200] for ln in blob.split('\n')
                   if 'File "' in ln and ('sovereignty' in ln and 'upgrades' in ln
-                                         or 'ui' in ln and 'shared' in ln and 'sov' in ln)]
-        check('no traceback frame from sovereignty/upgrades/ or ui/shared/sov/ in the client log',
+                                         or 'ui' in ln and 'shared' in ln and 'sov' in ln
+                                         or 'dbuff' in ln or 'buffButtons' in ln)]
+        check('no traceback frame from sovereignty/upgrades/, ui/shared/sov/, dbuff/ or buffButtons in the client log',
               not frames, text(frames[:3]))
         no_new_tracebacks('sov_upgrade', mark)
 

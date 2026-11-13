@@ -23,6 +23,11 @@
 # population.tsv with band `sovupg:<exclusive_group>:<tier>` go live). [A] the
 # names and the tiers are ours; falsifier: a TQ system whose Ansiblex or Tenebrex
 # works without the upgrade, or the client naming its own service gate.
+# `dbuff:<collection>=<value>` (SOV-UPG-4): while Online, every pilot's ship in space in
+# the system holds that dbuff collection at that value (a percent for a PostPercent
+# collection, the amount for a ModAdd one, negative for a Minimum collection). [V] which
+# collections a generator names (buffBarConst.py:432-445); [A] the values; falsifier: a
+# TQ buff-bar tooltip in a generator system, or an owner balance ruling.
 # why: the [A] and its falsifier.
 type_id	power	workforce	fuel_type	fuel_per_hour	startup	exclusive_group	power_out	workforce_out	enables	why
 81615	120	1500	81143	6	60	cyno_navigation	0	0	cyno_beacon	[A] cynosural navigation: a service upgrade, heavy on workforce; falsifier: owner balance ruling
@@ -58,11 +63,11 @@ type_id	power	workforce	fuel_type	fuel_per_hour	startup	exclusive_group	power_ou
 87708	65	900	81144	4	25	ore_zydrine	0	0	-	[A] zydrine prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
 87709	65	900	81144	4	25	ore_megacyte	0	0	-	[A] megacyte prospecting tier 3: modest power and workforce, burns ice; falsifier: owner balance ruling
 87710	20	0	-	0	0	workforce_generation	0	1500	-	[A] workforce mecha-tooling tier 1 makes workforce, burns nothing; falsifier: owner balance ruling
-87815	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87815	150	800	81143	5	50	system_effect	0	0	dbuff:2433=10,dbuff:2441=10,dbuff:2434=10	[A] a system effect generator, one per hub; falsifier: owner balance ruling; the dbuff values are [A] (falsifier: a TQ buff-bar tooltip in a generator system)
 87948	20	300	81144	1	5	exploration	0	0	-	[A] exploration detector tier 1; falsifier: owner balance ruling
-87949	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
-87950	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
-87951	150	800	81143	5	50	system_effect	0	0	-	[A] a system effect generator, one per hub; falsifier: owner balance ruling
+87949	150	800	81143	5	50	system_effect	0	0	dbuff:2435=10,dbuff:2442=10,dbuff:2436=10	[A] a system effect generator, one per hub; falsifier: owner balance ruling; the dbuff values are [A] (falsifier: a TQ buff-bar tooltip in a generator system)
+87950	150	800	81143	5	50	system_effect	0	0	dbuff:2437=-10,dbuff:2438=10	[A] a system effect generator, one per hub; falsifier: owner balance ruling; the dbuff values are [A] (falsifier: a TQ buff-bar tooltip in a generator system)
+87951	150	800	81143	5	50	system_effect	0	0	dbuff:2439=10,dbuff:2440=1	[A] a system effect generator, one per hub; falsifier: owner balance ruling; the dbuff values are [A] (falsifier: a TQ buff-bar tooltip in a generator system)
 87953	35	500	81144	2	10	exploration	0	0	-	[A] exploration detector tier 2; falsifier: owner balance ruling
 87954	55	800	81144	3	20	exploration	0	0	-	[A] exploration detector tier 3; falsifier: owner balance ruling
 88221	0	300	-	0	0	power_generation	200	0	-	[A] power monitoring tier 2 makes power, burns nothing; falsifier: owner balance ruling

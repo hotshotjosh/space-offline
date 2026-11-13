@@ -48,6 +48,10 @@
 //! refuses the two writes this module answers), `pub mod sov_upgrade;` in
 //! `lib.rs` and `("sovupg", "sov_upgrade")` in `delta_kinds::KINDS`.
 //!
+//! **System effects (SOV-UPG-4)**: an Online upgrade's `dbuff:` tokens (the
+//! `enables` column) are held on every character ship in its system by
+//! `sov_effect`; see [`online_effects`].
+//!
 //! **Clock:** reagent amounts are asked at wall-clock seconds
 //! (`sov_proto::unix_now`), the sov-held rule at the game clock.
 
@@ -220,15 +224,23 @@ pub struct Row {
     /// `sovupg:<group>:<tier>` is live while an Online upgrade of that
     /// exclusive group carries that tier **[A]**.
     pub tier: Option<u32>,
+    /// The dbuffs it holds on every pilot's ship in the system while Online
+    /// (SOV-UPG-4): (collection id, value in thousandths), in column order.
+    /// Thousandths keep the row `Eq`.
+    pub effects: Vec<(i64, i64)>,
 }
 
-/// The `enables` column: `-`, or a comma list of [`SERVICES`] names and
-/// `sites:<tier>` (at most one).
-fn parse_enables(field: &str) -> Result<(BTreeSet<String>, Option<u32>), String> {
+/// What [`parse_enables`] reads: services, site tier, dbuff effects.
+type Enables = (BTreeSet<String>, Option<u32>, Vec<(i64, i64)>);
+
+/// The `enables` column: `-`, or a comma list of [`SERVICES`] names,
+/// `sites:<tier>` (at most one) and `dbuff:<collection>=<value>` (SOV-UPG-4).
+fn parse_enables(field: &str) -> Result<Enables, String> {
     let mut services = BTreeSet::new();
     let mut tier = None;
+    let mut effects: Vec<(i64, i64)> = Vec::new();
     if dash(field) {
-        return Ok((services, tier));
+        return Ok((services, tier, effects));
     }
     for tok in field.split(',').map(str::trim) {
         if let Some(t) = tok.strip_prefix("sites:") {
@@ -240,15 +252,34 @@ fn parse_enables(field: &str) -> Result<(BTreeSet<String>, Option<u32>), String>
             if tier.replace(t).is_some() {
                 return Err("enables: two sites: tiers".into());
             }
+        } else if let Some(d) = tok.strip_prefix("dbuff:") {
+            let bad = || format!("enables: {tok:?} is not dbuff:<collection>=<value>");
+            let (c, v) = d.split_once('=').ok_or_else(bad)?;
+            let c = c
+                .trim()
+                .parse::<i64>()
+                .ok()
+                .filter(|c| *c > 0)
+                .ok_or_else(bad)?;
+            let v = v
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && v.abs() <= 1000.0)
+                .ok_or_else(bad)?;
+            if effects.iter().any(|(e, _)| *e == c) {
+                return Err(format!("enables: dbuff:{c} twice"));
+            }
+            effects.push((c, (v * 1000.0).round() as i64));
         } else if SERVICES.contains(&tok) {
             services.insert(tok.to_owned());
         } else {
             return Err(format!(
-                "enables: {tok:?} is not sites:<tier> or one of {SERVICES:?}"
+                "enables: {tok:?} is not sites:<tier>, dbuff:<collection>=<value> or one of {SERVICES:?}"
             ));
         }
     }
-    Ok((services, tier))
+    Ok((services, tier, effects))
 }
 
 /// `content/sov/upgrades.tsv`, by upgrade type id.
@@ -294,7 +325,7 @@ pub fn parse_row(r: &crate::authored::Row) -> Result<(i64, Row), String> {
     if dash(group) {
         return Err("exclusive_group is empty".into());
     }
-    let (services, tier) = parse_enables(r.field(9).trim())?;
+    let (services, tier, effects) = parse_enables(r.field(9).trim())?;
     Ok((
         type_id,
         Row {
@@ -310,6 +341,7 @@ pub fn parse_row(r: &crate::authored::Row) -> Result<(i64, Row), String> {
             group: group.to_owned(),
             services,
             tier,
+            effects,
         },
     ))
 }
@@ -379,6 +411,7 @@ pub fn fixture_upgrades() -> UpgradeTable {
         group: group.to_owned(),
         services: parse_enables(enables).expect("a fixture enables").0,
         tier: parse_enables(enables).expect("a fixture enables").1,
+        effects: parse_enables(enables).expect("a fixture enables").2,
     };
     UpgradeTable::new(vec![
         (9_201, row(20, None, 0, 0, "ga", 0, "sites:1")),
@@ -621,6 +654,38 @@ pub(crate) fn online_site_tiers_with(
             Some((r.group.clone(), r.tier?, cap))
         })
         .collect()
+}
+
+/// The dbuffs `system`'s claimed hub holds on the ships in it: the `dbuff:` tokens of
+/// its Online upgrades, in configured order, values as given (SOV-UPG-4). `None` for a
+/// system with no hub, a neutral hub, or no Online upgrade with effects. A collection
+/// two Online upgrades name keeps the larger absolute value.
+/// [V] the collections a generator names (`buffBarConst.py:432-445`);
+/// [A] the values (`content/sov/upgrades.tsv`).
+pub fn online_effects(d: &Deltas, t: &UpgradeTable, system: i64) -> Option<(i64, Vec<(i64, f64)>)> {
+    let h = sov_hub::hub(d, system)?;
+    sov::holder(d, system)?;
+    let mut out: Vec<(i64, f64)> = Vec::new();
+    for i in installed(d, h.hub_id)
+        .into_iter()
+        .filter(|i| i.state == Power::Online)
+    {
+        let Some(r) = t.get(i.type_id) else { continue };
+        for (c, v) in &r.effects {
+            let v = *v as f64 / 1000.0;
+            match out.iter_mut().find(|(e, _)| e == c) {
+                Some(e) if v.abs() > e.1.abs() => e.1 = v,
+                Some(_) => {}
+                None => out.push((*c, v)),
+            }
+        }
+    }
+    (!out.is_empty()).then_some((h.hub_id, out))
+}
+
+/// Whether any row carries a dbuff effect (the effect stage's fast path).
+pub fn any_effects(t: &UpgradeTable) -> bool {
+    t.rows.values().any(|r| !r.effects.is_empty())
 }
 
 /// The types of `system`'s hub's upgrades that are Online (L7's export).

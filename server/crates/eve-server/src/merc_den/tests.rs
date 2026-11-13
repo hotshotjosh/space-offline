@@ -1906,6 +1906,7 @@ fn an_upgrade_goes_offline_when_a_dens_draw_uses_up_the_budget() {
         group: "invented".to_owned(),
         services: std::collections::BTreeSet::new(),
         tier: None,
+        effects: Vec::new(),
     };
     let mut c = content();
     c.insert("sov upgrades", UpgradeTable::new(vec![(UPGRADE, row)]).0);
