@@ -141,16 +141,33 @@ pub struct Effect {
     pub warp_safe: Option<bool>,
 }
 
-/// The repeat count a type allows: one when it carries
-/// `disallowRepeatingActivation`, else what the client asked for.
-fn repeat_allowed(t: &ModuleType, repeat: i64) -> i64 {
-    if t.attribute(ATTR_DISALLOW_REPEATING)
-        .is_some_and(|v| v != 0.0)
-    {
+/// A fitted module's value for `attribute` from its mutaplasmid roll (#71):
+/// `None` for a module that is not a mutated item. The dynamic type's row
+/// holds none of the rolled values, so a reader that falls back to the type
+/// asks here first.
+pub(crate) fn rolled(w: &Registry, module_id: i64, type_id: i64, attribute: i64) -> Option<f64> {
+    crate::dynamic_item::overrides_of(w, module_id, type_id).and_then(|o| o.get(attribute))
+}
+
+/// The repeat count a module allows: one when it carries
+/// `disallowRepeatingActivation` (`disallow`, the roll's or the type's), else
+/// what the client asked for.
+fn repeat_allowed(disallow: Option<f64>, repeat: i64) -> i64 {
+    if disallow.is_some_and(|v| v != 0.0) {
         1
     } else {
         repeat
     }
+}
+
+/// [`repeat_allowed`] for a fitted module: its roll's `disallowRepeating
+/// Activation` when it is a mutated item (#71), else its type's.
+fn repeat_of(w: &Registry, module_id: i64, t: &ModuleType, repeat: i64) -> i64 {
+    repeat_allowed(
+        rolled(w, module_id, t.type_id, ATTR_DISALLOW_REPEATING)
+            .or_else(|| t.attribute(ATTR_DISALLOW_REPEATING)),
+        repeat,
+    )
 }
 
 /// One module type this server can cycle.
@@ -2784,7 +2801,7 @@ pub fn activate(
     }
     // `disallowRepeatingActivation` (1014) on the type: one cycle, whatever the
     // client asked for. Scanners, analyzers and the Micro Jump Drive carry it [V-data].
-    let repeat = repeat_allowed(&t, repeat);
+    let repeat = repeat_of(w, module_id, &t, repeat);
     // **A cloak has no cycle** (duration attribute 0): it runs until it is
     // deactivated, and the client is told `-1` (no ramp).
     let (duration_ms, repeat) = if is_cloak {
@@ -3009,7 +3026,8 @@ pub fn deactivate(
                         target_id: None,
                         t: now,
                         start: false,
-                        duration_ms: module_type(w, f.type_id).map_or(-1, |t| t.duration_ms()),
+                        duration_ms: module_type(w, f.type_id)
+                            .map_or(-1, |t| duration_ms(w, f.ship_id, module_id, &t)),
                         repeat: 0,
                         error: None,
                     },
@@ -3445,6 +3463,76 @@ pub(crate) fn motion_changed_for_test(
     motion_changed(w, Via::Answer, character_id, ship_id, before);
 }
 
+/// Test fixture for the MUTA-3b readers: an invented mutated item whose rolled
+/// value differs from the dynamic type's own row. Every attribute rolled is
+/// exactly [`muta_fixture::FACTOR`] times the source's value (invented ids).
+#[cfg(test)]
+pub(crate) mod muta_fixture {
+    use crate::service::Registry;
+
+    pub const FACTOR: f64 = 3.0;
+    pub const MUTATOR: i64 = 981_400_001;
+    pub const SOURCE: i64 = 981_400_002;
+    /// The mutated item the readers are asked about.
+    pub const ITEM: i64 = 981_400_010;
+
+    /// A registry in which `result` is a dynamic type (the mutator turns
+    /// [`SOURCE`] into it) and [`ITEM`] is a mutated item of it, with each of
+    /// `rolled` rolled to `FACTOR` times the source's value. `src` is the
+    /// source's own attribute rows; `result_row` is the result type's own
+    /// attribute rows, written only when `own_row` (a fixture module type
+    /// already has its row).
+    pub fn registry(
+        result: i64,
+        own_row: Option<&str>,
+        src: &[(i64, f64)],
+        rolled: &[i64],
+    ) -> Registry {
+        let attrs = |rows: &[(i64, f64)]| {
+            rows.iter()
+                .map(|(a, v)| format!("{a}={v:?}"))
+                .collect::<Vec<_>>()
+                .join(";")
+        };
+        let mut text = format!(
+            "{}type\t{SOURCE}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{}\tInvented Source\n",
+            crate::typedata::FIXTURE,
+            attrs(src)
+        );
+        if let Some(own) = own_row {
+            text.push_str(&format!(
+                "type\t{result}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{own}\tInvented Result\n"
+            ));
+        }
+        let table = crate::typedata::Table::parse(&text).expect("the fixture rows parse");
+        let ranges: Vec<String> = rolled
+            .iter()
+            .map(|a| format!("{MUTATOR}\t{a}\t{FACTOR}\t{FACTOR}\t1"))
+            .collect();
+        let maps = vec![format!("{MUTATOR}\t{result}\t{SOURCE}")];
+        let mut content = crate::content::Content::fixture();
+        content.insert("typedata", crate::typedata::Installed::build(table));
+        content.insert(
+            "mutators",
+            crate::mutator_data::Mutators::parse(&ranges, &maps).expect("the mutators parse"),
+        );
+        let mut reg = Registry::new(crate::model::SandboxConfig::default())
+            .with_content(std::sync::Arc::new(content));
+        crate::dynamic_item::put(
+            &mut reg,
+            &crate::dynamic_item::Row {
+                item_id: ITEM,
+                source_type: SOURCE,
+                mutator_type: MUTATOR,
+                creator: 0,
+                created_at: 0,
+                rolls: rolled.iter().map(|&a| (a, 0.5)).collect(),
+            },
+        );
+        reg
+    }
+}
+
 /// **Stop every effect running on a ship, now** (BE-2): the pilot is leaving
 /// it, and a hull nobody flies must not keep cycling a gun. The stop pair of
 /// each goes to the pilot's client and the observers', as going offline does
@@ -3469,11 +3557,15 @@ pub fn stop_ship(w: &mut Registry, ship_id: i64, now: i64) {
 /// The cycle time of a fitted module's effect, in ms: the **modified** value
 /// of the effect's duration attribute (rate-of-fire skills, ship bonuses,
 /// gyrostabilizers) when `crate::dogma` has a sheet, the type's own
-/// otherwise -- `ModuleButton.GetEffectTiming` reads the same attribute off
+/// otherwise the module's own roll when it is a mutated item (#71), then the
+/// type's -- `ModuleButton.GetEffectTiming` reads the same attribute off
 /// the client's own dogma item (`smb:1812`).
 fn duration_ms(w: &Registry, ship_id: i64, module_id: i64, t: &ModuleType) -> i64 {
     t.effect
-        .and_then(|e| crate::dogma::module_attribute(w, ship_id, module_id, e.duration_attribute))
+        .and_then(|e| {
+            crate::dogma::module_attribute(w, ship_id, module_id, e.duration_attribute)
+                .or_else(|| rolled(w, module_id, t.type_id, e.duration_attribute))
+        })
         .map_or_else(|| t.duration_ms(), |ms| ms.round() as i64)
 }
 
@@ -3481,6 +3573,7 @@ fn duration_ms(w: &Registry, ship_id: i64, module_id: i64, t: &ModuleType) -> i6
 /// High Speed Maneuvering, ...) when there is a sheet.
 fn capacitor_need(w: &Registry, ship_id: i64, module_id: i64, type_id: i64) -> f64 {
     crate::dogma::module_attribute(w, ship_id, module_id, attr::CAPACITOR_NEED)
+        .or_else(|| rolled(w, module_id, type_id, attr::CAPACITOR_NEED))
         .or_else(|| find_in(w.content(), type_id).map(|t| t.capacitor_need()))
         .unwrap_or(0.0)
 }
@@ -3520,8 +3613,14 @@ fn budget(
         crate::dogma::inputs(w, ship_id),
     ) {
         let (cpu, power) = sheet.load(&inputs, Some(module_id));
-        let need_cpu = sheet.module(module_id, attr::CPU).unwrap_or(t.cpu());
-        let need_power = sheet.module(module_id, attr::POWER).unwrap_or(t.power());
+        let need_cpu = sheet
+            .module(module_id, attr::CPU)
+            .or_else(|| rolled(w, module_id, type_id, attr::CPU))
+            .unwrap_or(t.cpu());
+        let need_power = sheet
+            .module(module_id, attr::POWER)
+            .or_else(|| rolled(w, module_id, type_id, attr::POWER))
+            .unwrap_or(t.power());
         return refuse_over(
             type_id,
             (cpu, need_cpu, sheet.ship(crate::dogma::attr::CPU_OUTPUT)),
@@ -3541,14 +3640,16 @@ fn budget(
             && m.is_online(i.item_id)
     }) {
         if let Some(o) = find_in(w.content(), i.type_id) {
-            cpu += o.cpu();
-            power += o.power();
+            cpu += rolled(w, i.item_id, i.type_id, attr::CPU).unwrap_or_else(|| o.cpu());
+            power += rolled(w, i.item_id, i.type_id, attr::POWER).unwrap_or_else(|| o.power());
         }
     }
+    let need_cpu = rolled(w, module_id, type_id, attr::CPU).unwrap_or_else(|| t.cpu());
+    let need_power = rolled(w, module_id, type_id, attr::POWER).unwrap_or_else(|| t.power());
     refuse_over(
         type_id,
-        (cpu, t.cpu(), h.cpu_output),
-        (power, t.power(), h.power_output),
+        (cpu, need_cpu, h.cpu_output),
+        (power, need_power, h.power_output),
     )
 }
 
@@ -4330,7 +4431,7 @@ fn reload_ancillary(w: &mut Registry, r: &Running, at: i64) {
                 r.character_id,
                 &[r.module_id],
                 charge_type_id,
-                reload_ms_of(w, f.type_id),
+                reload_ms_of(w, r.module_id, f.type_id),
                 at,
             );
             return;
@@ -4408,11 +4509,7 @@ pub fn load_ammo(
         };
         loaded_type = Some(charge_type);
         reloaded.push(module_id);
-        reload_ms = reload_ms.max(
-            find_in(w.content(), f.type_id)
-                .and_then(|t| t.attribute(attr::RELOAD_TIME))
-                .map_or(0, |ms| ms.round() as i64),
-        );
+        reload_ms = reload_ms.max(reload_ms_of(w, f.module_id, f.type_id));
     }
     if let (Some(charge_type_id), Some(character_id)) = (loaded_type, actor) {
         start_reload(w, character_id, &reloaded, charge_type_id, reload_ms, now);
@@ -4420,10 +4517,13 @@ pub fn load_ammo(
     Ok(PyValue::None)
 }
 
-/// A module type's `reloadTime` (1795), milliseconds.
-fn reload_ms_of(w: &Registry, module_type_id: i64) -> i64 {
-    find_in(w.content(), module_type_id)
-        .and_then(|t| t.attribute(attr::RELOAD_TIME))
+/// A fitted module's `reloadTime` (1795), milliseconds: its roll when it is a
+/// mutated item (#71), else its type's.
+fn reload_ms_of(w: &Registry, module_id: i64, module_type_id: i64) -> i64 {
+    rolled(w, module_id, module_type_id, attr::RELOAD_TIME)
+        .or_else(|| {
+            find_in(w.content(), module_type_id).and_then(|t| t.attribute(attr::RELOAD_TIME))
+        })
         .map_or(0, |ms| ms.round() as i64)
 }
 
@@ -4888,14 +4988,21 @@ mod tests {
             attributes: &[(ATTR_DISALLOW_REPEATING, 0.0)],
             ..base
         };
-        assert_eq!(repeat_allowed(&once, 1000), 1);
-        assert_eq!(repeat_allowed(&free, 1000), 1000);
+        assert_eq!(
+            repeat_allowed(once.attribute(ATTR_DISALLOW_REPEATING), 1000),
+            1
+        );
+        assert_eq!(
+            repeat_allowed(free.attribute(ATTR_DISALLOW_REPEATING), 1000),
+            1000
+        );
         assert_eq!(
             repeat_allowed(
-                &ModuleType {
+                ModuleType {
                     attributes: &[],
                     ..base
-                },
+                }
+                .attribute(ATTR_DISALLOW_REPEATING),
                 7
             ),
             7
@@ -6309,6 +6416,8 @@ mod tests {
 mod defense_tests;
 #[cfg(test)]
 mod local_tank_tests;
+#[cfg(test)]
+mod muta_tests;
 #[cfg(test)]
 mod online_slot_tests;
 #[cfg(test)]
