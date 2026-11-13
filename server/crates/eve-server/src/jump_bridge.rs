@@ -82,7 +82,7 @@
 //!
 //! **Access** ([`may_use`], `JumpRestrictionsText`): the pilot's alliance
 //! holds the sovereignty of the gate's system, the structure profile gives
-//! `SETTING_ACTIVATE` (a gate with no profile at all lets its owner group
+//! `SETTING_ACTIVATE` (a profile with no activation row lets its owner group
 //! use it, the interim rule), and the sov upgrade rule holds ([`upgraded`]).
 //! The hull list is the gate type's `restrictionTypeList` from
 //! `deploy/jump-bridges.tsv` ([`Bridges`], written by ANSI-2b), resolved
@@ -104,7 +104,8 @@
 //!   by a gate bracket that logs on it.
 //! - Without `deploy/jump-bridges.tsv` every zone multiplier is 1.0 and no
 //!   hull is restricted. Falsified by the extracted row (ANSI-2b).
-//! - A gate whose structure has no profile row lets its owner group use it
+//! - A gate whose profile holds no activation row (the default profile every
+//!   anchored gate gets holds docking rows only) lets its owner group use it
 //!   (today's interim), so no live gate locks its owners out. Falsified by a
 //!   TQ gate with the default profile refusing its own alliance.
 //! - A hull with no base cost (attribute 6364 absent or 0) is refused as
@@ -421,7 +422,8 @@ pub fn charge_at(cap: f64, recharge_ms: f64, c0: f64, t0: i64, now: i64) -> f64 
 }
 
 /// The zone (0 to 4) of a destination `ly` light years from the capital;
-/// `None` (no capital, or a distance unknown) is the last zone **[V]**
+/// `None` (no capital, or a distance unknown) is the last zone, and NaN is the
+/// first as in the client's `lightYears > distance` loop **[V]**
 /// (`zone_modifier_util._GetZoneIndexFromLYDistance`).
 pub fn zone_index(ly: Option<f64>) -> usize {
     let Some(ly) = ly else {
@@ -429,7 +431,7 @@ pub fn zone_index(ly: Option<f64>) -> usize {
     };
     ZONE_BOUNDS
         .iter()
-        .position(|bound| ly <= *bound)
+        .position(|bound| ly.partial_cmp(bound) != Some(std::cmp::Ordering::Greater))
         .unwrap_or(ZONE_BOUNDS.len())
 }
 
@@ -572,13 +574,20 @@ pub fn upgraded(reg: &Registry, gate: &Structure) -> bool {
     )
 }
 
-/// Whether the gate's structure has a profile at all: its own, else its
-/// owner's default (the rule `structure_profile::has_access` judges by).
-fn has_profile(d: &Deltas, gate: &Structure) -> bool {
+/// Whether the gate's profile (its own, else its owner's default, the rule
+/// `structure_profile::has_access` judges by) holds an activation row. Every
+/// gate anchored or spawned in the server has the owner's default profile, which
+/// holds only docking rows, so a profile without an activation row does not
+/// decide **[A]**: the owner group rule applies.
+fn profile_decides(d: &Deltas, gate: &Structure) -> bool {
     crate::structure_profile::profile(d, gate.profile)
         .filter(|p| p.corp == gate.owner_corp)
         .or_else(|| crate::structure_profile::default_of(d, gate.owner_corp))
-        .is_some()
+        .is_some_and(|p| {
+            crate::structure_profile::settings(d, p.id)
+                .iter()
+                .any(|(set, _, _)| *set == SETTING_ACTIVATE)
+        })
 }
 
 /// Whether `actor` may use `gate` (`JumpRestrictionsText`): a pilot of the
@@ -595,7 +604,7 @@ pub fn may_use(reg: &Registry, actor: i64, gate: &Structure) -> bool {
         return false;
     };
     crate::sov::holder(d, gate.system) == Some(mine)
-        && if has_profile(d, gate) {
+        && if profile_decides(d, gate) {
             crate::structure_profile::has_access(reg, gate, actor, SETTING_ACTIVATE)
         } else {
             same_owner(d, corp, gate.owner_corp)
@@ -654,7 +663,7 @@ pub fn take_charge(
 ) -> Result<f64, ServiceError> {
     ensure_row(reg, gate, now);
     let Some(cost) = cost_of(reg, actor, gate, ship_type, now) else {
-        return Err(restricted_error(ship_type));
+        return Err(restricted_error(reg.content(), ship_type));
     };
     let (charge, _) = charge_of(reg, gate, now);
     if cost > charge {
@@ -664,12 +673,18 @@ pub fn take_charge(
     Ok(cost)
 }
 
-/// `JumpBridgeRestrictedShip`; `shipName` is the hull's name on the client,
-/// the server's own type data names it.
-fn restricted_error(ship_type: i64) -> ServiceError {
+/// `JumpBridgeRestrictedShip`; `shipName` is the hull's name from the type
+/// data, the id when the type is unknown.
+fn restricted_error(content: &Content, ship_type: i64) -> ServiceError {
+    let name = crate::typedata::installed_in(content)
+        .table()
+        .get(ship_type)
+        .map(|r| r.name.clone())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| ship_type.to_string());
     user_error(
         RESTRICTED_SHIP,
-        vec![("shipName", crate::pyutil::bstr(&ship_type.to_string()))],
+        vec![("shipName", crate::pyutil::bstr(&name))],
     )
 }
 
@@ -1003,7 +1018,7 @@ pub fn jump_through(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Se
     }
     let ship_type = reg.character(actor).map_or(0, |c| c.ship_type_id);
     if !hull_allowed(reg, ship_type) {
-        return Err(restricted_error(ship_type));
+        return Err(restricted_error(reg.content(), ship_type));
     }
     // The client's range gate, repeated: a modified client could skip it.
     if let Some(d) =

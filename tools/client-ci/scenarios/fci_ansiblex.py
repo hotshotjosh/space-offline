@@ -23,20 +23,22 @@ destination in `extraConfig`).  Read off the client's OWN state:
    back;
 5. after an `/jbridge unlink` the link is gone from all three answers;
 6. (ANSI-2a, #86) the pair linked again and gate A emptied by `/jbridge charge
-   here 0`, the client's own `jumpbridge.client.jumpBridge.GetJumpBridgeInfo`
+   <gateA> 0`, the client's own `jumpbridge.client.jumpBridge.GetJumpBridgeInfo`
    answers an info object whose `structure_capacitor` is (almost) 0 (fails on
    `None` or a missing attribute);
-7. a menu jump on the empty gate is refused and the ship stays;
+7. a jump on the empty gate is refused with the empty-charge text and the ship stays;
 8. with the gate full, a jump takes `base cost x zone multiplier` off the
    gate's charge: the base cost is the client's own attribute 6364 of the
    ship, the multiplier the client's own `component.zoneMultipliers` through
-   `GetCapacitorZoneModifierAndIdx` for its own capital (nothing hard-coded);
+   `GetCapacitorZoneModifierAndIdx` for its own capital (nothing hard-coded;
+   until ANSI-2b the server prices every zone 1.0, so the base cost alone also passes);
    the charge read again from the origin gate after the way back lies between
    `before - cost` and that value recharged for the time between the reads;
 9. no traceback from `jumpbridge/` or `spacecomponents/client/ui/jumpbridge/`.
 
 The gates need the pilot's alliance to hold both systems (`/sov set here`) and
-a charge (`/jbridge charge here full`); both are set up before step 1.
+a charge (`/jbridge charge <gateID> full`, by id: `here` is the lowest-id
+gate of the system, which a reused world may not make ours); both are set up before step 1.
 
 No client log traceback may appear.
 
@@ -1572,7 +1574,7 @@ def eoci_main(EOCI_NAME):
                 return True, '%s after %s ms; %s' % (label, text(waited), text(notes))
         return False, '%s: no session change; %s' % (label, text(notes))
 
-    def claim_and_charge(alliance, label):
+    def claim_and_charge(alliance, label, gate_id):
         """`/sov set here` for the pilot's alliance (the holder rule of the
         gate's access) and a full charge for the gate here (a new gate starts
         empty).  `[A]` the reply of `/sov set` names no refusal."""
@@ -1580,7 +1582,7 @@ def eoci_main(EOCI_NAME):
         precondition('%s: the alliance holds the system (/sov set here)' % label,
                      bool(ok) and 'not claimable' not in rep and 'usage' not in rep.lower(),
                      rep[:200])
-        okc, repc = gm('/jbridge charge here full')
+        okc, repc = gm('/jbridge charge %d full' % gate_id)
         precondition('%s: the gate here holds a full charge' % label,
                      bool(okc) and 'holds' in repc, repc[:200])
 
@@ -1612,12 +1614,12 @@ def eoci_main(EOCI_NAME):
             return base, mult, idx, capital, list(comp.zoneMultipliers)
         ok, v = safe(go)
         if not ok:
-            return None, text(v)[:200]
+            return None, text(v)[:200], None
         base, mult, idx, capital, mults = v
         if not base or not mult:
-            return None, 'base %s multiplier %s' % (text(base), text(mult))
+            return None, 'base %s multiplier %s' % (text(base), text(mult)), None
         return float(base) * float(mult), 'base %s x %s (zone %s, capital %s, zones %s)' % (
-            text(base), text(mult), text(idx + 1), text(capital), text(mults))
+            text(base), text(mult), text(idx + 1), text(capital), text(mults)), float(base)
 
     def gate_charge_facts(gate_id):
         """`(capacity, recharge_ms)` of the gate's type, as the window reads them."""
@@ -1673,10 +1675,10 @@ def eoci_main(EOCI_NAME):
         precondition('in system A', go_to(sys_a), 'system %s' % text(sys_a))
         gate_a = spawn_gate(tid, 'Fci Gate A ' + uniq(3))
         precondition('an alliance to hold the systems', bool(alliance), text(alliance))
-        claim_and_charge(alliance, 'system A')
+        claim_and_charge(alliance, 'system A', gate_a)
         precondition('in system B', go_to(sys_b), 'system %s' % text(sys_b))
         gate_b = spawn_gate(tid, 'Fci Gate B ' + uniq(3))
-        claim_and_charge(alliance, 'system B')
+        claim_and_charge(alliance, 'system B', gate_b)
         if gate_a is None or gate_b is None:
             return
         gm_check('gate A is aimed at system B', '/jbridge link %d %d' % (gate_a, sys_b),
@@ -1754,36 +1756,39 @@ def eoci_main(EOCI_NAME):
         precondition('gate A is in the client\'s park again', bool(got), 'slim items of the park')
         if not got:
             return
-        gm_check('gate A is emptied', '/jbridge charge here 0', expect=['holds 0.0'])
-        info = bridge_info(gate_a)
-        cap_now = getattr_safe(info, 'structure_capacitor')
-        check('GetJumpBridgeInfo(A) answers an info object whose structure_capacitor is (almost) 0',
-              info is not None and cap_now is not None and 0 <= cap_now < 1.0,
-              'info %s structure_capacitor %s' % (text(info)[:80], text(cap_now)))
-        check('and says the ship type is valid',
-              getattr_safe(info, 'valid_ship_type') is True, text(getattr_safe(info, 'valid_ship_type')))
-
-        # 7. a menu jump on the empty gate is refused, the ship stays
-        session_gate_open()
-        ok, v = safe(lambda: get_svc('menu').JumpThroughStructureJumpBridge(gate_a))
-        left, _w = wait_for(lambda: sess_attr('solarsystemid2') != sys_a, timeout_ms=8000, step_ms=500)
-        check('a menu jump on the empty gate is refused and the ship stays in the system',
-              (not left) and in_system_park(sys_a),
-              'call %s; system now %s' % (text(v)[:120], text(sess_attr('solarsystemid2'))))
-
-        # 8. full: the jump takes base cost x zone multiplier off the gate
-        gm_check('gate A is full', '/jbridge charge here full', expect=['holds'])
-        cost, why = bridge_cost(gate_a)
-        precondition('the cost of this ship, worked out the window\'s way', cost is not None, why)
+        gm_check('gate A is emptied', '/jbridge charge %d 0' % gate_a, expect=['holds 0.0'])
         cap, recharge = gate_charge_facts(gate_a)
         precondition('the gate type\'s capacity and recharge time', bool(cap) and bool(recharge),
                      '%s %s' % (text(cap), text(recharge)))
+        if not (cap and recharge):
+            return
+        # the curve's value 30 s after the set bounds what a slow round trip may read
+        small = evolved(0.0, cap, recharge, 30 * 10000000) + 0.01
+        info = bridge_info(gate_a)
+        cap_now = getattr_safe(info, 'structure_capacitor')
+        check('GetJumpBridgeInfo(A) answers an info object whose structure_capacitor is (almost) 0',
+              info is not None and cap_now is not None and 0 <= cap_now <= small,
+              'info %s structure_capacitor %s (bound %s)' % (text(info)[:80], text(cap_now), fmt(small, 2)))
+        check('and says the ship type is valid',
+              getattr_safe(info, 'valid_ship_type') is True, text(getattr_safe(info, 'valid_ship_type')))
+
+        # 7. a jump on the empty gate is refused for the charge, the ship stays
+        ok, v = rcall('structureJumpBridgeMgr', 'CmdJumpThroughStructureStargate', gate_a)
+        left, _w = wait_for(lambda: sess_attr('solarsystemid2') != sys_a, timeout_ms=8000, step_ms=500)
+        check('a jump on the empty gate is refused with the empty-charge text and the ship stays',
+              (not ok) and 'enough charge' in text(v) and (not left) and in_system_park(sys_a),
+              'ok %s: %s; system now %s' % (text(ok), text(v)[:160], text(sess_attr('solarsystemid2'))))
+
+        # 8. full: the jump takes base cost x zone multiplier off the gate
+        gm_check('gate A is full', '/jbridge charge %d full' % gate_a, expect=['holds'])
+        cost, why, base = bridge_cost(gate_a)
+        precondition('the cost of this ship, worked out the window\'s way', cost is not None, why)
         info1 = bridge_info(gate_a)
         c1 = getattr_safe(info1, 'structure_capacitor')
         t1 = getattr_safe(info1, 'sim_timestamp')
         precondition('the full gate answers its charge', c1 is not None and t1 is not None,
                      'charge %s at %s' % (text(c1), text(t1)))
-        if cost is None or not cap or not recharge or c1 is None or t1 is None:
+        if cost is None or c1 is None or t1 is None:
             return
         moved, detail = jump_by_menu(gate_a, sys_b, 'A -> B (charged)')
         check('the jump on the full gate goes through', moved, detail)
@@ -1791,7 +1796,7 @@ def eoci_main(EOCI_NAME):
             return
         settled, _w = wait_for(lambda: in_system_park(sys_b), timeout_ms=JUMP_WAIT_MS, step_ms=500)
         precondition('the partner system\'s park is built', bool(settled), 'park for %s' % text(sys_b))
-        gm('/jbridge charge here full')
+        gm('/jbridge charge %d full' % gate_b)
         moved, detail = jump_by_menu(gate_b, sys_a, 'B -> A (charged)')
         check('and the way back', moved, detail)
         if not moved:
@@ -1803,14 +1808,21 @@ def eoci_main(EOCI_NAME):
         c2 = getattr_safe(info2, 'structure_capacitor')
         t2 = getattr_safe(info2, 'sim_timestamp')
         if c2 is not None and t2 is not None and bool(got):
-            tol = 0.005 * cap
-            lower = c1 - cost - tol
-            upper = evolved(max(c1 - cost, 0.0), cap, recharge, t2 - t1) + tol
-            check('the charge fell by base cost x zone multiplier (%s), within 0.5 %% of the capacity'
-                  % why[:120],
-                  lower <= c2 <= upper and c2 < c1,
-                  'before %s after %s cost %s allowed [%s, %s]'
-                  % (fmt(c1, 2), fmt(c2, 2), fmt(cost, 2), fmt(lower, 2), fmt(upper, 2)))
+            # [A] until ANSI-2b writes deploy/jump-bridges.tsv the server prices every
+            # zone at 1.0; falsifier: the table present and the first form never matching.
+            def band(k):
+                lo = c1 - k - 0.01 * k
+                hi = evolved(max(c1 - k, 0.0), cap, recharge, t2 - t1) + 0.01 * k
+                return lo, hi, lo <= c2 <= hi
+            lo, hi, by_client = band(cost)
+            lo1, hi1, by_base = band(base)
+            check('the charge fell by base cost x zone multiplier (%s), or by the base cost alone '
+                  'while the server has no zone table (ANSI-2b), within 1 %% of the cost' % why[:120],
+                  (by_client or by_base) and c2 < c1,
+                  'before %s after %s; zone cost %s allowed [%s, %s]%s; base cost %s allowed [%s, %s]%s'
+                  % (fmt(c1, 2), fmt(c2, 2), fmt(cost, 2), fmt(lo, 2), fmt(hi, 2),
+                     ' MATCH' if by_client else '', fmt(base, 2), fmt(lo1, 2), fmt(hi1, 2),
+                     ' MATCH (zone table absent)' if by_base and not by_client else ''))
         else:
             check('the origin gate answers its charge after the jump', False,
                   'info %s charge %s' % (text(info2)[:80], text(c2)))

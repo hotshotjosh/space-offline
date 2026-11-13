@@ -875,7 +875,6 @@ fn zone_bounds_and_cost() {
     assert_eq!(zone_index(Some(20.0)), 3);
     assert_eq!(zone_index(Some(25.0)), 4);
     assert_eq!(zone_index(None), 4, "no capital is the last zone");
-    assert_eq!(zone_index(Some(f64::NAN)), 4);
     assert_eq!(zone_cost(10.0, MULTS, 0), 10.0);
     assert_eq!(zone_cost(10.0, MULTS, 3), 40.0);
     assert_eq!(
@@ -965,7 +964,7 @@ fn a_restricted_hull_is_refused_before_any_charge_is_taken() {
     let before = cap_row(reg.deltas(), 11);
     assert_eq!(
         jump(&mut reg, ALICE, 11),
-        Err(restricted_error(SHIP_BANNED))
+        Err(restricted_error(reg.content(), SHIP_BANNED))
     );
     assert_eq!(cap_row(reg.deltas(), 11), before);
     assert!(reg.roster().is_in_space(ALICE));
@@ -973,7 +972,7 @@ fn a_restricted_hull_is_refused_before_any_charge_is_taken() {
     reg.character_mut(ALICE).unwrap().ship_type_id = SHIP_NO_COST;
     assert_eq!(
         jump(&mut reg, ALICE, 11),
-        Err(restricted_error(SHIP_NO_COST))
+        Err(restricted_error(reg.content(), SHIP_NO_COST))
     );
     assert_eq!(cap_row(reg.deltas(), 11), before);
 }
@@ -998,10 +997,9 @@ fn the_access_rule_wants_the_holder_alliance_and_the_profile_setting() {
     assert!(may_use(&reg, ALICE, &g));
     // Outside the alliance: out.
     assert!(!may_use(&reg, STRANGER, &g));
-    // An alliance member whose corporation is not the owner group, with no
-    // profile at all, is out (the interim rule is the owner group).
+    // A member of another corporation of the owner alliance is in: the
+    // interim rule is the owner group, which is the alliance.
     reg.character_mut(STRANGER).unwrap().corporation_id = CORP_B;
-    ally(&mut reg, &[CORP_B]);
     assert!(
         may_use(&reg, STRANGER, &g),
         "CORP_B is in the owner alliance"
@@ -1016,19 +1014,19 @@ fn the_profile_setting_decides_once_the_owner_has_a_profile() {
     let mut reg = world();
     pair(&mut reg);
     let g = structure::get(reg.deltas(), 11).unwrap();
-    assert!(!has_profile(reg.deltas(), &g));
+    assert!(!profile_decides(reg.deltas(), &g));
     assert!(
         may_use(&reg, ALICE, &g),
         "no profile: the owner group passes"
     );
-    // The owner now has a default profile with no activation row: it decides,
-    // and it grants nothing.
+    // The owner's default profile, as anchoring and /upwell spawn create it,
+    // holds no activation row: it does not decide, the owner group passes.
     let pid = crate::structure_profile::ensure_default(&mut reg, CORP_A);
     let g = structure::get(reg.deltas(), 11).unwrap();
-    assert!(has_profile(reg.deltas(), &g));
+    assert!(!profile_decides(reg.deltas(), &g));
     assert!(
-        !may_use(&reg, ALICE, &g),
-        "a profile without the setting refuses"
+        may_use(&reg, ALICE, &g),
+        "a default profile with no activation row lets the owner group through"
     );
     // A group holding the setting lets its members in, and no one else.
     let group = crate::owner_groups::create_for(
@@ -1043,6 +1041,7 @@ fn the_profile_setting_decides_once_the_owner_has_a_profile() {
         pid,
         &[(SETTING_ACTIVATE, group.group_id, 0.0)],
     );
+    assert!(profile_decides(reg.deltas(), &g));
     assert!(may_use(&reg, ALICE, &g));
     assert!(!may_use(&reg, STRANGER, &g));
 }
@@ -1139,13 +1138,13 @@ fn a_jump_and_the_gm_command_change_the_etag() {
 
 #[test]
 fn the_table_parses_its_lines_and_refuses_a_bad_one() {
-    let (id, row) = Bridges::parse_line("35841\t900\t1\t2.5\t3\t4\t5").unwrap();
-    assert_eq!((id, row.restriction_list), (35841, Some(900)));
+    let (id, row) = Bridges::parse_line("9960999\t900\t1\t2.5\t3\t4\t5").unwrap();
+    assert_eq!((id, row.restriction_list), (9_960_999, Some(900)));
     assert_eq!(row.zones, [1.0, 2.5, 3.0, 4.0, 5.0]);
-    let (_, none) = Bridges::parse_line("35841\t-\t1\t1\t1\t1\t1").unwrap();
+    let (_, none) = Bridges::parse_line("9960999\t-\t1\t1\t1\t1\t1").unwrap();
     assert_eq!(none.restriction_list, None);
-    assert!(Bridges::parse_line("35841\t900\t1\t2").is_err());
+    assert!(Bridges::parse_line("9960999\t900\t1\t2").is_err());
     assert!(Bridges::parse_line("0\t900\t1\t1\t1\t1\t1").is_err());
-    assert!(Bridges::parse_line("35841\t900\t1\tx\t1\t1\t1").is_err());
-    assert!(Bridges::parse_line("35841\t900\t-1\t1\t1\t1\t1").is_err());
+    assert!(Bridges::parse_line("9960999\t900\t1\tx\t1\t1\t1").is_err());
+    assert!(Bridges::parse_line("9960999\t900\t-1\t1\t1\t1\t1").is_err());
 }
