@@ -409,7 +409,7 @@ mod tests {
         let w = reg.read().unwrap();
         assert_eq!(
             enabled(&w, WHO, ship),
-            PyValue::Dict(vec![(PyValue::Int(0), PyValue::Int(CORPORATION_LOGO))])
+            eve_server::pyutil::dict_kv([(PyValue::Int(SLOT), PyValue::Int(CORPORATION_LOGO))])
         );
     }
 
