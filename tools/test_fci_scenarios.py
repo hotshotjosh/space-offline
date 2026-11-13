@@ -7,6 +7,8 @@ nothing here runs one.  Checked without a client:
   block (`sync-prelude.py --check`, `sync-fci.py --check`);
 - each names itself, declares `EOCI_FCI_TIMEOUT_S`, and declares at least one
   `SERVER-EXPECT: absent UNANSWERED ...` directive that parses;
+- every name read inside `eoci_main` is bound in its scope chain, at module
+  level or by Python 2.7 itself (`undefined_names`);
 - each body parses and uses nothing Python 2.7 lacks, no `print`, no
   8-9 digit literal inside a string that could be a copied client id;
 - `server-expect.py` evaluates present, absent and max directives correctly;
@@ -15,9 +17,11 @@ nothing here runs one.  Checked without a client:
 Stdlib unittest; reads files only.
 """
 import ast
+import functools
 import importlib.util
 import pathlib
 import re
+import symtable
 import sys
 import textwrap
 import unittest
@@ -39,6 +43,125 @@ sync_prelude = _load("sync_prelude_f", CI / "sync-prelude.py")
 sync_fci = _load("sync_fci", CI / "sync-fci.py")
 expect = _load("server_expect", CI / "server-expect.py")
 NAMES = sorted(p.stem for p in SCEN.glob("fci_*.py"))
+
+
+# The builtins of Python 2.7 (not the host's): the scenarios run there.
+PY27_BUILTINS = frozenset("""
+ArithmeticError AssertionError AttributeError BaseException BufferError BytesWarning
+DeprecationWarning EOFError Ellipsis EnvironmentError Exception False FloatingPointError
+FutureWarning GeneratorExit IOError ImportError ImportWarning IndentationError IndexError
+KeyError KeyboardInterrupt LookupError MemoryError NameError None NotImplemented
+NotImplementedError OSError OverflowError PendingDeprecationWarning ReferenceError
+RuntimeError RuntimeWarning StandardError StopIteration SyntaxError SyntaxWarning
+SystemError SystemExit TabError True TypeError UnboundLocalError UnicodeDecodeError
+UnicodeEncodeError UnicodeError UnicodeTranslateError UnicodeWarning UserWarning
+ValueError Warning WindowsError ZeroDivisionError
+__debug__ __doc__ __name__ __package__ __import__
+abs all any apply basestring bin bool buffer bytearray bytes callable chr classmethod
+cmp coerce compile complex copyright credits delattr dict dir divmod enumerate eval
+execfile exit file filter float format frozenset getattr globals hasattr hash help hex
+id input int intern isinstance issubclass iter len license list locals long map max
+memoryview min next object oct open ord pow print property quit range raw_input reduce
+reload repr reversed round set setattr slice sorted staticmethod str sum super tuple
+type unichr unicode vars xrange zip
+""".split())
+# Names the client installs into `__builtin__`, so a bare read resolves there
+# (the prelude's `builtin(name)` reads them the same way).  Kept to the four
+# the scenarios use; each is verified in the decompiled client (out/research/_w/src):
+#   sm       [V] carbon/common/script/sys/serviceManager.py:53 `__builtin__.sm = self`
+#   session  [V] autoexec_client_core.py:103 `__builtin__.session = session`
+#   const    [V] builtinmangler.py:20 `__builtin__.const = constmodule`
+#   cfg      [V] carbon/common/script/sys/cfg.py:45 `__builtin__.cfg = ...`
+# `uicore` is NOT one of them: the client imports it (`from carbonui.uicore import uicore`).
+CLIENT_BUILTINS = frozenset(["sm", "session", "const", "cfg"])
+
+
+@functools.lru_cache(maxsize=None)
+def undefined_names(source):
+    """[(name, line)] for every name read inside `eoci_main` that no enclosing
+    function, class-free scope chain, module binding or Python 2.7 builtin
+    binds.  `symtable` does the scoping (comprehensions, lambdas, defaults,
+    global, except-as, with-as, imports, loop targets, class bodies); two
+    Python 2 differences are patched: a list comprehension's variable lives in
+    the enclosing function, and a `global x` that assigns binds x at module
+    level.  Flow is not modelled: a binding anywhere in a scope counts, so order,
+    branches and `del` are not checked.  Returns a tuple of (name, line)."""
+    # the prelude still writes `except E, e:` and `10L`; same lines, py3 syntax
+    source = re.sub(r"(?m)^(\s*except\s+[^:\n]+?)\s*,\s*(\w+)\s*:", r"\1 as \2:", source)
+    source = re.sub(r"\b(\d+)[lL]\b", r"\1", source)
+    top = symtable.symtable(source, "scenario", "exec")
+    tree = ast.parse(source)
+    mod_bound = {s.get_name() for s in top.get_symbols()
+                 if s.is_assigned() or s.is_imported() or s.is_namespace()}
+
+    def tables(t):
+        yield t
+        for c in t.get_children():
+            yield from tables(c)
+
+    mains = [c for c in top.get_children() if c.get_name() == "eoci_main"]
+    if len(mains) != 1:
+        return [("eoci_main", 0)]
+    main = mains[0]
+    for t in tables(main):
+        for s in t.get_symbols():
+            if s.is_declared_global() and s.is_assigned():
+                mod_bound.add(s.get_name())
+
+    scopes = {}  # (name, line) -> ast node, to find a table's own list comprehensions
+    for x in ast.walk(tree):
+        if isinstance(x, (ast.FunctionDef, ast.ClassDef)):
+            scopes[(x.name, x.lineno)] = x
+        elif isinstance(x, ast.Lambda):
+            scopes[("lambda", x.lineno)] = x
+
+    def listcomp_targets(t):
+        """The names the list comprehensions written directly in this scope
+        bind: Python 2 leaves them in the scope, Python 3 hides them."""
+        node = scopes.get((t.get_name(), t.get_lineno()))
+        if node is None:
+            return set()
+        out = set()
+
+        def go(n):
+            if isinstance(n, ast.ListComp):
+                for g in n.generators:
+                    out.update(y.id for y in ast.walk(g.target) if isinstance(y, ast.Name))
+            if isinstance(n, (ast.GeneratorExp, ast.SetComp, ast.DictComp)):
+                go(n.generators[0].iter)  # their own scope; only the first iterable is ours
+                return
+            for c in ast.iter_child_nodes(n):
+                if not isinstance(c, (ast.arguments, ast.FunctionDef, ast.ClassDef, ast.Lambda)):
+                    go(c)
+        go(node)
+        return out
+
+    flagged = []
+
+    def visit(t, leaks):
+        here = set(leaks) | listcomp_targets(t)
+        for s in t.get_symbols():
+            n = s.get_name()
+            if (s.is_referenced() and s.is_global() and n not in mod_bound
+                    and n not in PY27_BUILTINS and n not in CLIENT_BUILTINS
+                    and n not in here):
+                flagged.append((n, t))
+        for c in t.get_children():
+            if c.get_type() != "annotation":
+                visit(c, leaks if t.get_type() == "class" else here)
+
+    visit(main, set())
+    out = []
+    for n, t in flagged:
+        node = scopes.get((t.get_name(), t.get_lineno()))
+        lines = [x.lineno for x in ast.walk(node) if isinstance(x, ast.Name)
+                 and x.id == n and isinstance(x.ctx, ast.Load)]
+        out.append((n, min(lines) if lines else t.get_lineno()))
+    return tuple(sorted(out, key=lambda x: (x[1], x[0])))
+
+
+# (scenario, name) pairs that really are unbound and wait for their owner to fix.
+KNOWN_UNBOUND = frozenset()  # (scenario, name, line); a new read of the name is not silenced
 
 
 def _parts(name):
@@ -238,6 +361,89 @@ class Python27(unittest.TestCase):
                     if (isinstance(c, ast.Constant) and isinstance(c.value, str)
                             and not c.value.startswith('/giveisk')):
                         self.assertIsNone(re.search(r"\b\d{8,9}\b", c.value), c.value)
+
+    def test_no_name_is_read_that_nothing_binds(self):
+        """A name read in `eoci_main` that is bound nowhere in its scope chain
+        dies with a NameError mid-run on a client (a `time.time()` with no
+        `import time`; a variable whose assignment an edit deleted)."""
+        bad = []
+        for n in NAMES:
+            src = (SCEN / f"{n}.py").read_text()
+            for name, line in undefined_names(src):
+                if (n, name, line) not in KNOWN_UNBOUND:
+                    bad.append("%s.py:%d: %s is not bound anywhere it can be reached" % (n, line, name))
+        self.assertEqual(bad, [], "unbound names:\n" + "\n".join(bad))
+
+    def test_the_known_list_has_no_stale_entries(self):
+        live = {(n, name, line) for n in NAMES
+                for name, line in undefined_names((SCEN / f"{n}.py").read_text())}
+        self.assertEqual(KNOWN_UNBOUND - live, set())
+
+
+class UndefinedNames(unittest.TestCase):
+    """Self-tests for `undefined_names` on tiny inline sources."""
+
+    @staticmethod
+    def _flags(body):
+        src = "import os\nMOD = 1\ndef eoci_main(N):\n" + textwrap.indent(
+            textwrap.dedent(body).strip("\n"), "    ") + "\n"
+        return [n for n, _ in undefined_names(src)]
+
+    def test_an_unbound_name_is_flagged(self):
+        self.assertEqual(self._flags("x = time.time()"), ["time"])
+        self.assertEqual(self._flags("def f():\n    return gone\nf()"), ["gone"])
+        self.assertEqual(self._flags("a = 1\ndel a\ndef f():\n    return a\n"), [])  # still a closure cell
+        self.assertEqual(self._flags("def f():\n    y = 1\nz = y"), ["y"])
+
+    def test_every_binding_form_passes(self):
+        ok = [
+            "import time\nx = time.time()",
+            "def f():\n    import time\n    return time\nf()",
+            "from os import path\nx = path",
+            "x = 1\ndef f():\n    return x\nf()",
+            "def g():\n    return h()\ndef h():\n    return 1\ng()",
+            "for i in range(3):\n    pass\nx = i",
+            "for a, (b, c) in []:\n    pass\nx = a + b + c",
+            "try:\n    pass\nexcept Exception as e:\n    x = e",
+            "with open('x') as fh:\n    x = fh",
+            "x = [i for i in range(3)]",
+            "x = [j for i in [[1]] for j in i]",
+            "x = [i for i in range(3)]\ny = i",  # py2 list comprehension leaks
+            "x = {k: v for k, v in []}",
+            "x = set(i for i in [])",
+            "f = lambda a, b=MOD: a + b + N",
+            "def f(a, b=MOD, *r, **kw):\n    return a, b, r, kw\nf(1)",
+            "x = 1\ndef f():\n    global x\n    x = 2\nf()",
+            "def f():\n    global late\n    late = 1\nf()\ny = late",
+            "class C(object):\n    a = 1\n    b = a + 1\n    def m(self):\n        return self\nz = C",
+            "x = unicode('a') + str(long(1)) + str(list(xrange(2))) + basestring.__name__ + unichr(1)",
+            "y = [reduce, execfile, raw_input, file, buffer, cmp, apply, intern, coerce, reload]",
+            "x = MOD + len(os.sep)",
+            "def f():\n    a = 1\n    def g():\n        return a\n    return g\nf()",
+        ]
+        for body in ok:
+            with self.subTest(body):
+                self.assertEqual(self._flags(body), [])
+
+    def test_a_class_body_does_not_bind_for_its_methods(self):
+        self.assertEqual(self._flags("class C(object):\n    a = 1\n    def m(self):\n        return a\n"), ["a"])
+
+    def test_a_list_comprehension_variable_stays_in_its_own_function(self):
+        self.assertEqual(self._flags("def a():\n    return [k for k in []]\ndef b():\n    return k\n"), ["k"])
+        self.assertEqual(self._flags("def a():\n    return [k for k in []]\ndef b(n):\n    return n.foo\n"), [])
+        self.assertEqual(self._flags("def b():\n    return n.foo\ndef a():\n    return [n for n in []]\n"), ["n"])
+        self.assertEqual(self._flags("x = list([w for w in r] for r in [[1]])\ny = w"), ["w"])
+
+    def test_py3_only_builtins_are_not_py27(self):
+        self.assertEqual(self._flags("x = ascii(1)"), ["ascii"])
+
+    def test_names_outside_eoci_main_are_not_checked(self):
+        src = "def other():\n    return nothing\ndef eoci_main(N):\n    return N\n"
+        self.assertEqual(undefined_names(src), ())
+
+    def test_client_builtins_resolve_bare(self):
+        self.assertEqual(self._flags("x = (sm, session, const, cfg)"), [])
+        self.assertEqual(self._flags("x = uicore"), ["uicore"])
 
 
 class EssPanelRatPick(unittest.TestCase):
