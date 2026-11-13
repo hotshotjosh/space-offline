@@ -1395,6 +1395,19 @@ def eoci_main(EOCI_NAME):
     SURVEY_GROUP = 1995     # [V-data] group of 'Triglavian Survey Database' (out/content/types/typedata.tsv)
     KILLS = 5
     KILL_WAIT_MS = 480000
+    HEAL_EVERY_MS = 15000   # a test pace, not a claim
+
+    def wait_healing(predicate, timeout_ms, step_ms=1000):
+        # wait_for that also sends /heal me every HEAL_EVERY_MS; returns (value, waited_ms, heals)
+        st = {'heals': 0, 'last': time.time()}
+        def tick():
+            if (time.time() - st['last']) * 1000.0 >= HEAL_EVERY_MS:
+                st['last'] = time.time()
+                st['heals'] += 1
+                gm('/heal me')
+            return predicate()
+        value, waited = wait_for(tick, timeout_ms=timeout_ms, step_ms=step_ms)
+        return value, waited, st['heals']
     WRECK_NEAR_M = 20000
 
     def trig_faction():
@@ -1562,23 +1575,42 @@ def eoci_main(EOCI_NAME):
                 break
             npc_id = npcs[0][0]
             last_at = ball_pos(park, npc_id)
-            ok, detail = approach(park, npc_id, 15000)
             ok2, detail2 = lock_target(npc_id)
             if not ok2:
                 check('kill %d: the battleship locks' % (n + 1), False, detail2)
+                break
+            still = getattr_safe(sess, 'shipid') == hull_ship
+            precondition('kill %d: still in the Tempest when it fires' % (n + 1), still,
+                         'session.shipid %s, the Tempest %s' % (
+                             text(getattr_safe(sess, 'shipid')), text(hull_ship)))
+            if not still:
                 break
             acts = [activate_module(m.itemID) for m in guns]
             check('kill %d: the guns activate' % (n + 1), any(a_[0] for a_ in acts),
                   text([a_[1] for a_ in acts][:3]))
             if not any(a_[0] for a_ in acts):
                 break
-            dead, waited = wait_for(lambda: npc_id not in park.slimItems,
-                                    timeout_ms=KILL_WAIT_MS, step_ms=1000)
+            ok, detail = approach(park, npc_id, 15000, timeout_ms=60000)
+            say('kill %d: approach %s: %s' % (n + 1, 'reached' if ok else 'not reached', text(detail)))
+            seen = {'at': last_at}
+            def gone():
+                at = ball_pos(park, npc_id)
+                if at is not None:
+                    seen['at'] = at
+                return npc_id not in park.slimItems
+            dead, waited, heals = wait_healing(gone, KILL_WAIT_MS)
+            last_at = seen['at']
+            alive = getattr_safe(sess, 'shipid') == hull_ship
+            precondition('kill %d: the Tempest survived the fight' % (n + 1), alive,
+                         'session.shipid %s, the Tempest %s, %d heal(s)' % (
+                             text(getattr_safe(sess, 'shipid')), text(hull_ship), heals))
+            if not alive:
+                break
             for m in guns:
                 deactivate_module(m.itemID)
             gm_info_check('GM: /heal me after kill %d' % (n + 1), '/heal me', ['healed'])
             check('kill %d: the battleship is destroyed (it leaves the park)' % (n + 1),
-                  bool(dead), 'after %s ms; approach: %s' % (text(waited), detail))
+                  bool(dead), 'after %s ms, %d heal(s); approach: %s' % (text(waited), heals, detail))
             if not dead:
                 break
             fresh = [w for w, _s in wreck_balls(park) if w not in before]
