@@ -40,6 +40,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
 - [ ] A bot summoned by a cloaked pilot never lands within decloak range of him: *built-unproved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests. fci_bot_ess still re-cloaks the client; a run without that workaround proves it
+- [ ] Fleet kept across a client quit: *built-unproved*, fleet.rs reconnect_lazy: the client's own Reconnect after a quit keeps the held seat and makes the auto-accepted rejoin invite due at once (#200); fci_fleet_lazy written, not yet run; fci_fleet_reconnect, fci_fleet_comp and fci_wing_follow to rerun
 - [ ] A camping HIC loads the focused script and points a prey no bubble holds: *built-unproved*, server/crates/eve-bot/tests/hic_point_socket.rs: camp::acts on live sockets locks a warpBubbleImmune hull past a nearer bubbleable decoy, loads the Focused Warp Disruption Script and runs the generator as a point on it, and the prey's warp is refused WarpScrambled; mutation-checked (nearest-prey and no-immunity mutants go red); camp.rs immune_target/load_script_now/point_now, pvp_kit.rs FieldPoint/ScriptOut. No client can fly a super here; the 60 s script hold, LEARN_TURNS and the cloak/logoff misfire of learned immunity are [A]
 - [ ] Rosters and gates: *built-unproved*, tools/soak.sh --hunters/--society-pvp and --dictors/--hics/--foes (a dev roster that buys bubblers), tools/pvp-report.py; every behaviour logs its decision (counter.rs, camp.rs, #136); no recorded run yet; soak B 2026-11-05 (dictors, HICs, hunters, foes in null sec): probes, fields and bubble holds PASS; it found dictor-held logged by the bubbling side and 459 re-locks of warping targets, fixed in counter.rs (held needs a hostile bubbler on grid) and hunt.rs (LockBackoff, 1 s per target, only the lock act waits) [A] at most 5 cancels per warp burst; a drill soak (smartbomb, MJD, gate camp) is still to run
 - [ ] Capitals fight: *partial*, capital_fight.rs: bot dreads and FAXes siege/triage on a fight grid and stock the fuel (#34); they fit the siege or triage module from their own stock or buy it (#140); sov_bot guards launch an owned cyno inhibitor at an enemy capital pair and forget it at expiry (#36); unit tests; doctrine, scenario and titans open
@@ -174,7 +175,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Bots | 11 | 27 | 3 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
-| Fleet | 9 | 1 | 0 | 0 | 0 |
+| Fleet | 9 | 2 | 0 | 0 | 0 |
 | Sovereignty | 4 | 9 | 1 | 1 | 0 |
 | Upwell structures | 10 | 4 | 2 | 3 | 0 |
 | Factional warfare | 3 | 1 | 1 | 2 | 0 |
@@ -464,7 +465,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Fleet</b>: 9 of 10 proved, 1 open</summary>
+<details><summary><b>Fleet</b>: 9 of 11 proved, 2 open</summary>
 
 - [x] Fleet composition with live locations: *client-proved*, fci_fleet_comp W10
 - [x] Bots join your wing and follow: *client-proved*, fci_wing_follow W10
@@ -475,6 +476,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Bots summoned to you: *client-proved*, fci_gang_summon W10
 - [ ] A bot summoned by a cloaked pilot never lands within decloak range of him: *built-unproved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests. fci_bot_ess still re-cloaks the client; a run without that workaround proves it
 - [x] Fleet kept across a reconnect: *client-proved*, fleet.rs offer_rejoins: a held pilot who logs back in inside the window gets an auto-accepted rejoin invite and is re-seated (#195); fci_fleet_reconnect green 11-07 (var/regress-1107r1), fci_fleet_comp and fci_wing_follow green beside it; two-minute window by owner decision
+- [ ] Fleet kept across a client quit: *built-unproved*, fleet.rs reconnect_lazy: the client's own Reconnect after a quit keeps the held seat and makes the auto-accepted rejoin invite due at once (#200); fci_fleet_lazy written, not yet run; fci_fleet_reconnect, fci_fleet_comp and fci_wing_follow to rerun
 - [x] A far fleet member does not show as on grid: *client-proved*, fci_fleet_comp grid ladder (regress-w28a): the fleet window's on-grid equals park membership; a mate is on grid to ~3.7 Mm and off past ~4.3 Mm (the server's GRID_ENTER/LEAVE [A]), never past GRIDSIZE; a TQ-like radius is an owner decision
 
 </details>

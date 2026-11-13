@@ -365,13 +365,15 @@ fn on_fleet(
             applied(reg, r)
         }
         // Sent when the client finds a fleet id it kept across a drop, inside
-        // a `try` that only logs **[V] fleetSvc.py:1615-1631**.
+        // a `try` that only logs **[V] fleetSvc.py:61, 1613-1631**.
+        // It sets no client state, so the seat is kept held and the
+        // auto-accepted rejoin invite is made due now; the invite is what
+        // seats the client again **[V] fleetSvc.py:150, 1138**.
         "Reconnect" => {
-            let fx = reg
-                .fleets_mut()
-                .reconnect(actor, fleet_id)
-                .ok_or_else(|| raise(FleetError::NotInFleet))?;
-            reg.fleet_apply(fx);
+            let now = crate::pyutil::filetime_now();
+            reg.fleets_mut()
+                .reconnect_lazy(actor, fleet_id, now)
+                .map_err(raise)?;
             Ok(PyValue::Bool(true))
         }
         // The composition reads where each pilot is now, so the ship type

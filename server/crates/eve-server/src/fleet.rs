@@ -145,8 +145,13 @@ pub const INVITE_DIALOG: &str = "AskJoinFleet";
 /// seat for the same span is ours **[A]**; falsified by a client that tries
 /// later than this and finds a retail fleet still holding it.
 ///
-/// A process quit is re-seated by the client's own `Reconnect`; a character
-/// log-off to the select screen is re-seated by `Fleets::offer_rejoins`.
+/// Both kinds of return end in the same offer. A character log-off to the
+/// select screen is re-seated by `Fleets::offer_rejoins` once he is seen
+/// online. A process quit makes the client call `Reconnect` on its own after
+/// about 10 s (`RECONNECT_DELAY` **[V]** fleetSvc.py:61, the sleep at :1613-1631); that call sets no client state
+/// (`self.fleet` is set only by Clear, Create, AcceptInvite and leave, **[V]**
+/// fleetSvc.py:150, 329, 1138, 1591), so `Fleets::reconnect_lazy` keeps the
+/// hold and makes the auto-accepted rejoin invite due at once.
 pub const RECONNECT_TIMEOUT: i64 = 2 * 60 * 10_000_000;
 
 /// How long after a held pilot's login his seat is offered back: past the
@@ -1833,6 +1838,51 @@ impl Fleets {
         fx.sessions.push(session);
         fx.absorb(self.replay_to(fleet_id, char_id));
         Some(fx)
+    }
+
+    /// `Reconnect()` from the client's `AttemptReconnectLazy`: the pilot is
+    /// back after a quit, but the call alone leaves his client without a
+    /// fleet **[V]** fleetSvc.py:1613-1631, so no session change is sent here.
+    /// The seat is held (inserted if it was never marked gone, else its
+    /// deadline is pushed past two retries) and the offer is made due at
+    /// `now`, so the next `offer_rejoins` tick sends the auto-accepted invite.
+    /// [A] The invite lands cleanly at about 10 s after the quit. Falsified by
+    /// `SessionChangeInProgress` at the client's `OnFleetInvite`. The accept
+    /// goes through `PerformSelectiveSessionChange(..., allowWait=True)`
+    /// **[V]** fleetSvc.py:1137, which waits out the session timer
+    /// (carbon sessions.py:503-504), so the risk is small.
+    /// [A] A pilot who is seated and present (his session already names the
+    /// fleet) and sends `Reconnect` is held and offered the invite like a
+    /// returning one; the stock client never does (fleetSvc.py:1617).
+    /// Falsified by a present pilot losing fleet pushes after a `Reconnect`.
+    pub fn reconnect_lazy(
+        &mut self,
+        char_id: i64,
+        fleet_id: i64,
+        now: i64,
+    ) -> Result<(), FleetError> {
+        if self.seats.get(&char_id) != Some(&fleet_id) {
+            return Err(FleetError::NotInFleet);
+        }
+        let fleet = self
+            .fleets
+            .get_mut(&fleet_id)
+            .ok_or(FleetError::NotInFleet)?;
+        if !fleet.members.contains_key(&char_id) {
+            return Err(FleetError::NotInFleet);
+        }
+        let hold = now + 2 * REJOIN_RETRY;
+        match fleet.gone.get_mut(&char_id) {
+            // A hold already past its deadline is left to `expire`, as
+            // `offer_rejoins` leaves it.
+            Some(at) if *at <= now => return Err(FleetError::NotInFleet),
+            Some(at) => *at = (*at).max(hold),
+            None => {
+                fleet.gone.insert(char_id, now + RECONNECT_TIMEOUT);
+            }
+        }
+        self.returned.insert(char_id, now);
+        Ok(())
     }
 
     // ------------------------------------------------ beacons and bridges

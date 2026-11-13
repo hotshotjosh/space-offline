@@ -1392,6 +1392,70 @@ fn a_reconnect_by_a_stranger_or_to_another_fleet_is_refused() {
 }
 
 #[test]
+fn a_lazy_reconnect_keeps_the_hold_and_makes_the_offer_due_now() {
+    let (mut f, id) = with_alice_and_bob();
+    f.character_disconnected(BOB, T0);
+    let later = T0 + 10 * 10_000_000;
+    f.reconnect_lazy(BOB, id, later).expect("seated");
+    assert!(f.has_gone(), "the seat stays held until he accepts");
+    assert!(f.fleet_of(BOB).is_some());
+    let fx = f.offer_rejoins(later, &[BOB]);
+    assert_eq!(events(&fx), vec!["OnFleetInvite"]);
+    assert!(
+        fx.sessions.is_empty(),
+        "no session change before the accept"
+    );
+    assert_eq!(f.invite_of(BOB).expect("invite").fleet_id, id);
+    // The hold outlives the offer.
+    assert_eq!(f.expire(later + 1), Effects::default());
+    assert!(f.fleet_of(BOB).is_some());
+}
+
+#[test]
+fn a_lazy_reconnect_late_in_the_window_extends_the_hold() {
+    let (mut f, id) = with_alice_and_bob();
+    f.character_disconnected(BOB, T0);
+    let later = T0 + RECONNECT_TIMEOUT - REJOIN_RETRY;
+    f.reconnect_lazy(BOB, id, later).expect("seated");
+    // Past the original deadline the seat is still held.
+    f.expire(T0 + RECONNECT_TIMEOUT + 1);
+    assert!(f.fleet_of(BOB).is_some());
+    assert!(f.has_gone());
+}
+
+#[test]
+fn a_lazy_reconnect_after_the_deadline_is_not_revived() {
+    let (mut f, id) = with_alice_and_bob();
+    f.character_disconnected(BOB, T0);
+    assert_eq!(
+        f.reconnect_lazy(BOB, id, T0 + RECONNECT_TIMEOUT),
+        Err(FleetError::NotInFleet)
+    );
+}
+
+#[test]
+fn a_lazy_reconnect_by_a_stranger_or_to_another_fleet_is_refused() {
+    let (mut f, id) = with_alice();
+    assert_eq!(f.reconnect_lazy(BOB, id, T0), Err(FleetError::NotInFleet));
+    assert_eq!(
+        f.reconnect_lazy(ALICE, id + 1, T0),
+        Err(FleetError::NotInFleet)
+    );
+    assert!(!f.has_gone());
+}
+
+#[test]
+fn a_lazy_reconnect_of_a_seat_never_marked_gone_holds_it_first() {
+    let (mut f, id) = with_alice_and_bob();
+    assert!(!f.has_gone());
+    f.reconnect_lazy(BOB, id, T0).expect("seated");
+    assert!(f.has_gone());
+    assert_eq!(f.expire(T0 + REJOIN_RETRY), Effects::default());
+    assert!(f.fleet_of(BOB).is_some());
+    assert_eq!(events(&f.offer_rejoins(T0, &[BOB])), vec!["OnFleetInvite"]);
+}
+
+#[test]
 fn nothing_is_pushed_to_a_gone_member() {
     let (mut f, id) = with_alice_and_bob();
     f.character_disconnected(BOB, T0);

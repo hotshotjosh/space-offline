@@ -937,6 +937,52 @@ fn changing_the_options_tells_the_fleet_old_and_new() {
     );
 }
 
+/// After a process quit the client calls `Reconnect` on its own, which sets
+/// no client state; the answer is the auto-accepted rejoin invite (#200).
+#[test]
+fn a_reconnect_call_after_a_quit_is_answered_by_the_rejoin_invite() {
+    use std::time::Instant;
+    const CLIENT: i64 = 10_000_000_001;
+    let mut reg = registry();
+    reg.session_opened(crate::session_table::SessionEntry {
+        client_id: CLIENT,
+        session_id: CLIENT,
+        user_id: 1,
+        character_id: None,
+    });
+    reg.session_selected_character(CLIENT, ALICE);
+    let id = alices_fleet(&mut reg);
+    let _ = reg.take_pending();
+    let _ = reg.take_due(Instant::now());
+    let _ = reg.fleets_mut().take_session_changes();
+
+    assert!(reg.character_log_off(CLIENT));
+    assert!(reg.fleets().has_gone());
+    reg.session_selected_character(CLIENT, ALICE);
+    let answer = call(
+        &mut reg,
+        Some(ALICE),
+        "Reconnect",
+        vec![],
+        Some(PyValue::Int(id)),
+    )
+    .expect("reconnect");
+    assert_eq!(answer, PyValue::Bool(true));
+    assert!(reg.fleets().has_gone(), "the hold stays until he accepts");
+    assert!(reg.fleets_mut().take_session_changes().is_empty());
+
+    crate::fleet::tick(&mut reg, Instant::now(), crate::pyutil::filetime_now());
+    let due: Vec<(String, Vec<i64>)> = reg
+        .take_due(Instant::now())
+        .iter()
+        .map(|n| (n.to_push().0.to_string(), n.audience().unwrap_or_default()))
+        .collect();
+    assert!(
+        due.contains(&("OnFleetInvite".to_string(), vec![ALICE])),
+        "the Reconnect is answered by the rejoin invite: {due:?}"
+    );
+}
+
 /// A pilot who logs off to the character screen and back inside the window
 /// is offered his own seat and taking it re-seats him (#195).
 #[test]

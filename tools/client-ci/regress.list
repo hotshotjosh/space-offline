@@ -336,6 +336,8 @@ fci_rat_point
 fci_abandon_kill --with-second -- --character Alice --character Bob --no-concord
 # w23-pve (#75): a fleet of one logs off and back on inside the two-minute window and is still in the fleet (session.fleetid, the fleet service, the server's composition); one client
 fci_fleet_reconnect
+# fleet-lazy (#200): the fleetReconnect key a quit leaves makes the client call Reconnect after the reselect; the server answers with the auto-accepted rejoin invite and svc.fleet is set again; one client
+fci_fleet_lazy
 # w24-belts (#15): warp to a belt: every rock radius on the client's own law, the field one side of the warp-in, the survey read and reported; one client, uses the Cockroach hull for the tier-2 survey
 fci_belt_rocks
 # w26-gas (#22): warp to a gas site (signatures resolved by GM): every cloud radius on the client's linear gas law; one client
