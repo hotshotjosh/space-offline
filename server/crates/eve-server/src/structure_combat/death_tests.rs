@@ -491,3 +491,32 @@ fn a_flying_ship_whose_item_is_in_the_hangar_does_not_drop() {
         "its cargo stays in it"
     );
 }
+
+/// The path `fci_upwell_kill` takes in known space: a gun volley kills the
+/// hull ([`hit`] -> [`destroy`]), the owner's spare hull in the hangar is
+/// wrapped, and the owner gets one 190 for it besides the 188.
+#[test]
+fn a_gun_kill_in_known_space_wraps_the_hangar_and_tells_its_owner_190() {
+    let (mut reg, id) = world();
+    let spare = hangar_item(&mut reg, BOSS, id);
+    kill(&mut reg, id);
+    let wraps = crate::asset_safety::of_owner(reg.deltas(), BOSS);
+    assert_eq!(wraps.len(), 1, "one wrap for the owner: {wraps:?}");
+    assert_eq!(wraps[0].system, SYSTEM);
+    assert_eq!(
+        reg.store().get(spare).map(|i| i.location_id),
+        Some(wraps[0].id),
+        "the spare hull is in the wrap"
+    );
+    let notes = received(
+        &reg,
+        BOSS,
+        crate::structure_notify::STRUCTURE_ITEMS_TO_ASSET_SAFETY,
+    );
+    assert_eq!(notes.len(), 1, "one 190");
+    assert_eq!(get(&notes[0], "structureID"), &Value::Int(id));
+    assert_eq!(
+        received(&reg, BOSS, crate::structure_notify::STRUCTURE_DESTROYED).len(),
+        1
+    );
+}
