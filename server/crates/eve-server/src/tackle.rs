@@ -129,7 +129,9 @@ pub trait Data {
     fn ship_attr(&self, w: &Registry, ship_id: i64, attribute_id: i64) -> Option<f64>;
     /// A running module's attribute, modified by its own ship.
     fn module_attr(&self, w: &Registry, r: &Running, attribute_id: i64) -> Option<f64>;
-    /// A type's own attribute (its `requiredSkill*`), from `w`'s content.
+    /// A type's own attribute (its `requiredSkill*`), from `w`'s content. The
+    /// static type's, never a roll's: a mutated module's required skills are its
+    /// type's (the client's `GetRequiredSkills(typeID)`, MUTA-3 review item 1).
     fn type_attr(&self, w: &Registry, type_id: i64, attribute_id: i64) -> Option<f64>;
     /// The focused script (6848 or 6849) the running module `r` aims, when
     /// it is a field generator with one loaded ([`script_effect_of`]).
@@ -150,10 +152,14 @@ impl Data for Live {
 
     fn module_attr(&self, w: &Registry, r: &Running, attribute_id: i64) -> Option<f64> {
         // The sheet's value picks up the hull bonuses to 105 (6358, 11452,
-        // 12569, §1.2); without a sheet, the type's own value [A] (§2).
-        crate::dogma::module_attribute(w, r.ship_id, r.module_id, attribute_id).or_else(|| {
-            crate::modules::find_in(w.content(), r.type_id).and_then(|t| t.attribute(attribute_id))
-        })
+        // 12569, §1.2); without a sheet, a mutated module's own roll (#71),
+        // then the type's own value [A] (§2).
+        crate::dogma::module_attribute(w, r.ship_id, r.module_id, attribute_id)
+            .or_else(|| crate::modules::rolled(w, r.module_id, r.type_id, attribute_id))
+            .or_else(|| {
+                crate::modules::find_in(w.content(), r.type_id)
+                    .and_then(|t| t.attribute(attribute_id))
+            })
     }
 
     fn type_attr(&self, w: &Registry, type_id: i64, attribute_id: i64) -> Option<f64> {
@@ -1266,5 +1272,46 @@ mod tests {
             crate::crimewatch::refuse_jump(&reg, Some(BOB), t).is_err(),
             "the scrammer has a weapons timer"
         );
+    }
+}
+
+/// MUTA-3b: a fitted mutated module reads its roll when no sheet holds it
+/// (#71); the skill rows stay the static type's (review item 1).
+#[cfg(test)]
+mod muta_tests {
+    use super::*;
+    use crate::modules::muta_fixture::{FACTOR, ITEM, registry};
+
+    const RESULT: i64 = 981_400_003;
+    const RANGE: i64 = 54;
+    const SKILL: i64 = 182;
+
+    #[test]
+    fn a_mutated_running_modules_attribute_is_its_roll() {
+        let reg = registry(
+            RESULT,
+            Some("182=3300.0"),
+            &[(RANGE, 1_000.0), (SKILL, 3_400.0)],
+            &[RANGE, SKILL],
+        );
+        let effect = crate::modules::find_in(&crate::content::Content::fixture(), 483)
+            .and_then(|t| t.effect)
+            .expect("an effect");
+        let r = Running {
+            character_id: 0,
+            ship_id: 0,
+            module_id: ITEM,
+            type_id: RESULT,
+            effect,
+            target_id: None,
+            started: 0,
+            period: 1,
+            repeat: 1,
+            cycles: 1,
+            stop_at: None,
+        };
+        assert_eq!(Live.module_attr(&reg, &r, RANGE), Some(1_000.0 * FACTOR));
+        // Required skills stay the static type's, never the roll's.
+        assert_eq!(Live.type_attr(&reg, RESULT, SKILL), Some(3_300.0));
     }
 }

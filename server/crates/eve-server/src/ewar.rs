@@ -1284,9 +1284,11 @@ fn reconcile_ship(w: &mut Registry, ship: i64, now: BlueTime, d: &dyn Data) {
     }
 }
 
-/// A fitted turret's number as its own ship's sheet has it, else its type's.
+/// A fitted turret's number as its own ship's sheet has it, else its own roll
+/// when it is a mutated item (#71), else its type's.
 fn turret_base(w: &Registry, ship: i64, module: i64, type_id: i64, attribute: i64) -> Option<f64> {
     crate::dogma::module_attribute(w, ship, module, attribute)
+        .or_else(|| crate::modules::rolled(w, module, type_id, attribute))
         .or_else(|| crate::typedata::attribute_in(w.content(), type_id, attribute))
         .or_else(|| {
             crate::modules::find_in(w.content(), type_id).and_then(|t| t.attribute(attribute))
@@ -3141,5 +3143,26 @@ mod tests {
         crate::invuln::grant(&mut reg, ALICE, ALICE_SHIP, t);
         let _ = reg.take_due(far());
         quiet(&mut reg, &sure());
+    }
+}
+
+/// MUTA-3b: a fitted mutated turret reads its roll when no sheet holds it
+/// (#71).
+#[cfg(test)]
+mod muta_tests {
+    use super::*;
+    use crate::modules::muta_fixture::{FACTOR, ITEM, registry};
+
+    #[test]
+    fn a_mutated_turrets_base_is_its_roll() {
+        const RESULT: i64 = 981_400_003;
+        let reg = registry(
+            RESULT,
+            None,
+            &[(attr::MAX_RANGE, 1_000.0)],
+            &[attr::MAX_RANGE],
+        );
+        let got = turret_base(&reg, 0, ITEM, RESULT, attr::MAX_RANGE);
+        assert_eq!(got, Some(1_000.0 * FACTOR));
     }
 }
