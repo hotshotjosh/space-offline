@@ -1574,9 +1574,11 @@ def eoci_main(EOCI_NAME):
                 return False
             return (getattr_safe(vs, 'activeTransition', None) is None
                     and not getattr_safe(vs, 'isOpeningView', None)
-                    and bool(safe(lambda: vs.IsViewActive('inflight'))[1] is True))
+                    and safe(lambda: vs.IsViewActive('inflight'))[1] is True)
         settled, _w = wait_for(view_settled, timeout_ms=60000)
         precondition('the undock transition ended', bool(settled), 'waited %s ms' % _w)
+        if not settled:
+            return  # a /tr now would bring the race back
         system = sorted(pochven)[0]
         precondition('arrived in the Triglavian system', go_to(system), 'system %s' % text(system))
         # /tr arrives under the gate cloak, and a cloaked ship cannot lock or fire
