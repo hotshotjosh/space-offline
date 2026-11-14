@@ -556,27 +556,6 @@ def eoci_main(EOCI_NAME):
             ok = True
         return ok, text(value)
 
-    def grant_and_settle(name_or_id, type_id, lvl):
-        """`/giveskill`, then wait (<= 5 s) until that grant's handler has run.
-
-        The client's `OnServerSkillsChanged` handler stamps the skill it
-        refreshed with `timeStamp` (`skillsvc.py:187`) and the server's
-        `SkillInfo` carries no such field (`skill.rs:36-37`) [V], so the
-        attribute marks "this grant's handler has finished".  Sending the next
-        grant while the previous handler still runs makes two refreshes
-        interleave on a yield.  `skills.myskills` is None during a reset, hence
-        `safe()`."""
-        res = gm('/giveskill %s %s' % (text(name_or_id), text(lvl)))
-
-        def stamped():
-            sk_svc = get_svc('skills')
-            ok, mine = safe(lambda: sk_svc.myskills) if sk_svc is not None else (False, None)
-            if not ok or not mine:
-                return False
-            return getattr_safe(mine.get(type_id), 'timeStamp', None) is not None
-        wait_for(stamped, timeout_ms=5000)
-        return res
-
     def gm_check(name, line, expect=None, forbid=None):
         """`gm(line)` as a check.  `expect` and `forbid` are lists of
         lower-case substrings of the reply.  Returns `(ok, reply)`."""
@@ -1023,7 +1002,7 @@ def eoci_main(EOCI_NAME):
         for sk, lvl in missing_skills_for(type_id):
             ok3, nm = safe(lambda: __import__('evetypes').GetEnglishName(sk))
             if ok3 and nm:
-                grant_and_settle(nm, sk, lvl)
+                gm('/giveskill %s %s' % (text(nm), text(lvl)))
         wait_for(lambda: not missing_skills_for(type_id), timeout_ms=10000)
         return missing_skills_for(type_id)
 
@@ -1171,7 +1150,7 @@ def eoci_main(EOCI_NAME):
             for sk, lvl in (missing_skills() or []):
                 ok3, nm = safe(lambda: __import__('evetypes').GetEnglishName(sk))
                 if ok3 and nm:
-                    grant_and_settle(nm, sk, lvl)
+                    gm('/giveskill %s %s' % (text(nm), text(lvl)))
             wait_for(lambda: missing_skills() == [], timeout_ms=10000)
             return missing_skills()
         check('board_ship: found the ship in the hangar', True, text(why))
@@ -1389,6 +1368,27 @@ def eoci_main(EOCI_NAME):
         return corp, got, ('founded alliance %s' % text(got)) if got else 'allianceid never arrived'
 
     # -- end of the fci block ------------------------------------------------
+
+    def grant_and_settle(name_or_id, type_id, lvl):
+        """`/giveskill`, then wait (<= 5 s) until that grant's handler has run.
+
+        The client's `OnServerSkillsChanged` handler stamps the skill it
+        refreshed with `timeStamp` (`skillsvc.py:187`) and the server's
+        `SkillInfo` carries no such field (`skill.rs:36-37`) [V], so the
+        attribute marks "this grant's handler has finished".  Sending the next
+        grant while the previous handler still runs makes two refreshes
+        interleave on a yield.  `skills.myskills` is None during a reset, hence
+        `safe()`."""
+        res = gm('/giveskill %s %s' % (text(name_or_id), text(lvl)))
+
+        def stamped():
+            sk_svc = get_svc('skills')
+            ok, mine = safe(lambda: sk_svc.myskills) if sk_svc is not None else (False, None)
+            if not ok or not mine:
+                return False
+            return getattr_safe(mine.get(type_id), 'timeStamp', None) is not None
+        wait_for(stamped, timeout_ms=5000)
+        return res
 
     def eoci_body():
         mark = log_mark()
