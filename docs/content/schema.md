@@ -2283,6 +2283,7 @@ Rules: §1.1's authored form. Every row that carries an `[A]` value states its f
 | `content/econ/geode-loot.tsv` | L6A | L6A (`eve-mod-econ` `geode::TABLE`) |
 | `content/pve/filament-drops.tsv` | #61 FIL-DROP | `filament_drops::TABLE` (the roll is called from NPC and site loot by #121) |
 | `content/pve/abyss-loot.tsv` | #5 AD-2 | `abyss::loot::TABLE` (the roll is called from `eve-mod-econ` `abyss_loot::on_npc_kill`) |
+| `content/pve/proving-events.tsv` | #64 PG-1b | `proving::TABLE` (read by `service/proving.rs`, `pvpFilamentMgr`) |
 | `content/pochven/filaments.tsv` | #228 PV-3 | `pochven::filaments::TABLE` (read by `random_jump::triglavian_type`) |
 
 ### `content/population.tsv`
@@ -2405,6 +2406,26 @@ tier	cache	group	name_has	chance_ppm	qty_min	qty_max	copy	why
 | `chance_ppm` | `i64` | one independent draw per matching row, parts per million [A] |
 | `qty_min`, `qty_max` | `i64` | quantity uniform in the range; a copy's quantity is its runs |
 | `copy` | `0\|1` | `1` gives one blueprint copy whose runs are the quantity, `0` a plain stack |
+| `why` | `str` | the reason and the [A]'s falsifier |
+
+### `content/pve/proving-events.tsv`
+
+- **Owner (writer):** #64 PG-1b.
+- **Readers:** `proving::TABLE` (`proving::Catalogue`). The match types (PG-1a, `proving/match_types.tsv`) are not read yet: until they are, every event has a blank match type.
+- **Key:** `schedule_id` (a repeated id keeps its first row).
+- **Stable ids and delta keys (ruling 4):** `schedule_id` is the `scheduleID` the client sends back.
+
+```
+schedule_id	format	name_has	start	end	qa	why
+```
+
+| column | type | meaning |
+|---|---|---|
+| `schedule_id` | `i64` | a positive id, unique |
+| `format` | `FLEETSxSIZE` | e.g. `2x1`: two fleets of one pilot; picks the match type with the filament name |
+| `name_has` | `str` | a word of the filament type's name (case-insensitive), or empty |
+| `start`, `end` | `YYYY-MM-DD` or empty | the window opens at downtime (11:00 UTC) on `start` and closes at downtime on `end`; empty only on a QA row |
+| `qa` | `0\|1` | `1`: always active, never listed in the window; `0`: active between `start` and `end` |
 | `why` | `str` | the reason and the [A]'s falsifier |
 
 ### `content/agents/rewards.tsv`

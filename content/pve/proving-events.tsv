@@ -1,0 +1,18 @@
+# Proving Grounds schedule (#64, PG-1b): which events the Proving Grounds window
+# lists and when. Header in docs/content/schema.md. Authored: a row names a format
+# and a word of the filament, never a type id. Restart to reload.
+#
+# schedule_id: a positive id, unique; it is the `scheduleID` the client sends back.
+# format: FLEETSxSIZE (2x1: two fleets of one pilot).
+# name_has: a word of the filament type's name (case-insensitive), or empty. With the
+#   match types loaded (PG-1a) it picks the match type; until then it is not read.
+# start, end: YYYY-MM-DD. The window opens at downtime on `start` and closes at
+#   downtime on `end` (11:00 UTC). May be empty on a QA row.
+# qa: 1 = always active and never listed in the window (the client hides QA events),
+#   0 = active between start and end.
+#
+# [A] The shipped row is a 2x1 QA event: the window has an event to ask about, no
+#   pilot sees it in the list. Falsified by the client listing it in Neocom (QA is
+#   then not what hides it), or by the maintainer wanting a real schedule.
+schedule_id	format	name_has	start	end	qa	why
+1	2x1		2000-01-01	2099-12-31	1	[A] 2x1 chosen as the smallest format; QA so it is always on and hidden. Falsifier: see the header.
