@@ -9,8 +9,8 @@
 //! - `GetAllEvents` and `GetActiveEvents` answer a **dict**; the client calls
 //!   `.values()` on it **[V]** `pvpFilaments/client/pvpFilamentSvc.py`
 //!   (`GetAllEvents`, `GetActiveEvents`).
-//! - An event is a `KeyVal` with the 25 keys of [`INFO_KEYS`] **[V]**
-//!   `pvpFilaments/common/util.py` `_construct_info`.
+//! - An event is a `KeyVal` with the 25 keys of keys `_construct_info` builds **[V]**
+//!   `pvpFilaments/common/util.py`.
 //! - The window's controller reads `GetActiveEvents()` and, when the list is
 //!   empty, never binds `sortedEvents` and dies with an `UnboundLocalError`
 //!   **[V]** `event_window/controller.py` (`__init__`). So the active answer is
@@ -56,22 +56,39 @@
 //!   (`eventNameID`, the hint ids, the list ids). Falsified by a traceback in
 //!   the Proving Grounds window naming `GetByMessageID` or `GetTypeIDsByListID`
 //!   (then send `0`, or load the real match types).
-//! - **A `datetime.date` goes over the wire in its `__reduce__` form**: the
-//!   callable `datetime.date` (whitelisted **[V]** `eve_rowset::whitelist`) and
-//!   one 4-byte state string **[I]**. Falsified by a traceback in
-//!   `datetime_to_filetime` or an unmarshal error when the window opens.
 //! - **The shipped row is a 2x1 QA event** (`content/pve/proving-events.tsv`):
 //!   always active, hidden from the window's list. Falsified by the client
 //!   listing the QA event in Neocom (then QA is not what hides it), or the
 //!   maintainer wanting a real schedule.
-//! - **Join and Leave refuse with code 33 (event not active)** until PG-1c.
-//!   Falsified by a Leave raising a dialog for a pilot who is in a queue (it
-//!   cannot happen: there is no queue yet).
 //! - **A match type is chosen by format and a word of the filament's name**
 //!   ([`Catalogue::resolve`]). Falsified by PG-1a's table naming the schedule
 //!   in a column of its own.
-//! - **The placeholder is dated today**, so `datetime_to_filetime` has a date
-//!   to read. Falsified by the window showing the placeholder's dates.
+//!
+//! ## The [I]s
+//!
+//! - **A `datetime.date` goes over the wire in its `__reduce__` form** (the
+//!   0x22 reduce form, as `__builtin__.set` and `GPSTransportClosed` already
+//!   do): the callable `datetime.date` and one 4-byte state string `[year >> 8,
+//!   year & 255, month, day]`. Evidence: `datetime.date` is in the client's
+//!   marshal whitelist **[V]** (`eve_rowset::whitelist`); the client's
+//!   `datetime` is CPython 2.7's C module, whose `date_new` takes one 4-byte
+//!   `str` with a month byte of 1 to 12; the client reads it in
+//!   `datetime_to_filetime` and in `controller.sort_event_by_date`. Not run
+//!   against the client. Falsified by a traceback in `datetime_to_filetime` or
+//!   an unmarshal error when the window opens.
+//!
+//! ## Not here yet
+//!
+//! - **The queue** (`JoinPVPQueue` refuses with code 33; `LeavePVPQueue`
+//!   answers `None`): PG-1c. `Leave` must not raise, because
+//!   `pvpFilamentController.LeaveQueue` does not catch a `UserError`
+//!   **[V]**.
+//! - **`AbyssalPVPEndGateActivation`**, a third `pvpFilamentMgr` call
+//!   (`movementFunctions.py`), is unrouted and answers no-such-method.
+//! - **Rows with no match type.** A row that is not QA is served only with a
+//!   match type: with a blank one the window would call `GetName(0)` and
+//!   `GetByMessageID(None)`. Until PG-1a loads the match types such a row is
+//!   dropped at load ([`Catalogue::unserved`]) and logged once.
 
 use crate::authored::Row;
 use crate::content::{Boxed, Sources, TableSpec};
@@ -102,7 +119,14 @@ pub const TABLE: TableSpec = TableSpec {
 fn load_table(src: &Sources) -> Result<Boxed, String> {
     let file = src.authored(FILE, SHIPPED, HEADER)?;
     let schedules = file.parse_rows(Schedule::from_row);
-    Ok(Box::new(Catalogue::new(schedules, Vec::new())))
+    let cat = Catalogue::new(schedules, Vec::new());
+    if !cat.unserved().is_empty() {
+        crate::outln!(
+            "[proving] {FILE}: schedule row(s) {:?} are not served: they need the match types (PG-1a)",
+            cat.unserved()
+        );
+    }
+    Ok(Box::new(cat))
 }
 
 /// The `PVPJumpError` code for "the event is not active" **[V]**
@@ -113,35 +137,6 @@ pub const EVENT_NOT_ACTIVE: i64 = 33;
 /// `activation_window/pvpFilamentController.py` (`JoinQueue`:
 /// `error.msg == 'PVPJumpError'`, `error.dict['errors']`).
 pub const ERROR: &str = "PVPJumpError";
-
-/// The keys of an event, in the order `_construct_info` builds them **[V]**.
-pub const INFO_KEYS: [&str; 25] = [
-    "matchTypeID",
-    "scheduleID",
-    "filamentTypeID",
-    "numberOfFleets",
-    "fleetSize",
-    "shipRestrictions",
-    "rewards",
-    "eventNameID",
-    "eventDescriptionID",
-    "filamentDescriptionID",
-    "restrictionsDescriptionID",
-    "rewardsHintID",
-    "shipRestrictionsHintID",
-    "rulesHintID",
-    "startDate",
-    "endDate",
-    "QA",
-    "moduleAndImplantMetaLevelRestrictions",
-    "maxOfShipTypeRestriction",
-    "maxOfShipGroupRestriction",
-    "minimumQueueSizeMultiplier",
-    "provingGroundLootTableID",
-    "bannedModulesTypeListID",
-    "limitedAmountOfModulesTypeListID",
-    "numberOfLimitedModules",
-];
 
 // ---------------------------------------------------------------------------
 // Dates
@@ -261,8 +256,6 @@ pub struct Schedule {
     pub name_has: String,
     pub start: Option<Day>,
     pub end: Option<Day>,
-    /// The start as written, which `GetNextEventDate` returns as is.
-    pub start_text: String,
     pub qa: bool,
 }
 
@@ -306,7 +299,6 @@ impl Schedule {
             name_has: r.field(2).trim().to_lowercase(),
             start,
             end,
-            start_text: r.field(3).to_owned(),
             qa,
         })
     }
@@ -331,11 +323,13 @@ impl Event {
 pub struct Catalogue {
     schedules: Vec<Schedule>,
     match_types: Vec<MatchType>,
+    unserved: Vec<i64>,
 }
 
 impl Catalogue {
     /// The catalogue of these rows. Schedules are kept in id order; a repeated
-    /// id keeps its **first** row. Match types are kept in id order.
+    /// id keeps its **first** row; a row that is not QA and has no match type
+    /// is dropped ([`Catalogue::unserved`]). Match types are kept in id order.
     pub fn new(schedules: Vec<Schedule>, mut match_types: Vec<MatchType>) -> Catalogue {
         let mut kept: Vec<Schedule> = Vec::new();
         for s in schedules {
@@ -345,10 +339,24 @@ impl Catalogue {
         }
         kept.sort_by_key(|s| s.id);
         match_types.sort_by_key(|m| m.id);
-        Catalogue {
-            schedules: kept,
+        let mut cat = Catalogue {
+            schedules: Vec::new(),
             match_types,
+            unserved: Vec::new(),
+        };
+        for s in kept {
+            if s.qa || cat.resolve(&s).id != 0 {
+                cat.schedules.push(s);
+            } else {
+                cat.unserved.push(s.id);
+            }
         }
+        cat
+    }
+
+    /// The ids of the rows dropped for having no match type (module doc).
+    pub fn unserved(&self) -> &[i64] {
+        &self.unserved
     }
 
     /// The catalogue of authored text. A bad header or row is an error naming
@@ -428,7 +436,8 @@ impl Catalogue {
         }
     }
 
-    /// Events that are over at `now` **[V]** `util._is_event_over`.
+    /// Events that are over at `now` **[V]** `util._is_event_over`. No RPC
+    /// asks for these (PG-1c may).
     pub fn over(&self, now: i64) -> Vec<Event> {
         let (today, done) = (today(now), downtime_done(now));
         self.schedules
@@ -449,7 +458,7 @@ impl Catalogue {
             .map(|s| self.event(s))
     }
 
-    /// The date `GetNextEventDate` answers, as written in the row **[V]**
+    /// The date `GetNextEventDate` answers, canonical `YYYY-MM-DD` **[V]**
     /// `util.get_next_active_event_date`.
     pub fn next_date(&self, now: i64) -> Option<String> {
         let today = today(now);
@@ -460,7 +469,8 @@ impl Catalogue {
                 return None;
             }
             let (start, end) = (s.start?, s.end?);
-            ((start < today && end > today) || start > today).then(|| s.start_text.clone())
+            ((start < today && end > today) || start > today)
+                .then(|| format!("{:04}-{:02}-{:02}", start.0, start.1, start.2))
         })
     }
 
@@ -510,18 +520,18 @@ fn is_over(s: &Schedule, today: Day, done: bool) -> bool {
 }
 
 /// The event served when none is active: QA (the window hides it), no
-/// filament, dated today **[A]** (module doc).
+/// filament, no dates (the client's own QA rows may have none **[V]**
+/// `util._get_date_from_string('')`).
 pub fn placeholder(now: i64) -> Event {
-    let t = today(now);
+    let _ = now;
     Event {
         schedule: Schedule {
             id: 0,
             fleets: 0,
             fleet_size: 0,
             name_has: String::new(),
-            start: Some(t),
-            end: Some(t),
-            start_text: String::new(),
+            start: None,
+            end: None,
             qa: true,
         },
         match_type: MatchType::blank(0, 0),
@@ -536,7 +546,7 @@ fn opt(v: Option<i64>) -> PyValue {
     v.map_or(PyValue::None, PyValue::Int)
 }
 
-/// An event as the client's `KeyVal`, every key of [`INFO_KEYS`].
+/// An event as the client's `KeyVal`, every key the client reads.
 pub fn event_info(e: &Event) -> PyValue {
     let m = &e.match_type;
     let s = &e.schedule;
@@ -627,7 +637,7 @@ pub fn most_recent_event(cat: &Catalogue, now: i64) -> PyValue {
         .map_or(PyValue::None, |e| event_info(&e))
 }
 
-/// `GetNextEventDate`: the date as written, or `None`.
+/// `GetNextEventDate`: the start date, or `None`.
 pub fn next_event_date(cat: &Catalogue, now: i64) -> PyValue {
     cat.next_date(now).map_or(PyValue::None, |d| bstr(&d))
 }
@@ -707,12 +717,14 @@ impl Push for StatisticsPush {
 /// know it. Returns whether it was queued.
 pub fn push_leaderboard(
     reg: &mut crate::service::Registry,
-    cat: &Catalogue,
     now: i64,
     match_type_id: i64,
     schedule_id: i64,
 ) -> bool {
-    let known = cat.known(now, match_type_id, schedule_id);
+    let known = reg
+        .content()
+        .get::<Catalogue>()
+        .known(now, match_type_id, schedule_id);
     if known {
         reg.push(LeaderboardPush {
             match_type_id,
@@ -726,12 +738,14 @@ pub fn push_leaderboard(
 /// know it. Returns whether it was queued.
 pub fn push_statistics(
     reg: &mut crate::service::Registry,
-    cat: &Catalogue,
     now: i64,
     match_type_id: i64,
     schedule_id: i64,
 ) -> bool {
-    let known = cat.known(now, match_type_id, schedule_id);
+    let known = reg
+        .content()
+        .get::<Catalogue>()
+        .known(now, match_type_id, schedule_id);
     if known {
         reg.push(StatisticsPush {
             match_type_id,

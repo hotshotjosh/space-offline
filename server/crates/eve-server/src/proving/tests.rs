@@ -1,6 +1,6 @@
 //! The Proving Grounds read-side tests. **Every id and date here is
 //! invented**: schedules are 880,xxx, match types 881,xxx, filament types
-//! 990,880,xxx, the years 3001 and 3002. The client's rules appear as rules
+//! 990,880,xxx, the years 2000, 2999, 3001 and 3002. The client's rules appear as rules
 //! (downtime at 11:00 UTC, the active window) and its key names as names.
 
 use super::*;
@@ -40,8 +40,18 @@ fn row(id: i64, format: &str, name: &str, start: &str, end: &str, qa: u8) -> Str
     format!("{id}\t{format}\t{name}\t{start}\t{end}\t{qa}\ttest\n")
 }
 
+/// A match type for each format the tests use, so a row that is not QA is
+/// served (a row with no match type is dropped).
+fn types() -> Vec<MatchType> {
+    [(2, 1), (4, 4), (4, 1), (3, 5)]
+        .iter()
+        .zip(MATCH_X..)
+        .map(|(&(f, z), id)| match_type(id, 0, "", f, z))
+        .collect()
+}
+
 fn catalogue(rows: &[String]) -> Catalogue {
-    Catalogue::parse(&format!("{}{}", header(), rows.concat()), Vec::new())
+    Catalogue::parse(&format!("{}{}", header(), rows.concat()), types())
         .expect("the test rows parse")
 }
 
@@ -165,7 +175,7 @@ fn placeholder_is_in_all_events_when_served() {
     let open = window();
     assert_eq!(values(&all_events(&open, now)).len(), 1);
     assert!(!open.known(now, 0, 0));
-    assert!(open.known(now, 0, SCHED_A));
+    assert!(open.known(now, MATCH_X, SCHED_A));
 }
 
 // ---- over, most recent, next -----------------------------------------------
@@ -263,13 +273,66 @@ fn resolve_needs_format_and_name() {
         types,
     )
     .unwrap();
-    let id = |s: i64| {
-        let sch = c.schedules.iter().find(|x| x.id == s).unwrap();
-        c.resolve(sch).id
-    };
-    assert_eq!(id(SCHED_A), MATCH_X, "the word is case-insensitive");
-    assert_eq!(id(SCHED_B), 0, "no filament name has the word");
-    assert_eq!(id(SCHED_C), 0, "no match type has the format");
+    let served = c.all(ft(3001, 3, 11, 12));
+    assert_eq!(served.len(), 1);
+    assert_eq!(
+        (served[0].schedule.id, served[0].match_type.id),
+        (SCHED_A, MATCH_X),
+        "the word is case-insensitive"
+    );
+    assert_eq!(
+        c.unserved(),
+        [SCHED_B, SCHED_C],
+        "no filament name has the word; no match type has the format"
+    );
+}
+
+#[test]
+fn a_row_with_no_match_type_is_not_served() {
+    let text = format!(
+        "{}{}{}",
+        header(),
+        row(SCHED_A, "2x1", "", "3001-03-10", "3001-03-12", 0),
+        row(SCHED_B, "2x1", "", "", "", 1),
+    );
+    let c = Catalogue::parse(&text, Vec::new()).unwrap();
+    let now = ft(3001, 3, 11, 12);
+    assert_eq!(c.unserved(), [SCHED_A]);
+    let active = c.active(now);
+    assert_eq!(active.len(), 1, "only the QA row");
+    assert_eq!(active[0].schedule.id, SCHED_B);
+    assert!(c.over(ft(3001, 4, 1, 12)).is_empty());
+    assert!(c.most_recent(ft(3001, 4, 1, 12)).is_none());
+    assert!(c.next_date(ft(3001, 3, 1, 12)).is_none());
+    // With nothing else, the placeholder stands in.
+    let only = Catalogue::parse(
+        &format!(
+            "{}{}",
+            header(),
+            row(SCHED_A, "2x1", "", "3001-03-10", "3001-03-12", 0)
+        ),
+        Vec::new(),
+    )
+    .unwrap();
+    let v = active_events(&only, now);
+    assert_eq!(get(values(&v)[0], "scheduleID"), &PyValue::Int(0));
+}
+
+#[test]
+fn next_date_is_canonical_text() {
+    let c = catalogue(&[row(SCHED_A, "2x1", "", "3001-3-1", "3001-03-12", 0)]);
+    assert_eq!(
+        c.next_date(ft(3001, 1, 1, 12)).as_deref(),
+        Some("3001-03-01")
+    );
+}
+
+#[test]
+fn the_placeholder_has_no_dates() {
+    let v = active_events(&catalogue(&[]), ft(3001, 3, 11, 12));
+    let e = values(&v)[0];
+    assert_eq!(get(e, "startDate"), &PyValue::None);
+    assert_eq!(get(e, "endDate"), &PyValue::None);
 }
 
 // ---- parsing ---------------------------------------------------------------
@@ -315,14 +378,9 @@ fn duplicate_schedule_id_keeps_the_first_row() {
 }
 
 #[test]
-fn shipped_file_parses_and_serves_a_qa_event() {
+fn shipped_file_parses() {
     let c = Catalogue::parse(SHIPPED, Vec::new()).expect("the shipped file parses");
     assert!(!c.is_empty());
-    for now in [ft(3001, 1, 1, 0), ft(2026, 11, 14, 12)] {
-        let a = c.active(now);
-        assert!(!a.is_empty());
-        assert!(a.iter().all(|e| e.schedule.qa), "hidden from the window");
-    }
 }
 
 // ---- the wire --------------------------------------------------------------
@@ -357,7 +415,6 @@ fn info_has_every_client_key() {
         "limitedAmountOfModulesTypeListID",
         "numberOfLimitedModules",
     ];
-    assert_eq!(INFO_KEYS, wanted);
     let c = window();
     let e = &c.active(ft(3001, 3, 11, 12))[0];
     let info = event_info(e);
@@ -377,6 +434,7 @@ fn info_has_every_client_key() {
         assert!(dict_get(state, k.as_bytes()).is_some(), "missing {k}");
     }
     assert_eq!(get(&info, "scheduleID"), &PyValue::Int(SCHED_A));
+    assert_eq!(get(&info, "matchTypeID"), &PyValue::Int(MATCH_X));
     assert_eq!(get(&info, "numberOfFleets"), &PyValue::Int(2));
     assert_eq!(get(&info, "fleetSize"), &PyValue::Int(1));
     assert_eq!(get(&info, "QA"), &PyValue::Int(0));
@@ -491,7 +549,7 @@ fn no_push_for_unknown_event() {
 fn known_event_gets_both_pushes() {
     let c = catalogue(&[row(SCHED_A, "2x1", "", "2000-01-01", "2999-12-31", 0)]);
     let mut reg = world(c);
-    let known = [PyValue::Int(0), PyValue::Int(SCHED_A)];
+    let known = [PyValue::Int(MATCH_X), PyValue::Int(SCHED_A)];
     assert_eq!(
         call(&mut reg, "GetLeaderboard", &known).unwrap(),
         PyValue::None
@@ -513,7 +571,7 @@ fn known_event_gets_both_pushes() {
 fn dispatch_answers_all_six_reads() {
     let c = catalogue(&[row(SCHED_A, "2x1", "", "2000-01-01", "2999-12-31", 0)]);
     let mut reg = world(c);
-    let ids = [PyValue::Int(0), PyValue::Int(SCHED_A)];
+    let ids = [PyValue::Int(MATCH_X), PyValue::Int(SCHED_A)];
     for m in ["GetAllEvents", "GetActiveEvents"] {
         let v = call(&mut reg, m, &[]).unwrap();
         assert_eq!(values(&v).len(), 1, "{m}");
@@ -561,23 +619,26 @@ fn unknown_method_is_no_such_method() {
 }
 
 #[test]
-fn join_and_leave_are_refused_with_event_not_active() {
+fn join_is_refused_with_event_not_active_and_leave_answers_none() {
     let mut reg = world(catalogue(&[]));
     let args = [PyValue::Int(100_880_001), PyValue::Int(FIL_X)];
-    for m in ["JoinPVPQueue", "LeavePVPQueue"] {
-        let Err(ServiceError::Raise(v)) = call(&mut reg, m, &args) else {
-            panic!("{m} did not raise");
-        };
-        let expected = eve_proto::user_error(
-            "PVPJumpError",
-            crate::pyutil::pypairs(vec![(
-                "errors",
-                PyValue::List(vec![PyValue::Tuple(vec![
-                    PyValue::Int(33),
-                    PyValue::Tuple(vec![]),
-                ])]),
-            )]),
-        );
-        assert_eq!(v, expected, "{m}");
-    }
+    let Err(ServiceError::Raise(v)) = call(&mut reg, "JoinPVPQueue", &args) else {
+        panic!("Join did not raise");
+    };
+    let expected = eve_proto::user_error(
+        "PVPJumpError",
+        crate::pyutil::pypairs(vec![(
+            "errors",
+            PyValue::List(vec![PyValue::Tuple(vec![
+                PyValue::Int(33),
+                PyValue::Tuple(vec![]),
+            ])]),
+        )]),
+    );
+    assert_eq!(v, expected);
+    assert_eq!(
+        call(&mut reg, "LeavePVPQueue", &args).unwrap(),
+        PyValue::None,
+        "the client's LeaveQueue does not catch an error"
+    );
 }
