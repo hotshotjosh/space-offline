@@ -280,6 +280,8 @@ mod industry;
 mod cosmetics;
 // S1 (#158): `corpRecProxy`, the recruitment adverts, empty.
 mod corp_rec;
+// #64 PG-1b: `pvpFilamentMgr`, the Proving Grounds calendar.
+mod proving;
 // W16 CP44: ship insurance, out of `inventory`; `pub(crate)` for its
 // `kill_hooks::PLAYER` row.
 pub(crate) mod insurance;
@@ -465,6 +467,8 @@ pub(crate) const DOMAINS: &[(&[&str], DomainDispatch)] = &[
     (crate::random_jump::SERVICES, crate::random_jump::dispatch),
     // `abyssalMgr`: the Abyss probe (#91).
     (crate::abyss::SERVICES, crate::abyss::dispatch),
+    // `pvpFilamentMgr`: the Proving Grounds calendar (#64).
+    (proving::SERVICES, proving::dispatch),
     // `econAgent`: a bot parks its career at log-off (E1).
     (
         crate::econ_agents::wire::SERVICES,

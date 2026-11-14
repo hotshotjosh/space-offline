@@ -43,6 +43,7 @@ pub const TABLES: &[TableSpec] = &[
     crate::pochven::loot::TABLE,
     crate::planet::STATICS,
     crate::population::AUTHORED,
+    crate::proving::TABLE,
     crate::reprocess::TABLE,
     crate::salvage::TABLE,
     crate::skill::TABLE,

@@ -255,6 +255,7 @@ pub mod overheat;
 pub mod planet;
 pub mod pochven;
 pub mod population;
+pub mod proving;
 pub(crate) mod push;
 pub mod pycode;
 pub mod pyutil;
