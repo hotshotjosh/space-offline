@@ -579,6 +579,32 @@ def eoci_main(EOCI_NAME):
             ok = True
         return ok, text(value)
 
+    def grant_and_settle(name_or_id, type_id, lvl):
+        """`/giveskill`, then wait (<= 5 s) for a NEW `timeStamp` on that skill.
+
+        The client's skill refresh (`skillsvc.py:174-200`) sets `timeStamp` on
+        the skill it fetched (`:192`) and the server's `SkillInfo` carries no
+        such field (`skill.rs:36-37`) [V], so a changed stamp means the handler
+        is past its refetch yield.  Sending the next grant earlier lets two
+        refreshes interleave.  The stamp before the grant is taken first: it
+        survives until the next reset, and a stale one must not pass the wait.
+        `skills.myskills` is None during a reset, hence `safe()`.  A timeout is
+        said, never silent; the caller's own checks decide the verdict."""
+        def stamp():
+            sk_svc = get_svc('skills')
+            ok, mine = safe(lambda: sk_svc.myskills) if sk_svc is not None else (False, None)
+            if not ok or not isinstance(mine, dict):
+                return None
+            return getattr_safe(mine.get(type_id), 'timeStamp', None)
+        prev = stamp()
+        res = gm('/giveskill %s %s' % (text(name_or_id), text(lvl)))
+        settled, waited = wait_for(
+            lambda: stamp() is not None and stamp() != prev, timeout_ms=5000)
+        if not settled:
+            say('grant_and_settle: no new timeStamp for skill %s after %s ms'
+                % (text(type_id), text(waited)))
+        return res
+
     def gm_check(name, line, expect=None, forbid=None):
         """`gm(line)` as a check.  `expect` and `forbid` are lists of
         lower-case substrings of the reply.  Returns `(ok, reply)`."""
@@ -1025,7 +1051,7 @@ def eoci_main(EOCI_NAME):
         for sk, lvl in missing_skills_for(type_id):
             ok3, nm = safe(lambda: __import__('evetypes').GetEnglishName(sk))
             if ok3 and nm:
-                gm('/giveskill %s %s' % (text(nm), text(lvl)))
+                grant_and_settle(nm, sk, lvl)
         wait_for(lambda: not missing_skills_for(type_id), timeout_ms=10000)
         return missing_skills_for(type_id)
 
@@ -1173,7 +1199,7 @@ def eoci_main(EOCI_NAME):
             for sk, lvl in (missing_skills() or []):
                 ok3, nm = safe(lambda: __import__('evetypes').GetEnglishName(sk))
                 if ok3 and nm:
-                    gm('/giveskill %s %s' % (text(nm), text(lvl)))
+                    grant_and_settle(nm, sk, lvl)
             wait_for(lambda: missing_skills() == [], timeout_ms=10000)
             return missing_skills()
         check('board_ship: found the ship in the hangar', True, text(why))
