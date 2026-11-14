@@ -1539,6 +1539,18 @@ def eoci_main(EOCI_NAME):
         precondition('undocked into space', undocked, detail)
         if not undocked:
             return
+        # `/tr` while the undock's view transition still runs makes two
+        # RefreshEnvironments interleave: the curveSet traceback (#228).
+        # viewStateSvc.py:262/336-338/517 [V]
+        def view_settled():
+            vs = get_svc('viewState')
+            if vs is None:
+                return False
+            return (getattr_safe(vs, 'activeTransition', None) is None
+                    and not getattr_safe(vs, 'isOpeningView', None)
+                    and bool(safe(lambda: vs.IsViewActive('inflight'))[1] is True))
+        settled, _w = wait_for(view_settled, timeout_ms=60000)
+        precondition('the undock transition ended', bool(settled), 'waited %s ms' % _w)
         system = sorted(pochven)[0]
         precondition('arrived in the Triglavian system', go_to(system), 'system %s' % text(system))
         # /tr arrives under the gate cloak, and a cloaked ship cannot lock or fire
