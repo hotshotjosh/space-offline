@@ -347,7 +347,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="388.8" y="221.0" width="4" height="4" class="built"/>
 <rect x="393.8" y="221.0" width="4" height="4" class="built"/>
 <rect x="398.8" y="221.0" width="4" height="4" class="built"/>
-<rect x="404.3" y="221.5" width="3" height="3" fill="none" class="missing"/>
+<rect x="403.8" y="221.0" width="4" height="4" class="built"/>
 <text x="412.8" y="226.0" class="s xs">33/42</text>
 <text x="16.0" y="242.0" class="t">Tools and remote clients</text>
 <rect x="198.8" y="237.0" width="4" height="4" class="proved"/>

@@ -318,7 +318,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="352.0" y="81.0" width="6" height="6" class="built"/>
 <rect x="359.0" y="46.0" width="6" height="6" class="built"/>
 <rect x="359.0" y="53.0" width="6" height="6" class="built"/>
-<rect x="359.5" y="60.5" width="5" height="5" fill="none" class="part-o"/><rect x="359.0" y="63.0" width="6" height="3.0" class="part-f"/>
+<rect x="359.0" y="60.0" width="6" height="6" class="built"/>
 <rect x="359.5" y="67.5" width="5" height="5" fill="none" class="part-o"/><rect x="359.0" y="70.0" width="6" height="3.0" class="part-f"/>
 <rect x="359.5" y="74.5" width="5" height="5" fill="none" class="part-o"/><rect x="359.0" y="77.0" width="6" height="3.0" class="part-f"/>
 <rect x="359.5" y="81.5" width="5" height="5" fill="none" class="part-o"/><rect x="359.0" y="84.0" width="6" height="3.0" class="part-f"/>
@@ -330,7 +330,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="366.5" y="81.5" width="5" height="5" fill="none" class="part-o"/><rect x="366.0" y="84.0" width="6" height="3.0" class="part-f"/>
 <rect x="373.5" y="46.5" width="5" height="5" fill="none" class="part-o"/><rect x="373.0" y="49.0" width="6" height="3.0" class="part-f"/>
 <rect x="373.5" y="53.5" width="5" height="5" fill="none" class="part-o"/><rect x="373.0" y="56.0" width="6" height="3.0" class="part-f"/>
-<rect x="373.5" y="60.5" width="5" height="5" fill="none" class="missing"/>
+<rect x="373.5" y="60.5" width="5" height="5" fill="none" class="part-o"/><rect x="373.0" y="63.0" width="6" height="3.0" class="part-f"/>
 <rect x="373.5" y="67.5" width="5" height="5" fill="none" class="missing"/>
 <rect x="373.5" y="74.5" width="5" height="5" fill="none" class="missing"/>
 <rect x="373.5" y="81.5" width="5" height="5" fill="none" class="missing"/>
@@ -348,11 +348,11 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="16.0" y="98.0" width="9" height="9" class="proved"/>
 <text x="30.0" y="106.0" class="s xs">Proved 208</text>
 <rect x="103.8" y="98.0" width="9" height="9" class="built"/>
-<text x="117.8" y="106.0" class="s xs">Built 88</text>
+<text x="117.8" y="106.0" class="s xs">Built 89</text>
 <rect x="179.3" y="98.5" width="8" height="8" fill="none" class="part-o"/><rect x="178.8" y="102.5" width="9" height="4.5" class="part-f"/>
 <text x="192.8" y="106.0" class="s xs">Part built 12</text>
 <rect x="286.3" y="98.5" width="8" height="8" fill="none" class="missing"/>
-<text x="299.8" y="106.0" class="s xs">Missing 13</text>
+<text x="299.8" y="106.0" class="s xs">Missing 12</text>
 <rect x="373.6" y="98.0" width="9" height="9" class="unknown"/>
 <text x="387.6" y="106.0" class="s xs">Unknown 2</text>
 </svg>
