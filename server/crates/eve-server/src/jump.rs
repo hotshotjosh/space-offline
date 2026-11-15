@@ -289,7 +289,7 @@ pub fn cmd_stargate_jump(reg: &mut Registry, req: &Request<'_>) -> Result<PyValu
     reg.jumps_mut().0.insert(
         actor,
         Leg::Departing {
-            at: Instant::now(),
+            at: crate::game_clock::clock::instant(),
             origin,
             dest_system,
             dest_gate,
@@ -395,7 +395,7 @@ pub fn arm_at(w: &mut Registry, character_id: i64, origin: i64, dest_system: i64
     w.jumps_mut().0.insert(
         character_id,
         Leg::Departing {
-            at: Instant::now(),
+            at: crate::game_clock::clock::instant(),
             origin,
             dest_system,
             dest_gate: 0,

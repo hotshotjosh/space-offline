@@ -44,7 +44,7 @@
 //!
 //! Every stored value is a wall FILETIME. The model works in **game
 //! seconds**: the remaining fatigue is the wall remainder times the scale
-//! ([`GameClock::elapsed`]) and a span made by a jump is compressed
+//! ([`GameClock::game_span`]) and a span made by a jump is compressed
 //! ([`GameClock::span`]) before it becomes a deadline. At scale 1 nothing
 //! changes. At scale N the HUD's own "next jump" hint, which knows no
 //! scale, reads N times too long; a soak-only difference.
@@ -98,7 +98,7 @@ impl Timers {
     /// The fatigue left at `now`, in **game** seconds.
     pub fn fatigue_seconds(&self, now: BlueTime, clock: GameClock) -> f64 {
         let wall = (self.fatigue_until - now).max(0);
-        clock.elapsed(wall) as f64 / SEC as f64
+        clock.game_span(wall) as f64 / SEC as f64
     }
 
     /// What `jumpTimers.GetTimers` answers: the timers as they stand at

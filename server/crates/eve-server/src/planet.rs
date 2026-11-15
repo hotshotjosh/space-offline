@@ -1904,7 +1904,7 @@ impl Pin {
                 let start = self.install_time.unwrap_or(self.last_run_time);
                 // Lane clock: the curve is read at the game time since the
                 // install, so cycle k yields cycle k's quantity at any pace.
-                let game_time = start.saturating_add(self.pace.elapsed(run_time - start));
+                let game_time = start.saturating_add(self.pace.game_span(run_time - start));
                 let qty = ecu_program_output(
                     game_time,
                     start,

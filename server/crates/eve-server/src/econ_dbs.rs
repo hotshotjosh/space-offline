@@ -116,7 +116,7 @@ pub fn multiplier(reg: &Registry, system: i64, now: BlueTime) -> f64 {
         // recovers a day's worth. Derived from the stored `at`, so a restart
         // at another scale recovers the time since at the new pace.
         .map_or(DEFAULT, |(d, at)| {
-            let game_now = at.saturating_add(crate::game_clock::of(reg).elapsed(now - at));
+            let game_now = at.saturating_add(crate::game_clock::of(reg).game_span(now - at));
             recovered(d, at, game_now)
         })
 }

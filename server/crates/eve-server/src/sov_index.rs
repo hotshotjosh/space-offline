@@ -181,7 +181,9 @@ pub fn vulnerability_window(adm: f64) -> i64 {
 /// seconds (the world clock scales the wall span: lane CLOCK's rule for a
 /// span derived from a stored start).
 pub fn claimed_seconds(claim_time: Option<i64>, now: i64, clock: GameClock) -> i64 {
-    claim_time.map_or(0, |t| clock.elapsed(now.saturating_sub(t).max(0)) / SECOND)
+    claim_time.map_or(0, |t| {
+        clock.game_span(now.saturating_sub(t).max(0)) / SECOND
+    })
 }
 
 // ---------------------------------------------------------------------------

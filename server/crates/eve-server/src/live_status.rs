@@ -1901,7 +1901,7 @@ wait mean {:.2} ms max {rwmax:.2} ms{}",
             crate::clock_probe::take_lock_suffix(),
         );
         let rolled = roll_window(&mut METHODS.lock().unwrap_or_else(|e| e.into_inner()));
-        let unix = std::time::SystemTime::now()
+        let unix = crate::game_clock::clock::wall_system()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let methods: Vec<(&String, &Method)> = rolled.iter().map(|(k, m)| (k, m)).collect();

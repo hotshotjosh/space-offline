@@ -65,7 +65,7 @@
 //! ## The clock
 //!
 //! Spans are wall FILETIMEs; a settled span is game time,
-//! `GameClock::elapsed(wall)`, exactly the lane `clock` rule for a derived
+//! `GameClock::game_span(wall)`, exactly the lane `clock` rule for a derived
 //! span. At scale 1 that is the wall span. Work is [`rules::active_hours`]
 //! of it.
 //!
@@ -623,7 +623,7 @@ pub(crate) fn settle_at(
 ) -> Option<Report> {
     let a = agent(reg, character)?;
     let clock = crate::game_clock::of(reg);
-    let span_s = clock.elapsed((now - a.settled_to).max(0)) as f64 / 1.0e7;
+    let span_s = clock.game_span((now - a.settled_to).max(0)) as f64 / 1.0e7;
     if span_s < rules::MIN_SPAN_S {
         return None;
     }

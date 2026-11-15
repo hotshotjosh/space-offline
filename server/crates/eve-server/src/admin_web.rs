@@ -50,7 +50,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 /// The token file, in the control directory.
 pub const TOKEN_FILE: &str = "admin.token";
@@ -325,7 +325,7 @@ impl Shared {
     /// path).
     pub fn new(token: String, map: &MapData) -> Shared {
         Shared {
-            started: Instant::now(),
+            started: crate::game_clock::clock::wall(),
             token,
             map_json: map.to_json(),
             system_names: map.systems.iter().map(|s| (s.id, s.name.clone())).collect(),
@@ -362,9 +362,10 @@ impl Shared {
         let Ok(mut g) = self.groups.lock() else {
             return BTreeMap::new();
         };
-        let stale = g.0.is_none_or(|t| t.elapsed() >= GROUPS_EVERY);
+        let stale =
+            g.0.is_none_or(|t| crate::game_clock::clock::wall_since(t) >= GROUPS_EVERY);
         if stale && let Some(dir) = &self.dir {
-            g.0 = Some(Instant::now());
+            g.0 = Some(crate::game_clock::clock::wall());
             g.1 = std::fs::read_to_string(dir.join(GROUPS_FILE))
                 .map(|t| parse_groups(&t))
                 .unwrap_or_default();
@@ -503,9 +504,11 @@ pub(crate) fn shared_of(w: &Registry) -> Option<Arc<Shared>> {
 /// The clock's snapshot, under the lock; `None` without `--admin`.
 pub fn take(w: &Registry) -> Option<(Arc<Shared>, Snapshot)> {
     let shared = Arc::clone(w.ext::<AdminSlot>().shared.as_ref()?);
-    let t = Instant::now();
+    let t = crate::game_clock::clock::wall();
     let snap = snapshot(w);
-    let ns = t.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+    let ns = crate::game_clock::clock::wall_since(t)
+        .as_nanos()
+        .min(u128::from(u64::MAX)) as u64;
     shared.snap_cost_last_ns.store(ns, Ordering::Relaxed);
     shared.snap_cost_max_ns.fetch_max(ns, Ordering::Relaxed);
     Some((shared, snap))
@@ -583,7 +586,7 @@ pub fn snapshot(w: &Registry) -> Snapshot {
 }
 
 fn unix_now() -> u64 {
-    SystemTime::now()
+    crate::game_clock::clock::wall_system()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
@@ -765,7 +768,7 @@ pub fn status_json(shared: &Shared) -> String {
     let _ = write!(
         s,
         "{{\"uptime_s\":{},\"now_unix\":{now}",
-        shared.started.elapsed().as_secs()
+        crate::game_clock::clock::wall_since(shared.started).as_secs()
     );
     match &snap {
         Some(snap) => {
@@ -1057,7 +1060,7 @@ fn render_metrics(shared: &Shared, methods: &crate::live_status::prof::MethodsWi
     let _ = writeln!(
         o,
         "eve_uptime_seconds {}",
-        shared.started.elapsed().as_secs()
+        crate::game_clock::clock::wall_since(shared.started).as_secs()
     );
     fam(
         &mut o,
@@ -1437,7 +1440,10 @@ pub fn route_post(shared: &Shared, h: &Head, body: &str, peer: &str) -> Response
         Err(why) if why == "no such action" => return Response::error(404, &why),
         Err(why) => return Response::error(400, &why),
     };
-    if !shared.actions.allow(action.name(), Instant::now()) {
+    if !shared
+        .actions
+        .allow(action.name(), crate::game_clock::clock::wall())
+    {
         return Response::error(429, "one per second per action");
     }
     let (name, args) = (action.name(), action.args());

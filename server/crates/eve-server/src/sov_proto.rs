@@ -70,11 +70,10 @@ pub(crate) fn refusal_line(tag: &str, hub_id: i64, who: i64, reason: &str) -> St
     format!("[{tag}] 403 hub {hub_id} pilot {who}: {reason}")
 }
 
-/// Wall-clock unix seconds.
+/// Game-time unix seconds (the wall clock at time-scale 1): hub fuel burns
+/// and upgrade timers read it.
 pub(crate) fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+    crate::game_clock::clock::unix_secs()
 }
 
 /// 200 with the `<base>Response` of request type `ty`.

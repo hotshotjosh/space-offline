@@ -191,7 +191,7 @@ impl GameClock {
     /// The game time that passes in a wall span of `wall`: `wall × N`. The
     /// inverse of [`Self::span`], for a timer derived from elapsed time (a
     /// recovery, an extractor's decay curve).
-    pub fn elapsed(self, wall: i64) -> i64 {
+    pub fn game_span(self, wall: i64) -> i64 {
         wall.saturating_mul(i64::from(self.scale))
     }
 
@@ -303,7 +303,7 @@ mod tests {
         let c = GameClock::REAL;
         for x in [-5, 0, 1, 7, HOUR, DAY, 90 * DAY] {
             assert_eq!(c.span(x), x);
-            assert_eq!(c.elapsed(x), x);
+            assert_eq!(c.game_span(x), x);
         }
         assert_eq!(c.rate(2.5), 2.5);
         assert_eq!(
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(c.span(3), 1, "a positive span stays positive");
         assert_eq!(c.span(0), 0);
         assert_eq!(c.span(-16), -16);
-        assert_eq!(c.elapsed(HOUR), 8 * HOUR);
+        assert_eq!(c.game_span(HOUR), 8 * HOUR);
         assert_eq!(c.rate(1.5), 12.0);
         assert_eq!(c.duration(Duration::from_secs(80)), Duration::from_secs(10));
         assert_eq!(c.day(), 3 * HOUR);

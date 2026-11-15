@@ -138,7 +138,7 @@ fn settle_text(reg: &mut Registry, actor: Option<i64>, args: &[&str]) -> String 
                 settled_to: now - wall,
                 ..a
             };
-            let span_s = clock.elapsed(wall) as f64 / 1.0e7;
+            let span_s = clock.game_span(wall) as f64 / 1.0e7;
             match super::settle_span(reg, who, moved, span_s, now) {
                 Some(r) => r.line(),
                 None => "nothing settled".to_owned(),

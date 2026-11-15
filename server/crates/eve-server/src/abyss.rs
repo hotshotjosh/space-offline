@@ -592,7 +592,9 @@ impl AbyssState {
     /// test that ticks on a fake clock keeps its fake time. 0 before any tick.
     fn now_on_clock(&self) -> BlueTime {
         match self.clock_at {
-            Some(at) => self.clock + (at.elapsed().as_nanos() / 100) as BlueTime,
+            Some(at) => {
+                self.clock + (crate::game_clock::clock::since(at).as_nanos() / 100) as BlueTime
+            }
             None => 0,
         }
     }

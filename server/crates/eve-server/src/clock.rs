@@ -344,46 +344,22 @@ pub const USE_SLEEP: &str = "use thread::sleep";
 /// shifts lines does not trip it. `clock.rs` itself is exempt.
 pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
     (
-        "abyss.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "admin_web.rs",
-        ".elapsed(",
-        4,
-        "pending #145: file held by another lane; convert after it lands",
-    ),
-    (
-        "admin_web.rs",
-        "Instant::now",
-        4,
-        "pending #145: file held by another lane; convert after it lands",
-    ),
-    (
-        "admin_web.rs",
-        "SystemTime::now",
-        1,
-        "pending #145: file held by another lane; convert after it lands",
-    ),
-    (
         "admin_web.rs",
         "recv_timeout(",
         1,
-        "pending #145: file held by another lane; convert after it lands",
+        "kept real: the HTTP handler waits for the clock thread to answer an admin action (a client-facing deadline)",
     ),
     (
         "admin_web.rs",
         "set_read_timeout(",
         1,
-        "pending #145: file held by another lane; convert after it lands",
+        "kept real: the admin HTTP socket read budget",
     ),
     (
         "admin_web.rs",
         "set_write_timeout(",
         1,
-        "pending #145: file held by another lane; convert after it lands",
+        "kept real: the admin HTTP socket write budget",
     ),
     (
         "bot_control.rs",
@@ -459,30 +435,6 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "pending #145 hot-ok: hot file",
     ),
     (
-        "econ_agents.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "econ_agents/wire.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "econ_dbs.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "econ_report.rs",
-        ".elapsed(",
-        2,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
         "gateway.rs",
         "set_read_timeout(",
         1,
@@ -501,24 +453,6 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "kept real: accept-error back-off",
     ),
     (
-        "jump.rs",
-        "Instant::now",
-        2,
-        "pending #145: file held by another lane; convert after it lands",
-    ),
-    (
-        "jump_fatigue.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "live_status.rs",
-        "SystemTime::now",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
         "logline.rs",
         "recv_timeout(",
         1,
@@ -529,12 +463,6 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "thread::sleep(",
         1,
         "kept real: the log writer's flush poll",
-    ),
-    (
-        "planet.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
     ),
     (
         "push.rs",
@@ -608,18 +536,6 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "Instant::now",
         7,
         "pending #145 hot-ok: hot file",
-    ),
-    (
-        "sov_index.rs",
-        ".elapsed(",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
-    ),
-    (
-        "sov_proto.rs",
-        "SystemTime::now",
-        1,
-        "pending #145: outside this lane's Owns; classify in a follow-up",
     ),
     ("store.rs", ".elapsed(", 4, "pending #145 hot-ok: hot file"),
     (

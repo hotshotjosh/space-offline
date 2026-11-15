@@ -235,9 +235,9 @@ fn counts(e: &Entry) -> bool {
 impl Report {
     pub fn of(reg: &Registry, from: BlueTime, to: BlueTime) -> Report {
         let clock = crate::game_clock::of(reg);
-        let hour = |date: i64| (clock.elapsed((date - from).max(0)) / crate::seed::HOUR) as i64;
+        let hour = |date: i64| (clock.game_span((date - from).max(0)) / crate::seed::HOUR) as i64;
         let mut r = Report {
-            hours: clock.elapsed((to - from).max(0)) as f64 / crate::seed::HOUR as f64,
+            hours: clock.game_span((to - from).max(0)) as f64 / crate::seed::HOUR as f64,
             ..Report::default()
         };
         #[derive(Default)]

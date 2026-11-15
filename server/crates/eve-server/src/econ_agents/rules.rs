@@ -19,7 +19,7 @@
 //! `[settle]` line and the daily `[econ]` line are where they are read.
 
 /// A game hour in seconds. The agents think in game time; the caller turns
-/// wall spans into game spans with `GameClock::elapsed`.
+/// wall spans into game spans with `GameClock::game_span`.
 pub const HOUR_S: f64 = 3_600.0;
 
 /// The share of an offline span a career is at work **[A]**. The rest is
