@@ -632,6 +632,47 @@ pub fn take_due(d: &mut Deltas, now: i64) -> Vec<Due> {
     out
 }
 
+/// Close the open case `id` now: its `end` becomes `now`, so the next
+/// [`take_due`] settles it. `false` for a missing or already closed case.
+/// A GM tool; no client call reaches it.
+pub fn close_now(d: &mut Deltas, id: i64, now: i64) -> bool {
+    let Some(case) = get(d, id) else {
+        return false;
+    };
+    if !case.is_open(now) {
+        return false;
+    }
+    let Some(mut row) = d.of(KIND).get(&case_key(id)).cloned() else {
+        return false;
+    };
+    row[4] = now.to_string();
+    d.put(KIND, case_key(id), row);
+    true
+}
+
+const SLASH_USAGE: &str = "usage: /vote close <voteCaseID>";
+
+/// GM: `/vote close <voteCaseID>` ends an open vote now. It does not settle:
+/// the next `voteManager` call does.
+pub fn slash(
+    reg: &mut crate::service::Registry,
+    _actor: Option<i64>,
+    args: &[&str],
+) -> Result<eve_marshal::PyValue, crate::service::ServiceError> {
+    let text = |s: String| Ok(crate::pyutil::bstr(&s));
+    let [verb, id] = args else {
+        return text(SLASH_USAGE.to_owned());
+    };
+    let (true, Ok(id)) = (verb.eq_ignore_ascii_case("close"), id.parse::<i64>()) else {
+        return text(SLASH_USAGE.to_owned());
+    };
+    if close_now(reg.deltas_mut(), id, crate::pyutil::filetime_now()) {
+        text(format!("vote {id} closed; it acts on the next vote call"))
+    } else {
+        text(format!("vote {id} is missing or already closed"))
+    }
+}
+
 /// A won kick, shares, lock or unlock vote, as the client lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sanction {
@@ -1266,5 +1307,75 @@ mod tests {
         prop(&mut d, "Last", 1, T0 + DAY + RETENTION + 1);
         assert!(get(&d, id).is_none());
         assert!(!d.of(KIND).contains_key(&sanction_key(id)));
+    }
+
+    #[test]
+    fn close_now_ends_an_open_case_and_take_due_settles_it() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let id = typed(&mut d, VOTE_CEO, BOB);
+        vote(&mut d, id, ALICE, &[], 0, T0).unwrap();
+        assert!(pending(&d, T0 + 5).is_empty(), "still open");
+        assert!(close_now(&mut d, id, T0 + 5));
+        assert_eq!(get(&d, id).unwrap().end, T0 + 5);
+        assert_eq!(pending(&d, T0 + 5).len(), 1);
+        let due = take_due(&mut d, T0 + 5);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].effect, Effect::NewCeo { candidate: BOB });
+    }
+
+    #[test]
+    fn close_now_refuses_a_closed_or_missing_case() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let id = opened(&mut d, 1);
+        assert!(!close_now(&mut d, id + 99, T0));
+        assert!(!close_now(&mut d, id, T0 + DAY), "already closed");
+        assert_eq!(get(&d, id).unwrap().end, T0 + DAY, "left alone");
+        assert!(close_now(&mut d, id, T0 + 1));
+        assert!(!close_now(&mut d, id, T0 + 2), "closed by the first call");
+    }
+
+    #[test]
+    fn the_vote_slash_closes_by_id_and_explains_its_usage() {
+        use crate::service::Registry;
+        let mut reg = Registry::new(crate::model::SandboxConfig::default());
+        let now = crate::pyutil::filetime_now();
+        shares(reg.deltas_mut());
+        let id = open(
+            reg.deltas_mut(),
+            &Proposal {
+                corp: CORP,
+                creator: ALICE,
+                vote_type: VOTE_GENERAL,
+                title: "t",
+                description: "",
+                days: 1,
+                options: &yes_no(),
+            },
+            now,
+        )
+        .unwrap();
+        let say = |reg: &mut Registry, a: &[&str]| match slash(reg, None, a).unwrap() {
+            eve_marshal::PyValue::Bytes(b) => String::from_utf8(b).unwrap(),
+            other => panic!("text expected, got {other:?}"),
+        };
+        assert_eq!(say(&mut reg, &[]), SLASH_USAGE);
+        assert_eq!(say(&mut reg, &["close"]), SLASH_USAGE);
+        assert_eq!(say(&mut reg, &["close", "x"]), SLASH_USAGE);
+        assert_eq!(say(&mut reg, &["open", "1"]), SLASH_USAGE);
+        assert_eq!(
+            say(&mut reg, &["close", &id.to_string()]),
+            format!("vote {id} closed; it acts on the next vote call")
+        );
+        assert!(
+            !get(reg.deltas(), id)
+                .unwrap()
+                .is_open(crate::pyutil::filetime_now())
+        );
+        assert_eq!(
+            say(&mut reg, &["close", &id.to_string()]),
+            format!("vote {id} is missing or already closed")
+        );
     }
 }

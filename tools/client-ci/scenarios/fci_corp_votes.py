@@ -29,14 +29,14 @@ traceback may appear.  A fresh world is a PRECONDITION: A starts in an NPC
 corporation.
 
 6. (#153) B runs for CEO (`CreateVote` with the CEO type): A sees the case, its
-   option 0 carries B as the candidate, A votes against and B for, and A is
-   still the CEO while the vote is open.
+   option 0 carries B as the candidate, A and B both vote for it, and A is
+   still the CEO while the vote is open.  A then closes the vote with the GM
+   line `/vote close <id>` (the shortest vote runs a day and no client call
+   shortens it), one `voteManager` call settles it, and B is the CEO.
 
-NOT here: closing a vote (the shortest vote runs a day and no client call
-shortens it: the expiry, the result and a won vote taking effect, a new CEO
-and an expulsion, are unit-tested in `corp_votes.rs` and `service/corp_votes.rs`),
-the Votes panels on screen (a human check).  A check that the CEO CHANGED needs
-a vote that can close inside a run; see the lane report for the spec.
+NOT here: the expiry by the clock, other won vote types and an expulsion (unit-tested
+in `corp_votes.rs` and `service/corp_votes.rs`), the Votes panels on screen
+(a human check).
 [A]s: `GetVoteCasesByCorporation(corp, STATUS_OPEN)` is a rowset the client
 can `len()`; falsifier: the open-case check fails with a TypeError detail.
 """
@@ -1628,9 +1628,8 @@ def eoci_main(EOCI_NAME):
               sum((tally(corp, case.voteCaseID) or {}).values()) == total,
               '%s of %s' % (text(tally(corp, case.voteCaseID)), text(total)))
         # 6. B runs for CEO (#153): the proposal carries B as the candidate and,
-        # while it is open, nothing has changed hands.  A won vote acting is
-        # unit-tested (a vote runs a day at the least and no client call
-        # shortens it); here only the wire a won vote reads is proved.
+        # while it is open, nothing has changed hands.  Then both vote for it,
+        # a GM closes it and one voteManager call settles it.
         got, waited = wait_for(lambda: ceo_case(corp) is not None, timeout_ms=PEER_WAIT_MS, step_ms=2000)
         check('A sees B\'s run for CEO as an open vote of the CEO type', bool(got),
               'after %s ms' % text(waited))
@@ -1640,10 +1639,23 @@ def eoci_main(EOCI_NAME):
         check('its option 0 names B as the candidate (the parameter the server acts on)',
               candidate_of(corp, run.voteCaseID) == other,
               'parameter %s, B %s' % (text(candidate_of(corp, run.voteCaseID)), text(other)))
-        ok, v = safe(lambda: votes_svc().InsertVote(corp, run.voteCaseID, 1))
-        check('A votes against it (InsertVote)', ok, text(v)[:200])
+        ok, v = safe(lambda: votes_svc().InsertVote(corp, run.voteCaseID, 0))
+        check('A votes for it (InsertVote)', ok, text(v)[:200])
         check('while the vote is open A is still the CEO', ceo_of_corp(corp) == me,
               'ceoID %s, A %s' % (text(ceo_of_corp(corp)), text(me)))
+        # With B's vote option 0 holds every issued share, which meets the quorum.
+        total_now = sum((holders(corp) or {}).values())
+        got, waited = wait_for(lambda: total_now > 0 and (tally(corp, run.voteCaseID) or {}).get(0) == total_now,
+                               timeout_ms=PEER_WAIT_MS, step_ms=2000)
+        check('B\'s vote lands: option 0 holds every share', bool(got),
+              'tally %s, shares %s after %s ms' % (text(tally(corp, run.voteCaseID)), text(total_now), text(waited)))
+        gm('/vote close %d' % run.voteCaseID)
+        # One voteManager call that skips the client cache runs the server's settle.
+        # [V] voting.py:47 remoteSvc = sm.RemoteSvc('voteManager')
+        safe(lambda: votes_svc().remoteSvc.CanRunForCEO())
+        got, waited = wait_for(lambda: ceo_of_corp(corp) == other, timeout_ms=PEER_WAIT_MS, step_ms=2000)
+        check('a won CEO vote with a share majority hands the seat to B', bool(got),
+              'ceoID %s, B %s after %s ms' % (text(ceo_of_corp(corp)), text(other), text(waited)))
 
     def phase_member(me, other):
         svc = corp_svc()
@@ -1718,11 +1730,14 @@ def eoci_main(EOCI_NAME):
         got, waited = wait_for(lambda: ceo_case(corp) is not None, timeout_ms=30000, step_ms=500)
         check('B sees its CEO vote open after OnVoteCaseChanged', bool(got), 'after %s ms' % text(waited))
         run = ceo_case(corp)
+        check('while the vote is open A is still the CEO', ceo_of_corp(corp) == other,
+              'ceoID %s, A %s' % (text(ceo_of_corp(corp)), text(other)))
         if run is not None:
             ok, v = safe(lambda: votes_svc().InsertVote(corp, run.voteCaseID, 0))
             check('B votes for itself (InsertVote)', ok, text(v)[:200])
-        check('while the vote is open A is still the CEO', ceo_of_corp(corp) == other,
-              'ceoID %s, A %s' % (text(ceo_of_corp(corp)), text(other)))
+        got, waited = wait_for(lambda: ceo_of_corp(corp) == me, timeout_ms=STEP_WAIT_MS, step_ms=2000)
+        check('B is the CEO after the vote closes', bool(got),
+              'ceoID %s, B %s after %s ms' % (text(ceo_of_corp(corp)), text(me), text(waited)))
 
     def linger(ms):
         waited = 0
