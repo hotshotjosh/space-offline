@@ -15,8 +15,10 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-/// How many pilots a book keeps. **[A]**: falsified by a bot that forgets a
-/// pilot who killed it twice within a day of meeting 64 others.
+/// How many pilots a book keeps. **[A]**: falsified by (1) a bot that forgets
+/// a pilot who killed it twice within a day of meeting 64 others, or (2) a
+/// book full of old heavy entries that leaves too few slots for newcomers
+/// (P3b greetings repeat or miss regulars).
 pub const KNOW_KEEP: usize = 64;
 
 /// What happened at the last meeting.
@@ -84,6 +86,34 @@ struct Book {
     pilots: BTreeMap<i64, Acquaintance>,
     dirty: bool,
     attached: bool,
+    /// Bumped on every change, so a flush that raced a note stays dirty.
+    rev: u64,
+}
+
+/// Drop the stalest of the least eventful pilot.
+fn evict_one(b: &mut Book) {
+    let out = b
+        .pilots
+        .values()
+        .min_by_key(|a| (a.weight(), a.last, a.who))
+        .map(|a| a.who);
+    if let Some(o) = out {
+        b.pilots.remove(&o);
+    }
+}
+
+/// Fold the loaded `a` into `m`: first meeting kept, last meeting's place and
+/// kind from the later side, counts summed.
+fn merge(m: &mut Acquaintance, a: Acquaintance) {
+    if a.last > m.last {
+        m.last = a.last;
+        m.system = a.system;
+        m.last_kind = a.last_kind;
+    }
+    m.first = m.first.min(a.first);
+    m.killed_me = m.killed_me.saturating_add(a.killed_me);
+    m.i_killed = m.i_killed.saturating_add(a.i_killed);
+    m.helps = m.helps.saturating_add(a.helps);
 }
 
 fn books() -> std::sync::MutexGuard<'static, BTreeMap<String, Book>> {
@@ -110,14 +140,7 @@ pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
     let b = all.entry(name.to_owned()).or_default();
     if !b.pilots.contains_key(&who) && b.pilots.len() >= KNOW_KEEP {
         // The stalest of the least eventful goes first.
-        let out = b
-            .pilots
-            .values()
-            .min_by_key(|a| (a.weight(), a.last, a.who))
-            .map(|a| a.who);
-        if let Some(o) = out {
-            b.pilots.remove(&o);
-        }
+        evict_one(b);
     }
     let a = b.pilots.entry(who).or_insert(Acquaintance {
         who,
@@ -140,6 +163,7 @@ pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
         Met::Fleet | Met::Theft => {}
     }
     b.dirty = true;
+    b.rev += 1;
 }
 
 /// What `name` remembers of `who`.
@@ -191,10 +215,8 @@ fn parse(text: &str) -> Option<BTreeMap<i64, Acquaintance>> {
                 rows += 1;
             }
             ["end", n] => {
-                let ok = n.parse::<usize>().ok()? == rows
-                    && rows == out.len()
-                    && out.len() <= KNOW_KEEP
-                    && lines.next().is_none();
+                let ok =
+                    n.parse::<usize>().ok()? == rows && rows == out.len() && lines.next().is_none();
                 return ok.then_some(out);
             }
             _ => return None,
@@ -204,41 +226,69 @@ fn parse(text: &str) -> Option<BTreeMap<i64, Acquaintance>> {
 }
 
 /// Read `<dir>/<name>.know.tsv` into the book, once per process. A missing
-/// or torn file is an empty book.
+/// or torn file is an empty book; a file over [`KNOW_KEEP`] is trimmed; notes
+/// made before the attach are merged with the file's rows. The file is read
+/// without the registry lock.
 pub fn attach(dir: &Path, name: &str) {
-    let mut all = books();
-    let b = all.entry(name.to_owned()).or_default();
-    if b.attached {
-        return;
+    {
+        let mut all = books();
+        let b = all.entry(name.to_owned()).or_default();
+        if b.attached {
+            return;
+        }
+        b.attached = true;
     }
-    b.attached = true;
     let loaded = std::fs::read_to_string(path_for(dir, name))
         .ok()
         .and_then(|t| parse(&t));
-    if let Some(p) = loaded {
-        b.pilots = p;
+    let Some(p) = loaded else { return };
+    let mut all = books();
+    let b = all.entry(name.to_owned()).or_default();
+    for (who, a) in p {
+        b.pilots.entry(who).and_modify(|m| merge(m, a)).or_insert(a);
+    }
+    while b.pilots.len() > KNOW_KEEP {
+        evict_one(b);
+        b.dirty = true;
+        b.rev += 1;
+    }
+}
+
+/// The text to write and the generation it stands for, when the book changed
+/// since the last write.
+fn prepare(name: &str) -> Option<(String, u64)> {
+    let all = books();
+    let b = all.get(name)?;
+    b.dirty.then(|| (render(b), b.rev))
+}
+
+/// The write of generation `rev` succeeded: the book is clean unless a note
+/// came in meanwhile.
+fn commit(name: &str, rev: u64) {
+    if let Some(b) = books().get_mut(name)
+        && b.rev == rev
+    {
+        b.dirty = false;
     }
 }
 
 /// Write the book by temp-and-rename when it changed since the last write.
+/// The registry lock is held only to render and to mark clean, never across
+/// the file I/O.
 pub fn flush(dir: &Path, name: &str) -> std::io::Result<()> {
-    let mut all = books();
-    let Some(b) = all.get_mut(name) else {
+    let Some((text, rev)) = prepare(name) else {
         return Ok(());
     };
-    if !b.dirty {
-        return Ok(());
-    }
     std::fs::create_dir_all(dir)?;
     let path = path_for(dir, name);
     let tmp = path.with_extension("tsv.tmp");
     {
         let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(render(b).as_bytes())?;
+        f.write_all(text.as_bytes())?;
         f.sync_all()?;
     }
     std::fs::rename(&tmp, &path)?;
-    b.dirty = false;
+    commit(name, rev);
     Ok(())
 }
 
@@ -283,12 +333,13 @@ mod tests {
         // A killer met first, then KNOW_KEEP trivial meetings.
         note(me, 1, Met::KilledMe, 1, 10);
         for i in 0..KNOW_KEEP as i64 {
-            note(me, 100 + i, Met::Fleet, 1, 20 + i as u64);
+            note(me, 1000 - i, Met::Fleet, 1, 20 + i as u64);
         }
         assert_eq!(books().get(me).unwrap().pilots.len(), KNOW_KEEP);
         assert!(recall(me, 1).is_some(), "the killer outlives trivial ones");
-        assert_eq!(recall(me, 100), None, "the stalest trivial entry went");
-        assert!(recall(me, 101).is_some());
+        // Ids fall while times rise: only `last` tells the stalest.
+        assert_eq!(recall(me, 1000), None, "the stalest trivial entry went");
+        assert!(recall(me, 999).is_some());
     }
 
     #[test]
@@ -335,6 +386,65 @@ mod tests {
         flush(&dir, me).unwrap();
         let back = parse(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert_eq!(back.get(&3).unwrap().helps, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_note_between_render_and_commit_stays_dirty() {
+        let dir = scratch("rev");
+        let me = "know-t6";
+        note(me, 3, Met::Fleet, 4, 50);
+        let (text, rev) = prepare(me).unwrap();
+        assert!(text.contains("pilot\t3\t"));
+        note(me, 8, Met::Fleet, 4, 60);
+        commit(me, rev);
+        assert!(prepare(me).is_some(), "the second note is still dirty");
+        flush(&dir, me).unwrap();
+        let back = parse(&std::fs::read_to_string(path_for(&dir, me)).unwrap()).unwrap();
+        assert!(back.contains_key(&3) && back.contains_key(&8));
+        assert!(prepare(me).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attach_merges_with_notes_made_before_it() {
+        let dir = scratch("merge");
+        std::fs::create_dir_all(&dir).unwrap();
+        let me = "know-t7";
+        std::fs::write(
+            path_for(&dir, me),
+            "know\t1\npilot\t5\t10\t20\t3\ti_killed\t0\t1\t0\nend\t1\n",
+        )
+        .unwrap();
+        note(me, 5, Met::KilledMe, 9, 100);
+        attach(&dir, me);
+        let a = recall(me, 5).unwrap();
+        assert_eq!((a.first, a.last, a.system), (10, 100, 9));
+        assert_eq!((a.killed_me, a.i_killed), (1, 1));
+        assert_eq!(a.last_kind, Met::KilledMe);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_over_keep_loads_trimmed_not_empty() {
+        let dir = scratch("trim");
+        std::fs::create_dir_all(&dir).unwrap();
+        let me = "know-t8";
+        let n = KNOW_KEEP as i64 + 3;
+        let mut t = String::from("know\t1\n");
+        for i in 0..n {
+            t.push_str(&format!(
+                "pilot\t{}\t1\t{}\t3\tfleet\t0\t0\t0\n",
+                500 + i,
+                10 + i
+            ));
+        }
+        t.push_str(&format!("end\t{n}\n"));
+        std::fs::write(path_for(&dir, me), t).unwrap();
+        attach(&dir, me);
+        assert_eq!(books().get(me).unwrap().pilots.len(), KNOW_KEEP);
+        assert_eq!(recall(me, 500), None, "the stalest went");
+        assert!(recall(me, 500 + n - 1).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
