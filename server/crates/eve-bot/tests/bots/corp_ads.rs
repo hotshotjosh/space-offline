@@ -73,6 +73,11 @@ fn member(name: &str, corp: i64) -> Member {
     }
 }
 
+fn corp_call(c: &mut Conn, corp: i64, method: &str, args: Vec<PyValue>) -> eve_bot::Answer {
+    c.moniker_call("corpRegistry", PyValue::Int(corp), method, args, vec![])
+        .expect(method)
+}
+
 fn adverts(c: &mut Conn) -> usize {
     let o = c
         .call("corpRecProxy", "GetRecruitmentAdsForCorporation", vec![])
@@ -160,6 +165,99 @@ fn a_bot_ceo_posts_an_advert_a_seeker_finds_it_and_a_full_corp_takes_it_down() {
         }
         assert!(st.size(corp) >= society::CORP_SIZE_CAP);
     }
+    let lines = corp_ads::tend(&mut ann, &hall, ANN, corp).expect("tend");
+    assert_eq!(lines, vec![format!("advert removed corp={corp}")]);
+    assert_eq!(adverts(&mut ann), 0);
+}
+
+/// The first `applicationID` anywhere in a `GetApplications` answer.
+fn application_id(v: &PyValue) -> Option<i64> {
+    match v {
+        PyValue::Dict(entries) => entries.iter().find_map(|(value, key)| match (key, value) {
+            (PyValue::Bytes(k), PyValue::Int(id)) if k == b"applicationID" => Some(*id),
+            _ => application_id(value),
+        }),
+        PyValue::List(items) | PyValue::Tuple(items) => items.iter().find_map(application_id),
+        PyValue::Instance { state, .. } => application_id(state),
+        _ => None,
+    }
+}
+
+#[test]
+fn an_open_offer_not_the_member_count_takes_the_advert_down() {
+    let mut config = config();
+    config.sandbox.characters = vec![
+        pilot(ANN, "Ann", 100_000_901),
+        pilot(BEN, "Ben", 100_000_902),
+    ];
+    let (addr, _world) = serve_world(config);
+    let mut ann = login(addr, "Ann");
+    let mut ben = login(addr, "Ben");
+    let corp = found_corp(&mut ann, "Offer Corp Invented", "OFFC");
+
+    // One seat left by members: Ann plus the fillers stand one below the cap.
+    // A 86_400-day offer window keeps the offer fresh however slow the box.
+    let hall = Hall::new(86_400).with_every(0);
+    {
+        let mut st = hall.lock();
+        st.corps.insert(
+            corp,
+            CorpMind {
+                id: corp,
+                ceo: Some(ANN),
+                profile: Profile::of("miner", Band::High),
+                founded: 0,
+                alliance: None,
+                name: "Offer Corp Invented".to_owned(),
+                applied_alliance: None,
+                salt: 0,
+            },
+        );
+        st.members.insert(ANN, member("Ann", corp));
+        for i in 0..(society::CORP_SIZE_CAP as i64 - 2) {
+            st.members
+                .insert(FILLER + i, member(&format!("Filler {i}"), corp));
+        }
+        assert_eq!(st.size(corp), society::CORP_SIZE_CAP - 1);
+    }
+    let hall = Arc::new(hall);
+
+    let lines = corp_ads::tend(&mut ann, &hall, ANN, corp).expect("tend");
+    assert_eq!(lines, vec![format!("advert posted corp={corp}")]);
+
+    // Ben applies; with the application only pending, the seat is still free.
+    let bens = ben.session().get_i64("corpid").expect("Ben's own corp");
+    let a = corp_call(
+        &mut ben,
+        bens,
+        "InsertApplication",
+        vec![PyValue::Int(corp), uni("I would like to fly with you.")],
+    );
+    assert_eq!(a.refusal(), None, "InsertApplication refused");
+    let lines = corp_ads::tend(&mut ann, &hall, ANN, corp).expect("tend");
+    assert!(lines.is_empty(), "{lines:?}");
+    assert_eq!(adverts(&mut ann), 1);
+
+    // Ann offers (status 6): the offer holds the last seat, so the advert goes.
+    let apps = corp_call(&mut ann, corp, "GetApplications", vec![]);
+    let id = apps
+        .value
+        .as_ref()
+        .and_then(application_id)
+        .expect("Ben's application");
+    let a = corp_call(
+        &mut ann,
+        corp,
+        "UpdateApplicationOffer",
+        vec![
+            PyValue::Int(id),
+            PyValue::Int(BEN),
+            PyValue::Int(corp),
+            uni(""),
+            PyValue::Int(6),
+        ],
+    );
+    assert_eq!(a.refusal(), None, "the offer was refused");
     let lines = corp_ads::tend(&mut ann, &hall, ANN, corp).expect("tend");
     assert_eq!(lines, vec![format!("advert removed corp={corp}")]);
     assert_eq!(adverts(&mut ann), 0);

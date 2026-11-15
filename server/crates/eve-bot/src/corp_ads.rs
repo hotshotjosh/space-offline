@@ -118,6 +118,7 @@ pub fn tend(conn: &mut Conn, hall: &Hall, me: i64, corp: i64) -> Result<Vec<Stri
             let day = hall.lock().day;
             fresh_offers(&v, eve_server::pyutil::filetime_now(), day)
         }
+        // A raise counts no offers: the advert decision before #152.
         None => 0,
     };
     match decide(size, offers, &own) {
