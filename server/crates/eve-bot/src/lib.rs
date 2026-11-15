@@ -128,6 +128,7 @@ pub mod human;
 pub mod hunt;
 pub mod ice;
 pub mod insure;
+pub mod know;
 pub mod logi;
 pub mod login_gate;
 pub mod lp_spend;
