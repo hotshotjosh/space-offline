@@ -58,7 +58,7 @@ pub const DROP_RETRY: Duration = Duration::from_secs(20 * 60);
 /// whose text is the server's "that ship is too far away",
 /// `ship_config::reach`; [`is_range_refusal`]) and tried again
 /// **[A]**. The bot's follow model now closes at the ship's speed as the
-/// server's does (`park::World::advance_one`, `Motion::tethered_advance`), so
+/// server's does (`park::World::advance_one`, `Motion::tethered_advance_led`), so
 /// this is a safety net for model drift, not the main path; before that fix
 /// the first drop came while the real ship was still on its way (client run
 /// 11-05: the Add came 0.1 s after the `CmdFollowBall`). Falsified by a drop that gives up here beside a boss

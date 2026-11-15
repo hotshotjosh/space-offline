@@ -234,17 +234,60 @@ impl World {
     /// Carry every ball forward to `now` ([`space_state::now_seconds`]'s
     /// clock), with the server's law. Idempotent at a fixed `now`.
     pub fn advance_to(&mut self, now: f64) {
-        let ids: Vec<i64> = self.balls.keys().copied().collect();
-        for id in ids {
-            self.advance_one(id, now);
+        let before: BTreeMap<i64, [f64; 3]> = self
+            .balls
+            .iter()
+            .map(|(&id, b)| (id, b.motion.position))
+            .collect();
+        for id in self.follow_order() {
+            self.advance_one(id, now, &before);
         }
+    }
+
+    /// The ball a follower of another pilot's ship follows, if `id` is one:
+    /// the server's `Run::follows_a_mover`.
+    fn follows_a_ship(&self, id: i64) -> Option<i64> {
+        let ball = self.balls.get(&id)?;
+        let Mode::Follow { ball_id, .. } = ball.motion.mode else {
+            return None;
+        };
+        let own_char = ball.slim.and_then(|s| s.char_id);
+        let t = self.balls.get(&ball_id)?;
+        let by_ship = ball_id != id
+            && t.slim
+                .and_then(|s| s.char_id)
+                .is_some_and(|c| Some(c) != own_char);
+        by_ship.then_some(ball_id)
+    }
+
+    /// The order a step places its balls in, as the server's `follow_order`:
+    /// everything that does not follow another pilot's ship first, then each
+    /// follower after the ball it follows (a ring of followers in id order).
+    fn follow_order(&self) -> Vec<i64> {
+        let mut order: Vec<i64> = Vec::with_capacity(self.balls.len());
+        let mut waiting: Vec<i64> = Vec::new();
+        for &id in self.balls.keys() {
+            if self.follows_a_ship(id).is_some() {
+                waiting.push(id);
+            } else {
+                order.push(id);
+            }
+        }
+        while !waiting.is_empty() {
+            let ready = waiting
+                .iter()
+                .position(|&i| self.follows_a_ship(i).is_none_or(|t| !waiting.contains(&t)))
+                .unwrap_or(0);
+            order.push(waiting.remove(ready));
+        }
+        order
     }
 
     /// One ball, as `Registry::advance_character` does it: integrate, then
     /// put a follower or orbiter back on its tether, with the range as a
     /// centre separation (`orbit::centre_distance`) and the follower's own
     /// radius taken **from its hull**, which is the server's choice.
-    fn advance_one(&mut self, id: i64, now: f64) {
+    fn advance_one(&mut self, id: i64, now: f64, before: &BTreeMap<i64, [f64; 3]>) {
         let Some(ball) = self.balls.get(&id).copied() else {
             return;
         };
@@ -255,6 +298,7 @@ impl World {
         let hull = ball.hull();
         let own_char = ball.slim.and_then(|s| s.char_id);
         let mut by_ship = false;
+        let mut lead = 0.0;
         let tether = ball
             .motion
             .tether()
@@ -266,6 +310,12 @@ impl World {
                     .slim
                     .and_then(|s| s.char_id)
                     .is_some_and(|c| Some(c) != own_char);
+                // How far the leader moved in this step: a follower that
+                // cannot fly that far does not snap to it.
+                lead = space_state::distance(
+                    before.get(&target).copied().unwrap_or(t.motion.position),
+                    t.motion.position,
+                );
                 Some((
                     t.motion.position,
                     eve_server::orbit::centre_distance(range, f64::from(hull.radius), t.radius),
@@ -280,7 +330,9 @@ impl World {
             // here, though the server orbits a ship with `tethered_step`
             // (not a regression: it snapped before too).
             if by_ship && matches!(ball.motion.mode, Mode::Follow { .. }) {
-                motion = ball.motion.tethered_advance(&hull, id, at, range, dt, now);
+                motion = ball
+                    .motion
+                    .tethered_advance_led(&hull, id, at, range, lead, dt, now);
             } else {
                 motion.tethered_in_plane(at, range, id, now as u32);
             }
@@ -392,7 +444,7 @@ impl World {
                 // **Advance before applying**, as the server does: `after`
                 // turns a heading into a point relative to the position it
                 // finds, so a stale position compounds.
-                self.advance_one(id, now);
+                self.advance_one(id, now, &BTreeMap::new());
                 let hull = match self.balls.get(&id) {
                     Some(b) => b.hull(),
                     None => return,
@@ -863,6 +915,38 @@ mod tests {
             (gap(&w, OTHER) - tether).abs() < 1e-6,
             "{} vs {tether}",
             gap(&w, OTHER)
+        );
+    }
+
+    #[test]
+    fn a_slow_follower_falls_behind_a_faster_pilot() {
+        let mut w = state_with_ship(1_000.0);
+        let fast = eve_server::destiny::hull::Hull {
+            max_velocity: 300.0,
+            ..eve_server::destiny::hull::FALLBACK
+        };
+        let slow = eve_server::destiny::hull::Hull {
+            max_velocity: 150.0,
+            ..eve_server::destiny::hull::FALLBACK
+        };
+        {
+            let lead = w.balls.get_mut(&OTHER).expect("ship");
+            lead.motion.position = [2_600.0, 0.0, 0.0];
+            lead.motion.velocity = [300.0, 0.0, 0.0];
+            lead.motion.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
+            lead.motion.speed_fraction = 1.0;
+            lead.own_hull = Some(fast);
+        }
+        w.balls.get_mut(&SHIP).expect("ego").own_hull = Some(slow);
+        follow(&mut w, OTHER, 1_000.0);
+        let tether = 500.0 + w.ego_ball().expect("ego").radius + 2_000.0;
+        for s in 1..=60 {
+            w.advance_to(1_000.0 + f64::from(s));
+        }
+        let g = gap(&w, OTHER);
+        assert!(
+            g > tether + 5_000.0,
+            "kept up at 150 m/s: {g} (tether {tether})"
         );
     }
 

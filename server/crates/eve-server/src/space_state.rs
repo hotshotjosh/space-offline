@@ -634,7 +634,7 @@ impl Motion {
 
     /// [`Motion::tethered_advance_led`] for a target that did not move in the
     /// step (`lead` 0), or whose move the caller cannot see.
-    pub fn tethered_advance(
+    fn tethered_advance(
         self,
         h: &crate::destiny::hull::Hull,
         ball_id: i64,
