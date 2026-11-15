@@ -110,9 +110,9 @@ pub const STEPS: &[Step] = &[
         run: Run::Once(|w, d| crate::service::corp_office::on_rollover(w, d.now)),
     },
     // E1: a no-op after `econ_agents_close` in the same rollover (the slice
-    // already ran). The agents the sweep settles later are counted in an
-    // `[econ] late` line and land in the next day's `[econ]` line. Its count
-    // is 0.
+    // already ran). The agents the sweep settles later are booked to this
+    // day's `econ` rows by correction (`econ_ledger::book_late`) and counted in
+    // an `[econ] late` line. Its count is 0.
     Step {
         name: "econ_agents",
         run: Run::Once(crate::econ_agents::on_rollover),
