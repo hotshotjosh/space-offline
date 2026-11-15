@@ -12,8 +12,8 @@
 //! | `GetVotes(voteCaseID)` | the caller's own vote as a list of `KeyVal` (`optionID voteCaseID characterID weight`), empty before they vote |
 //! | `InsertVoteCase(title, description, type, options, days)` | `None`; pushes `OnVoteCaseChanged` |
 //! | `InsertVote(corpID, voteCaseID, optionID)` | `None`; pushes `OnVoteCast` and `OnVoteCaseChanged` |
-//! | `GetCorpSanctionedActions()` | an empty dict: sanctioned actions are not made |
-//! | `ActivateSanctionedAction(voteCaseID)` | refused |
+//! | `GetCorpSanctionedActions()` | a dict `voteCaseID -> KeyVal` of the corp's won kick, shares, lock and unlock votes (`voteCaseID voteType optionID parameter parameter1 parameter2 expires actedUpon inEffect timeActedUpon timeRescended`), empty for a non-viewer |
+//! | `ActivateSanctionedAction(voteCaseID)` | `None`; the CEO puts a won expulsion in effect; pushes `OnSanctionedActionChanged` and `OnVoteCaseChanged` |
 //!
 //! **Shapes [V]** (`voting.py`, `corp_ui_votes.py`): `voteCases` is indexed by
 //! status and its values iterate as rows and carry `.header`; a vote case
@@ -40,10 +40,13 @@
 //! the candidate through `corp::hand_over`, the path `ResignFromCEO` takes.
 //! The candidate is always the proposer: `insert_case` overwrites the
 //! option's parameter with the caller. The **sanctioned actions** (expel,
-//! create shares, lock or unlock a blueprint) are a follow-up: the client
-//! lists a won one with an Implement button that calls
+//! create shares, lock or unlock a blueprint) are listed by
+//! `GetCorpSanctionedActions`, and the client's Implement button calls
 //! `ActivateSanctionedAction(voteCaseID)` (`corp_ui_sanctionableactions.py`
-//! **[V]**), so a won one is only logged as awaiting it. Nobody is told when
+//! **[V]**): the CEO puts a won expulsion in effect through
+//! `corp::expel`, keeping every `can_be_kicked_out` refusal. Create shares
+//! and blueprint lock or unlock are refused until built, and stay listed and
+//! not acted upon. Nobody is told when
 //! nothing is called, so a closed vote acts when the next vote call comes
 //! in, from anyone.
 
@@ -104,6 +107,9 @@ fn refusal(r: Refusal) -> ServiceError {
         Refusal::AlreadyVoted => "You have already voted on this.",
         Refusal::NoSuchOption => "That is not an option of this vote.",
         Refusal::NoWeight => "Only shareholders can vote.",
+        Refusal::NotSanctioned => "That vote has no action to put in effect.",
+        Refusal::ActedUpon => "That action has already been put in effect.",
+        Refusal::Expired => "The time to put that action in effect has passed.",
     })
 }
 
@@ -259,6 +265,88 @@ fn case_keyval(c: &cv::Case) -> PyValue {
         ("startDateTime", PyValue::Int(c.start)),
         ("endDateTime", PyValue::Int(c.end)),
     ])
+}
+
+/// One sanctioned action as the client reads it **[V]**
+/// (`corp_ui_sanctionableactions.py:93-116`, `:136-149`, `:212`;
+/// `voting.py:241-267`). In effect means acted upon. [I] The client indexes
+/// `[No, Yes][row.actedUpon]`, so the flags are ints 0 or 1, not bools.
+fn sanction_row(s: &cv::Sanction) -> PyValue {
+    let flag = i64::from(s.acted_at.is_some());
+    crate::pyutil::keyval(vec![
+        ("voteCaseID", PyValue::Int(s.case.id)),
+        ("voteType", PyValue::Int(s.case.vote_type)),
+        ("optionID", PyValue::Int(s.option)),
+        ("parameter", PyValue::Int(s.parameter)),
+        ("parameter1", PyValue::Int(s.parameter1)),
+        ("parameter2", PyValue::Int(s.parameter2)),
+        ("expires", PyValue::Int(s.expires)),
+        ("actedUpon", PyValue::Int(flag)),
+        ("inEffect", PyValue::Int(flag)),
+        (
+            "timeActedUpon",
+            s.acted_at.map_or(PyValue::None, PyValue::Int),
+        ),
+        ("timeRescended", PyValue::None),
+    ])
+}
+
+/// `GetCorpSanctionedActions`: `{voteCaseID: row}`, as (value, key) pairs.
+fn get_sanctioned(reg: &mut Registry, me: i64) -> PyValue {
+    let Some(corp) = my_corp(reg, me).filter(|c| can_view(reg, *c, me)) else {
+        return PyValue::Dict(vec![]);
+    };
+    let now = crate::pyutil::filetime_now();
+    PyValue::Dict(
+        cv::sanctioned(reg.deltas(), corp, now)
+            .iter()
+            .map(|s| (sanction_row(s), PyValue::Int(s.case.id)))
+            .collect(),
+    )
+}
+
+/// `ActivateSanctionedAction(voteCaseID)`: the CEO puts a won sanctioned
+/// action in effect **[V]** (the client gates on `UserIsActiveCEO`).
+fn activate_sanctioned(
+    reg: &mut Registry,
+    req: &Request<'_>,
+    me: i64,
+) -> Result<PyValue, ServiceError> {
+    let id = Args::new(req).int_or_kw(0, "voteCaseID").unwrap_or(0);
+    let Some(case) = cv::get(reg.deltas(), id) else {
+        return Err(refusal(Refusal::NotSanctioned));
+    };
+    let corp = case.corp;
+    let is_ceo =
+        live_corp(reg, corp) && reg.corporations().get(corp).is_some_and(|c| c.ceo_id == me);
+    if !is_ceo {
+        return Err(denied(
+            "Only the CEO can put a sanctioned action in effect.",
+        ));
+    }
+    // Check the type first: a kind not built yet stays activatable.
+    if case.vote_type != cv::VOTE_KICK_MEMBER {
+        return Err(
+            if cv::sanctioned(reg.deltas(), corp, i64::MAX)
+                .iter()
+                .any(|s| s.case.id == id)
+            {
+                custom("That action cannot be put in effect yet.")
+            } else {
+                refusal(Refusal::NotSanctioned)
+            },
+        );
+    }
+    let now = crate::pyutil::filetime_now();
+    let s = cv::put_in_effect(reg.deltas_mut(), id, now).map_err(refusal)?;
+    super::corp::expel(reg, me, s.parameter)?;
+    tell(
+        reg,
+        corp,
+        id,
+        &["OnSanctionedActionChanged", "OnVoteCaseChanged"],
+    );
+    Ok(PyValue::None)
 }
 
 /// `{status: CRowset}` for a corp, the shape `voteCases[status]` indexes.
@@ -448,7 +536,7 @@ pub(crate) fn settle(reg: &mut Registry, now: i64) {
                 }
             }
             cv::Effect::Expel { target } => {
-                eprintln!("[votes] case {id}: expelling {target} awaits ActivateSanctionedAction");
+                eprintln!("[votes] case {id}: expelling {target} is a sanctioned action");
                 false
             }
             cv::Effect::CreateShares { shares } => {
@@ -535,8 +623,8 @@ pub(crate) fn vote_manager(reg: &mut Registry, req: &Request<'_>) -> Result<PyVa
         }
         "InsertVoteCase" => insert_case(reg, req, me),
         "InsertVote" => insert_vote(reg, req, me),
-        "GetCorpSanctionedActions" => Ok(PyValue::Dict(vec![])),
-        "ActivateSanctionedAction" => Err(custom("There is no such action to put in effect.")),
+        "GetCorpSanctionedActions" => Ok(get_sanctioned(reg, me)),
+        "ActivateSanctionedAction" => activate_sanctioned(reg, req, me),
         _ => Err(reg.no_method(req)),
     }
 }
@@ -1004,5 +1092,145 @@ mod tests {
         reg.dirty = false;
         settle(&mut reg, crate::pyutil::filetime_now());
         assert!(!reg.dirty);
+    }
+
+    /// A won expulsion of `target` (ALICE votes yes), closed and settled.
+    fn won_kick(reg: &mut Registry, corp: i64, vote_type: i64, target: i64) -> i64 {
+        call(
+            reg,
+            ALICE,
+            "InsertVoteCase",
+            &[
+                u(""),
+                u(""),
+                i(vote_type),
+                PyValue::Tuple(vec![
+                    u("a"),
+                    u("b"),
+                    i(target),
+                    PyValue::None,
+                    PyValue::None,
+                ]),
+                i(1),
+            ],
+        )
+        .unwrap();
+        let id = cases_now(reg, corp).last().unwrap().id;
+        call(reg, ALICE, "InsertVote", &[i(corp), i(id), i(0)]).unwrap();
+        // Close it for real: the calls read the wall clock.
+        let mut row = reg
+            .deltas()
+            .of(cv::KIND)
+            .get(&vec!["case".to_owned(), id.to_string()])
+            .unwrap()
+            .clone();
+        let past = (crate::pyutil::filetime_now() - cv::DAY).to_string();
+        row[4] = past;
+        reg.deltas_mut()
+            .put(cv::KIND, vec!["case".to_owned(), id.to_string()], row);
+        settle(reg, crate::pyutil::filetime_now());
+        id
+    }
+
+    /// The reply's rows as `(voteCaseID key, row)`.
+    fn listed(reg: &mut Registry, who: i64) -> Vec<(PyValue, PyValue)> {
+        let PyValue::Dict(rows) = call(reg, who, "GetCorpSanctionedActions", &[]).unwrap() else {
+            panic!("a dict")
+        };
+        rows.into_iter().map(|(v, k)| (k, v)).collect()
+    }
+
+    fn attr(row: &PyValue, name: &str) -> PyValue {
+        let PyValue::Instance { state, .. } = row else {
+            panic!("a KeyVal")
+        };
+        crate::pyutil::dict_get(state, name.as_bytes())
+            .unwrap_or_else(|| panic!("{name} missing"))
+            .clone()
+    }
+
+    #[test]
+    fn the_ceo_puts_a_won_expulsion_in_effect_and_the_member_leaves() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        let _ = pushes(&mut reg);
+        assert!(reg.corporations().membership(CAROL).is_some());
+        call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
+        assert!(reg.corporations().membership(CAROL).is_none());
+        let p = pushes(&mut reg);
+        let names: Vec<&str> = p.iter().map(|x| x.0).collect();
+        assert!(names.contains(&"OnSanctionedActionChanged"));
+        assert!(names.contains(&"OnVoteCaseChanged"));
+        for (_, to) in p.iter().filter(|x| x.0 == "OnSanctionedActionChanged") {
+            assert!(to.contains(&ALICE) && to.contains(&BOB));
+        }
+    }
+
+    #[test]
+    fn a_director_who_is_not_ceo_is_refused_activation() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        reg.corporations_mut().member_mut(BOB).unwrap().roles =
+            super::super::corp::CORP_ROLE_DIRECTOR;
+        let e = call(&mut reg, BOB, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(key_of(&e), "CrpAccessDenied");
+        assert!(reg.corporations().membership(CAROL).is_some());
+        // The case is still there to be put in effect by the CEO.
+        call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
+        assert!(reg.corporations().membership(CAROL).is_none());
+    }
+
+    #[test]
+    fn a_second_activation_is_refused() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
+        let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(key_of(&e), "CustomNotify");
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(1));
+    }
+
+    #[test]
+    fn a_won_shares_vote_cannot_be_put_in_effect_yet_and_stays_listed_not_acted() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_SHARES, 50);
+        let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(key_of(&e), "CustomNotify");
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(0));
+        assert_eq!(attr(&rows[0].1, "timeActedUpon"), PyValue::None);
+        assert!(
+            cv::sanctioned(reg.deltas(), corp, i64::MAX)[0]
+                .acted_at
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn get_corp_sanctioned_actions_answers_value_key_pairs_with_int_flags() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        let PyValue::Dict(pairs) = call(&mut reg, ALICE, "GetCorpSanctionedActions", &[]).unwrap()
+        else {
+            panic!("a dict")
+        };
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].1, i(id), "the key is the case id");
+        let row = &pairs[0].0;
+        assert_eq!(attr(row, "voteCaseID"), i(id));
+        assert_eq!(attr(row, "voteType"), i(cv::VOTE_KICK_MEMBER));
+        assert_eq!(attr(row, "optionID"), i(0));
+        assert_eq!(attr(row, "parameter"), i(CAROL));
+        assert_eq!(attr(row, "actedUpon"), i(0));
+        assert_eq!(attr(row, "inEffect"), i(0));
+        assert_eq!(attr(row, "timeActedUpon"), PyValue::None);
+        assert_eq!(attr(row, "timeRescended"), PyValue::None);
+        let case = cv::get(reg.deltas(), id).unwrap();
+        assert_eq!(attr(row, "expires"), i(case.end + cv::SANCTION_WINDOW));
+        // A pilot who is not a shareholder or CEO sees none.
+        assert!(listed(&mut reg, DAVE).is_empty());
+        assert!(listed(&mut reg, CAROL).is_empty());
     }
 }

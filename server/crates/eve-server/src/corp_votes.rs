@@ -14,6 +14,7 @@
 //! | [`KIND`] | `snap id holder` | `shares`, what `holder` held when the case opened |
 //! | [`KIND`] | `used id holder` | marker: that holder's snapshot shares were already voted |
 //! | [`KIND`] | `acted id` | `result`: the closed case was settled (its effect carried out or skipped), once |
+//! | [`KIND`] | `sanction id` | `acted_at`: the CEO put the case's sanctioned action in effect, once (FILETIME) |
 //!
 //! Times are Windows FILETIMEs, as the client compares `endDateTime` with
 //! `GetWallclockTime()` (`voting.py` service `GetVoteCase`) **[V]**.
@@ -60,8 +61,9 @@
 //! other types, with an Implement button calling
 //! `ActivateSanctionedAction`), so a won CEO vote acts by itself. The other
 //! won votes (expel, create shares, lock, unlock) are *sanctioned actions*
-//! in the client's model and wait for `ActivateSanctionedAction`; that is a
-//! follow-up, so here they are only logged as awaiting it.
+//! in the client's model and wait for `ActivateSanctionedAction`: [`sanctioned`]
+//! lists them and [`put_in_effect`] marks one acted upon, once, within
+//! [`SANCTION_WINDOW`] of the case's end; the service runs the effect.
 //!
 //! **CEO quorum [A].** A CEO vote acts only when option 0 holds more than
 //! half of the corp's issued shares ([`ceo_quorum_met`]), not on plurality
@@ -102,6 +104,12 @@ pub const MAX_DESCRIPTION: usize = 1000;
 /// a longer history.
 pub const RETENTION: i64 = 90 * DAY;
 
+/// How long after a case closes its sanctioned action may be put in effect
+/// **[A]**; falsifier: reference data or a TQ observation of a different
+/// window. The client only compares `expires` with the wall clock
+/// (`voting.py:241-246`).
+pub const SANCTION_WINDOW: i64 = 30 * DAY;
+
 /// Why a call is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
@@ -123,6 +131,12 @@ pub enum Refusal {
     NoSuchOption,
     /// The voter holds no shares of the corp.
     NoWeight,
+    /// No such won kick, shares, lock or unlock case.
+    NotSanctioned,
+    /// The sanctioned action was already put in effect.
+    ActedUpon,
+    /// The window to put it in effect has passed.
+    Expired,
 }
 
 /// One vote case.
@@ -356,7 +370,7 @@ fn prune(d: &mut Deltas, now: i64) {
         .of(KIND)
         .keys()
         .filter(|k| match k.first().map(String::as_str) {
-            Some("case" | "snapped" | "acted") => k.len() == 2 && old.contains(&k[1]),
+            Some("case" | "snapped" | "acted" | "sanction") => k.len() == 2 && old.contains(&k[1]),
             Some("opt" | "cast" | "snap" | "used") => k.len() == 3 && old.contains(&k[1]),
             _ => false,
         })
@@ -616,6 +630,91 @@ pub fn take_due(d: &mut Deltas, now: i64) -> Vec<Due> {
         });
     }
     out
+}
+
+/// A won kick, shares, lock or unlock vote, as the client lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sanction {
+    pub case: Case,
+    /// Always 0: the winning "yes".
+    pub option: i64,
+    pub parameter: i64,
+    pub parameter1: i64,
+    pub parameter2: i64,
+    /// FILETIME: `case.end + SANCTION_WINDOW`.
+    pub expires: i64,
+    /// FILETIME the CEO put it in effect, if they did.
+    pub acted_at: Option<i64>,
+}
+
+fn sanction_key(id: i64) -> Vec<String> {
+    vec!["sanction".to_owned(), id.to_string()]
+}
+
+fn is_sanctionable(vote_type: i64) -> bool {
+    matches!(
+        vote_type,
+        VOTE_KICK_MEMBER | VOTE_SHARES | VOTE_ITEM_LOCKDOWN | VOTE_ITEM_UNLOCK
+    )
+}
+
+fn sanction_of(d: &Deltas, case: Case) -> Option<Sanction> {
+    if !is_sanctionable(case.vote_type) {
+        return None;
+    }
+    if !is_acted(d, case.id) || outcome(d, case.id) != Outcome::Won(0) {
+        return None;
+    }
+    let spec = options(d, case.id).into_iter().find(|o| o.id == 0)?.spec;
+    let acted_at = d
+        .of(KIND)
+        .get(&sanction_key(case.id))
+        .map(|r| num(r, 0).unwrap_or(0));
+    Some(Sanction {
+        expires: case.end.saturating_add(SANCTION_WINDOW),
+        option: 0,
+        parameter: spec.parameter,
+        parameter1: spec.parameter1,
+        parameter2: spec.parameter2,
+        acted_at,
+        case,
+    })
+}
+
+/// The sanctioned actions of `corp`: its settled, closed cases that were won
+/// with option 0 and are a kick, shares, lock or unlock vote, oldest first.
+/// [I] The client also renders general and CEO rows, but only the typed ones
+/// carry an action, so they are left out.
+pub fn sanctioned(d: &Deltas, corp: i64, now: i64) -> Vec<Sanction> {
+    let mut v: Vec<Sanction> = d
+        .of(KIND)
+        .iter()
+        .filter(|(k, _)| k.len() == 2 && k[0] == "case")
+        .filter_map(|(k, row)| parse_case(k[1].parse().ok()?, row))
+        .filter(|c| c.corp == corp && !c.is_open(now))
+        .filter_map(|c| sanction_of(d, c))
+        .collect();
+    v.sort_by_key(|s| s.case.id);
+    v
+}
+
+/// Mark case `id`'s sanctioned action as put in effect at `now`, once and
+/// within the window. It does not run the effect; the service does.
+pub fn put_in_effect(d: &mut Deltas, id: i64, now: i64) -> Result<Sanction, Refusal> {
+    let case = get(d, id).ok_or(Refusal::NotSanctioned)?;
+    if case.is_open(now) {
+        return Err(Refusal::NotSanctioned);
+    }
+    let mut s = sanction_of(d, case).ok_or(Refusal::NotSanctioned)?;
+    if s.acted_at.is_some() {
+        return Err(Refusal::ActedUpon);
+    }
+    if now >= s.expires {
+        return Err(Refusal::Expired);
+    }
+    d.put(KIND, sanction_key(id), vec![now.to_string()]);
+    s.acted_at = Some(now);
+    Ok(s)
 }
 
 /// The result: the option with the most weight.
@@ -1070,5 +1169,86 @@ mod tests {
         assert!(pending(&d, T0).is_empty());
         assert_eq!(pending(&d, T0 + DAY)[0].id, id);
         assert!(!is_acted(&d, id));
+    }
+
+    /// A won typed case, settled after it closed.
+    fn won(d: &mut Deltas, vote_type: i64, param: i64) -> i64 {
+        let id = typed(d, vote_type, param);
+        vote(d, id, ALICE, &[], 0, T0).unwrap();
+        take_due(d, T0 + 2 * DAY);
+        id
+    }
+
+    #[test]
+    fn a_won_kick_vote_is_listed_with_its_target_and_window() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let id = won(&mut d, VOTE_KICK_MEMBER, CAROL);
+        let now = T0 + 2 * DAY;
+        assert!(sanctioned(&d, OTHER, now).is_empty());
+        let list = sanctioned(&d, CORP, now);
+        assert_eq!(list.len(), 1);
+        let s = &list[0];
+        assert_eq!(s.case.id, id);
+        assert_eq!((s.option, s.parameter), (0, CAROL));
+        assert_eq!((s.parameter1, s.parameter2), (7, 8));
+        assert_eq!(s.expires, s.case.end + SANCTION_WINDOW);
+        assert_eq!(s.acted_at, None);
+    }
+
+    #[test]
+    fn a_lost_general_or_ceo_vote_is_not_a_sanctioned_action() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let ceo = won(&mut d, VOTE_CEO, BOB);
+        let general = won(&mut d, VOTE_GENERAL, 0);
+        // A kick vote that went to "No".
+        let no = typed(&mut d, VOTE_KICK_MEMBER, CAROL);
+        vote(&mut d, no, ALICE, &[], 1, T0).unwrap();
+        // A kick vote nobody voted on.
+        let empty = typed(&mut d, VOTE_KICK_MEMBER, CAROL);
+        take_due(&mut d, T0 + 2 * DAY);
+        assert!(is_acted(&d, empty));
+        // A won kick vote not yet settled is not listed either.
+        let unsettled = typed(&mut d, VOTE_KICK_MEMBER, CAROL);
+        vote(&mut d, unsettled, ALICE, &[], 0, T0).unwrap();
+        assert!(sanctioned(&d, CORP, T0 + 2 * DAY).is_empty());
+        let _ = (ceo, general);
+    }
+
+    #[test]
+    fn put_in_effect_once_then_acted_upon() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let id = won(&mut d, VOTE_KICK_MEMBER, CAROL);
+        let end = get(&d, id).unwrap().end;
+        let at = end + DAY;
+        let s = put_in_effect(&mut d, id, at).unwrap();
+        assert_eq!(s.acted_at, Some(at));
+        assert_eq!(sanctioned(&d, CORP, at)[0].acted_at, Some(at));
+        assert_eq!(put_in_effect(&mut d, id, at + 1), Err(Refusal::ActedUpon));
+        // A second case, past its window.
+        let late = won(&mut d, VOTE_KICK_MEMBER, BOB);
+        let expires = get(&d, late).unwrap().end + SANCTION_WINDOW;
+        assert_eq!(put_in_effect(&mut d, late, expires), Err(Refusal::Expired));
+        assert!(put_in_effect(&mut d, late, expires - 1).is_ok());
+        // Not a sanctioned case.
+        let ceo = won(&mut d, VOTE_CEO, BOB);
+        assert_eq!(put_in_effect(&mut d, ceo, at), Err(Refusal::NotSanctioned));
+        assert_eq!(
+            put_in_effect(&mut d, 9_999, at),
+            Err(Refusal::NotSanctioned)
+        );
+    }
+
+    #[test]
+    fn the_sanction_marker_goes_with_its_case_at_retention() {
+        let mut d = Deltas::default();
+        shares(&mut d);
+        let id = won(&mut d, VOTE_KICK_MEMBER, CAROL);
+        put_in_effect(&mut d, id, T0 + 2 * DAY).unwrap();
+        prop(&mut d, "Last", 1, T0 + DAY + RETENTION + 1);
+        assert!(get(&d, id).is_none());
+        assert!(!d.of(KIND).contains_key(&sanction_key(id)));
     }
 }

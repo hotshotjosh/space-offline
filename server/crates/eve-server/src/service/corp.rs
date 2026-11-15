@@ -3618,7 +3618,7 @@ fn delete_title(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
 
 /// Expel one member: the shared tail of `KickOutMember` and
 /// `KickOutMembers`.
-fn expel(reg: &mut Registry, actor: i64, target: i64) -> Result<(), ServiceError> {
+pub(super) fn expel(reg: &mut Registry, actor: i64, target: i64) -> Result<(), ServiceError> {
     can_be_kicked_out(reg, actor, target)?;
     let left = reg
         .corporations
