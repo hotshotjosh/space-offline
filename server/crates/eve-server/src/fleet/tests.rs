@@ -1623,9 +1623,10 @@ fn a_held_squad_commander_keeps_his_seat_and_nobody_takes_it_meanwhile() {
     f.accept_invite(CAROL, id, Some(SHIP_TYPE), Some(STATION), Some(SYSTEM))
         .expect("accept");
     f.character_disconnected(BOB, T0);
-    assert!(
+    assert_eq!(
         f.move_member(ALICE, id, CAROL, Some(w2), Some(s2), Some(ROLE_SQUAD_CMDR))
-            .is_err(),
+            .map(|(ok, _)| ok),
+        Err(FleetError::Generic),
         "the held commander still counts as sitting in the seat"
     );
     f.offer_rejoins(T0, &[BOB]);
@@ -1636,6 +1637,22 @@ fn a_held_squad_commander_keeps_his_seat_and_nobody_takes_it_meanwhile() {
     assert_eq!(
         (bob.wing_id, bob.squad_id, bob.role),
         (w2, s2, ROLE_SQUAD_CMDR)
+    );
+    let fleet = f.fleet(id).expect("fleet");
+    let carol = &fleet.members[&CAROL];
+    assert_ne!(
+        (carol.wing_id, carol.squad_id, carol.role),
+        (w2, s2, ROLE_SQUAD_CMDR),
+        "Carol was not put in Bob's seat"
+    );
+    assert_eq!(
+        fleet
+            .members
+            .values()
+            .filter(|m| m.squad_id == s2 && m.role == ROLE_SQUAD_CMDR)
+            .count(),
+        1,
+        "one commander in the squad"
     );
 }
 

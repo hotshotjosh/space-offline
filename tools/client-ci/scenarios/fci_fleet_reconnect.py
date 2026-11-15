@@ -1473,19 +1473,23 @@ def eoci_main(EOCI_NAME):
             return
         # Move the boss into a second wing and squad.  The remote object is
         # called, not the service: `fleetSvc.CreateWing` makes a squad by itself
-        # and returns None, and `fleetSvc.MoveMember` runs
-        # `CheckIfIsOKWithDemotion`, which can open a modal [V fleetSvc.py:501-506,
-        # 561-565].  `fleetRoleMember` is 4 [V evefleet/const.py:12].
+        # and returns None [V fleetSvc.py:561-565], and `fleetSvc.MoveMember` runs
+        # `CheckIfIsOKWithDemotion`, which can prompt a non-creator
+        # [V fleetSvc.py:493-506]; the moniker answers directly.
+        # `fleetRoleMember` is 4 [V evefleet/const.py:12].
         handler0 = getattr_safe(fleet_svc, 'fleet')
         precondition('the fleet service holds its server object', handler0 is not None, '')
         if handler0 is None:
             return
-        ok, old_wings = safe(lambda: list(fleet_svc.GetWings().keys()))
-        old_wings = old_wings if ok else []
-        try:
-            role_member = getattr_safe(getattr_safe(__import__('evefleet'), 'const'),
-                                       'fleetRoleMember', 4)
-        except Exception:
+        wings_ok, old_wings = safe(lambda: list(fleet_svc.GetWings().keys()))
+        old_wings_detail = text(old_wings) if wings_ok else 'GetWings failed: ' + text(old_wings)
+        old_wings = old_wings if wings_ok else []
+        seat0 = (getattr_safe(builtin('session'), 'wingid'),
+                 getattr_safe(builtin('session'), 'squadid'))
+        role_ok, role_member = safe(lambda: __import__('evefleet').fleetRoleMember)
+        if not role_ok:
+            precondition('evefleet.fleetRoleMember resolves (else 4 is used)', False,
+                         text(role_member)[:200])
             role_member = 4
         ok, wing_id = safe(lambda: handler0.CreateWing())
         check('CreateWing answered', ok and bool(wing_id), text(wing_id)[:200])
@@ -1495,13 +1499,16 @@ def eoci_main(EOCI_NAME):
         check('CreateSquad answered', ok and bool(squad_id), text(squad_id)[:200])
         if not ok or not squad_id:
             return
-        precondition('the new wing is not the fleet\'s first wing', wing_id not in old_wings,
-                     'new %s, existing %s' % (text(wing_id), text(old_wings)))
-        if wing_id in old_wings:
+        fresh = (wing_id, squad_id) != seat0 and wing_id not in old_wings
+        precondition('the new seat is not the default one', fresh,
+                     'new %s/%s, default %s, existing wings %s' % (
+                         text(wing_id), text(squad_id), text(seat0), old_wings_detail))
+        if not fresh:
             return
         ok, v = safe(lambda: handler0.MoveMember(me, wing_id, squad_id, role_member))
-        check('MoveMember answered', ok, text(v)[:200])
-        if not ok:
+        check('MoveMember answered True', ok and v is True,
+              'role %s: %s' % (text(role_member), text(v)[:200]))
+        if not ok or v is not True:
             return
         moved, waited = wait_for(lambda: getattr_safe(builtin('session'), 'wingid') == wing_id
                                  and getattr_safe(builtin('session'), 'squadid') == squad_id,
@@ -1571,6 +1578,13 @@ def eoci_main(EOCI_NAME):
         mem, waited = wait_for(lambda: me in member_ids(svc2), timeout_ms=60000, step_ms=1000)
         check('the pilot is still a member (GetMembers)', bool(mem),
               'members %s after %s ms' % (text(member_ids(svc2)), text(waited)))
+        ok, mine = safe(lambda: svc2.GetMembers().get(me))
+        check('GetMembers places the pilot in the second wing and squad',
+              ok and getattr_safe(mine, 'wingID') == wing_id
+              and getattr_safe(mine, 'squadID') == squad_id,
+              'wing %s squad %s, wanted %s/%s' % (
+                  text(getattr_safe(mine, 'wingID')), text(getattr_safe(mine, 'squadID')),
+                  text(wing_id), text(squad_id)))
         if handler is not None:
             ok, why = comp_has(handler, me)
             check('the server still lists the pilot in GetFleetComposition', ok, why)
