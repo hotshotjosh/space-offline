@@ -22,6 +22,9 @@ pub const KINDS: &[(&str, &str)] = &[
     // DG-2 (#202): `char day slot -> progress state earned_isk` (state o/d/r),
     // and `char day slot key -> content_key`, a GM swap override.
     ("dgoal", "daily_goals"),
+    // HN-1 (#203): `next`; `r id -> running owner location system item type count price
+    // restriction created expires status winner end_date is_copy`; `t id number -> owner running`.
+    ("raffle", "hypernet"),
     // CAP-F: `char -> activation_until fatigue_until last_updated`, wall
     // FILETIMEs of a pilot's jump timers, only while one is running.
     ("jumpfat", "jump_fatigue"),

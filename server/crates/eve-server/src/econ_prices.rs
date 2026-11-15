@@ -236,13 +236,30 @@ fn parse_row(line: &str) -> Option<(i64, Price)> {
     ))
 }
 
-/// `P_ref` of `type_id`, or `None` for an unpriced type.
-pub fn p_ref(reg: &Registry, type_id: i64) -> Option<f64> {
+/// `invconst.typePlex` **[V]**.
+pub const PLEX_TYPE_ID: i64 = 44_992;
+
+/// What PLEX is worth when `prices.tsv` has no row for it: the client's own
+/// `LOCAL_DEFAULT_PLEX_PRICE` (`raffles/common/util.py`) **[V]** as a client
+/// value, **[A]** as our price. HyperNet's create page raises without a PLEX
+/// price (`_get_plex_price`), and the globalConfig override is closed here.
+/// Falsifier: that `RuntimeError`, or a PLEX price nobody trades near.
+pub const PLEX_FALLBACK_ISK: f64 = 3_500_000.0;
+
+/// `P_ref` of `type_id` from the table alone, with no fallback: what the
+/// reports use, so an invented PLEX price never enters an index.
+pub fn table_ref(reg: &Registry, type_id: i64) -> Option<f64> {
     reg.content()
         .get::<Table>()
         .prices
         .get(&type_id)
         .map(|p| p.ref_price)
+}
+
+/// `P_ref` of `type_id`, or `None` for an unpriced type. PLEX falls back to
+/// [`PLEX_FALLBACK_ISK`] when the table has no row.
+pub fn p_ref(reg: &Registry, type_id: i64) -> Option<f64> {
+    table_ref(reg, type_id).or_else(|| (type_id == PLEX_TYPE_ID).then_some(PLEX_FALLBACK_ISK))
 }
 
 /// What one unit of `type_id` costs a pilot who builds its whole chain, as a
@@ -467,7 +484,8 @@ pub fn fold_day(reg: &mut Registry, type_id: i64, mean: f64, day: u32) -> Option
 /// `typeHelpers.GetAdjustedAveragePrice` and `GetAveragePrice`
 /// (`typeHelpers.py:106-118`). `adjustedPrice` is `P_ref` **[A]** (falsified
 /// by a capture whose two values differ in kind), `averagePrice` the index.
-/// An empty table, which is the server with no bundle, answers `{}`.
+/// An empty table, which is the server with no bundle, answers PLEX alone,
+/// at `PLEX_FALLBACK_ISK` (HN-1: the raffle create page needs a PLEX price).
 pub fn average_market_prices(reg: &Registry) -> PyValue {
     // The ~12k-entry copy happens here, after the slot's mutex is released.
     PyValue::clone(&average_market_prices_shared(reg))
@@ -505,22 +523,26 @@ pub const SLOT: crate::world_ext::SlotSpec = crate::world_ext::SlotSpec {
 
 fn compute_average_market_prices(reg: &Registry) -> PyValue {
     let table = reg.content().get::<Table>();
-    PyValue::Dict(
-        table
-            .prices
-            .iter()
-            .map(|(&id, p)| {
-                let avg = average(reg, id).unwrap_or(p.ref_price);
-                (
-                    keyval(vec![
-                        ("adjustedPrice", PyValue::Real(p.ref_price)),
-                        ("averagePrice", PyValue::Real(avg)),
-                    ]),
-                    PyValue::Int(id),
-                )
-            })
-            .collect(),
-    )
+    let row = |id: i64, adjusted: f64, avg: f64| {
+        (
+            keyval(vec![
+                ("adjustedPrice", PyValue::Real(adjusted)),
+                ("averagePrice", PyValue::Real(avg)),
+            ]),
+            PyValue::Int(id),
+        )
+    };
+    let mut rows: Vec<(PyValue, PyValue)> = table
+        .prices
+        .iter()
+        .map(|(&id, p)| row(id, p.ref_price, average(reg, id).unwrap_or(p.ref_price)))
+        .collect();
+    // PLEX is listed even without a table row (see `p_ref`).
+    if !table.prices.contains_key(&PLEX_TYPE_ID) {
+        let avg = average(reg, PLEX_TYPE_ID).unwrap_or(PLEX_FALLBACK_ISK);
+        rows.push(row(PLEX_TYPE_ID, PLEX_FALLBACK_ISK, avg));
+    }
+    PyValue::Dict(rows)
 }
 
 #[cfg(test)]
@@ -627,6 +649,45 @@ mod tests {
         );
     }
 
+    /// HN-1 (#203, trap 4): PLEX has no `prices.tsv` row, and the raffle create
+    /// page raises without a PLEX price. `p_ref` falls back, the index starts
+    /// from it, the answer lists PLEX, and a table row beats the fallback.
+    #[test]
+    fn plex_has_a_fallback_price_unless_the_table_has_one() {
+        let reg = world();
+        assert!(!Table::fixture().prices.contains_key(&PLEX_TYPE_ID));
+        assert_eq!(p_ref(&reg, PLEX_TYPE_ID), Some(PLEX_FALLBACK_ISK));
+        assert_eq!(average(&reg, PLEX_TYPE_ID), Some(PLEX_FALLBACK_ISK));
+        assert_eq!(p_ref(&reg, 990_999), None, "no other type is invented");
+        let PyValue::Dict(rows) = average_market_prices(&reg) else {
+            panic!("a dict")
+        };
+        let plex: Vec<&PyValue> = rows
+            .iter()
+            .filter(|(_, k)| *k == PyValue::Int(PLEX_TYPE_ID))
+            .map(|(v, _)| v)
+            .collect();
+        assert_eq!(plex.len(), 1, "PLEX is listed once");
+        let PyValue::Instance { state, .. } = plex[0] else {
+            panic!("a KeyVal")
+        };
+        assert_eq!(
+            crate::pyutil::dict_get(state, b"averagePrice"),
+            Some(&PyValue::Real(PLEX_FALLBACK_ISK))
+        );
+        // A table that prices PLEX wins.
+        let mut t = Table::fixture();
+        let (_, mut p) = t
+            .prices
+            .iter()
+            .next()
+            .map(|(k, v)| (*k, v.clone()))
+            .unwrap();
+        p.ref_price = 4_242_000.0;
+        t.prices.insert(PLEX_TYPE_ID, p);
+        assert_eq!(p_ref(&with_table(t), PLEX_TYPE_ID), Some(4_242_000.0));
+    }
+
     /// **CP31**: the answer is a dict keyed by type id whose values are
     /// `KeyVal`s carrying `adjustedPrice` and `averagePrice` [V names,
     /// `typeHelpers.py:106-118`], read by attribute.
@@ -637,12 +698,19 @@ mod tests {
             panic!("a dict")
         };
         let table = Table::fixture();
-        assert_eq!(rows.len(), table.prices.len(), "one entry per priced type");
+        assert_eq!(
+            rows.len(),
+            table.prices.len() + 1,
+            "one entry per priced type, and PLEX"
+        );
         for (value, key) in &rows {
             // `(value, key)`: marshal dict entries are inverted.
             let PyValue::Int(id) = key else {
                 panic!("keyed by type id: {key:?}")
             };
+            if *id == PLEX_TYPE_ID {
+                continue;
+            }
             let PyValue::Instance { state, .. } = value else {
                 panic!("a KeyVal, read by attribute: {value:?}")
             };
@@ -657,12 +725,16 @@ mod tests {
         }
     }
 
-    /// **CP31**: an empty table answers `{}`, the pre-CP31 answer, which is
-    /// what the server with no bundle serves.
+    /// **CP31**: an empty table answers no priced type; since HN-1 (#203) the
+    /// one entry is PLEX, which the raffle create page needs.
     #[test]
     fn empty_with_an_empty_table() {
         let reg = with_table(Table::default());
-        assert_eq!(average_market_prices(&reg), PyValue::Dict(vec![]));
+        let PyValue::Dict(rows) = average_market_prices(&reg) else {
+            panic!("a dict")
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].1, PyValue::Int(PLEX_TYPE_ID));
         let src_dir = crate::authored::Dir::compiled_only();
         let src = Sources::new(None, &src_dir);
         let loaded = (TABLE.load)(&src).expect("loads");

@@ -67,6 +67,13 @@ pub struct Session {
     pub client_build: Option<i64>,
 }
 
+/// The `countryCode` the session carries. `raffleSvc.is_available` is False
+/// while it is falsy (`raffle_service.py:40`) **[V]**; any code but `KR`
+/// (`RESTRICTED_COUNTRIES`) opens HyperNet. **[A]** `NO`; falsifier:
+/// `session.countryCode` still None in the CI (the client applying the
+/// initial state verbatim is **[I]**).
+pub const COUNTRY: &str = "NO";
+
 impl Default for Session {
     fn default() -> Self {
         Session {
@@ -108,6 +115,7 @@ impl Session {
                 "languageID",
                 PyValue::Bytes(self.language_id.as_bytes().to_vec()),
             ),
+            ("countryCode", PyValue::Bytes(COUNTRY.as_bytes().to_vec())),
         ]) else {
             unreachable!("pydict returns a dict")
         };
@@ -167,9 +175,9 @@ mod tests {
     }
 
     #[test]
-    fn the_session_carries_the_three_attributes_the_client_needs() {
+    fn the_session_carries_the_attributes_the_client_needs() {
         let st = state(&Session::default());
-        for key in [b"userid".as_slice(), b"role", b"languageID"] {
+        for key in [b"userid".as_slice(), b"role", b"languageID", b"countryCode"] {
             assert!(
                 dict_get(&st, key).is_some(),
                 "missing {}",
@@ -221,11 +229,12 @@ mod tests {
         };
         assert!(dict_get(&state(&s), b"charid").is_none());
         assert!(dict_get(&state(&s), b"characterID").is_none());
-        // And the three keys we do send are still exactly those three.
+        // And the four keys we do send are still exactly those four (HN-1
+        // added `countryCode`).
         let PyValue::Dict(entries) = state(&s) else {
             unreachable!("state is a dict")
         };
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4);
     }
 
     /// Neither does the connection address.

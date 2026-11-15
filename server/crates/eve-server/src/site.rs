@@ -1809,6 +1809,7 @@ mod tests {
         // `service::market::ESCROW_TICKET_BASE` (private there): market
         // escrow locations are `item::escrow_location(1e12 + order_id)`.
         let market_escrow = item::ESCROW_BASE + 1_000_000_000_000;
+        let hypernet_escrow = item::ESCROW_BASE + crate::hypernet::ESCROW_RAFFLE_BASE;
         let sys = ess::SYSTEM_ID_END;
         vec![
             ("static and npc-owner ids", 0, asteroid::MIN_ROCK_ID),
@@ -1851,6 +1852,15 @@ mod tests {
                 "ess beacons",
                 ess::BEACON_ID_BASE,
                 ess::BEACON_ID_BASE + sys,
+            ),
+            // HN-1 (#203): raffle escrow locations, `item::escrow_location(
+            // hypernet::ESCROW_RAFFLE_BASE + id)`. Width is a design cap of the
+            // raffle id counter: it has about 9.1e10 of headroom before an escrow
+            // location meets the ess band.
+            (
+                "hypernet escrow",
+                hypernet_escrow,
+                hypernet_escrow + SPAN / 2,
             ),
             ("ess", ess::ESS_ID_BASE, ess::ESS_ID_BASE + sys),
             (

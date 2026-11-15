@@ -473,6 +473,14 @@ pub const STAGES: &[Stage] = &[
         phase: 2,
         run: crate::merc_den::tick,
     },
+    // HN-1 (#203): a raffle past its expiry refunds its tickets and returns
+    // the prize. Keyed on the stored `expires`; one comparison when idle.
+    Stage {
+        name: "hypernet",
+        every: 4,
+        phase: 2,
+        run: crate::hypernet::tick,
+    },
     // F1: a dropped pilot's fleet place runs out `RECONNECT_TIMEOUT` after
     // the drop. Reads only the fleets with a gone member.
     Stage {

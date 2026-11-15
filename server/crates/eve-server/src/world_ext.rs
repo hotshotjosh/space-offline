@@ -165,6 +165,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::pochven::loot::SLOT,
     // #44: what each Upwell structure took lately, for its repair pause.
     crate::structure_combat::SLOT,
+    // HN-1 (#203): who listens to which raffle, and the soonest expiry.
+    crate::hypernet::SLOT,
 ];
 
 /// The slots' state, keyed by type.

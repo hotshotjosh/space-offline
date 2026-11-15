@@ -401,7 +401,7 @@ impl Tape {
         };
 
         for &(region, ty) in &keys {
-            let Some(p_ref) = prices::p_ref(reg, ty) else {
+            let Some(p_ref) = prices::table_ref(reg, ty) else {
                 continue;
             };
             let (value, units, n) = traded.get(&(region, ty)).copied().unwrap_or_default();
@@ -605,7 +605,7 @@ pub fn audit_of(reg: &Registry, fills: &[Fill], report: &Report) -> Audit {
         let (Some(ty), [avg, _]) = (k.first().and_then(|t| t.parse::<i64>().ok()), &v[..]) else {
             continue;
         };
-        let (Some(p), Ok(avg)) = (prices::p_ref(reg, ty), avg.parse::<f64>()) else {
+        let (Some(p), Ok(avg)) = (prices::table_ref(reg, ty), avg.parse::<f64>()) else {
             continue;
         };
         let (lo, hi) = (prices::CLAMP.0 * p, prices::CLAMP.1 * p);

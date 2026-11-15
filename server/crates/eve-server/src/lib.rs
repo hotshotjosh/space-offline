@@ -175,6 +175,7 @@ pub mod group_contacts;
 pub mod hacking;
 pub mod hacking_loot;
 pub mod handshake;
+pub mod hypernet;
 pub mod implants;
 pub mod industry;
 pub mod item;

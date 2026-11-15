@@ -417,3 +417,5 @@ fci_gm_cwatch
 fci_gm_missioncomplete --serial -- --dev
 # trig-player (#268, PV-7): the player Light Entropic Disintegrator spools: the client reads 5804 above 0, the module tooltip builds, the median outgoing damage of the last three hits beats the first three on one rat, a stop resets 5804 to 0 with no traceback; needs the combat.rs plan_unit spool line and the world_ext SLOTS row
 fci_trig_player -- --dev
+# hn1-203 (#203): HyperNet through the real raffle client: availability, create with HyperCores, buy, the TicketUnavailableError class, expire and refund, notifications 243 and 244
+fci_hypernet

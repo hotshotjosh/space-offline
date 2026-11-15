@@ -184,6 +184,14 @@ pub const REFS: &[(i64, Flow, &str)] = &[
     (123, Flow::System, "asset safety recovery tax"),
     (127, Flow::System, "reprocessing tax"),
     (135, Flow::System, "reactions"),
+    // HN-1 (#203): HyperNet. A ticket is held (143) until the draw; the seller
+    // is paid the total (144) and then the 5 % fee leaves as a plain sink
+    // (145; owner ruling 2026-11-07, no pool); an expired offer refunds each
+    // ticket (146).
+    (143, Flow::Held, "HyperNet ticket"),
+    (144, Flow::Held, "HyperNet payout"),
+    (145, Flow::System, "HyperNet fee (a sink)"),
+    (146, Flow::Held, "HyperNet refund"),
     // #89 ESS-1: a share of the ESS main bank paid back to a ratter
     // (`crate::ess`); the bank's cut was never a journal row, so this is a
     // faucet when it lands.
@@ -1186,7 +1194,8 @@ impl Closed {
         let mut priced: Vec<(i64, f64, f64)> = by_type
             .into_iter()
             .filter_map(|(t, (v, q))| {
-                let p = crate::econ_prices::p_ref(reg, t).filter(|p| *p > 0.0)?;
+                // The table's price only: PLEX's fallback is not a market fact.
+                let p = crate::econ_prices::table_ref(reg, t).filter(|p| *p > 0.0)?;
                 Some((t, v, p * q as f64))
             })
             .collect();
@@ -1882,6 +1891,23 @@ mod tests {
             assert!(line.contains(field), "{field:?} missing from {line}");
         }
         assert_eq!(Closed::of(&reg(), 0, Goods::default()).index, None);
+    }
+
+    #[test]
+    fn plex_without_a_table_row_stays_out_of_the_closed_index() {
+        let mut w = with_bots(0.0, 0.0, 0.0);
+        let (t, p_ref) = priced(&w);
+        assert_eq!(
+            crate::econ_prices::table_ref(&w, crate::econ_prices::PLEX_TYPE_ID),
+            None
+        );
+        w.seed_market_fills(vec![
+            fill(t, p_ref, 1, BOT, HUMAN),
+            fill(crate::econ_prices::PLEX_TYPE_ID, 9.0e9, 5, BOT, HUMAN),
+        ]);
+        let c = Closed::of(&w, 0, Goods::default());
+        assert_eq!(c.indexed, 1, "PLEX has no table price and is not weighed");
+        assert!((c.index.unwrap() - 1.0).abs() < 1e-12, "{c:?}");
     }
 
     #[test]

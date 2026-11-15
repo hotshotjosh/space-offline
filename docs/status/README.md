@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (209 of 326) · **92% built** (301 of 326) · 3 parked, not counted.
+**64% proved** (209 of 327) · **92% built** (302 of 327) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -138,6 +138,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Offline careers at the rollover: a slice of parked agents (gatherers first) settles before the day closes; the sweep settles the rest up to the rollover, one span per open rollover capped against its own day, and books their flows and goods to the closed day's econ rows (an [econ] late line counts them): *built-unproved*, eve-server econ_agents.rs on_rollover, ROLLOVER_SLICE, Target per rollover; econ_ledger book_late/window; tests: one slice per rollover, gatherers first, late bounty and ore booked, closed day's cap, two rollovers settle apart, login mid-sweep; proof: a [world] rollover timing with parked ratters under 25 ms
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests; not yet read by chat (P3b)
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
+- [ ] HyperNet offers: create with HyperCores, buy tickets, draw, claim, expire: *built-unproved*, hypernet.rs + service/hypernet.rs (raffleProxy), escrow band 3e12, 5 % fee as a sink, draw salted with process entropy, running ids kept in the slot; fci_hypernet
 
 ### 3.8 Remote clients, hosting
 
@@ -175,7 +176,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 30 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
-| Market and wallet | 18 | 12 | 0 | 0 | 0 |
+| Market and wallet | 18 | 13 | 0 | 0 | 0 |
 | Bots | 11 | 32 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
@@ -336,7 +337,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 18 of 30 proved, 12 open</summary>
+<details><summary><b>Market and wallet</b>: 18 of 31 proved, 13 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
 - [ ] The wallet journal's Type column names every entry type, from the content bundle's table: *built-unproved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run
@@ -368,6 +369,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Ship emblem licences owned and shown on the hull: *built-unproved*, server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem ran 27/28 on 11-13, GetEnabledCosmetics the one fail (slot and type swapped), now fixed; rerun pending
 - [ ] Another pilot sees your emblem: *built-unproved*, emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it; fci_emblem ran 27/28 on 11-13, the one fail now fixed, rerun pending
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
+- [ ] HyperNet offers: create with HyperCores, buy tickets, draw, claim, expire: *built-unproved*, hypernet.rs + service/hypernet.rs (raffleProxy), escrow band 3e12, 5 % fee as a sink, draw salted with process entropy, running ids kept in the slot; fci_hypernet
 
 </details>
 

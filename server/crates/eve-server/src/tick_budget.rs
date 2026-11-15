@@ -299,6 +299,11 @@ pub const RULES: &[StageRule] = &[
         "no skyhook row, no work; else each reagent skyhook's stored window is compared with now and only an edge or a running link does anything",
     ),
     r(
+        "hypernet",
+        Rule::OwnClock,
+        "keyed on stored `expires`: one comparison against the cached soonest expiry while nothing is due",
+    ),
+    r(
         "merc_den",
         Rule::Every,
         "no den row, no work; else each den's stored times give its count and stages and only a change is written or told",
@@ -360,6 +365,7 @@ pub const CADENCE_OK: &[(&str, u8)] = &[
     ("skyhook", 4),
     ("skyhook_theft", 20),
     ("merc_den", 20),
+    ("hypernet", 4),
     ("asset_safety", 4),
     ("bounty_payout", 4),
     ("facwar", 4),

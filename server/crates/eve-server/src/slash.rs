@@ -51,6 +51,12 @@ pub const COMMANDS: &[Command] = &[
         usage: "/dailygoals | /dailygoals swap <slot> <key>",
         run: crate::daily_goals::slash,
     },
+    // HN-1 (#203): list open raffles, or expire one (GM role).
+    Command {
+        name: "hypernet",
+        usage: "/hypernet | /hypernet expire <id>",
+        run: crate::hypernet::slash,
+    },
     Command {
         name: "dynamicitem",
         usage: "/dynamicitem <source type> <mutator type> [roll 0..1]",

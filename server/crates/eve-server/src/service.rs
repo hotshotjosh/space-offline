@@ -328,6 +328,8 @@ mod corp_votes;
 // GAP-TRADE: `trademgr`, the direct trade window.
 mod trade;
 mod wallet;
+// HN-1 (#203): `raffleProxy`, the HyperNet window.
+mod hypernet;
 // C8: player wars over the wire.
 pub(crate) mod war;
 mod world;
@@ -452,6 +454,8 @@ pub(crate) const DOMAINS: &[(&[&str], DomainDispatch)] = &[
     (fleet::SERVICES, fleet::dispatch),
     // GAP-TRADE: `trademgr` and its world-minted session object.
     (trade::SERVICES, trade::dispatch),
+    // HN-1 (#203): `raffleProxy`.
+    (hypernet::SERVICES, hypernet::dispatch),
     // PROG-MINE: `inSpaceCompressionMgr`, the Compress menu entry.
     (crate::compression::SERVICES, crate::compression::dispatch),
     // Drone commands: the `entity` bound object (`docs/lanes/drones.md`).
