@@ -87,6 +87,13 @@ pub const STEPS: &[Step] = &[
         name: "dbs",
         run: Run::Once(|w, d| crate::econ_dbs::on_rollover(w, d.now)),
     },
+    // #272: lapse the sov claims of an alliance a pre-fix world kept after it
+    // closed. Before `sov_index` and `sov_fuel`, so a dead holder's hub is not
+    // decayed or burned for the day first. Its count is the alliances swept.
+    Step {
+        name: "sov_closed_alliances",
+        run: Run::Once(|w, d| crate::sov_hub::sweep_closed_alliances(w, d.now)),
+    },
     // SOC-D4: one game day of decay on every sov development index, the
     // "increasing" arrows, and `OnSolarSystemDevIndexChanged` to every
     // claimed system. Its count is the index rows decayed.

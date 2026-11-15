@@ -1033,6 +1033,12 @@ pub fn on_alliance_closed(reg: &mut Registry, alliance_id: i64, now: i64) {
         "[sov] alliance {alliance_id} closed: {} claim(s) lapse",
         claims.len()
     );
+    lapse_claims(reg, claims, now);
+}
+
+/// Lapse each of a closed alliance's claims (the loop of
+/// [`on_alliance_closed`], which logs).
+fn lapse_claims(reg: &mut Registry, claims: Vec<Claim>, now: i64) {
     for c in claims {
         match hub(reg.deltas(), c.system_id) {
             Some(h) => lapse(reg, &h, now),
@@ -1046,6 +1052,39 @@ pub fn on_alliance_closed(reg: &mut Registry, alliance_id: i64, now: i64) {
             }
         }
     }
+}
+
+/// #272 follow-up: a world saved before the alliance-close fix can hold an
+/// alliance that is already `deleted` and still holds claims. Lapse each
+/// such alliance's claims the way [`on_alliance_closed`] does, with `now`
+/// the rollover's. Idempotent: the claims are gone after the first call, so
+/// the next finds nothing. Returns the alliances swept. It runs every
+/// rollover: one scan of the claims, and of the alliances only when a claim
+/// exists. One `[sov]` line per swept alliance.
+pub(crate) fn sweep_closed_alliances(reg: &mut Registry, now: i64) -> usize {
+    let held: std::collections::BTreeSet<i64> = sov::all(reg.deltas())
+        .iter()
+        .filter_map(Claim::holder)
+        .collect();
+    if held.is_empty() {
+        return 0;
+    }
+    let closed: Vec<i64> = crate::alliance::Alliances::load(reg.deltas())
+        .all()
+        .filter(|a| a.deleted && held.contains(&a.alliance_id))
+        .map(|a| a.alliance_id)
+        .collect();
+    on_the_clock(reg, |reg| {
+        for id in &closed {
+            let claims = sov::claims_of(reg.deltas(), *id);
+            crate::errln!(
+                "[sov] sweep: alliance {id} is closed and still holds {} claim(s); they lapse",
+                claims.len()
+            );
+            lapse_claims(reg, claims, now);
+        }
+    });
+    closed.len()
 }
 
 /// **The claim lapses and the hub goes**: the holder lost (a `sovact` row
@@ -2679,5 +2718,81 @@ mod tests {
             .expect("the ledger");
         assert!(fuel < ledger, "{names:?}");
         assert!(crate::delta_kinds::is_registered(KIND));
+    }
+
+    /// The alliance an old save left `deleted`, never lapsed.
+    fn close_without_the_hook(reg: &mut Registry, a: i64) {
+        let mut st = crate::alliance::Alliances::load(reg.deltas());
+        st.leave(CORP, 5).expect("the last corp leaves");
+        st.save(reg.deltas_mut());
+        assert!(st.get(a).expect("kept").deleted);
+    }
+
+    /// Two stand-in claims (no hub row) held by `holder`.
+    fn hold_stand_ins(reg: &mut Registry, holder: i64) {
+        for s in [39_300_001, 39_300_002] {
+            sov::set_claim(reg.deltas_mut(), s, Some((holder, CORP)), 1);
+        }
+    }
+
+    #[test]
+    fn the_sweep_lapses_the_claims_of_a_closed_alliance_once() {
+        let (mut reg, a, d) = world();
+        hold_stand_ins(&mut reg, a);
+        sov::set_claim(reg.deltas_mut(), 39_300_003, Some((d, RIVAL)), 1);
+        close_without_the_hook(&mut reg, a);
+        assert_eq!(sov::claims_of(reg.deltas(), a).len(), 2, "old-save state");
+        assert_eq!(sweep_closed_alliances(&mut reg, 5), 1);
+        assert!(sov::claims_of(reg.deltas(), a).is_empty());
+        assert_eq!(
+            sov::holder(reg.deltas(), 39_300_003),
+            Some(d),
+            "a live alliance keeps its claim"
+        );
+        assert_eq!(sweep_closed_alliances(&mut reg, 5), 0, "idempotent");
+    }
+
+    /// A real hub row goes through `lapse` under the sweep's clock.
+    #[test]
+    fn the_sweep_lapses_a_real_hub_and_destroys_its_item() {
+        let (mut reg, a, _) = world();
+        let hub_id = launched(&mut reg);
+        let pair = owner(&reg, a);
+        capture(&mut reg, SYSTEM, pair).expect("captured");
+        close_without_the_hook(&mut reg, a);
+        assert!(hub(reg.deltas(), SYSTEM).is_some(), "old-save state");
+        assert_eq!(sweep_closed_alliances(&mut reg, 5), 1);
+        assert!(hub(reg.deltas(), SYSTEM).is_none());
+        assert_eq!(sov::holder(reg.deltas(), SYSTEM), None);
+        assert!(reg.store().get(hub_id).is_none(), "the hub item is gone");
+    }
+
+    #[test]
+    fn the_sweep_leaves_a_live_alliance_alone() {
+        let (mut reg, a, _) = world();
+        hold_stand_ins(&mut reg, a);
+        assert_eq!(sweep_closed_alliances(&mut reg, 5), 0);
+        assert_eq!(sov::claims_of(reg.deltas(), a).len(), 2);
+    }
+
+    #[test]
+    fn the_rollover_steps_run_the_sweep() {
+        let (mut reg, a, _) = world();
+        hold_stand_ins(&mut reg, a);
+        close_without_the_hook(&mut reg, a);
+        let step = crate::rollover_steps::STEPS
+            .iter()
+            .find(|s| s.name == "sov_closed_alliances")
+            .expect("registered");
+        let crate::rollover::Run::Once(f) = step.run else {
+            panic!("a once step");
+        };
+        let dd = crate::rollover::Day {
+            day: reg.world().day + 1,
+            days: 1,
+            now: crate::pyutil::filetime_now(),
+        };
+        assert_eq!(f(&mut reg, &dd), 1);
+        assert!(sov::claims_of(reg.deltas(), a).is_empty());
     }
 }
