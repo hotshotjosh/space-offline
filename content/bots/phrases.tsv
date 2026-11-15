@@ -220,3 +220,51 @@ taunt	lovely night for it
 taunt	do you feel lucky
 taunt	one of you is going to pop
 taunt	just warming up
+
+# P3a (lane bot-temper, #209): greetings to a pilot the bot knows. Every line is [A]: falsified by the
+# owner finding them creepy or repetitive. A line with an unknown slot is not used.
+greet_again	o/ again
+greet_again	hey, back again o/
+greet_again	o/ good to see you again
+greet_again	hi again
+greet_again	yo, you again o/
+greet_again	o/ {name}, back again
+greet_again	hey {name} o/ again
+greet_again	o7 again
+greet_again	welcome back o/
+greet_again	hey, you again o/
+greet_again	o/ {name} welcome back
+greet_again	hi {name}, back in {system}?
+greet_again	o/ you again
+greet_again	hey, good to see you o/
+greet_again	ey, again o/
+greet_killer	o/ gf last time
+greet_killer	hey, remember me? gf
+greet_killer	o7 gf from last time
+greet_killer	o/ you again, no hard feelings
+greet_killer	hi, last time went your way, gg
+greet_killer	o/ {name}, gg last time
+greet_killer	o7 {name}, good fight last time
+greet_killer	hey {name}, I'll bring a better ship this time
+greet_killer	o/ {name}, rematch some day?
+greet_killer	hi, you got me last time, gg
+greet_killer	hey, gg earlier o/
+greet_killer	o/ {name} gg, I'm still a bit sore
+greet_killer	o7 you again, be gentle
+greet_killer	hey {name}, nice flying last time
+greet_killer	o/ gf, no hard feelings
+greet_helper	o/ thanks for last time
+greet_helper	hey, thanks again for the help
+greet_helper	o/ {name}, thanks for the help earlier
+greet_helper	hi, I owe you one o/
+greet_helper	o7 thanks for last time
+greet_helper	hey {name}, thanks again
+greet_helper	o/ you were a lifesaver last time
+greet_helper	hi {name}, good to see a friendly face
+greet_helper	o/ the helpful one, hi
+greet_helper	hey, thanks for pulling me out last time
+greet_helper	o/ {name} I still owe you
+greet_helper	hi again, and thanks
+greet_helper	o7 {name} thanks again
+greet_helper	hey, friendly face, o/
+greet_helper	o/ thanks for the help, {name}

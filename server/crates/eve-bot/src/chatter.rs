@@ -70,6 +70,12 @@ pub enum Cat {
     MateAttacked,
     /// A hostile bot's jab at a human in Local; never from any other bot.
     Taunt,
+    /// A greeting to a pilot met several times before.
+    GreetAgain,
+    /// A greeting to a pilot who has killed this bot.
+    GreetKiller,
+    /// A greeting to a pilot who has helped this bot.
+    GreetHelper,
 }
 
 impl Cat {
@@ -87,10 +93,13 @@ impl Cat {
             Cat::GfLost => "gf_lost",
             Cat::MateAttacked => "mate_attacked",
             Cat::Taunt => "taunt",
+            Cat::GreetAgain => "greet_again",
+            Cat::GreetKiller => "greet_killer",
+            Cat::GreetHelper => "greet_helper",
         }
     }
 
-    const ALL: [Cat; 11] = [
+    const ALL: [Cat; 14] = [
         Cat::Greet,
         Cat::ReplyGreet,
         Cat::Gf,
@@ -102,13 +111,24 @@ impl Cat {
         Cat::GfLost,
         Cat::MateAttacked,
         Cat::Taunt,
+        Cat::GreetAgain,
+        Cat::GreetKiller,
+        Cat::GreetHelper,
     ];
 
     /// An answer to what someone just said or did (it waits a human delay).
     fn is_reply(self) -> bool {
         matches!(
             self,
-            Cat::Greet | Cat::ReplyGreet | Cat::Gf | Cat::Boosts | Cat::GfWon | Cat::GfLost
+            Cat::Greet
+                | Cat::GreetAgain
+                | Cat::GreetKiller
+                | Cat::GreetHelper
+                | Cat::ReplyGreet
+                | Cat::Gf
+                | Cat::Boosts
+                | Cat::GfWon
+                | Cat::GfLost
         )
     }
 
@@ -149,7 +169,7 @@ pub fn reply_delay(c: f64, draw: f64) -> Duration {
 /// The least time between two lines of one category **[A]**.
 pub fn cooldown(cat: Cat) -> Duration {
     Duration::from_secs(match cat {
-        Cat::Greet => 20,
+        Cat::Greet | Cat::GreetAgain | Cat::GreetKiller | Cat::GreetHelper => 20,
         Cat::ReplyGreet => 120,
         Cat::Gf => 90,
         Cat::Boosts => 300,
@@ -238,6 +258,26 @@ pub fn take_fights(me: i64) -> Vec<(i64, bool, Instant)> {
         .unwrap_or_default()
 }
 
+/// What this bot remembers of one pilot (P3a: a pure input; the acquaintance
+/// book fills it later). The default `Scene` knows nobody.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Known {
+    /// Times this pilot has been met.
+    pub met: u32,
+    /// Times this pilot killed the bot.
+    pub killed_me: u16,
+    /// Times the bot killed this pilot.
+    pub i_killed: u16,
+    /// This pilot helped the bot.
+    pub helped: bool,
+}
+
+/// A pilot met this often is greeted as a regular **[A]**: falsified by the
+/// owner finding "again" too early or never heard.
+pub const REGULAR_MET: u32 = 3;
+/// A killer is named in a greeting at most once per this long **[A]**.
+pub const KILLER_NAMED_EVERY: Duration = Duration::from_secs(86_400);
+
 /// A human who came into Local.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Arrival {
@@ -262,6 +302,9 @@ pub struct Scene {
     pub names: BTreeMap<i64, String>,
     pub system_name: Option<String>,
     pub ore: Option<String>,
+    /// Pilots this bot remembers, by character id. Empty: every arrival is
+    /// greeted as a stranger.
+    pub known: BTreeMap<i64, Known>,
 }
 
 impl Default for Scene {
@@ -275,6 +318,7 @@ impl Default for Scene {
             names: BTreeMap::new(),
             system_name: None,
             ore: None,
+            known: BTreeMap::new(),
         }
     }
 }
@@ -314,6 +358,9 @@ pub struct State {
     said: Vec<Instant>,
     cat_last: BTreeMap<Cat, Instant>,
     greeted: BTreeMap<(i64, i64), Instant>,
+    /// When a killer was last named in a greeting. Not pruned: it holds only
+    /// pilots who have killed this bot.
+    killer_named: BTreeMap<i64, Instant>,
     pending: Option<Pending>,
     seen_line: u64,
     seen_arrival: u64,
@@ -344,6 +391,7 @@ impl State {
             said: Vec::new(),
             cat_last: BTreeMap::new(),
             greeted: BTreeMap::new(),
+            killer_named: BTreeMap::new(),
             pending: None,
             seen_line: 0,
             seen_arrival: 0,
@@ -744,6 +792,24 @@ pub fn mate_attacked(st: &mut State, cx: &Ctx) -> Option<String> {
     say(st, cx, Cat::MateAttacked, None)
 }
 
+/// Which greeting a known pilot gets: a killer first (named at most once per
+/// [`KILLER_NAMED_EVERY`]), then a helper, then a regular; `None` is the plain one.
+fn greet_cat(st: &State, k: &Known, who: i64, now: Instant) -> Option<Cat> {
+    let named_lately = st
+        .killer_named
+        .get(&who)
+        .is_some_and(|t| now.saturating_duration_since(*t) < KILLER_NAMED_EVERY);
+    if k.killed_me > 0 && !named_lately {
+        Some(Cat::GreetKiller)
+    } else if k.helped {
+        Some(Cat::GreetHelper)
+    } else if k.met >= REGULAR_MET || k.i_killed > 0 {
+        Some(Cat::GreetAgain)
+    } else {
+        None
+    }
+}
+
 fn say(st: &mut State, cx: &Ctx, cat: Cat, target: Option<i64>) -> Option<String> {
     let sc = cx.scene;
     let slots = Slots {
@@ -752,7 +818,22 @@ fn say(st: &mut State, cx: &Ctx, cat: Cat, target: Option<i64>) -> Option<String
         ore: sc.ore.as_deref(),
         hull: cx.hull,
     };
-    let line = pick(st, cat, &slots)?;
+    // A greeting to a pilot the bot knows: its own category, else the plain one.
+    let mut line = None;
+    if cat == Cat::Greet
+        && let Some(t) = target
+        && let Some(k) = sc.known.get(&t)
+        && let Some(special) = greet_cat(st, k, t, cx.now)
+    {
+        line = pick(st, special, &slots);
+        if line.is_some() && special == Cat::GreetKiller {
+            st.killer_named.insert(t, cx.now);
+        }
+    }
+    let line = match line {
+        Some(l) => l,
+        None => pick(st, cat, &slots)?,
+    };
     st.last_say = Some(cx.now);
     st.said.push(cx.now);
     st.cat_last.insert(cat, cx.now);
@@ -768,6 +849,140 @@ fn say(st: &mut State, cx: &Ctx, cat: Cat, target: Option<i64>) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// P3a helpers: a scene knowing `HUMAN` as given.
+    fn scene_knowing(k: Option<Known>) -> Scene {
+        let mut scene = Scene {
+            sociability: 1.0,
+            local_humans: 1,
+            ..Scene::default()
+        };
+        if let Some(k) = k {
+            scene.known.insert(HUMAN, k);
+        }
+        scene
+    }
+
+    fn greeting_for(scene: &Scene, st: &mut State, now: Instant) -> String {
+        let cx = Ctx {
+            now,
+            system: Some(SYS),
+            in_fleet: false,
+            foreman: false,
+            mining: false,
+            hostile: false,
+            hull: None,
+            scene,
+        };
+        say(st, &cx, Cat::Greet, Some(HUMAN)).unwrap()
+    }
+
+    fn lines_of(cat: Cat) -> Vec<&'static str> {
+        table()
+            .iter()
+            .filter(|(c, _)| *c == cat)
+            .map(|(_, l)| *l)
+            .collect()
+    }
+
+    #[test]
+    fn a_known_killer_gets_a_killer_greeting() {
+        let t0 = Instant::now();
+        let scene = scene_knowing(Some(Known {
+            killed_me: 1,
+            met: 1,
+            ..Known::default()
+        }));
+        let mut st = State::new(11);
+        let first = greeting_for(&scene, &mut st, t0);
+        assert!(!lines_of(Cat::GreetKiller).is_empty());
+        assert!(
+            lines_of(Cat::GreetKiller).iter().any(|l| fill(
+                l,
+                &Slots {
+                    name: None,
+                    system: None,
+                    ore: None,
+                    hull: None
+                }
+            )
+            .as_deref()
+                == Some(first.as_str())),
+            "{first}"
+        );
+        // Named at most once per KILLER_NAMED_EVERY: the next is another category.
+        let again = greeting_for(&scene, &mut st, t0 + secs(100));
+        assert!(
+            !lines_of(Cat::GreetKiller).contains(&again.as_str()),
+            "{again}"
+        );
+        // And again after the period.
+        let later = t0 + KILLER_NAMED_EVERY + secs(1);
+        let third = greeting_for(&scene, &mut st, later);
+        assert!(!third.is_empty());
+        assert!(st.killer_named[&HUMAN] == later);
+    }
+
+    #[test]
+    fn a_regular_is_greeted_as_one() {
+        let t0 = Instant::now();
+        let scene = scene_knowing(Some(Known {
+            met: REGULAR_MET,
+            ..Known::default()
+        }));
+        let mut st = State::new(12);
+        let l = greeting_for(&scene, &mut st, t0);
+        let slots = Slots {
+            name: None,
+            system: None,
+            ore: None,
+            hull: None,
+        };
+        assert!(
+            lines_of(Cat::GreetAgain)
+                .iter()
+                .any(|x| fill(x, &slots).as_deref() == Some(l.as_str())),
+            "{l}"
+        );
+        // One met fewer times than a regular is a stranger still.
+        let few = scene_knowing(Some(Known {
+            met: REGULAR_MET.saturating_sub(1),
+            ..Known::default()
+        }));
+        assert_eq!(greet_cat(&st, &few.known[&HUMAN], HUMAN, t0), None);
+        // A helper is thanked.
+        let helper = Known {
+            helped: true,
+            ..Known::default()
+        };
+        assert_eq!(greet_cat(&st, &helper, HUMAN, t0), Some(Cat::GreetHelper));
+    }
+
+    #[test]
+    fn an_empty_book_greets_as_today() {
+        let t0 = Instant::now();
+        let empty = scene_knowing(None);
+        assert!(Scene::default().known.is_empty());
+        let stranger = scene_knowing(Some(Known::default()));
+        for seed in 0..50u64 {
+            let (mut a, mut b) = (State::new(seed), State::new(seed));
+            let la = greeting_for(&empty, &mut a, t0);
+            let lb = greeting_for(&stranger, &mut b, t0);
+            assert_eq!(la, lb, "a pilot with nothing known is a stranger");
+            let slots = Slots {
+                name: None,
+                system: None,
+                ore: None,
+                hull: None,
+            };
+            assert!(
+                lines_of(Cat::Greet)
+                    .iter()
+                    .any(|x| fill(x, &slots).as_deref() == Some(la.as_str())),
+                "{la}"
+            );
+        }
+    }
 
     const SYS: i64 = 30_990_777;
     const HUMAN: i64 = 970_000_101;
