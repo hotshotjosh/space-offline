@@ -410,7 +410,7 @@ fn fuel_error(
 
 /// What `modules::activate` asks before a cyno starts (the `if
 /// is_cyno(effect.effect_id)` arm, in `modules.rs`), in this order:
-/// fleet, warp, security, speed, group, fuel. See the module header for each
+/// fleet, warp, security, Pochven, inhibitor, jammer, speed, group, fuel. See the module header for each
 /// key. A pilot not in space has already been refused by the caller.
 pub fn check_activation(
     w: &mut Registry,
@@ -458,6 +458,16 @@ pub fn check_activation(
                 ("type", type_arg(inhibitor)),
             ],
         ));
+    }
+    // `CynosuralGenerationJammed` **[V]** (`findings/user-errors.tsv`, dialog
+    // 2249, loc `UI/Messages/2249/CynosuralGenerationJammedBody`, no tokens): a Tenebrex online in the
+    // system. **[A]** the industrial cyno counts as non-covert and a covert
+    // field is not jammed. Falsifier: a TQ industrial cyno lit in a jammed
+    // system, or the client refusing a covert one with this key (#88).
+    if field_type_for(w, module.type_id) != TYPE_COVERT_CYNOSURAL_FIELD
+        && crate::sov_jammer::jammed(w, here.solar_system_id)
+    {
+        return Err(user_error("CynosuralGenerationJammed", vec![]));
     }
     if let Some(limit) = module_value(
         w,
@@ -570,8 +580,21 @@ pub fn on_activated(w: &mut Registry, r: &Running) {
 
 /// **A later cycle starts** (`modules::advance`, before the cycle is
 /// recorded): pay its fuel. `Err` is the stop's `error` --
-/// `(ModuleRequiresFuel, {fuel, fueled})` -- and the module must stop.
+/// `(ModuleRequiresFuel, {fuel, fueled})` -- and the module must stop. A
+/// jammed system stops it with `(CynosuralGenerationJammed, {})` (#88).
 pub fn pay_cycle(w: &mut Registry, r: &Running) -> Result<(), PyValue> {
+    // A lit field ends at its next cycle once its system is jammed (#88).
+    // **[A]** not at once. Falsifier: a TQ field that drops when the jammer
+    // onlines. A covert field is skipped.
+    if let Some(f) = fields(w).find(|f| f.module_id == r.module_id).copied()
+        && f.type_id != TYPE_COVERT_CYNOSURAL_FIELD
+        && crate::sov_jammer::jammed(w, f.system_id)
+    {
+        return Err(PyValue::Tuple(vec![
+            crate::pyutil::bstr("CynosuralGenerationJammed"),
+            PyValue::Dict(Vec::new()),
+        ]));
+    }
     if burn(w, r.character_id, r.ship_id, r.type_id) {
         return Ok(());
     }

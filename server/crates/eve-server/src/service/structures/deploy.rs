@@ -95,6 +95,17 @@ fn anchor(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError
             ],
         ));
     }
+    // One cyno jammer per system (#88). **[A]** the text is ours.
+    // Falsifier: a TQ refusal key for a second jammer.
+    if let Some(system) = reg.present_system(actor)
+        && reg
+            .store()
+            .get(item_id)
+            .is_some_and(|i| i.type_id == crate::sov_jammer::TYPE_TENEBREX)
+        && let Some(t) = crate::sov_jammer::anchor_refusal(reg.deltas(), system)
+    {
+        return Err(notify(t));
+    }
     let s = space::anchor(reg, actor, corp, &args).map_err(|e| notify(&e))?;
     // ANSI-1 (#85): a jump gate is aimed by `extraConfig`.
     crate::jump_bridge::on_anchored(reg, &s, a.get(9));
@@ -117,6 +128,11 @@ mod tests {
 
     /// BOSS, a director, in space in `system`, with a structure in his hold.
     fn world(system: i64) -> Registry {
+        world_of(system, space::ASTRAHUS)
+    }
+
+    /// [`world`] with the item in the hold of `item_type`.
+    fn world_of(system: i64, item_type: i64) -> Registry {
         let rows = [POCHVEN]
             .iter()
             .map(|id| {
@@ -145,7 +161,7 @@ mod tests {
         let mut items = reg.store().items().to_vec();
         items.push(Item {
             item_id: ITEM,
-            type_id: space::ASTRAHUS,
+            type_id: item_type,
             owner_id: BOSS,
             location_id: SHIP,
             flag_id: crate::sov_hub::FLAG_CARGO,
@@ -235,5 +251,36 @@ mod tests {
         let mut reg = world(PLAIN);
         assert_eq!(anchor_call(&mut reg), Ok(PyValue::None));
         assert_eq!(crate::structure::all(reg.deltas()).len(), 1);
+    }
+
+    /// **#88.** A second Tenebrex in a system is refused before the item is
+    /// taken; the first anchors.
+    #[test]
+    fn a_second_tenebrex_in_a_system_is_refused() {
+        let mut reg = world_of(PLAIN, crate::sov_jammer::TYPE_TENEBREX);
+        let env = crate::structure::Env::new(1_000_000);
+        let mut s = crate::structure::Structure::anchored(
+            100_700_900,
+            crate::sov_jammer::TYPE_TENEBREX,
+            CORP,
+            PLAIN,
+            [0.0; 3],
+            0.0,
+            "first",
+            1,
+            &env,
+        );
+        s.take_events();
+        crate::structure::put(reg.deltas_mut(), &s);
+        let e = anchor_call(&mut reg).expect_err("refused");
+        assert!(format!("{e:?}").contains("cyno jammer"), "{e:?}");
+        assert_eq!(crate::structure::all(reg.deltas()).len(), 1, "none added");
+        let item = reg
+            .store()
+            .items()
+            .iter()
+            .find(|i| i.item_id == ITEM)
+            .expect("the item is still there");
+        assert_eq!(item.location_id, SHIP, "the item was not taken");
     }
 }

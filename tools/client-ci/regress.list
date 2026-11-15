@@ -358,6 +358,8 @@ fci_fw_capture -- --character Alice --no-concord
 fci_landing_orbit --with-second -- --character Alice --character Bob
 # w27-cynojam (#87): a Tenebrex cyno jammer marks its system jammed; the panel icon follows GetCynoJammerState and the push; one client
 fci_cyno_jammer
+# cyno-jam (#88): a Tenebrex jams its system; the generator is refused with CynosuralGenerationJammed while fueled, lights in a jammer-free system; one client
+fci_cyno_jam
 fci_ansiblex
 # abyss-waves (#4): a filament run, room one holds hostiles and no gate, /abyss clear brings a second wave, the gate only after the last is dead, room two has its own; the plain server
 fci_abyss_waves

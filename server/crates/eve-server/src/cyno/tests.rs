@@ -1156,3 +1156,92 @@ fn an_inhibitor_is_refused_above_the_rows_security_ceiling() {
     place(&mut w.reg, CAROL, SYSTEM, [1.0e7, 2.0e6, -3.0e6]);
     crate::anchor::launch_one(&mut w.reg, CAROL, stack).expect("null sec is fine");
 }
+
+// ---------------------------------------------------------------------------
+// The cyno jammer (#88)
+// ---------------------------------------------------------------------------
+
+/// An online Tenebrex (an invented structure id and owner) in `system`.
+fn put_jammer(w: &mut World, system: i64) {
+    let env = crate::structure::Env::new(crate::pyutil::filetime_now());
+    let mut s = crate::structure::Structure::anchored(
+        990_640_900 + system % 10,
+        crate::sov_jammer::TYPE_TENEBREX,
+        CORP,
+        system,
+        [0.0; 3],
+        0.0,
+        "jam",
+        1,
+        &env,
+    );
+    s.set_state(crate::structure::State::ShieldVulnerable, &env);
+    s.take_events();
+    crate::structure::put(w.reg.deltas_mut(), &s);
+    // Also the upgrade, so the tests hold if JAMMER_NEEDS_UPGRADE flips.
+    crate::sov_jammer::hub_with(
+        w.reg.deltas_mut(),
+        system,
+        true,
+        CORP,
+        &[(
+            crate::sov_jammer::JAMMER_UPGRADE,
+            crate::sov_upgrade::Power::Online,
+        )],
+    );
+    assert!(
+        crate::sov_jammer::jammed(&w.reg, system),
+        "the jammer is on"
+    );
+}
+
+#[test]
+fn a_normal_cyno_in_a_jammed_system_is_refused_with_the_jam_key() {
+    let mut w = world();
+    put_jammer(&mut w, SYSTEM);
+    let e = w.light(ALICE, ALICE_CYNO, T0).expect_err("jammed");
+    let (key, d) = raised(&e);
+    assert_eq!(key, "CynosuralGenerationJammed");
+    assert!(d.is_empty(), "no tokens");
+    assert!(fields(&w.reg).next().is_none(), "no field was made");
+    assert_eq!(w.ozone(ALICE, FLAG_CARGO), PLENTY, "no ozone was burned");
+}
+
+#[test]
+fn a_covert_cyno_in_a_jammed_system_still_lights() {
+    let mut w = world();
+    put_jammer(&mut w, SYSTEM);
+    w.light(BOB, BOB_COVERT, T0).expect("covert is not jammed");
+    assert_eq!(w.field_of(BOB).type_id, TYPE_COVERT_CYNOSURAL_FIELD);
+}
+
+#[test]
+fn a_lit_cyno_stops_at_its_next_cycle_once_the_system_is_jammed() {
+    let mut w = world();
+    w.light(ALICE, ALICE_CYNO, T0).expect("lit");
+    let ozone = w.ozone(ALICE, FLAG_CARGO);
+    put_jammer(&mut w, SYSTEM);
+    assert!(fields(&w.reg).next().is_some(), "not at once");
+    let r = *w.reg.modules().running(ALICE_CYNO).expect("running");
+    let e = pay_cycle(&mut w.reg, &r).expect_err("jammed");
+    let PyValue::Tuple(t) = e else {
+        panic!("a tuple")
+    };
+    assert_eq!(t[0], crate::pyutil::bstr("CynosuralGenerationJammed"));
+    assert_eq!(t[1], PyValue::Dict(vec![]), "no tokens");
+    assert_eq!(
+        w.ozone(ALICE, FLAG_CARGO),
+        ozone,
+        "the refused cycle burned nothing"
+    );
+    crate::modules::tick(&mut w.reg, T0 + CYCLE);
+    assert!(w.reg.modules().running(ALICE_CYNO).is_none(), "stopped");
+    assert!(fields(&w.reg).next().is_none(), "the field is gone");
+}
+
+#[test]
+fn a_cyno_in_another_system_is_not_jammed() {
+    let mut w = world();
+    put_jammer(&mut w, 30_640_077);
+    w.light(ALICE, ALICE_CYNO, T0).expect("another system");
+}

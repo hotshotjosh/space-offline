@@ -272,11 +272,56 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTim
     }
 }
 
+/// Test helper: a hub in `system` with the installed upgrades `ups`, held by
+/// `(ALLIANCE, corp)` when `held`.
+#[cfg(test)]
+pub(crate) fn hub_with(
+    d: &mut Deltas,
+    system: i64,
+    held: bool,
+    corp: i64,
+    ups: &[(i64, sov_upgrade::Power)],
+) {
+    crate::sov_hub::put(
+        d,
+        &crate::sov_hub::Hub {
+            system_id: system,
+            hub_id: HUB + system % 100,
+            position: [0.0; 3],
+            launcher_id: None,
+            launch_time: 0,
+            offline_days: 0,
+        },
+    );
+    if held {
+        crate::sov::set_claim(d, system, Some((ALLIANCE, corp)), 1);
+    }
+    let list: Vec<_> = ups
+        .iter()
+        .map(|(t, p)| sov_upgrade::Installed {
+            type_id: *t,
+            online: true,
+            state: *p,
+        })
+        .collect();
+    sov_upgrade::put_installed(d, HUB + system % 100, &list);
+}
+
+/// Invented ids of `sov_upgrade::fixture_upgrades`: 9_203 enables
+/// `cyno_jammer`, 9_204 `jump_bridge`.
+#[cfg(test)]
+pub(crate) const HUB: i64 = 8_870_001;
+#[cfg(test)]
+pub(crate) const ALLIANCE: i64 = 99_870_001;
+#[cfg(test)]
+pub(crate) const JAMMER_UPGRADE: i64 = 9_203;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::structure::Env;
 
+    const OTHER_UPGRADE: i64 = 9_204;
     const CORP: i64 = 98_700_001;
     const SYS: i64 = 30_870_001;
     const NOW: i64 = 1_000_000 * structure::SECOND;
@@ -424,39 +469,6 @@ mod tests {
 
     // -- SOV-UPG-2 (#80): the upgrade gate -------------------------------------
 
-    const HUB: i64 = 8_870_001;
-    const ALLIANCE: i64 = 99_870_001;
-    /// Invented upgrade types of `sov_upgrade::fixture_upgrades`: 9_203 enables
-    /// `cyno_jammer`, 9_204 `jump_bridge`.
-    const JAMMER_UPGRADE: i64 = 9_203;
-    const OTHER_UPGRADE: i64 = 9_204;
-
-    fn hub_with(d: &mut Deltas, system: i64, held: bool, ups: &[(i64, sov_upgrade::Power)]) {
-        crate::sov_hub::put(
-            d,
-            &crate::sov_hub::Hub {
-                system_id: system,
-                hub_id: HUB + system % 100,
-                position: [0.0; 3],
-                launcher_id: None,
-                launch_time: 0,
-                offline_days: 0,
-            },
-        );
-        if held {
-            crate::sov::set_claim(d, system, Some((ALLIANCE, CORP)), 1);
-        }
-        let list: Vec<_> = ups
-            .iter()
-            .map(|(t, p)| sov_upgrade::Installed {
-                type_id: *t,
-                online: true,
-                state: *p,
-            })
-            .collect();
-        sov_upgrade::put_installed(d, HUB + system % 100, &list);
-    }
-
     #[test]
     fn a_tenebrex_is_off_without_the_service_and_on_with_it() {
         let t = sov_upgrade::fixture_upgrades();
@@ -469,6 +481,7 @@ mod tests {
             &mut d,
             SYS,
             true,
+            CORP,
             &[(OTHER_UPGRADE, sov_upgrade::Power::Online)],
         );
         assert_eq!(state_with(&d, &t, SYS, true), Jam::Off);
@@ -477,6 +490,7 @@ mod tests {
             &mut d,
             SYS,
             true,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Low)],
         );
         assert_eq!(state_with(&d, &t, SYS, true), Jam::Off);
@@ -485,6 +499,7 @@ mod tests {
             &mut d,
             SYS,
             true,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
         );
         assert_eq!(state_with(&d, &t, SYS, true), Jam::On);
@@ -493,6 +508,7 @@ mod tests {
             &mut d,
             SYS,
             false,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
         );
         crate::sov::set_claim(&mut d, SYS, None, 2);
@@ -511,6 +527,7 @@ mod tests {
             &mut d,
             SYS,
             true,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
         );
         let got = states_with(&d, &t, true);
@@ -531,6 +548,7 @@ mod tests {
             &mut d,
             SYS,
             true,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
         );
         assert_eq!(changes(&d, &t, true, &mut told), vec![(SYS, Jam::On)]);
@@ -569,6 +587,7 @@ mod tests {
             reg.deltas_mut(),
             SYS,
             true,
+            CORP,
             &[(JAMMER_UPGRADE, sov_upgrade::Power::Online)],
         );
         let _ = reg.take_pending();
