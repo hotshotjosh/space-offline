@@ -899,4 +899,25 @@ mod tests {
             );
         }
     }
+
+    /// A whole-valued real is a count, a fractional one is refused (pins the
+    /// shared whole-number reader).
+    #[test]
+    fn a_whole_real_quantity_is_read_and_a_fraction_refused() {
+        let mut reg = world(0);
+        let ask = |reg: &mut Registry, q: PyValue| {
+            call(
+                reg,
+                "GetDiminishedSpFromInjectors",
+                &[PyValue::Int(TYPE_LARGE), q, PyValue::Int(0)],
+            )
+        };
+        let by_int = ask(&mut reg, PyValue::Int(2));
+        assert!(by_int.is_ok(), "{by_int:?}");
+        assert_eq!(ask(&mut reg, PyValue::Real(2.0)), by_int);
+        assert!(matches!(
+            ask(&mut reg, PyValue::Real(2.5)),
+            Err(ServiceError::BadArguments { .. })
+        ));
+    }
 }

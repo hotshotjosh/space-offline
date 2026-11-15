@@ -2006,4 +2006,31 @@ mod tests {
             );
         }
     }
+
+    /// `CheckMyDockingAccessToStructures` reads a bare id, a list or a tuple,
+    /// and skips a `Bool` entry (pins the shared id reader).
+    #[test]
+    fn docking_access_reads_a_bare_id_a_list_and_a_tuple() {
+        let mut reg = world();
+        let id = spawn(&mut reg);
+        let mut ask = |arg: PyValue| {
+            ints(
+                call(
+                    &mut reg,
+                    BOSS,
+                    "structureDirectory",
+                    "CheckMyDockingAccessToStructures",
+                    &[arg],
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(ask(PyValue::Int(id)), vec![id]);
+        assert_eq!(ask(PyValue::Tuple(vec![PyValue::Int(id)])), vec![id]);
+        assert_eq!(
+            ask(PyValue::List(vec![PyValue::Bool(true), PyValue::Int(id)])),
+            vec![id]
+        );
+        assert_eq!(ask(PyValue::Real(id as f64)), Vec::<i64>::new());
+    }
 }

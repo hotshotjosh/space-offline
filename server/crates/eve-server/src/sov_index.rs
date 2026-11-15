@@ -1625,4 +1625,26 @@ mod tests {
             .expect("pushed");
         assert_eq!(to, &vec![PILOT_AWAY]);
     }
+
+    /// `SetCapitalSystem` reads the system as an integer only: a real or a
+    /// bool is `BadArguments` (pins the shared integer reader).
+    #[test]
+    fn the_capital_system_must_be_an_integer() {
+        let mut reg = world();
+        for bad in [PyValue::Real(1.0), PyValue::Bool(true), PyValue::None] {
+            let got = capital_call(
+                &mut reg,
+                "SetCapitalSystem",
+                std::slice::from_ref(&bad),
+                Some(ALLIANCE),
+                true,
+            );
+            assert!(
+                matches!(got, Some(Err(ServiceError::BadArguments { .. }))),
+                "{bad:?}: {got:?}"
+            );
+        }
+        let got = capital_call(&mut reg, "SetCapitalSystem", &[], Some(ALLIANCE), true);
+        assert!(matches!(got, Some(Err(ServiceError::BadArguments { .. }))));
+    }
 }

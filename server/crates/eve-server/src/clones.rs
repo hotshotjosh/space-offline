@@ -2010,4 +2010,28 @@ mod clones_tests {
         assert_eq!(clean_clone_name(" a\tb\nc "), "a b c");
         assert_eq!(clean_clone_name(&"x".repeat(150)).len(), 100);
     }
+
+    /// A text id is `BadArguments` in both arms that read one integer
+    /// (pins the shared integer reader).
+    #[test]
+    fn a_text_id_is_bad_arguments() {
+        let mut reg = two();
+        for (service, method) in [
+            ("home_station", "set_home_station"),
+            ("jumpCloneSvc", "DestroyInstalledClone"),
+        ] {
+            let e = call(
+                &mut reg,
+                ALICE,
+                service,
+                method,
+                &[PyValue::Unicode("1".to_owned())],
+            )
+            .unwrap_err();
+            assert!(
+                matches!(e, ServiceError::BadArguments { .. }),
+                "{method}: {e:?}"
+            );
+        }
+    }
 }

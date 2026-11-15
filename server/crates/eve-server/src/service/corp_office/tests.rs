@@ -731,6 +731,38 @@ fn a_multi_drag_moves_what_it_may_and_raises_the_first_refusal() {
     assert!(refused(&e, "CrpAccessDenied"), "{e:?}");
 }
 
+/// `MultiAdd` reads a bare id or a tuple of ids and skips a `Bool` entry
+/// (pins the shared id reader).
+#[test]
+fn a_multi_drag_takes_a_bare_id_or_a_tuple() {
+    let (mut reg, corp, office) = with_office();
+    let a = ore(&mut reg, ALICE, 1);
+    let b = ore(&mut reg, ALICE, 2);
+    let r = inv(
+        &mut reg,
+        ALICE,
+        office,
+        "MultiAdd",
+        vec![PyValue::Int(a), PyValue::Int(STATION)],
+        vec![kw("flag", PyValue::Int(DIV3))],
+    );
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(units_at(&reg, corp, office, DIV3), 1);
+    let r = inv(
+        &mut reg,
+        ALICE,
+        office,
+        "MultiAdd",
+        vec![
+            PyValue::Tuple(vec![PyValue::Bool(true), PyValue::Int(b)]),
+            PyValue::Int(STATION),
+        ],
+        vec![kw("flag", PyValue::Int(DIV3))],
+    );
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(units_at(&reg, corp, office, DIV3), 3);
+}
+
 #[test]
 fn a_division_moves_to_another_division_under_the_sources_role_too() {
     let (mut reg, corp, office) = with_office();

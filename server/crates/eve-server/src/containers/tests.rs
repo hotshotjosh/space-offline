@@ -998,3 +998,21 @@ fn stale_password_rows_are_pruned() {
     set_pw(&mut reg, ALICE, sec, PASSWORD_GENERAL, None, "hunter").unwrap();
     assert_eq!(reg.deltas().of(KIND).len(), 1, "the dead id's row went");
 }
+
+/// A text item id is `BadArguments`, not a lookup (pins the shared integer
+/// reader).
+#[test]
+fn assembling_needs_an_integer_item_id() {
+    let mut reg = world();
+    let e = call(
+        &mut reg,
+        ALICE,
+        "invbroker",
+        "AssembleCargoContainer",
+        &[PyValue::Unicode("1".to_owned()), PyValue::None],
+        &[],
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
+}

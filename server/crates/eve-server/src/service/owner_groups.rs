@@ -278,4 +278,35 @@ mod tests {
             .collect();
         assert_eq!(pushes, vec![("OnOwnerGroupsUpdated", Some(vec![8]))]);
     }
+
+    /// `GetGroupsMany` reads a bare id or a list of ids and skips a `Bool`
+    /// entry (pins the shared id reader).
+    #[test]
+    fn group_ids_take_a_bare_id_and_skip_a_bool() {
+        let mut reg = world();
+        let made = call(
+            &mut reg,
+            7,
+            "Create",
+            &[
+                PyValue::Unicode("ops".into()),
+                PyValue::Unicode(String::new()),
+            ],
+        );
+        assert!(made.is_ok());
+        let gid = og::all(&reg)[0].group_id;
+        let n = |reg: &mut Registry, arg: PyValue| match call(reg, 7, "GetGroupsMany", &[arg]) {
+            Ok(PyValue::List(l)) => l.len(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(n(&mut reg, PyValue::Int(gid)), 1);
+        assert_eq!(
+            n(
+                &mut reg,
+                PyValue::List(vec![PyValue::Bool(true), PyValue::Int(gid)])
+            ),
+            1
+        );
+        assert_eq!(n(&mut reg, PyValue::Bool(true)), 0);
+    }
 }

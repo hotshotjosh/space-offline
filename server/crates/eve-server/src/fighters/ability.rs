@@ -2010,6 +2010,26 @@ effect\t{bm}\t2\t1\t2349\t0\t0\t0\t0\tfixtureBomb\teffects.FixtureBomb
         );
     }
 
+    /// An item-targeted ability reads only an integer as the target: a
+    /// `Bool` gets the "needs a target" words, not a lookup (pins the shared
+    /// integer reader).
+    #[test]
+    fn a_bool_is_not_a_target() {
+        let (mut reg, ids, _) = fly(&[(ATTACKER, SQUADRON)]);
+        let a = activate_call(&mut reg, &ids, 0, &[PyValue::Bool(true)]);
+        let PyValue::Dict(d) = &a else {
+            panic!("a dict: {a:?}")
+        };
+        let (v, _) = d
+            .iter()
+            .find(|(_, k)| *k == PyValue::Int(ids[0]))
+            .expect("an entry");
+        assert_eq!(
+            ServiceError::Raise(v.clone()),
+            Refusal::text("That ability needs a target.").to_error()
+        );
+    }
+
     #[test]
     fn an_empty_slot_and_a_bad_slot_are_refused() {
         let (mut reg, ids, _) = fly(&[(PLAIN, SQUADRON)]);

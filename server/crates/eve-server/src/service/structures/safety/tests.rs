@@ -137,6 +137,30 @@ fn wrap_names_answer_by_id() {
     assert_eq!(d[0].0, PyValue::Unicode(w.name));
 }
 
+/// `GetWrapNames` reads a list or a tuple of ids; an integer or nothing is
+/// `BadArguments` (pins the shared list reader).
+#[test]
+fn wrap_names_take_a_tuple_and_refuse_a_bare_id_or_nothing() {
+    let (mut reg, id, corp) = world();
+    let _ = unanchor(&mut reg, id, corp);
+    let w = wrap_of(&reg, BOSS);
+    let out = call(
+        &mut reg,
+        BOSS,
+        "GetWrapNames",
+        &[PyValue::Tuple(vec![PyValue::Int(w.id)])],
+    )
+    .unwrap();
+    let PyValue::Dict(d) = out else {
+        panic!("a dict")
+    };
+    assert_eq!(d.len(), 1);
+    let e = call(&mut reg, BOSS, "GetWrapNames", &[PyValue::Int(w.id)]).unwrap_err();
+    assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
+    let e = call(&mut reg, BOSS, "GetWrapNames", &[]).unwrap_err();
+    assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
+}
+
 #[test]
 fn the_wrap_is_delivered_by_keyword_and_early_delivery_is_refused() {
     let (mut reg, id, corp) = world();

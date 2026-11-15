@@ -657,4 +657,25 @@ mod tests {
             id
         );
     }
+
+    /// `UpdateBulletinOrder` takes the ids as a tuple too, and a non-list is
+    /// `BadArguments` (pins the shared list reader).
+    #[test]
+    fn the_order_list_may_be_a_tuple() {
+        let (mut reg, mine, _) = world();
+        let a = add(&mut reg, ALICE, Scope::Corp, mine, "One", "1").unwrap();
+        let b = add(&mut reg, ALICE, Scope::Corp, mine, "Two", "2").unwrap();
+        call_as(
+            &mut reg,
+            ALICE,
+            "UpdateBulletinOrder",
+            &[PyValue::Tuple(vec![PyValue::Int(b), PyValue::Int(a)])],
+            &[],
+        )
+        .expect("ordered");
+        assert_eq!(list(&reg, mine)[0].id, b);
+        let e = call_as(&mut reg, ALICE, "UpdateBulletinOrder", &[PyValue::Int(a)], &[])
+            .unwrap_err();
+        assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
+    }
 }

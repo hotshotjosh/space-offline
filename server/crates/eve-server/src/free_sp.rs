@@ -774,4 +774,27 @@ mod tests {
         assert!(names.contains(&"OnNewSkillQueueSaved"), "{names:?}");
         assert!(names.contains(&"OnServerSkillsChanged"), "{names:?}");
     }
+
+    /// A whole-valued real is a count, a fractional one is refused (pins the
+    /// shared whole-number reader).
+    #[test]
+    fn apply_one_takes_a_whole_real_and_refuses_a_fraction() {
+        let mut reg = with_pool(500);
+        let got = call(
+            &mut reg,
+            "ApplyFreeSkillPoints",
+            &[PyValue::Int(FRIGATE), PyValue::Real(3.0)],
+        );
+        assert_eq!(got, Ok(PyValue::Int(497)));
+        let got = call(
+            &mut reg,
+            "ApplyFreeSkillPoints",
+            &[PyValue::Int(FRIGATE), PyValue::Real(3.5)],
+        );
+        assert!(
+            matches!(got, Err(ServiceError::BadArguments { .. })),
+            "{got:?}"
+        );
+        assert_eq!(of(&reg, actor(&reg)), 497);
+    }
 }

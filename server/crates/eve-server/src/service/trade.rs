@@ -876,4 +876,34 @@ mod tests {
         assert!(fresh.take_dirty(), "the load changed what is on disk");
         assert!(fresh.take_pending().is_empty(), "a load tells nobody");
     }
+
+    /// `MultiAdd` takes a bare id or a list or tuple of ids, and skips an
+    /// entry that is not an integer (pins the shared id reader).
+    #[test]
+    fn multi_add_takes_a_bare_id_and_a_tuple_of_ids() {
+        let mut reg = world();
+        let c = start(&mut reg);
+        sess(
+            &mut reg,
+            ALICE,
+            "MultiAdd",
+            &[PyValue::Int(ITEM), PyValue::Int(STATION)],
+        )
+        .expect("bare id");
+        assert_eq!(at(&reg, ITEM), Slot::new(ALICE, c, FLAG_HANGAR));
+
+        let mut reg = world();
+        let c = start(&mut reg);
+        sess(
+            &mut reg,
+            ALICE,
+            "MultiAdd",
+            &[
+                PyValue::Tuple(vec![PyValue::Int(ITEM), PyValue::Bool(true)]),
+                PyValue::Int(STATION),
+            ],
+        )
+        .expect("tuple");
+        assert_eq!(at(&reg, ITEM), Slot::new(ALICE, c, FLAG_HANGAR));
+    }
 }
