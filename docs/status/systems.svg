@@ -98,7 +98,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="230.8" y="61.5" width="3" height="3" class="proved"/>
 <rect x="234.8" y="61.5" width="3" height="3" class="proved"/>
 <rect x="238.8" y="61.5" width="3" height="3" class="proved"/>
-<rect x="242.8" y="61.5" width="3" height="3" class="built"/>
+<rect x="242.8" y="61.5" width="3" height="3" class="proved"/>
 <rect x="246.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="250.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="254.8" y="61.5" width="3" height="3" class="built"/>
@@ -106,7 +106,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="262.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="266.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="270.8" y="61.5" width="3" height="3" class="built"/>
-<text x="278.8" y="66.0" class="s xs">11/19</text>
+<text x="278.8" y="66.0" class="s xs">12/19</text>
 <text x="16.0" y="82.0" class="t">Modules</text>
 <rect x="198.8" y="77.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="77.5" width="3" height="3" class="proved"/>
@@ -258,9 +258,9 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="222.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="226.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="230.8" y="157.5" width="3" height="3" class="proved"/>
-<rect x="234.8" y="157.5" width="3" height="3" class="built"/>
+<rect x="234.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="238.8" y="157.5" width="3" height="3" class="built"/>
-<text x="246.8" y="162.0" class="s xs">9/11</text>
+<text x="246.8" y="162.0" class="s xs">10/11</text>
 <text x="16.0" y="178.0" class="t">Sovereignty</text>
 <rect x="198.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="173.5" width="3" height="3" class="proved"/>
@@ -289,7 +289,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="226.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="230.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="234.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="238.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="238.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="242.8" y="189.5" width="3" height="3" class="built"/>
 <rect x="246.8" y="189.5" width="3" height="3" class="built"/>
 <rect x="250.8" y="189.5" width="3" height="3" class="built"/>
@@ -299,7 +299,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="267.3" y="190.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="271.3" y="190.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="275.3" y="190.0" width="2" height="2" fill="none" class="missing"/>
-<text x="282.8" y="194.0" class="s xs">10/20</text>
+<text x="282.8" y="194.0" class="s xs">11/20</text>
 <text x="16.0" y="210.0" class="t">Factional warfare</text>
 <rect x="198.8" y="205.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="205.5" width="3" height="3" class="proved"/>

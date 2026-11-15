@@ -44,23 +44,21 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="254.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="258.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="262.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="271.3" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.8" y="47.0" width="3" height="1.5" class="part-f"/>
-<text x="278.8" y="50.0" class="s xs">10</text>
+<rect x="267.3" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="266.8" y="47.0" width="3" height="1.5" class="part-f"/>
+<text x="274.8" y="50.0" class="s xs">9</text>
 <text x="16.0" y="66.0" class="t">3.4 Upwell</text>
 <rect x="234.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="242.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="246.8" y="61.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="61.5" width="3" height="3" class="built"/>
+<rect x="251.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.8" y="63.0" width="3" height="1.5" class="part-f"/>
 <rect x="255.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="254.8" y="63.0" width="3" height="1.5" class="part-f"/>
-<rect x="259.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="63.0" width="3" height="1.5" class="part-f"/>
+<rect x="259.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="263.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="267.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="271.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="275.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="279.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<text x="286.8" y="66.0" class="s xs">12</text>
+<text x="282.8" y="66.0" class="s xs">11</text>
 <text x="16.0" y="82.0" class="t">3.5 PvE</text>
 <rect x="234.8" y="77.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="77.5" width="3" height="3" class="built"/>
@@ -79,8 +77,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="290.8" y="77.5" width="3" height="3" class="built"/>
 <rect x="294.8" y="77.5" width="3" height="3" class="built"/>
 <rect x="298.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="302.8" y="77.5" width="3" height="3" class="built"/>
-<text x="310.8" y="82.0" class="s xs">18</text>
+<text x="306.8" y="82.0" class="s xs">17</text>
 <text x="16.0" y="98.0" class="t">3.6 Factional warfare and sov</text>
 <rect x="234.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="93.5" width="3" height="3" class="built"/>
