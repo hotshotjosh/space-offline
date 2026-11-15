@@ -1144,7 +1144,7 @@ fn selecting_the_character_is_a_login_and_a_stale_row_goes_at_the_sweep() {
 }
 
 #[test]
-fn the_rollover_step_settles_every_parked_agent() {
+fn the_rollover_slice_settles_a_parked_miner_before_the_reset() {
     let mut reg = miner();
     away_six_hours(&mut reg);
     let now = crate::pyutil::filetime_now();
@@ -1210,16 +1210,89 @@ fn the_sweep_finishes_what_the_rollover_left() {
     for &id in &ids {
         assert_eq!(agent(&reg, id).expect("row").settled_to, now);
     }
+    // One more tick finds nothing due and ends the sweep.
+    tick(&mut reg, Instant::now(), late);
+    assert!(!reg.ext::<Book>().sweeping);
+    // The next timed sweep settles to the tick's own time again.
+    let period = (SWEEP_EVERY_H * 3_600.0 * 1.0e7) as i64;
+    let timed = late + 2 * period;
+    let mut ticks = 0;
+    loop {
+        tick(&mut reg, Instant::now(), timed);
+        ticks += 1;
+        if !reg.ext::<Book>().sweeping || ticks >= 40 {
+            break;
+        }
+    }
+    assert!(!reg.ext::<Book>().sweeping);
+    for &id in &ids {
+        assert_eq!(agent(&reg, id).expect("row").settled_to, timed);
+    }
+}
+
+#[test]
+fn the_sweep_counts_its_late_agents_for_the_closed_day() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, _) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    on_rollover(&mut reg, &rollover_day(now));
+    assert!(reg.ext::<Book>().last_late().is_none());
+    let mut ticks = 0;
+    while reg.ext::<Book>().sweeping && ticks < 20 {
+        assert!(
+            reg.ext::<Book>().last_late().is_none(),
+            "not before the end"
+        );
+        tick(&mut reg, Instant::now(), now + 1);
+        ticks += 1;
+    }
+    let late = reg.ext::<Book>().last_late().expect("kept at the end");
+    assert_eq!(late.agents, 3);
+    assert_eq!(late.day, 1);
+}
+
+#[test]
+fn the_rollover_runs_one_slice_even_when_two_steps_call_it() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, _) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    let day = rollover_day(now);
+    assert_eq!(on_rollover(&mut reg, &day), ROLLOVER_SLICE);
+    assert_eq!(on_rollover(&mut reg, &day), 0);
+    assert_eq!(reg.ext::<Book>().settled(), ROLLOVER_SLICE as u64);
+}
+
+#[test]
+fn the_rollover_slice_takes_gatherers_first() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + 1, now);
+    // The ratter is the longest unsettled, yet it waits for the sweep.
+    let ratter = ids[0];
+    let mut a = agent(&reg, ratter).expect("row");
+    a.career = Career::Ratter;
+    a.settled_to = now - 2 * HOURS6;
+    write(&mut reg, ratter, a);
+    assert_eq!(on_rollover(&mut reg, &rollover_day(now)), ROLLOVER_SLICE);
+    assert_eq!(
+        agent(&reg, ratter).expect("row").settled_to,
+        now - 2 * HOURS6
+    );
+    for &id in &ids[1..] {
+        assert_eq!(agent(&reg, id).expect("row").settled_to, now);
+    }
 }
 
 #[test]
 fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
     let now = crate::pyutil::filetime_now();
-    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + SWEEP_SLICE + 1, now);
     on_rollover(&mut reg, &rollover_day(now));
     tick(&mut reg, Instant::now(), now + 1);
     let mid = reg.ext::<Book>().settled();
     assert_eq!(mid, (ROLLOVER_SLICE + SWEEP_SLICE) as u64);
+    let behind = ids
+        .iter()
+        .filter(|&&id| agent(&reg, id).expect("row").settled_to == now - HOURS6)
+        .count();
+    assert_eq!(behind, 1, "one agent is still unreached");
     // The next day's rollover arrives with one agent still unsettled.
     let next = now + 24 * 3_600 * 10_000_000;
     let n = on_rollover(&mut reg, &rollover_day(next));

@@ -45,9 +45,14 @@
 //!   the offline day and not as one lump at login, and a bot that never
 //!   comes back still works (to the caps).
 //! - **At the rollover** ([`on_rollover`], a `rollover_steps::STEPS` row):
-//!   a slice ([`ROLLOVER_SLICE`]) of the parked agents, then the sweep
-//!   finishes the rest, each settled up to the rollover's time so the
-//!   day's `[econ]` line holds its day.
+//!   a slice ([`ROLLOVER_SLICE`]) of the parked agents, gatherers first
+//!   (they cut the day's rocks before the asteroid reset), settles before
+//!   the day's fold. The sweep then settles the rest up to the rollover's
+//!   time: their span and work cap stop at the rollover, but their flows
+//!   land in the **next** rollover's `[econ]` line, because the ledger folds
+//!   by journal cursor (`econ_ledger.rs` `since`, `step`) and the settle
+//!   paths date rows with the wall clock. A `[econ] late` line counts them.
+//!   Gatherers past the slice still cut the new day's rocks.
 //!
 //! ## The clock
 //!
@@ -125,9 +130,10 @@ pub const SWEEP_SLICE: usize = 2;
 
 /// At most this many agents settle in one rollover step **[A]**; the rest wait
 /// for the sweep ([`SWEEP_SLICE`] a tick), settled up to the rollover's own
-/// time so the closed day keeps their output. Falsified by a `[world]`
-/// rollover timing over 25 ms with this many parked ratters (lower it), or a
-/// day line that misses settled output (raise it).
+/// time (span and work cap); their flows are counted in the next day's
+/// `[econ]` line, not the closed day's. Falsified by a `[world]` rollover
+/// timing over 25 ms with this many parked ratters per rollover (lower it),
+/// or by a `[econ] late` count that is most of the parked agents (raise it).
 pub const ROLLOVER_SLICE: usize = 64;
 
 /// How many `[settle]` reports the world remembers for `/settle`.
@@ -460,15 +466,43 @@ pub struct Book {
     /// A sweep is under way: it began at `swept_at` and has due agents left.
     sweeping: bool,
     /// The time the running sweep settles up to: the rollover's, when one
-    /// started it (so the closed day keeps the output); 0 for a timed sweep,
-    /// which settles to the tick's time.
-    sweep_to: BlueTime,
+    /// started it (the span and cap stop there; the flows still land in the
+    /// next day's `[econ]` line, see the module header); `None` for a timed
+    /// sweep, which settles to the tick's time.
+    sweep_to: Option<BlueTime>,
+    /// What the running rollover sweep has settled after the day's fold.
+    late: Option<Late>,
+    /// The last finished late count.
+    last_late: Option<Late>,
     recent: Vec<Report>,
     settled: u64,
     isk: f64,
 }
 
+/// The agents a rollover's sweep settled after the day's fold: their flows
+/// are counted in the next day's `[econ]` line.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Late {
+    pub day: u32,
+    pub agents: u64,
+    pub isk: f64,
+}
+
+impl Late {
+    fn line(&self) -> String {
+        format!(
+            "[econ] late day={} agents={} isk={:.0}: settled up to the rollover, counted in the next day's line",
+            self.day, self.agents, self.isk
+        )
+    }
+}
+
 impl Book {
+    /// The last finished late count of a rollover sweep.
+    pub fn last_late(&self) -> Option<&Late> {
+        self.last_late.as_ref()
+    }
+
     /// The recent reports, oldest first.
     pub fn recent(&self) -> &[Report] {
         &self.recent
@@ -626,22 +660,40 @@ pub fn tick(reg: &mut Registry, _: Instant, ft: BlueTime) {
         }
         book.sweeping = true;
         book.swept_at = ft;
-        book.sweep_to = 0;
+        book.sweep_to = None;
     }
-    let to = match reg.ext::<Book>().sweep_to {
-        0 => ft,
-        t => t,
+    let to = reg.ext::<Book>().sweep_to.unwrap_or(ft);
+    let (n0, isk0) = {
+        let b = reg.ext::<Book>();
+        (b.settled, b.isk)
     };
-    if sweep(reg, to, SWEEP_SLICE) == 0 {
-        let book = reg.ext_mut::<Book>();
+    let n = sweep(reg, to, SWEEP_SLICE);
+    let book = reg.ext_mut::<Book>();
+    if let Some(late) = book.late.as_mut() {
+        late.agents += book.settled - n0;
+        late.isk += book.isk - isk0;
+    }
+    if n == 0 {
         book.sweeping = false;
-        book.sweep_to = 0;
+        book.sweep_to = None;
+        if let Some(late) = book.late.take() {
+            if late.agents > 0 {
+                crate::outln!("{}", late.line());
+            }
+            book.last_late = Some(late);
+        }
     }
 }
 
 /// Settle up to `max` due parked agents at `now`; answers how many settled.
 pub(crate) fn sweep(reg: &mut Registry, now: BlueTime, max: usize) -> usize {
-    let mut due: Vec<(BlueTime, i64)> = Vec::new();
+    sweep_ordered(reg, now, max, false)
+}
+
+/// [`sweep`], with `gatherers_first` the gatherers go before the rest (each
+/// group longest-unsettled first).
+fn sweep_ordered(reg: &mut Registry, now: BlueTime, max: usize, gatherers_first: bool) -> usize {
+    let mut due: Vec<(bool, BlueTime, i64)> = Vec::new();
     for (ch, a) in parked(reg) {
         // A row for a character that is online (a crash left it) or gone
         // is no agent.
@@ -649,11 +701,12 @@ pub(crate) fn sweep(reg: &mut Registry, now: BlueTime, max: usize) -> usize {
             forget(reg, ch);
             continue;
         }
-        due.push((a.settled_to, ch));
+        let first = gatherers_first && matches!(a.career.family(), Family::Gather(_));
+        due.push((!first, a.settled_to, ch));
     }
     due.sort_unstable();
     let mut n = 0;
-    for (_, ch) in due.into_iter().take(max) {
+    for (_, _, ch) in due.into_iter().take(max) {
         if settle(reg, ch, now).is_some() {
             n += 1;
         }
@@ -662,18 +715,42 @@ pub(crate) fn sweep(reg: &mut Registry, now: BlueTime, max: usize) -> usize {
 }
 
 /// **The rollover step** (`rollover_steps::STEPS`): settle at most
-/// [`ROLLOVER_SLICE`] parked agents at the rollover's time, then mark the
-/// book as sweeping up to that time so [`tick`] settles the rest
-/// ([`SWEEP_SLICE`] a tick) against the day just closed. A rollover that
-/// arrives mid-sweep takes over the sweep: its time becomes the target and
-/// the longest-unsettled agents go first, so none is settled twice for the
-/// same span or skipped. Its count is the agents settled in the slice.
+/// [`ROLLOVER_SLICE`] parked agents at the rollover's time, gatherers first
+/// (before the asteroid reset), then mark the book as sweeping up to that
+/// time so [`tick`] settles the rest ([`SWEEP_SLICE`] a tick). The slice
+/// settles before the day's fold. The swept agents' span and work cap stop at
+/// the rollover, but their flows land in the next rollover's `[econ]` line
+/// (the ledger folds by transaction id past its cursor, `econ_ledger.rs`
+/// `since` and `step`); a `[econ] late` line counts them. The step is listed
+/// twice in `rollover_steps`; only the call that starts this rollover's
+/// sweep settles, the other answers 0. A rollover that arrives mid-sweep
+/// takes over the sweep: its time becomes the target and the
+/// longest-unsettled agents go first, so none is settled twice for the same
+/// span or skipped; an agent it had not yet reached settles one merged span
+/// of both days (capped as one span, [`rules::active_hours`]). Every
+/// settlement books its hours to the day the registry now holds, the new
+/// one (`rollover.rs` advances the day before the steps), so the closed day's
+/// last hours eat the new day's cap. Its count is the agents settled in the
+/// slice.
 pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
-    let n = sweep(reg, d.now, ROLLOVER_SLICE);
+    if reg.ext::<Book>().sweep_to == Some(d.now) {
+        return 0;
+    }
+    let n = sweep_ordered(reg, d.now, ROLLOVER_SLICE, true);
     let book = reg.ext_mut::<Book>();
+    if let Some(prev) = book.late.take() {
+        if prev.agents > 0 {
+            crate::outln!("{}", prev.line());
+        }
+        book.last_late = Some(prev);
+    }
+    book.late = Some(Late {
+        day: d.day,
+        ..Late::default()
+    });
     book.sweeping = true;
     book.swept_at = d.now;
-    book.sweep_to = d.now;
+    book.sweep_to = Some(d.now);
     n
 }
 
