@@ -2390,6 +2390,9 @@ fn revive(w: &mut Registry, character_id: i64, pod_id: i64) {
             to: vec![character_id],
         },
     );
+    // Inside an open clock the outer call's pushes so far leave first
+    // (`sov_hub::clock_flush`, #258).
+    crate::sov_hub::clock_flush(w);
     let before = w.take_pending_raw();
     let revival = crate::service::revive_in_clone(w, character_id);
     let ours = w.take_pending_raw();
@@ -2455,28 +2458,14 @@ fn apply_on_the_clock(
 }
 
 /// [`apply_on_the_clock`] to any audience; an empty one drops the plan's
-/// pushes -- for items nobody's client holds, an NPC wreck's.
+/// pushes -- for items nobody's client holds, an NPC wreck's. The shared
+/// helper, nest-safe (#258).
 fn apply_on_the_clock_to(
     w: &mut Registry,
     to: &[i64],
     edits: &[crate::item::Edit],
 ) -> Result<Vec<crate::item::Change>, crate::item::EditError> {
-    let before = w.take_pending_raw();
-    let applied = w.apply_items(edits);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    if applied.is_ok() && !to.is_empty() {
-        for (_, p) in ours {
-            w.schedule(
-                Duration::ZERO,
-                Addressed {
-                    to: Some(to.to_vec()),
-                    inner: p,
-                },
-            );
-        }
-    }
-    applied
+    crate::sov_hub::apply_items_on_the_clock_to(w, to, edits)
 }
 
 /// The store half of a ship's death, as **two** plans, because the second
@@ -3239,6 +3228,31 @@ mod par_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    /// #258: combat's addressed apply inside an open clock sends after the
+    /// outer call's earlier pushes, and its later ones follow (A2).
+    #[test]
+    fn combats_apply_inside_the_clock_follows_the_outer_calls_pushes() {
+        use crate::sov_hub::fixture::*;
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            super::apply_on_the_clock_to(
+                r,
+                &[ALICE],
+                &[crate::item::Edit::Consume {
+                    item_id: ALICE_FUEL,
+                    quantity: 1,
+                }],
+            )
+            .expect("applies");
+            r.push(Mark("c"));
+        });
+        let names = due_names(&mut reg);
+        assert!(names.len() >= 3, "the plan pushed: {names:?}");
+        assert_eq!(names.first(), Some(&"a"), "{names:?}");
+        assert_eq!(names.last(), Some(&"c"), "{names:?}");
+    }
+
     /// A ring change carries a real time: `None` made the shield's charged
     /// attribute `[value, None, ...]` and the HUD's `GetChargeValue` raised on
     /// every poll (FCI-FIX2, fci_doc_0).

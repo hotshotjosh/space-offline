@@ -1142,8 +1142,8 @@ fn clock_all(reg: &mut Registry, pushes: Vec<(std::time::Duration, Box<dyn crate
 }
 
 /// **Inside an open [`on_the_clock`], send what its `f` has pushed so far by
-/// the clock now.** Every set-aside outside `combat.rs` that schedules its
-/// own pushes directly calls this first (combat's own two follow later), so its pushes, and whatever its caller schedules after
+/// the clock now.** Every set-aside that schedules its
+/// own pushes directly calls this first, so its pushes, and whatever its caller schedules after
 /// them, follow the outer call's earlier pushes instead of jumping ahead.
 /// What is pending inside an open call is that call's `f`'s alone: the
 /// outermost call set the turn's pending aside. That holds while no other
@@ -1202,9 +1202,9 @@ pub(crate) fn apply_items_on_the_clock_to(
 /// panic.
 ///
 /// The plain `on_clock` wrappers in `mining`, `salvage`, `hacking` and `mtu`
-/// are this function. The addressed set-asides outside `combat.rs` call
-/// [`clock_flush`] first; `combat::apply_on_the_clock_to` and `combat::revive`
-/// keep their own unguarded copies for now.
+/// are this function. The addressed set-asides call [`clock_flush`] first:
+/// `combat::apply_on_the_clock_to` is [`apply_items_on_the_clock_to`], and
+/// `combat::revive` flushes before its own set-aside.
 pub(crate) fn on_the_clock<T>(reg: &mut Registry, f: impl FnOnce(&mut Registry) -> T) -> T {
     if clock_open() {
         return f(reg);
