@@ -330,7 +330,9 @@ impl World {
                     .motion
                     .tethered_advance_led(&hull, id, at, range, lead, dt, now);
             } else {
+                // A follow of it is then at rest (`Motion::settle_follow`).
                 motion.tethered_in_plane(at, range, id, now as u32);
+                motion.settle_follow([0.0; 3]);
             }
         }
         if let Some(b) = self.balls.get_mut(&id) {
@@ -360,6 +362,10 @@ impl World {
     /// The first member of a ring (A follows B follows A) reads its leader
     /// before the leader is placed, and gets 0 as the server does
     /// (`start == placed`).
+    ///
+    /// A carried leader's mean spans this follower's whole read gap, which
+    /// can be many seconds, where the server's spans only its last tick; for
+    /// a leader that turns or accelerates across the gap the two differ.
     fn lead(
         &self,
         target: i64,
@@ -371,9 +377,9 @@ impl World {
             return [0.0; 3];
         };
         let scaled = |v: [f64; 3], k: f64| [v[0] * k, v[1] * k, v[2] * k];
-        let carried = || scaled(t.motion.velocity, dt);
+        let at_its_velocity = || scaled(t.motion.velocity, dt);
         let Some(&(p0, s0)) = before.get(&target) else {
-            return carried();
+            return at_its_velocity();
         };
         let span = t.since - s0;
         if span > 0.0 {
@@ -382,7 +388,7 @@ impl World {
         } else if t.since < now {
             [0.0; 3]
         } else {
-            carried()
+            at_its_velocity()
         }
     }
 
@@ -1150,6 +1156,23 @@ mod tests {
         assert!((gap(&w, OTHER) - tether).abs() < 1e-6);
         let v = w.ego_ball().expect("ego").motion.velocity;
         assert_eq!(space_state::distance(v, [0.0; 3]), 0.0, "{v:?}");
+    }
+
+    #[test]
+    fn a_follow_of_a_fixed_object_is_at_rest_at_its_tether() {
+        // The server's `Pull::Fixed` snap leaves a follow of a rock at rest
+        // (`Motion::settle_follow`); arriving sideways, it used to keep
+        // flying along that heading.
+        let mut w = state(1_000.0);
+        w.balls.get_mut(&SHIP).expect("ego").motion.velocity = [0.0, 100.0, 0.0];
+        follow(&mut w, ROCK, 1_000.0);
+        let want = 500.0 + w.ego_ball().expect("ego").radius + 2_000.0;
+        for at in [1_000.25, 1_000.5, 1_001.0, 1_002.5] {
+            w.advance_to(at);
+            assert!((gap(&w, ROCK) - want).abs() < 1e-6, "at {at}");
+            let v = w.ego_ball().expect("ego").motion.velocity;
+            assert_eq!(space_state::distance(v, [0.0; 3]), 0.0, "at {at}: {v:?}");
+        }
     }
 
     #[test]
