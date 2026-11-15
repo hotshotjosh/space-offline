@@ -1479,26 +1479,49 @@ def eoci_main(EOCI_NAME):
         def fleet_panel_state():
             try:
                 from eve.client.script.ui.shared.fleet.fleetwindow import FleetWindow
+                ok, w = safe(lambda: FleetWindow.GetIfOpen())
             except Exception:
-                return 'no-import'
-            ok, w = safe(lambda: FleetWindow.GetIfOpen())
+                # The path is [V] and fleetSvc imports it itself, so a failed
+                # import is news; try the lookup GetIfOpen does
+                # [V carbonui/control/window.py:3050] before reporting it.
+                ok, w = safe(lambda: __import__('carbonui.uicore', fromlist=['uicore'])
+                             .uicore.registry.GetWindow('fleetwindow'))
+                if not ok:
+                    return 'no-import'
             if not ok or w is None:
                 return 'no-window'
             panel = getattr_safe(w, 'myFleetPanel')
             if panel is None:
                 return 'no-panel'
-            return 'ready' if me in (getattr_safe(panel, 'members') or {}) else 'loading'
+            members = getattr_safe(panel, 'members')
+            if members is None:
+                # PostStartup never ran (another tab is showing), so the panel
+                # has not registered for notifications either [V fleet.py:116, 121].
+                return 'not-started'
+            return 'ready' if me in members else 'loading'
 
-        ready, waited = wait_for(lambda: fleet_panel_state() in ('ready', 'no-window', 'no-import'),
-                                 timeout_ms=15000, step_ms=250)
-        state = fleet_panel_state()
-        precondition('the fleet window has loaded the pilot (or is closed)', bool(ready),
-                     '%s after %s ms' % (state, text(waited)))
-        if not ready:
+        def wait_fleet_panel(what):
+            ready, waited = wait_for(
+                lambda: fleet_panel_state() in ('ready', 'no-window', 'no-import'),
+                timeout_ms=15000, step_ms=250)
+            state = fleet_panel_state()
+            if state == 'no-import':
+                precondition('the fleet window class imports from '
+                             'eve.client.script.ui.shared.fleet.fleetwindow (%s)' % what,
+                             False, 'import and registry lookup both failed')
+                return False
+            precondition('the fleet window has loaded the pilot (or is closed) (%s)' % what,
+                         bool(ready), '%s after %s ms' % (state, text(waited)))
+            if not ready:
+                return False
+            if state != 'ready':
+                # No loaded panel to race: still give any panel opened just now
+                # its first load.
+                sleep_ms(2000)
+            return True
+
+        if not wait_fleet_panel('before the wing'):
             return
-        if state != 'ready':
-            # No panel to race: still give any panel opened just now its first load.
-            sleep_ms(2000)
         # Move the boss into a second wing and squad.  The remote object is
         # called, not the service: `fleetSvc.CreateWing` makes a squad by itself
         # and returns None [V fleetSvc.py:561-565], and `fleetSvc.MoveMember` runs
@@ -1532,6 +1555,9 @@ def eoci_main(EOCI_NAME):
                      'new %s/%s, default %s, existing wings %s' % (
                          text(wing_id), text(squad_id), text(seat0), old_wings_detail))
         if not fresh:
+            return
+        # The wing and squad steps can rebuild the panel; check again.
+        if not wait_fleet_panel('before MoveMember'):
             return
         ok, v = safe(lambda: handler0.MoveMember(me, wing_id, squad_id, role_member))
         check('MoveMember answered True', ok and v is True,
