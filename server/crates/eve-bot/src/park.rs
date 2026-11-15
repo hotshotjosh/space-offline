@@ -305,7 +305,7 @@ impl World {
         // The server's `Run::follows_a_mover`, the same test `follow_order`
         // reads, so the order and the step cannot disagree.
         let leader = self.follows_a_ship(id);
-        let lead = leader.map_or(0.0, |target| self.lead(target, now, dt, before));
+        let lead = leader.map_or([0.0; 3], |target| self.lead(target, now, dt, before));
         let tether = ball
             .motion
             .tether()
@@ -339,40 +339,50 @@ impl World {
         }
     }
 
-    /// The leader's move over a follower's own `dt` s to `now`: a follower
-    /// that cannot fly that far does not snap to it. The server's two rules
+    /// The leader's displacement over a follower's own `dt` s to `now`: a
+    /// follower that cannot fly that far does not snap to it, and one that
+    /// snaps moves as its leader does (velocity `lead / dt`,
+    /// `Motion::tethered_advance_led`). The server's two rules
     /// (space_state.rs, `Run::stepped` and the in-tick view):
     ///
     /// - The leader was carried in this pass, from `(p0, s0)` to its
     ///   position at `now`: its displacement scaled from that span to `dt`.
     ///   When the two share a `since` (the usual state after an
     ///   `advance_to`) the span is `dt` and this is the server's exact
-    ///   `distance(start, placed)`. When an order advanced only one of them
-    ///   in between, the spans differ and the scale keeps the lead a speed,
+    ///   `placed - start`. When an order advanced only one of them in
+    ///   between, the spans differ and the scale keeps the lead a velocity,
     ///   not a part of one.
     /// - The leader was not carried (`before` is empty, an order on the
     ///   follower; or the leader was already at `now`, an order on it): its
-    ///   speed now times `dt`, the server's rule for a mover commanded
+    ///   velocity now times `dt`, the server's rule for a mover commanded
     ///   within the tick.
     ///
     /// The first member of a ring (A follows B follows A) reads its leader
     /// before the leader is placed, and gets 0 as the server does
     /// (`start == placed`).
-    fn lead(&self, target: i64, now: f64, dt: f64, before: &BTreeMap<i64, ([f64; 3], f64)>) -> f64 {
+    fn lead(
+        &self,
+        target: i64,
+        now: f64,
+        dt: f64,
+        before: &BTreeMap<i64, ([f64; 3], f64)>,
+    ) -> [f64; 3] {
         let Some(t) = self.balls.get(&target) else {
-            return 0.0;
+            return [0.0; 3];
         };
-        let speed = || space_state::distance(t.motion.velocity, [0.0; 3]) * dt;
+        let scaled = |v: [f64; 3], k: f64| [v[0] * k, v[1] * k, v[2] * k];
+        let carried = || scaled(t.motion.velocity, dt);
         let Some(&(p0, s0)) = before.get(&target) else {
-            return speed();
+            return carried();
         };
         let span = t.since - s0;
         if span > 0.0 {
-            space_state::distance(p0, t.motion.position) * dt / span
+            let p = t.motion.position;
+            scaled([p[0] - p0[0], p[1] - p0[1], p[2] - p0[2]], dt / span)
         } else if t.since < now {
-            0.0
+            [0.0; 3]
         } else {
-            speed()
+            carried()
         }
     }
 
@@ -477,7 +487,7 @@ impl World {
                 // **Advance before applying**, as the server does: `after`
                 // turns a heading into a point relative to the position it
                 // finds, so a stale position compounds. Only this ball: an
-                // empty `before` gives a follower its leader's speed times
+                // empty `before` gives a follower its leader's velocity times
                 // its own `dt` as the lead (`World::lead`), the server's rule
                 // for a mover commanded within a tick, rather than a whole
                 // park pass per order.
@@ -1121,6 +1131,25 @@ mod tests {
         let tether = 500.0 + w.ego_ball().expect("ego").radius + 2_000.0;
         w.advance_to(1_001.0);
         assert!((gap(&w, OTHER) - tether).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_follower_held_at_range_from_a_ship_at_rest_is_at_rest() {
+        // Snapped to its tether every step, the follower moves as its leader
+        // does: the leader is at rest, so the follower is too, not flying at
+        // cruise along its last heading (eve-server `tethered_advance_led`).
+        // It arrives moving, so a kept heading would show.
+        let mut w = state_with_ship(1_000.0);
+        w.balls.get_mut(&OTHER).expect("ship").motion.position = [2_600.0, 0.0, 0.0];
+        w.balls.get_mut(&SHIP).expect("ego").motion.velocity = [100.0, 0.0, 0.0];
+        follow(&mut w, OTHER, 1_000.0);
+        let tether = 500.0 + w.ego_ball().expect("ego").radius + 2_000.0;
+        for s in 1..=5 {
+            w.advance_to(1_000.0 + f64::from(s));
+        }
+        assert!((gap(&w, OTHER) - tether).abs() < 1e-6);
+        let v = w.ego_ball().expect("ego").motion.velocity;
+        assert_eq!(space_state::distance(v, [0.0; 3]), 0.0, "{v:?}");
     }
 
     #[test]

@@ -643,15 +643,29 @@ impl Motion {
         dt: f64,
         end: f64,
     ) -> Motion {
-        self.tethered_advance_led(h, ball_id, target, range, 0.0, dt, end)
+        self.tethered_advance_led(h, ball_id, target, range, [0.0; 3], dt, end)
     }
 
-    /// `self` carried `dt` s to `end` on a tether whose target moved `lead`
-    /// metres in that time: the snap (bit-identical to `advanced_at` +
+    /// `self` carried `dt` s to `end` on a tether whose target moved by the
+    /// vector `lead` in that time: the snap (`advanced_at` +
     /// `tethered_in_plane`) only when the ship could have flown there -- it
     /// is within reach ([`Motion::tether_within_reach`]) and keeps up with
     /// its leader ([`Motion::keeps_up`]) -- else flown toward the target at
     /// cruise ([`Motion::tethered_step`]), as Carbon's follow/orbit would.
+    ///
+    /// **A follow snap also takes its leader's velocity** (`lead / dt`, the
+    /// leader's mean velocity over the step): a ship held at a fixed range
+    /// from its leader moves as the leader does [I]. Before this the snap
+    /// kept `advanced_at`'s velocity, and a follow's commanded velocity is
+    /// the ship's own heading at cruise ([`Motion::commanded_velocity`]), so a
+    /// follower held at range from a ship at rest carried full speed in
+    /// whatever direction it last had. Every observer was sent that speed,
+    /// and a state's [`Motion::at_boundary`] stepped the follower back along
+    /// it, off its range (the bot test
+    /// `a_following_ship_reads_at_its_follow_range_from_the_ship_it_follows`
+    /// read 1200.2 to 1201.7 m against 1200 m, by how far into its second the
+    /// state was built). An orbit keeps its tangent speed
+    /// ([`Motion::tethered_in_plane`]).
     #[allow(clippy::too_many_arguments)]
     pub fn tethered_advance_led(
         self,
@@ -659,13 +673,18 @@ impl Motion {
         ball_id: i64,
         target: [f64; 3],
         range: f64,
-        lead: f64,
+        lead: [f64; 3],
         dt: f64,
         end: f64,
     ) -> Motion {
-        if self.tether_within_reach(h, target, range, dt) && self.keeps_up(h, lead, dt) {
+        if self.tether_within_reach(h, target, range, dt)
+            && self.keeps_up(h, distance(lead, [0.0; 3]), dt)
+        {
             let mut m = self.advanced_at(h, dt, end);
             m.tethered_in_plane(target, range, ball_id, end as u32);
+            if matches!(m.mode, Mode::Follow { .. }) && dt.is_finite() && dt > 0.0 {
+                m.velocity = scale(lead, 1.0 / dt);
+            }
             m
         } else {
             self.tethered_step(h, ball_id, target, range, end.floor() as i64, dt)
@@ -945,6 +964,11 @@ impl Motion {
     }
 }
 
+/// `b - a`.
+fn sub(b: [f64; 3], a: [f64; 3]) -> [f64; 3] {
+    [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+}
+
 fn scale(v: [f64; 3], k: f64) -> [f64; 3] {
     [v[0] * k, v[1] * k, v[2] * k]
 }
@@ -1128,7 +1152,7 @@ impl Run {
                 m
             }
             Pull::Mover { index, range } if self.follows_a_mover() => {
-                let lead = distance(start[index], placed[index]);
+                let lead = sub(placed[index], start[index]);
                 self.state.tethered_advance_led(
                     &self.hull,
                     self.ship_id,
@@ -1970,9 +1994,9 @@ impl Roster {
                         // commanded within the tick has its grid state at the
                         // *next* tick, so its speed now times `part` instead.
                         let lead = if runs[index].tick == r.tick {
-                            distance(start[index], positions[index])
+                            sub(positions[index], start[index])
                         } else {
-                            views[index].map_or(0.0, |v| distance(v.velocity, [0.0; 3]) * part)
+                            views[index].map_or([0.0; 3], |v| scale(v.velocity, part))
                         };
                         r.state.tethered_advance_led(
                             &r.hull,
@@ -2001,8 +2025,7 @@ impl Roster {
                         // (its view is placed first, `follow_order`): its
                         // speed now times `dt`, since its view may span a
                         // different interval.
-                        let lead =
-                            views[index].map_or(0.0, |v| distance(v.velocity, [0.0; 3]) * dt);
+                        let lead = views[index].map_or([0.0; 3], |v| scale(v.velocity, dt));
                         p.motion.tethered_advance_led(
                             &r.hull,
                             r.ship_id,
@@ -3993,6 +4016,86 @@ mod tests {
         assert!(
             !m.keeps_up(&SLOW_HULL, 1.0, 1.0),
             "a stopped ship keeps up with nothing"
+        );
+    }
+
+    /// **A follower held at its range from a ship at rest is at rest**
+    /// (follow-flake): the snap used to keep the follow's commanded velocity,
+    /// its own heading at cruise, so it was sent at full speed sideways and a
+    /// state's [`Motion::at_boundary`] stepped it back along that speed, off
+    /// its range. The same fault, at the bot test's timings, read 1200.2 to
+    /// 1201.7 m against 1200 m.
+    #[test]
+    fn a_follower_held_at_range_from_a_ship_at_rest_is_at_rest() {
+        let t0 = 1_792_800_000.0;
+        let mut roster = led_pair(
+            t0,
+            [CENTRE, 0.0, 0.0],
+            [0.0; 3],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            None,
+        );
+        // A drifts across the line to B, as a ship leaving a station mouth
+        // does, before it is told to follow; the throttle is open.
+        roster.get_mut(1).expect("A").motion.velocity = [0.0, 50.0, 0.0];
+        // Reads that fall inside a second, and one more that crosses a tick.
+        for at in [0.25, 0.5, 0.75, 1.25, 2.5, 5.5] {
+            let m = led_movers(&roster, [PAIR_HULL, PAIR_HULL], CENTRE, None);
+            roster.advance(&m, t0 + at);
+        }
+        let a = roster.get(1).expect("A");
+        let [_, b] = pair_positions(&roster);
+        assert!(
+            a.motion.speed() < 1e-9,
+            "A sits at its range from a ship at rest, yet is sent at {} m/s",
+            a.motion.speed()
+        );
+        let drawn = a.motion.at_boundary(a.since, a.since.floor());
+        assert!(
+            (distance(drawn.position, b) - CENTRE).abs() < 1e-6,
+            "a state draws A {} m from its range",
+            distance(drawn.position, b) - CENTRE
+        );
+    }
+
+    /// **A follower keeping up moves as its leader does**: a snap gives it
+    /// the leader's velocity over the step, not its own heading at cruise.
+    #[test]
+    fn a_follower_keeping_up_moves_as_its_leader_does() {
+        let t0 = 1_792_800_000.0;
+        let mut roster = led_pair(
+            t0,
+            [-CENTRE, 0.0, 0.0],
+            [0.0; 3],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            Some(Action::GotoPoint {
+                ball: SHIP_B,
+                point: [1.0e9, 0.0, 0.0],
+            }),
+        );
+        roster.get_mut(1).expect("A").motion.velocity = [0.0, 50.0, 0.0];
+        for k in 1..=30 {
+            let m = led_movers(&roster, [PAIR_HULL, SLOW_HULL], CENTRE, None);
+            roster.advance(&m, t0 + f64::from(k));
+        }
+        let a = roster.get(1).expect("A").motion;
+        let b = roster.get(2).expect("B").motion;
+        let [pa, pb] = pair_positions(&roster);
+        assert!((distance(pa, pb) - CENTRE).abs() < 1e-6, "A held at range");
+        let gap = distance(a.velocity, b.velocity);
+        assert!(
+            gap < 0.05 * b.speed(),
+            "A at {:?} m/s against B's {:?}",
+            a.velocity,
+            b.velocity
         );
     }
 }
