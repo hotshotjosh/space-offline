@@ -619,15 +619,14 @@ fn whoami(
 // the map, and it is what makes the skill system testable at all
 // without ISK, a price table or a market window.
 //
-// Both push `OnSkillForcedRefresh` for the same reason
-// `purchase_skills` does: the client's skill caches are only
-// reset by that event, so a grant the client never re-reads is a
-// grant nobody can see. They also schedule an `OnServerSkillsChanged`
-// (after the reset), which makes the client scatter `OnSkillsChanged`
-// so the certificate cache clears. A giveskill carries its entry; a
-// removal or a reset carries an empty dict, never
-// `OnServerSkillsRemoved`, whose `del myskills[id]` raises KeyError
-// after the reset.
+// A removal and a reset push `OnSkillForcedRefresh`, as
+// `purchase_skills` does: the client's skill caches are reset by
+// that event. A grant does not: it schedules an `OnServerSkillsChanged`
+// that carries its entry, which writes the caches itself and makes
+// the client scatter `OnSkillsChanged` so the certificate cache
+// clears. A removal or a reset schedules the same event with an empty
+// dict (after the reset), never `OnServerSkillsRemoved`, whose
+// `del myskills[id]` raises KeyError after the reset.
 fn skill_command(
     reg: &mut Registry,
     cmd: &str,
@@ -684,10 +683,18 @@ fn skill_command(
         format!("{skill_name} is now level {} ({} SP)", e.level, e.points)
     };
     reg.mark_dirty();
-    reg.push(crate::skill::ForcedRefresh);
     if cmd == "removeskill" {
+        // A removal cannot carry its entry (the client's `del` branch raises
+        // KeyError after a refetch), so it resets the caches and sends an
+        // empty dict.
+        reg.push(crate::skill::ForcedRefresh);
         crate::skill_queue::tell_skills_changed(reg, actor, &[]);
     } else {
+        // A grant carries its entry and nothing else: OnServerSkillsChanged
+        // writes both caches itself. A forced refresh beside it races the
+        // client: its pooled Reset() can land while the handler waits on
+        // GetAllSkills, and the handler then assigns into None
+        // (skillsvc.py:174-197, 896-899) [V].
         crate::skill_queue::tell_skills_changed(reg, actor, &[type_id]);
     }
     Ok(bstr(&format!("{line}.")))
@@ -995,6 +1002,13 @@ mod tests {
             .collect()
     }
 
+    fn forced_refreshes(reg: &mut Registry) -> usize {
+        reg.take_pending_raw()
+            .iter()
+            .filter(|(_, p)| p.to_push().0 == "OnSkillForcedRefresh")
+            .count()
+    }
+
     fn dict_len(v: &PyValue) -> usize {
         match v {
             PyValue::Dict(d) => d.len(),
@@ -1003,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn a_giveskill_also_schedules_the_changed_skill_entry() {
+    fn a_giveskill_schedules_its_entry_and_no_forced_refresh() {
         let (mut reg, ch, type_id) = skill_world();
         reg.take_pending_raw();
         giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "2"]).unwrap();
@@ -1012,7 +1026,7 @@ mod tests {
             .iter()
             .map(|(_, p)| p.to_push().0)
             .collect();
-        assert_eq!(now, ["OnSkillForcedRefresh"]);
+        assert!(now.is_empty(), "a grant pushes no forced refresh: {now:?}");
         let due = due_pushes(&mut reg);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].0, "OnServerSkillsChanged");
@@ -1020,16 +1034,40 @@ mod tests {
     }
 
     #[test]
+    fn two_quick_giveskills_send_two_entries_and_no_reset() {
+        let (mut reg, ch, type_id) = skill_world();
+        reg.take_pending_raw();
+        for level in ["1", "2"] {
+            giveskill(&mut reg, Some(ch), &[&type_id.to_string(), level]).unwrap();
+        }
+        let now: Vec<&str> = reg
+            .take_pending_raw()
+            .iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert!(now.is_empty(), "a grant pushes no forced refresh: {now:?}");
+        let due = due_pushes(&mut reg);
+        assert_eq!(due.len(), 2, "{due:?}");
+        for d in &due {
+            assert_eq!(d.0, "OnServerSkillsChanged");
+            assert_eq!(dict_len(&d.1[0]), 1, "{d:?}");
+        }
+    }
+
+    #[test]
     fn a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed() {
         let (mut reg, ch, type_id) = skill_world();
         giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "2"]).unwrap();
         due_pushes(&mut reg);
+        reg.take_pending_raw();
         removeskill(&mut reg, Some(ch), &[&type_id.to_string()]).unwrap();
+        assert_eq!(forced_refreshes(&mut reg), 1);
         let due = due_pushes(&mut reg);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].0, "OnServerSkillsChanged");
         assert_eq!(dict_len(&due[0].1[0]), 0, "{:?}", due[0]);
         givestarterskills(&mut reg, Some(ch), &[]).unwrap();
+        assert_eq!(forced_refreshes(&mut reg), 1);
         let due = due_pushes(&mut reg);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].0, "OnServerSkillsChanged");

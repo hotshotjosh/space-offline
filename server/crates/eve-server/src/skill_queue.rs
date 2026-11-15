@@ -461,9 +461,10 @@ fn skills_changed_push(
 /// training clock (a GM grant or reset). `type_ids` names the entries to
 /// carry; an empty list is allowed and sends an empty dict.
 ///
-/// Scheduled, not pushed: it must reach the client after the pooled
-/// `OnSkillForcedRefresh` reset: the reset makes skillsvc refetch, so the
-/// certificate cache that `OnSkillsChanged` clears re-reads fresh skills.
+/// Scheduled, not pushed: for a removal or a reset it must reach the client
+/// after the pooled `OnSkillForcedRefresh` reset: the reset makes skillsvc
+/// refetch, so the certificate cache that `OnSkillsChanged` clears re-reads
+/// fresh skills. A grant sends no reset; its entry is all it carries.
 pub(crate) fn tell_skills_changed(reg: &mut Registry, character_id: i64, type_ids: &[i64]) {
     let push =
         skills_changed_push(reg, character_id, type_ids).unwrap_or(crate::skill::SkillsChanged {

@@ -1974,11 +1974,12 @@ fn every_refusal_uses_a_generic_key_that_the_client_can_render() {
 /// a market.**
 ///
 /// Each one has to do two things, and the second is the one that is easy
-/// to leave out: change the map, and tell the client to re-read it. The
-/// client's skill caches are reset only by `OnSkillForcedRefresh`, so a
-/// grant without the push is a grant nobody can see.
+/// to leave out: change the map, and tell the client. A grant tells it with
+/// a scheduled `OnServerSkillsChanged` that carries the entry, and no
+/// `OnSkillForcedRefresh`: that handler writes the caches itself, and a
+/// reset beside it races the client.
 #[test]
-fn the_gm_skill_commands_change_the_map_and_push_the_refresh() {
+fn the_gm_skill_commands_change_the_map_and_tell_the_client() {
     let mut r = registry();
     let count = |r: &Registry| {
         let PyValue::Dict(entries) = r.skill_dict(actor(r)) else {
@@ -1998,16 +1999,20 @@ fn the_gm_skill_commands_change_the_map_and_push_the_refresh() {
     assert!(line.contains("Small Projectile Turret"), "{line}");
     assert!(line.contains('4'), "the level is worth echoing: {line}");
     assert_eq!(count(&r), starter + 1);
-    // The **event the client will see**, not the type we queued: an
-    // assertion on the variant would pass just as well if `to_push`
-    // named the wrong method, which is the half that reaches the client.
+    // The **event the client will see**, not the type we queued.
+    assert!(
+        r.take_pending().is_empty(),
+        "a grant pushes no forced refresh"
+    );
+    let due: Vec<_> = r
+        .take_due(Instant::now() + std::time::Duration::from_secs(1))
+        .iter()
+        .map(|p| p.to_push().0)
+        .collect();
     assert_eq!(
-        r.take_pending()
-            .iter()
-            .map(|(_, n)| n.to_push())
-            .collect::<Vec<_>>(),
-        vec![("OnSkillForcedRefresh", vec![])],
-        "a grant the client never re-reads is a grant nobody can see"
+        due,
+        ["OnServerSkillsChanged"],
+        "the grant is told by its entry"
     );
 
     // By name, case-insensitively, which is what a person types.

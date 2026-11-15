@@ -3130,7 +3130,7 @@ fn the_world_survives_the_server_being_dropped() {
         c.recv();
         c.recv();
         slash(&mut c, 82, "/giveskill 3302 4 ");
-        c.recv(); // OnSkillForcedRefresh
+        c.recv(); // the scheduled OnServerSkillsChanged (a grant sends no forced refresh)
         c.stream.shutdown(Shutdown::Both).expect("shutdown");
         handle.join().expect("join");
     }

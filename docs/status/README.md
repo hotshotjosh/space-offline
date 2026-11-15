@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (210 of 326) · **92% built** (301 of 326) · 3 parked, not counted.
+**64% proved** (209 of 326) · **92% built** (301 of 326) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -14,6 +14,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 ### 3.1 Prove what landed
 
+- [ ] A GM giveskill, removeskill and givestarterskills make the client refresh its certificates: *built-unproved*, giveskill schedules OnServerSkillsChanged with its entry and no forced refresh (the pair raced the client's pooled Reset, fci_upwell_shoot 11-15); removeskill and givestarterskills keep the forced refresh with an empty dict; tests a_giveskill_schedules_its_entry_and_no_forced_refresh, two_quick_giveskills_send_two_entries_and_no_reset, a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed, the_gm_skill_commands_change_the_map_and_tell_the_client; reruns of fci_char_certs and fci_upwell_shoot pending
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
 - [ ] Bots use filaments: *built-unproved*, commit 7bbc445; unit tests; socket test tests/bots/hunt.rs a_hunter_with_a_filament_jumps_hunts_the_new_space_and_flies_home (stock, jump through randomJumpMgr, scan, roam home); escort.rs no longer unloads a stocked filament as loot (it kept the hunter docked)
 - [ ] Filament drops: abyssal and random-jump filaments from NPC kills and hacked sites: *built-unproved*, filament_drops.rs, content/pve/filament-drops.tsv; wired by #121: combat::npc_wreck rolls once per kill (class name) and hacking_loot::on_won once per can (relic/data) via combat::roll_filament, candidates in a world slot; unit tests in combat and hacking_loot; Triglavian filaments too: trig_in/trig_out, band p, roll_where (#228); no client run yet
@@ -174,7 +175,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 30 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
-| Market and wallet | 19 | 11 | 0 | 0 | 0 |
+| Market and wallet | 18 | 12 | 0 | 0 | 0 |
 | Bots | 11 | 32 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
@@ -335,7 +336,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 19 of 30 proved, 11 open</summary>
+<details><summary><b>Market and wallet</b>: 18 of 30 proved, 12 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
 - [ ] The wallet journal's Type column names every entry type, from the content bundle's table: *built-unproved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types, not yet run
@@ -362,7 +363,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] An authored system cost index sets industry job cost (TQ-like, not 100 % of EIV): *client-proved*, content/econ/cost-index.tsv ([A] 0.04 default for manufacturing, reactions, research, copying, invention) read by industry::CostIndex; plan_install multiplies the cost line (SCC and tax on the base, as the client); the facility row globalModifiers and map.GetIndustryCostModifier carry it so the client preview agrees (#157); tests an_install_charges_the_system_cost_index, a_facility_row_carries_the_system_cost_index; offline settlement uses the same plan_install; fci_industry_job, fci_reactions and fci_invention green on regress-w31a (the client's quote equals the charge)
 - [ ] A multi-stack sell is all or nothing on the wallet: a short fee refuses the batch with nothing placed: *built-unproved*, service/market.rs plan_sell/ensure_sell_wallet/apply_sell (single sells and settle_sell/settle_list through sell_one); tests a_multisell_short_on_its_second_fee_places_nothing, a_corp_multisell_short_on_its_second_fee_places_nothing, earlier_proceeds_pay_a_later_fee_and_a_lines_own_do_not, two_lines_of_one_type_share_a_bid_as_if_sold_one_by_one
 - [x] Certificates and ship masteries: *client-proved*, no server code: the client computes them from its own certificates.static and skillMgr2.GetSkills (certificateSvc.py); fci_char_certs; fci_char_certs green 11-07 (regress-1107s1)
-- [x] A GM giveskill, removeskill and givestarterskills make the client refresh its certificates: *client-proved*, skill_queue::tell_skills_changed schedules OnServerSkillsChanged after the forced refresh (giveskill with the entry, the others an empty dict); tests a_giveskill_also_schedules_the_changed_skill_entry, a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed; fci_char_certs (no hand-called handler, each grant settled) 14/14 on 2026-11-15
+- [ ] A GM giveskill, removeskill and givestarterskills make the client refresh its certificates: *built-unproved*, giveskill schedules OnServerSkillsChanged with its entry and no forced refresh (the pair raced the client's pooled Reset, fci_upwell_shoot 11-15); removeskill and givestarterskills keep the forced refresh with an empty dict; tests a_giveskill_schedules_its_entry_and_no_forced_refresh, two_quick_giveskills_send_two_entries_and_no_reset, a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed, the_gm_skill_commands_change_the_map_and_tell_the_client; reruns of fci_char_certs and fci_upwell_shoot pending
 - [ ] Paragon store (Evermarks) sells ship emblem licences: *built-unproved*, tools/content_lp.py heraldry class; content/agents/emblem-prices.tsv (prices by hull group [A]); test_content_lp.py; the bundle sells every licence; client proof comes with EM-3's scenario
 - [ ] Ship emblem licences owned and shown on the hull: *built-unproved*, server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem ran 27/28 on 11-13, GetEnabledCosmetics the one fail (slot and type swapped), now fixed; rerun pending
 - [ ] Another pilot sees your emblem: *built-unproved*, emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it; fci_emblem ran 27/28 on 11-13, the one fail now fixed, rerun pending
