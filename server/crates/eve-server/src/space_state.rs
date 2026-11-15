@@ -552,8 +552,10 @@ impl Motion {
     /// 13 km of station this used to bury a ship in are written down.
     ///
     /// **For a follow this is the whole law, and for an orbit it is not.**
-    /// It is applied only *while within reach* ([`Motion::tether_within_reach`]):
-    /// out of reach the ship is flown toward its target, not snapped.
+    /// It is applied only when the ship could have flown there
+    /// ([`Motion::tethered_advance_led`]: within reach and keeping up with a
+    /// moving target); otherwise the ship is flown toward its target, not
+    /// snapped.
     /// `EvolveFollow` aims at the point on the line joining the two balls, on
     /// the side the follower is already on (`docs/port-tracker.md` §54.1)
     /// `[V]`, which is what this does. An orbit also has a *plane*, and the
@@ -585,7 +587,21 @@ impl Motion {
         ];
     }
 
-    /// Whether this ship can be at `range` from `target` within `dt` s.
+    /// How far this ship can fly in `dt` s at its cruise speed
+    /// (`max_velocity * speed_fraction`); 0 for a ship that cannot move.
+    fn cruise_reach(&self, h: &crate::destiny::hull::Hull, dt: f64) -> f64 {
+        let cruise = f64::from(h.max_velocity) * f64::from(self.speed_fraction);
+        if cruise.is_finite() && cruise > 0.0 && dt > 0.0 {
+            cruise * dt
+        } else {
+            0.0
+        }
+    }
+
+    /// Whether putting this ship at `range` from `target` moves it no further
+    /// than it can fly in `dt` s plus [`TETHER_SLACK`]. The snap's own
+    /// displacement is measured, so a ship too far *inside* its range is
+    /// flown out the same as one too far outside is flown in.
     pub fn tether_within_reach(
         &self,
         h: &crate::destiny::hull::Hull,
@@ -593,19 +609,20 @@ impl Motion {
         range: f64,
         dt: f64,
     ) -> bool {
-        let cruise = f64::from(h.max_velocity) * f64::from(self.speed_fraction);
-        let reach = if cruise.is_finite() && cruise > 0.0 && dt > 0.0 {
-            cruise * dt
-        } else {
-            0.0
-        };
-        distance(self.position, target) <= range + reach + TETHER_SLACK
+        (distance(self.position, target) - range).abs() <= self.cruise_reach(h, dt) + TETHER_SLACK
     }
 
-    /// `self` carried `dt` s to `end` on a tether: the old snap when within
-    /// reach (bit-identical to `advanced_at` + `tethered_in_plane`), else flown
-    /// toward the target at cruise ([`Motion::tethered_step`]), as Carbon's
-    /// follow/orbit would.
+    /// Whether this ship can keep up with a leader that moved `lead` metres
+    /// in the same `dt` s: it can fly at least that far. A leader that moved
+    /// further cannot be kept at range by a snap without the follower flying
+    /// faster than its hull does (`fci_pochven_loot` kill 5: a 158 m/s ship
+    /// held 8.15 km behind a 250 m/s rat for a whole fight).
+    pub fn keeps_up(&self, h: &crate::destiny::hull::Hull, lead: f64, dt: f64) -> bool {
+        lead <= self.cruise_reach(h, dt) + 1e-6
+    }
+
+    /// [`Motion::tethered_advance_led`] for a target that did not move in the
+    /// step (`lead` 0), or whose move the caller cannot see.
     pub fn tethered_advance(
         self,
         h: &crate::destiny::hull::Hull,
@@ -615,7 +632,27 @@ impl Motion {
         dt: f64,
         end: f64,
     ) -> Motion {
-        if self.tether_within_reach(h, target, range, dt) {
+        self.tethered_advance_led(h, ball_id, target, range, 0.0, dt, end)
+    }
+
+    /// `self` carried `dt` s to `end` on a tether whose target moved `lead`
+    /// metres in that time: the snap (bit-identical to `advanced_at` +
+    /// `tethered_in_plane`) only when the ship could have flown there -- it
+    /// is within reach ([`Motion::tether_within_reach`]) and keeps up with
+    /// its leader ([`Motion::keeps_up`]) -- else flown toward the target at
+    /// cruise ([`Motion::tethered_step`]), as Carbon's follow/orbit would.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tethered_advance_led(
+        self,
+        h: &crate::destiny::hull::Hull,
+        ball_id: i64,
+        target: [f64; 3],
+        range: f64,
+        lead: f64,
+        dt: f64,
+        end: f64,
+    ) -> Motion {
+        if self.tether_within_reach(h, target, range, dt) && self.keeps_up(h, lead, dt) {
             let mut m = self.advanced_at(h, dt, end);
             m.tethered_in_plane(target, range, ball_id, end as u32);
             m
@@ -836,7 +873,8 @@ impl Motion {
     /// at speed (a 300 m/s, `tau` 3 s ship told 2,080 m settles near 2,350 m,
     /// `docs/lanes/fx9.md`), and around a ball that is itself moving the snap
     /// is what made a mutual pair sail off (FX6). A static target keeps the
-    /// snap; see [`Roster::advance`].
+    /// snap; a follow of a moving ship snaps only what it could have flown
+    /// ([`Motion::tethered_advance_led`]); see [`Roster::advance`].
     pub fn tethered_step(
         self,
         h: &crate::destiny::hull::Hull,
@@ -992,14 +1030,19 @@ pub const TICK_SECONDS: f64 = 1.0;
 /// any observer advances the system).
 pub const MAX_CATCHUP_TICKS: i64 = 3_600;
 
-/// **A tether snaps only what the ship could have flown** (live-fleetgrid): a
-/// follow or orbit is put at its range from its target only when the ship
-/// starts within `range + cruise * dt + TETHER_SLACK` of it; otherwise it is
-/// flown toward it ([`Motion::tethered_step`]). [A] 10 km: bounds the model's
-/// error to 10 km (it was unbounded -- a follower rode its leader's warp 16 AU),
-/// keeps every on-grid approach as before, and is ~400x under `grid::GRID_ENTER`.
-/// Falsified by a follower the client shows 5-10 km from where the server's
-/// range checks put it.
+/// **A tether snaps only what the ship could have flown** (live-fleetgrid,
+/// follow-lead): a follow of a moving ship is put at its range from its target
+/// only when that moves it no more than `cruise * dt + TETHER_SLACK` and the
+/// target moved no further than the follower can fly in the step
+/// ([`Motion::tethered_advance_led`]); otherwise it is flown toward it
+/// ([`Motion::tethered_step`]). So the slack is how far a single step may
+/// move a follower beyond what it can fly. [A] 2 km: the 10 km it was let a
+/// 158 m/s ship sit 8.15 km behind a 250 m/s rat and teleport there on the
+/// first tick (`fci_pochven_loot` kill 5, the client 40 km apart). Falsified by
+/// the bot test `a_following_ship_reads_at_its_follow_range_from_the_ship_it_follows`
+/// printing an `apart_before` over 2 km (then the snap is still a jump the
+/// client never shows), or a follower the client shows over 2 km from where
+/// the server puts it.
 ///
 /// **Only a follow of a moving ship is bounded.** A tether to a fixed ball (a
 /// rock, a wreck, a gate, a station) still snaps at any distance, as before:
@@ -1007,7 +1050,7 @@ pub const MAX_CATCHUP_TICKS: i64 = 3_600;
 /// 95-120 km off being instant, and a fixed target cannot drag a ship out of
 /// a park. Falsified by a ship that appears at a rock the client shows far
 /// away (then bound the fixed sites too, and fix the fixtures).
-pub const TETHER_SLACK: f64 = 10_000.0;
+pub const TETHER_SLACK: f64 = 2_000.0;
 
 /// One ship [`Roster::advance`] is to carry forward, with the facts only the
 /// registry has.
@@ -1051,8 +1094,8 @@ struct Run {
 
 impl Run {
     /// Whether this mover follows (not orbits) another mover. Such a ship
-    /// keeps the snap of [`Motion::tethered_to`] (while within reach, see
-    /// [`Motion::tethered_advance`]) and so is placed after the
+    /// keeps the snap of [`Motion::tethered_to`] (when it could have flown
+    /// there, see [`Motion::tethered_advance_led`]) and so is placed after the
     /// mover it follows ([`follow_order`]).
     fn follows_a_mover(&self) -> bool {
         matches!(self.pull, Pull::Mover { .. }) && matches!(self.state.mode, Mode::Follow { .. })
@@ -1072,8 +1115,16 @@ impl Run {
                 m
             }
             Pull::Mover { index, range } if self.follows_a_mover() => {
-                self.state
-                    .tethered_advance(&self.hull, self.ship_id, placed[index], range, dt, end)
+                let lead = distance(start[index], placed[index]);
+                self.state.tethered_advance_led(
+                    &self.hull,
+                    self.ship_id,
+                    placed[index],
+                    range,
+                    lead,
+                    dt,
+                    end,
+                )
             }
             Pull::Mover { index, range } => {
                 self.state
@@ -1695,7 +1746,7 @@ impl Roster {
     ///   integrates in a second (`Ballpark.cpp:421-600`) **[V]** -- with a
     ///   ship *orbiting* a mover under [`Motion::tethered_step`], and a ship
     ///   *following* one snapped to its range from where that mover was just
-    ///   put *while within reach* ([`Motion::tethered_advance`]; the [`Motion::tethered_to`] law, `[A]` as before; Carbon's
+    ///   put *when it could have flown there* ([`Motion::tethered_advance_led`]: within reach and keeping up; otherwise flown by [`Motion::tethered_step`]; the [`Motion::tethered_to`] law, `[A]` as before; Carbon's
     ///   follow is a goto at that point, §54.1, which the snap is the settled
     ///   state of, and the bot harness pins the range). The state
     ///   at the last whole tick is kept ([`Ticked`]) and the next call starts
@@ -1848,6 +1899,11 @@ impl Roster {
                     Pull::Fixed { at, range } => {
                         m.tethered_in_plane(at, range, r.ship_id, floor as u32)
                     }
+                    // `lead` 0: the lump holds every target where it was,
+                    // so a follower is not held to a leader's flight it
+                    // cannot see. [A] as `MAX_CATCHUP_TICKS`: falsified by a
+                    // pair watched across more than that gap, which no one
+                    // can do (any observer advances the system).
                     Pull::Mover { index, range } => {
                         m = r.state.tethered_advance(
                             &r.hull,
@@ -1899,9 +1955,23 @@ impl Roster {
                         m.tethered_in_plane(at, range, r.ship_id, now as u32);
                         m
                     }
-                    Pull::Mover { index, range } if r.follows_a_mover() => p
-                        .motion
-                        .tethered_advance(&r.hull, r.ship_id, positions[index], range, dt, now),
+                    Pull::Mover { index, range } if r.follows_a_mover() => {
+                        // The leader's move over this record's own `dt`
+                        // (its view is placed first, `follow_order`): its
+                        // speed now times `dt`, since its view may span a
+                        // different interval.
+                        let lead =
+                            views[index].map_or(0.0, |v| distance(v.velocity, [0.0; 3]) * dt);
+                        p.motion.tethered_advance_led(
+                            &r.hull,
+                            r.ship_id,
+                            positions[index],
+                            range,
+                            lead,
+                            dt,
+                            now,
+                        )
+                    }
                     _ => p.motion.advanced_at(&r.hull, dt, now),
                 }
             };
@@ -3427,7 +3497,7 @@ mod tests {
         assert!(distance(a, b) > crate::grid::GRID_LEAVE);
     }
 
-    /// **A follow of a moving ship keeps its snap (while within reach) and loses the cadence**:
+    /// **A follow of a moving ship it can keep up with keeps its snap and loses the cadence**:
     /// it is placed after the ship it follows each tick, so it reads at its
     /// range from where that ship *is* (the bot harness's
     /// `a_following_ship_reads_at_its_follow_range_from_the_ship_it_follows`
@@ -3511,5 +3581,222 @@ mod tests {
         );
         let flying = Motion::arrived([0.0; 3], [0.0; 3]);
         assert!(!flying.warp_commanded() && !flying.warp_active_at(1.0e12));
+    }
+
+    // ---- follow-lead: a follower snaps only what it could have flown -----
+
+    /// Half [`PAIR_HULL`]'s speed, same `tau`. Invented.
+    const SLOW_HULL: crate::destiny::hull::Hull = crate::destiny::hull::Hull {
+        max_velocity: 150.0,
+        ..PAIR_HULL
+    };
+    /// Between the two, same `tau`. Invented.
+    const MID_HULL: crate::destiny::hull::Hull = crate::destiny::hull::Hull {
+        max_velocity: 250.0,
+        ..PAIR_HULL
+    };
+
+    /// A (character 1, `SHIP_A`) and B (character 2, `SHIP_B`) at rest at
+    /// `a` and `b`, each told `act_a` / `act_b`, at full speed.
+    fn led_pair(t0: f64, a: [f64; 3], b: [f64; 3], act_a: Action, act_b: Option<Action>) -> Roster {
+        let mut roster = Roster::default();
+        for (character_id, ship_id, at, act) in [(1, SHIP_A, a, Some(act_a)), (2, SHIP_B, b, act_b)]
+        {
+            let mut motion = Motion::arrived(at, [0.0; 3]);
+            if let Some(act) = act {
+                motion.after(act);
+            }
+            motion.speed_fraction = 1.0;
+            roster.arrive(Presence {
+                character_id,
+                ship_id,
+                solar_system_id: PAIR_SYSTEM,
+                motion,
+                since: t0,
+                ticked: None,
+            });
+        }
+        roster
+    }
+
+    /// The registry's movers for [`led_pair`]: A tethered to B at `range_a`,
+    /// B to A at `range_b` (`None`: B is free).
+    fn led_movers(
+        roster: &Roster,
+        hulls: [crate::destiny::hull::Hull; 2],
+        range_a: f64,
+        range_b: Option<f64>,
+    ) -> [Mover; 2] {
+        let at = |ship| roster.by_ship(ship).expect("in space").motion.position;
+        [
+            Mover {
+                character_id: 1,
+                hull: hulls[0],
+                tether: Some(Tether {
+                    ball_id: SHIP_B,
+                    range: range_a,
+                    at: at(SHIP_B),
+                }),
+            },
+            Mover {
+                character_id: 2,
+                hull: hulls[1],
+                tether: range_b.map(|range| Tether {
+                    ball_id: SHIP_A,
+                    range,
+                    at: at(SHIP_A),
+                }),
+            },
+        ]
+    }
+
+    /// **A slower follower falls behind a faster leader** (follow-lead): the
+    /// follow snap used to hold it at its range from a ship it cannot keep up
+    /// with, so a 158 m/s ship kept 8 km behind a 250 m/s rat for a fight.
+    #[test]
+    fn a_slower_follower_falls_behind_a_faster_leader() {
+        let t0 = 1_792_800_000.0;
+        let mut roster = led_pair(
+            t0,
+            [0.0; 3],
+            [CENTRE, 0.0, 0.0],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            Some(Action::GotoPoint {
+                ball: SHIP_B,
+                point: [1.0e9, 0.0, 0.0],
+            }),
+        );
+        for k in 1..=60 {
+            let m = led_movers(&roster, [SLOW_HULL, PAIR_HULL], CENTRE, None);
+            roster.advance(&m, t0 + f64::from(k));
+        }
+        let [a, b] = pair_positions(&roster);
+        assert!(
+            distance(a, b) - CENTRE > 5_000.0,
+            "A is {} m past its range",
+            distance(a, b) - CENTRE
+        );
+        // It still chases at its own speed.
+        assert!(
+            a[0] > 0.5 * f64::from(SLOW_HULL.max_velocity) * 60.0,
+            "A at {a:?}"
+        );
+    }
+
+    /// **A follower far outside its range flies in rather than jumping**:
+    /// 6 km out, which a 150 m/s ship needs 40 s to fly, a follower of a ship
+    /// at rest moves in one second at most what it can fly (it used to jump
+    /// the 6 km at once).
+    #[test]
+    fn a_follower_far_outside_its_range_flies_in_rather_than_jumping() {
+        let t0 = 1_792_800_000.0;
+        let off = CENTRE + 6_000.0;
+        let mut roster = led_pair(
+            t0,
+            [off, 0.0, 0.0],
+            [0.0; 3],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            None,
+        );
+        let m = led_movers(&roster, [SLOW_HULL, PAIR_HULL], CENTRE, None);
+        roster.advance(&m, t0 + 1.0);
+        let [a, _] = pair_positions(&roster);
+        let moved = distance(a, [off, 0.0, 0.0]);
+        assert!(
+            moved <= f64::from(SLOW_HULL.max_velocity) + 1e-6,
+            "A moved {moved} m in 1 s"
+        );
+        assert!(a[0] < off, "toward B: {a:?}");
+    }
+
+    /// **A rat orbiting inside its range gets out while a slower ship chases
+    /// it** (the `fci_pochven_loot` pair): the chaser's snap used to keep the
+    /// rat at the chaser's follow range, so the rat flew a straight line out
+    /// for ever instead of reaching its orbit.
+    #[test]
+    fn a_rat_orbiting_inside_its_range_gets_out_while_a_slower_ship_chases_it() {
+        let t0 = 1_792_800_000.0;
+        let (follow, orbit) = (2_000.0, 20_000.0);
+        let mut roster = led_pair(
+            t0,
+            [0.0; 3],
+            [3.0 * follow, 0.0, 0.0],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: follow,
+            },
+            Some(Action::Orbit {
+                ball: SHIP_B,
+                target: SHIP_A,
+                range: orbit,
+            }),
+        );
+        for k in 1..=600 {
+            let m = led_movers(&roster, [SLOW_HULL, MID_HULL], follow, Some(orbit));
+            roster.advance(&m, t0 + f64::from(k));
+        }
+        let [a, b] = pair_positions(&roster);
+        assert!(
+            distance(a, b) > 0.75 * orbit,
+            "{} m apart after 600 s",
+            distance(a, b)
+        );
+    }
+
+    /// **A follower that can keep up still snaps**: the same pair as
+    /// [`a_slower_follower_falls_behind_a_faster_leader`] with equal hulls
+    /// holds its range exactly at every step.
+    #[test]
+    fn a_follower_that_keeps_up_holds_its_range_every_step() {
+        let t0 = 1_792_800_000.0;
+        let mut roster = led_pair(
+            t0,
+            [0.0; 3],
+            [CENTRE, 0.0, 0.0],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            Some(Action::GotoPoint {
+                ball: SHIP_B,
+                point: [1.0e9, 0.0, 0.0],
+            }),
+        );
+        for k in 1..=60 {
+            let m = led_movers(&roster, [PAIR_HULL, PAIR_HULL], CENTRE, None);
+            roster.advance(&m, t0 + f64::from(k) * 0.5);
+            let [a, b] = pair_positions(&roster);
+            assert!(
+                (distance(a, b) - CENTRE).abs() < 1e-6,
+                "step {k}: {} m apart",
+                distance(a, b)
+            );
+        }
+    }
+
+    /// **Keeping up is flying at least as far as the leader did** in the step.
+    #[test]
+    fn keeping_up_is_flying_as_far_as_the_leader_moved() {
+        let mut m = Motion::arrived([0.0; 3], [0.0; 3]);
+        m.speed_fraction = 0.5;
+        let reach = f64::from(SLOW_HULL.max_velocity) * 0.5 * 2.0;
+        assert!(m.keeps_up(&SLOW_HULL, reach, 2.0));
+        assert!(!m.keeps_up(&SLOW_HULL, reach + 1.0, 2.0));
+        m.speed_fraction = 0.0;
+        assert!(m.keeps_up(&SLOW_HULL, 0.0, 1.0), "a still leader");
+        assert!(
+            !m.keeps_up(&SLOW_HULL, 1.0, 1.0),
+            "a stopped ship keeps up with nothing"
+        );
     }
 }

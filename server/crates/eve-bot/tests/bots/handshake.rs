@@ -1341,6 +1341,11 @@ fn a_following_ship_reads_at_its_follow_range_from_the_ship_it_follows() {
         .expect("bob's ship in alice's park");
     let apart_before = gap(alice_start.position, bob_ball_then.position);
 
+    // A follow flies at the throttle the pilot set, and an undocked ship has
+    // none (a shove, fraction 0): at zero throttle it cannot close a gap on a
+    // ship still coasting off the undock, and the server no longer
+    // teleports it there (`Motion::keeps_up`).
+    alice.set_speed_fraction(1.0).expect("alice's throttle");
     alice
         .follow(100_000_002, RANGE)
         .expect("alice follows bob's ship");
