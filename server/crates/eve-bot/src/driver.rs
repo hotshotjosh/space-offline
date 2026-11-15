@@ -1614,6 +1614,7 @@ impl Bot {
         while self.handle.released() && !self.expired() {
             if !said_released {
                 said_released = true;
+                self.decision("shed", "offline: released by the bubble until woken");
                 self.record(
                     ActKind::Session,
                     "offline: released by the bubble until woken".to_owned(),
@@ -1622,6 +1623,9 @@ impl Bot {
                 );
             }
             self.idle(Duration::from_secs(1));
+        }
+        if said_released && !self.expired() {
+            self.decision("wake", "woken by the bubble");
         }
         let Some(table) = self.config.society.as_ref().map(|s| s.timetable.clone()) else {
             return !self.expired();
@@ -6852,6 +6856,7 @@ impl Bot {
                 }
                 self.lease = Some(station);
                 self.stranded = Some((station, 0));
+                self.decision("lease", &format!("lent to station {station} by the bubble"));
                 self.record(
                     ActKind::Travel,
                     format!("lent to station {station} by the bubble"),
@@ -6863,6 +6868,10 @@ impl Bot {
                 self.lease = None;
                 self.stranded = self.home_station.map(|h| (h, 0));
                 let home = self.home_station.unwrap_or_default();
+                self.decision(
+                    "lease",
+                    &format!("recalled to station {home} by the bubble"),
+                );
                 self.record(
                     ActKind::Travel,
                     format!("recalled to station {home} by the bubble"),
@@ -7129,6 +7138,20 @@ impl Bot {
         Ok(true)
     }
 
+    /// One persona-log line (#273) for this bot, in its society's state dir.
+    fn decision(&self, kind: &str, text: &str) {
+        crate::persona_log::note(
+            self.config
+                .society
+                .as_ref()
+                .and_then(|s| s.state.as_deref()),
+            &self.config.name,
+            unix_now(),
+            kind,
+            text,
+        );
+    }
+
     /// **A bubble release** (`bubble.rs`): head home and log off docked, or
     /// where it is after [`LOGOFF_GRACE`], like a timetable's end. A society
     /// bot parks its career first, so the server settles the time away from
@@ -7273,7 +7296,12 @@ impl Bot {
         if let Some(hall) = &soc.hall
             && matches!(self.obs.place, Place::Docked { .. })
         {
+            let corps_before = soc.lock().corps.clone();
             let lines = crate::corpmind::turn(conn, hall, &soc.mind, soc.table, now)?;
+            let corps_after = soc.lock().corps.clone();
+            for (kind, text) in mind::corp_changes(&corps_before, &corps_after) {
+                self.decision(kind, &text);
+            }
             // R-REL-3: the friendly humans a fleet commander invites.
             {
                 let (regard, loyalty) = {
@@ -7411,7 +7439,7 @@ impl Bot {
         let flown = self.obs.ship.and_then(|s| s.type_id);
         crate::foreman::lift_block(&mut signals, &self.obs.hangar, flown);
         let signals = crate::mine_ladder::scale_prior(signals, flown);
-        let (lines, decision, career) = {
+        let (lines, decision, career, changes) = {
             let mut mind = soc.lock();
             // PROG-PVE: the wallet's change less what the bot laid out on
             // assets (a hull, guns, books), over this connection's time.
@@ -7439,7 +7467,9 @@ impl Bot {
                     || self.obs.hangar.iter().any(|r| r.type_id == h)
             });
             let price = hull.and_then(|h| market.refs.get(&h).copied());
+            let goals_before = mind.goals.clone();
             let goals = mind.rescore_goals(&mind::career_goals(hull, holds, wallet, price));
+            let changes = mind::goal_changes(&goals_before, &mind.goals);
             (
                 [
                     crate::signal::signals_line(&mind.name, &signals, &market),
@@ -7456,6 +7486,7 @@ impl Bot {
                 ],
                 eval.decision,
                 mind.career.clone(),
+                changes,
             )
         };
         let role = role_of(soc.table, &career);
@@ -7481,6 +7512,9 @@ impl Bot {
             Decision::Wait { to, wins } => format!("stay {career}: {to} won {wins}"),
             Decision::Tenure { to } => format!("stay {career}: {to} wins, tenure first"),
         };
+        for (kind, text) in &changes {
+            self.decision(kind, text);
+        }
         if matches!(decision, Decision::Switch { .. }) {
             crate::persona_log::note(
                 soc.state.as_deref(),
@@ -8309,6 +8343,11 @@ mod tests {
             "decided docked: {log:#?}"
         );
         assert_eq!(soc.career(), "t_rival");
+        let notes = crate::persona_log::tail(&dir, NAME, 50).join("\n");
+        assert!(
+            notes.contains(" goal push"),
+            "the goal stack is logged: {notes}"
+        );
 
         let (again, source) = Society::open(NAME, SEED, FIXTURE, signals, Some(&dir), unix_now());
         assert_eq!(source, crate::state::Source::Restored);
@@ -8397,7 +8436,9 @@ mod tests {
         let addr = society_server(&[NAME]);
         let signals = Signals::default();
         let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
-        let soc = Society::new(mind, FIXTURE, signals);
+        let dir = scratch("shed");
+        let mut soc = Society::new(mind, FIXTURE, signals);
+        soc.state = Some(dir.clone());
         let online = Arc::clone(&soc.online);
         let (h, t) = spawn(society_bot(NAME, addr, soc));
         h.watch();
@@ -8431,6 +8472,8 @@ mod tests {
         assert!(!h.is_live());
         assert_eq!(online.load(Ordering::SeqCst), 0);
         assert_eq!(connects(&h), 1, "it stays off while released");
+        let kinds = |dir: &PathBuf| crate::persona_log::tail(dir, NAME, 50).join("\n");
+        assert!(kinds(&dir).contains(" shed "), "{}", kinds(&dir));
         h.wake();
         assert!(
             wait_for(&h, Duration::from_secs(30), |_| connects(&h) == 2
@@ -8440,6 +8483,53 @@ mod tests {
         );
         h.stop();
         let _ = t.join();
+        assert!(kinds(&dir).contains(" wake "), "{}", kinds(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A lease and its recall reach the persona log** (#273).
+    #[test]
+    fn a_lent_society_bot_logs_its_lease_and_recall() {
+        const NAME: &str = "Invented Leasebot";
+        let addr = society_server(&[NAME]);
+        let signals = Signals::default();
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let dir = scratch("lease");
+        let mut soc = Society::new(mind, FIXTURE, signals);
+        soc.state = Some(dir.clone());
+        let (h, t) = spawn(society_bot(NAME, addr, soc));
+        // A watched bot waits in short steps, so it hears the recall.
+        h.watch();
+        let home = eve_server::model::Character::default()
+            .station_id
+            .expect("the default pilot is docked");
+        h.lend(home);
+        let notes = || crate::persona_log::tail(&dir, NAME, 50).join("\n");
+        assert!(
+            wait_for(&h, Duration::from_secs(30), |log| {
+                log.iter().any(|e| e.what.starts_with("lent to station"))
+            }),
+            "{:#?}",
+            h.log()
+        );
+        assert!(notes().contains(" lease lent to station"), "{}", notes());
+        h.recall();
+        assert!(
+            wait_for(&h, Duration::from_secs(30), |log| {
+                log.iter()
+                    .any(|e| e.what.starts_with("recalled to station"))
+            }),
+            "{:#?}",
+            h.log()
+        );
+        assert!(
+            notes().contains(" lease recalled to station"),
+            "{}",
+            notes()
+        );
+        h.stop();
+        let _ = t.join();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// **The way home** (SOC-A2, the travel lane's follow-up): a bot that

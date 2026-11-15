@@ -2,7 +2,8 @@
 //! each bot appends one line per *decision* to `<character>.log`, beside its
 //! `<character>.tsv` ([`crate::state::log_path_for`]): a career switch, a goal
 //! pushed or popped, a corp joined or left, a bubble lease, shed or wake, a
-//! budget wait, a park and its answer.
+//! budget wait, a park and its answer. The kinds are `budget`, `release`,
+//! `park`, `career`, `goal`, `corp`, `lease`, `shed`, `wake`.
 //!
 //! **Why a file.** At 1,000 bots `bots.log` is unreadable and `--quiet` (the
 //! production setting) prints no act line at all. This file is written by

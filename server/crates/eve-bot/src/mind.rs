@@ -652,6 +652,54 @@ pub fn decision_line(m: &Mind, e: &Evaluation) -> String {
     )
 }
 
+/// **The goal pushes and pops between two stacks** (#273), as persona-log
+/// `(kind, text)` pairs. A `Wallet` counts as one goal whatever its amount
+/// (the amount moves with prices, so comparing by value would log on every
+/// rescore) **[I]**; every other goal counts by value. A changed active
+/// goal adds an `active` line.
+pub fn goal_changes(before: &[Goal], after: &[Goal]) -> Vec<(&'static str, String)> {
+    fn same(a: &Goal, b: &Goal) -> bool {
+        match (a, b) {
+            (Goal::Wallet(_), Goal::Wallet(_)) => true,
+            _ => a == b,
+        }
+    }
+    let mut out = Vec::new();
+    for g in after.iter().filter(|g| !before.iter().any(|b| same(b, g))) {
+        out.push(("goal", format!("push {g:?}")));
+    }
+    for g in before.iter().filter(|g| !after.iter().any(|a| same(a, g))) {
+        out.push(("goal", format!("pop {g:?}")));
+    }
+    match (before.first(), after.first()) {
+        (b, Some(a)) if !b.is_some_and(|b| same(b, a)) => {
+            out.push(("goal", format!("active {a:?}")));
+        }
+        _ => {}
+    }
+    out
+}
+
+/// **The corp joins and leaves between two stint lists** (#273), as
+/// persona-log `(kind, text)` pairs: a stint not in `before` is a join, a
+/// stint whose `left` went from `None` to `Some` is a leave.
+pub fn corp_changes(before: &[Stint], after: &[Stint]) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    for s in after {
+        let old = before
+            .iter()
+            .find(|b| b.corp == s.corp && b.joined == s.joined);
+        match old {
+            None => out.push(("corp", format!("join {}", s.corp))),
+            Some(b) if b.left.is_none() && s.left.is_some() => {
+                out.push(("corp", format!("leave {}", s.corp)));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The `[soc]` line for a goal re-score.
 pub fn goal_line(m: &Mind, scored: &[(Goal, f64)]) -> String {
     let goals: Vec<String> = scored
@@ -1126,6 +1174,47 @@ mod tests {
         );
         assert_eq!(m.goal(), Some(&Goal::Rung(5)));
         assert!(s[0].1 > s[2].1);
+    }
+
+    #[test]
+    fn goal_changes_pushes_pops_and_names_the_active_goal() {
+        let a = vec![Goal::Rung(1), Goal::Wallet(5)];
+        let c = goal_changes(&[], &a);
+        assert_eq!(
+            c,
+            vec![
+                ("goal", "push Rung(1)".to_owned()),
+                ("goal", "push Wallet(5)".to_owned()),
+                ("goal", "active Rung(1)".to_owned()),
+            ]
+        );
+        assert!(goal_changes(&a, &[Goal::Rung(1), Goal::Wallet(9)]).is_empty());
+        let c = goal_changes(&a, &[Goal::Wallet(9)]);
+        assert_eq!(
+            c,
+            vec![
+                ("goal", "pop Rung(1)".to_owned()),
+                ("goal", "active Wallet(9)".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn corp_changes_reads_joins_and_leaves() {
+        let open = Stint {
+            corp: 7_001,
+            joined: 10,
+            left: None,
+        };
+        let c = corp_changes(&[], &[open]);
+        assert_eq!(c, vec![("corp", "join 7001".to_owned())]);
+        assert!(corp_changes(&[open], &[open]).is_empty());
+        let closed = Stint {
+            left: Some(20),
+            ..open
+        };
+        let c = corp_changes(&[open], &[closed]);
+        assert_eq!(c, vec![("corp", "leave 7001".to_owned())]);
     }
 
     #[test]
