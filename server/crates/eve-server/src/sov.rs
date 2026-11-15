@@ -83,9 +83,10 @@ pub const ACTIVITY_KEEP: usize = 200;
 pub const ACTIVITY_WINDOW: i64 = 7 * 24 * HOUR;
 
 /// **[A]** the first stand-in hub id: a GM claim without a launched hub uses
-/// `STAND_IN_HUB_BASE + systemID`, a band no allocator in this server
-/// reaches (player items count up from `item::MIN_PLAYER_ITEM`, NPCs from
-/// 7e9, sites 8.1e9 and 8.7e9, escrow 9e9). Falsified by a client that
+/// `STAND_IN_HUB_BASE + systemID`, its own band (player items count up from
+/// `item::MIN_PLAYER_ITEM`, NPCs from 7e9, sites 8.1e9, instances 8.7e9 to
+/// 8.8e9, war HQs 8.8e9, escrow 9e9; `site::tests::id_bands_do_not_overlap`
+/// checks it). Falsified by a client that
 /// looks the id up as an item and throws (a Show Info on the hub from the
 /// Sov Hubs page is the place to see it); D2 replaces it with a real hub.
 pub const STAND_IN_HUB_BASE: i64 = 8_900_000_000;

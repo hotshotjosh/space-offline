@@ -43,7 +43,8 @@
 //! `structureDirectory.GetStructureInfo` answers `None` and the wizard
 //! crashes. There is no Upwell and this build's corporations have no HQ
 //! station, so an HQ is a **virtual type-27 item** ([`TYPE_WAR_HQ`]) per
-//! owner, in a band no allocator reaches ([`HQ_ITEM_BASE`]), anchored to the
+//! owner, in its own id band ([`HQ_ITEM_BASE`], listed in
+//! `site::tests::id_bands_do_not_overlap`), anchored to the
 //! station the declaring director is docked in when they open the wizard
 //! ([`valid_hqs`]), and valid only while that system is high-sec
 //! ([`high_sec`]). `allowWar` ([`permit`]) is 1 for every player corp whose
@@ -155,9 +156,10 @@ pub const CONCORD_OWNER: i64 = 1_000_125;
 pub const TYPE_WAR_HQ: i64 = 27;
 
 /// **[A]** the first war HQ item id. Player items count up from
-/// `item::MIN_PLAYER_ITEM`, NPCs from 7e9, sites 8.1e9, instances 8.7e9, a
-/// sov stand-in hub 8.9e9, escrow 9e9: this band sits between instances and
-/// hubs and is far below `minFakeItem`. Falsified by a client path that
+/// `item::MIN_PLAYER_ITEM`, NPCs from 7e9, sites 8.1e9, instances 8.7e9 to
+/// 8.8e9, a sov stand-in hub 8.9e9, escrow 9e9: this band sits between
+/// instances and hubs (`site::tests::id_bands_do_not_overlap` checks it) and
+/// is far below `minFakeItem`. Falsified by a client path that
 /// mishandles an item id above 2^31 (then `item::MIN_PLAYER_ITEM`'s band
 /// with a counter row replaces it).
 pub const HQ_ITEM_BASE: i64 = 8_800_000_000;
