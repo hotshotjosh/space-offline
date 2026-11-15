@@ -85,6 +85,8 @@ fn custom(text: &str) -> ServiceError {
     raise("CustomNotify", vec![("notify", crate::pyutil::bstr(text))])
 }
 
+const NOT_CEO: &str = "Only the CEO can put a sanctioned action in effect.";
+
 fn denied(reason: &str) -> ServiceError {
     raise(
         "CrpAccessDenied",
@@ -313,16 +315,16 @@ fn activate_sanctioned(
     me: i64,
 ) -> Result<PyValue, ServiceError> {
     let id = Args::new(req).int_or_kw(0, "voteCaseID").unwrap_or(0);
+    // An unknown id answers like another corporation's case, so a stranger
+    // cannot tell whether a case exists.
     let Some(case) = cv::get(reg.deltas(), id) else {
-        return Err(refusal(Refusal::NotSanctioned));
+        return Err(denied(NOT_CEO));
     };
     let corp = case.corp;
     let is_ceo =
         live_corp(reg, corp) && reg.corporations().get(corp).is_some_and(|c| c.ceo_id == me);
     if !is_ceo {
-        return Err(denied(
-            "Only the CEO can put a sanctioned action in effect.",
-        ));
+        return Err(denied(NOT_CEO));
     }
     // Check the type first: a kind not built yet stays activatable.
     if case.vote_type != cv::VOTE_KICK_MEMBER {
@@ -338,8 +340,20 @@ fn activate_sanctioned(
         );
     }
     let now = crate::pyutil::filetime_now();
-    let s = cv::put_in_effect(reg.deltas_mut(), id, now).map_err(refusal)?;
+    // Check, run the effect, then mark: a refused expulsion leaves the case
+    // there for the CEO to try again.
+    let s = cv::check_put_in_effect(reg.deltas(), id, now).map_err(refusal)?;
+    if reg
+        .corporations()
+        .membership(s.parameter)
+        .is_none_or(|m| m.corporation_id != corp)
+    {
+        return Err(custom(
+            "That pilot is no longer a member of the corporation.",
+        ));
+    }
     super::corp::expel(reg, me, s.parameter)?;
+    cv::put_in_effect(reg.deltas_mut(), id, now).map_err(refusal)?;
     tell(
         reg,
         corp,
@@ -719,6 +733,27 @@ mod tests {
         match &args[0] {
             PyValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
             other => panic!("the key is a str: {other:?}"),
+        }
+    }
+
+    /// The single text a refusal carries (`notify` or `reason`).
+    fn text_of(e: &ServiceError) -> String {
+        let ServiceError::Raise(PyValue::ObjectEx { header, .. }) = e else {
+            panic!("not a raised exception: {e:?}")
+        };
+        let PyValue::Tuple(parts) = header.as_ref() else {
+            panic!("header")
+        };
+        let PyValue::Tuple(args) = &parts[1] else {
+            panic!("args")
+        };
+        let PyValue::Dict(d) = &args[1] else {
+            panic!("kwargs")
+        };
+        match &d[0].0 {
+            PyValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
+            PyValue::Unicode(t) => t.clone(),
+            other => panic!("a text: {other:?}"),
         }
     }
 
@@ -1124,7 +1159,8 @@ mod tests {
             .get(&vec!["case".to_owned(), id.to_string()])
             .unwrap()
             .clone();
-        let past = (crate::pyutil::filetime_now() - cv::DAY).to_string();
+        let past =
+            (crate::pyutil::filetime_now() - cv::DAY.min(cv::SANCTION_WINDOW / 2)).to_string();
         row[4] = past;
         reg.deltas_mut()
             .put(cv::KIND, vec!["case".to_owned(), id.to_string()], row);
@@ -1187,8 +1223,48 @@ mod tests {
         call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
         let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
         assert_eq!(key_of(&e), "CustomNotify");
+        assert_eq!(text_of(&e), "That action has already been put in effect.");
         let rows = listed(&mut reg, ALICE);
         assert_eq!(attr(&rows[0].1, "actedUpon"), i(1));
+    }
+
+    #[test]
+    fn a_refused_expulsion_leaves_the_action_to_try_again() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        // The target is gone before the CEO acts.
+        super::super::corp::expel(&mut reg, ALICE, CAROL).unwrap();
+        let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(
+            text_of(&e),
+            "That pilot is no longer a member of the corporation."
+        );
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(0));
+        assert_eq!(attr(&rows[0].1, "inEffect"), i(0));
+        assert!(
+            cv::sanctioned(reg.deltas(), corp, i64::MAX)[0]
+                .acted_at
+                .is_none()
+        );
+        // Back as a plain member: the same action now goes through.
+        super::super::corp::dev_join(&mut reg, CAROL, "TST");
+        assert!(reg.corporations().membership(CAROL).is_some());
+        call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
+        assert!(reg.corporations().membership(CAROL).is_none());
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(1));
+    }
+
+    #[test]
+    fn an_unknown_case_and_another_corps_case_are_refused_alike() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        let a = call(&mut reg, DAVE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        let b = call(&mut reg, DAVE, "ActivateSanctionedAction", &[i(id + 9_999)]).unwrap_err();
+        assert_eq!(key_of(&a), key_of(&b));
+        assert_eq!(text_of(&a), text_of(&b));
+        assert!(reg.corporations().membership(CAROL).is_some());
     }
 
     #[test]
@@ -1197,6 +1273,7 @@ mod tests {
         let id = won_kick(&mut reg, corp, cv::VOTE_SHARES, 50);
         let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
         assert_eq!(key_of(&e), "CustomNotify");
+        assert_eq!(text_of(&e), "That action cannot be put in effect yet.");
         let rows = listed(&mut reg, ALICE);
         assert_eq!(rows.len(), 1);
         assert_eq!(attr(&rows[0].1, "actedUpon"), i(0));

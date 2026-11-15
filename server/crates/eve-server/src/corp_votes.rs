@@ -698,20 +698,28 @@ pub fn sanctioned(d: &Deltas, corp: i64, now: i64) -> Vec<Sanction> {
     v
 }
 
-/// Mark case `id`'s sanctioned action as put in effect at `now`, once and
-/// within the window. It does not run the effect; the service does.
-pub fn put_in_effect(d: &mut Deltas, id: i64, now: i64) -> Result<Sanction, Refusal> {
+/// The checks of [`put_in_effect`] without the write: the case must be a
+/// closed sanctioned one, not yet acted upon, and inside its window.
+pub fn check_put_in_effect(d: &Deltas, id: i64, now: i64) -> Result<Sanction, Refusal> {
     let case = get(d, id).ok_or(Refusal::NotSanctioned)?;
     if case.is_open(now) {
         return Err(Refusal::NotSanctioned);
     }
-    let mut s = sanction_of(d, case).ok_or(Refusal::NotSanctioned)?;
+    let s = sanction_of(d, case).ok_or(Refusal::NotSanctioned)?;
     if s.acted_at.is_some() {
         return Err(Refusal::ActedUpon);
     }
     if now >= s.expires {
         return Err(Refusal::Expired);
     }
+    Ok(s)
+}
+
+/// Mark case `id`'s sanctioned action as put in effect at `now`, once and
+/// within the window. It does not run the effect; the service does, between
+/// [`check_put_in_effect`] and this call.
+pub fn put_in_effect(d: &mut Deltas, id: i64, now: i64) -> Result<Sanction, Refusal> {
+    let mut s = check_put_in_effect(d, id, now)?;
     d.put(KIND, sanction_key(id), vec![now.to_string()]);
     s.acted_at = Some(now);
     Ok(s)
@@ -1197,7 +1205,7 @@ mod tests {
     }
 
     #[test]
-    fn a_lost_general_or_ceo_vote_is_not_a_sanctioned_action() {
+    fn won_general_and_ceo_lost_empty_and_unsettled_kick_votes_are_not_listed() {
         let mut d = Deltas::default();
         shares(&mut d);
         let ceo = won(&mut d, VOTE_CEO, BOB);
@@ -1213,6 +1221,14 @@ mod tests {
         let unsettled = typed(&mut d, VOTE_KICK_MEMBER, CAROL);
         vote(&mut d, unsettled, ALICE, &[], 0, T0).unwrap();
         assert!(sanctioned(&d, CORP, T0 + 2 * DAY).is_empty());
+        // Settling hands the won kick votes over: the earlier unsettled one
+        // and a new one are listed, nothing else.
+        let kick = won(&mut d, VOTE_KICK_MEMBER, CAROL);
+        let ids: Vec<i64> = sanctioned(&d, CORP, T0 + 2 * DAY)
+            .iter()
+            .map(|s| s.case.id)
+            .collect();
+        assert_eq!(ids, vec![unsettled, kick]);
         let _ = (ceo, general);
     }
 
@@ -1222,7 +1238,7 @@ mod tests {
         shares(&mut d);
         let id = won(&mut d, VOTE_KICK_MEMBER, CAROL);
         let end = get(&d, id).unwrap().end;
-        let at = end + DAY;
+        let at = end + SANCTION_WINDOW / 2;
         let s = put_in_effect(&mut d, id, at).unwrap();
         assert_eq!(s.acted_at, Some(at));
         assert_eq!(sanctioned(&d, CORP, at)[0].acted_at, Some(at));
