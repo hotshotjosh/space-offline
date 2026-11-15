@@ -38,7 +38,8 @@
 //!   first thing a returning bot's session does is settle the span since
 //!   the last settlement, then drop the row, so the bot sees exactly the
 //!   settled state ("a bot that logs in resumes with exactly the settled
-//!   state").
+//!   state"). While a rollover's sweep is still running, the span is
+//!   settled through each open rollover first, as the sweep would.
 //! - **On a sweep** ([`tick`], a `tick::STAGES` row): every
 //!   [`SWEEP_EVERY_H`] game hours a slice ([`SWEEP_SLICE`]) of the parked
 //!   agents that are due are settled, so the market sees the output over
@@ -47,10 +48,10 @@
 //! - **At the rollover** ([`on_rollover`], a `rollover_steps::STEPS` row):
 //!   a slice ([`ROLLOVER_SLICE`]) of the parked agents, gatherers first
 //!   (they cut the day's rocks before the asteroid reset), settles before
-//!   the day's fold. The sweep then settles the rest up to the rollover's
-//!   time: their span and work cap stop at the rollover, and their journal
-//!   rows and goods are booked to the closed day's `econ` rows
-//!   (`econ_ledger::book_late`), which the next fold subtracts. That day's
+//!   the day's fold. The sweep then settles the rest up to each open
+//!   rollover, one span per rollover, capped against that rollover's closed
+//!   day, and their journal rows and goods are booked to that day's `econ`
+//!   rows (`econ_ledger::book_late`), which the next fold subtracts. That day's
 //!   money stock, fills and price index stay as the fold saw them, and the
 //!   `[econ]` line and the `econ_report` TSV printed at the rollover do not
 //!   include them; a `[econ] late` line counts them and what was booked.
@@ -132,8 +133,8 @@ pub const SWEEP_SLICE: usize = 2;
 
 /// At most this many agents settle in one rollover step **[A]**; the rest wait
 /// for the sweep ([`SWEEP_SLICE`] a tick), settled up to the rollover's own
-/// time (span and work cap); their flows are booked to the closed day's
-/// `econ` rows after its `[econ]` line printed. Falsified by a `[world]` rollover
+/// time (span, and work cap against the closed day); their flows are booked
+/// to the closed day's `econ` rows after its `[econ]` line printed. Falsified by a `[world]` rollover
 /// timing over 25 ms with this many parked ratters per rollover (lower it),
 /// or by a `[econ] late` count that is most of the parked agents (raise it).
 pub const ROLLOVER_SLICE: usize = 64;
@@ -467,18 +468,28 @@ pub struct Book {
     swept_at: BlueTime,
     /// A sweep is under way: it began at `swept_at` and has due agents left.
     sweeping: bool,
-    /// The time the running sweep settles up to: the rollover's, when one
-    /// started it (the span and cap stop there, and the flows are booked to
-    /// the closed day, see the module header); `None` for a timed sweep,
-    /// which settles to the tick's time.
-    sweep_to: Option<BlueTime>,
-    /// What the running rollover sweep has settled after the day's fold.
-    late: Option<Late>,
-    /// The last finished late count.
+    /// The rollovers the running sweep settles up to, oldest first: one
+    /// span per target, each capped against its own closed day, and the
+    /// flows booked to that day (see the module header). Empty for a timed
+    /// sweep, which settles to the tick's time.
+    targets: Vec<Target>,
+    /// The last finished late count (the newest target's).
     last_late: Option<Late>,
     recent: Vec<Report>,
     settled: u64,
     isk: f64,
+}
+
+/// A rollover the running sweep still settles up to.
+#[derive(Debug, Clone, PartialEq)]
+struct Target {
+    /// The rollover's time: a span settled for it stops here.
+    to: BlueTime,
+    /// The agent day its hours count against: the day the rollover closed,
+    /// `d.day - d.days` (`rollover.rs` `begin` advances the day first).
+    work_day: u32,
+    /// Its `econ` rows' day (`d.day`), where its late flows are booked.
+    late: Late,
 }
 
 /// The agents a rollover's sweep settled after the day's fold: their
@@ -582,17 +593,29 @@ fn balance(reg: &Registry, character: i64) -> f64 {
 /// report kept. `None`: nothing to settle (not parked, or too soon). The
 /// row stays: [`on_login`] drops it, a sweep does not.
 pub fn settle(reg: &mut Registry, character: i64, now: BlueTime) -> Option<Report> {
+    settle_at(reg, character, now, reg.world().day)
+}
+
+/// [`settle`], with the span's hours counted against agent day `work_day`
+/// (its work cap, [`rules::DAY_HOURS_CAP`]).
+pub(crate) fn settle_at(
+    reg: &mut Registry,
+    character: i64,
+    now: BlueTime,
+    work_day: u32,
+) -> Option<Report> {
     let a = agent(reg, character)?;
     let clock = crate::game_clock::of(reg);
     let span_s = clock.elapsed((now - a.settled_to).max(0)) as f64 / 1.0e7;
     if span_s < rules::MIN_SPAN_S {
         return None;
     }
-    settle_span(reg, character, a, span_s, now)
+    settle_span_on(reg, character, a, span_s, now, work_day)
 }
 
 /// The settlement itself, for a span of `span_s` game seconds ending at
-/// `now`. Split from [`settle`] so `/settle` can name the span.
+/// `now`. Split from [`settle`] so `/settle` can name the span. Its hours
+/// count against the registry's day.
 pub(crate) fn settle_span(
     reg: &mut Registry,
     character: i64,
@@ -601,6 +624,18 @@ pub(crate) fn settle_span(
     now: BlueTime,
 ) -> Option<Report> {
     let day = reg.world().day;
+    settle_span_on(reg, character, a, span_s, now, day)
+}
+
+/// [`settle_span`], with the hours counted against agent day `day`.
+fn settle_span_on(
+    reg: &mut Registry,
+    character: i64,
+    a: Agent,
+    span_s: f64,
+    now: BlueTime,
+    day: u32,
+) -> Option<Report> {
     let used = if a.day == day { a.used_h } else { 0.0 };
     let work_h = rules::active_hours(span_s, used);
     let name = reg.character(character)?.name.clone();
@@ -662,6 +697,10 @@ pub fn on_login(reg: &mut Registry, character: i64) {
     if agent(reg, character).is_none() {
         return;
     }
+    // A bot that logs in while a rollover's sweep lags settles each owed
+    // day apart first; those pieces are late.
+    let targets = reg.ext::<Book>().targets.clone();
+    settle_through(reg, character, &targets, usize::MAX);
     settle(reg, character, crate::pyutil::filetime_now());
     forget(reg, character);
 }
@@ -669,7 +708,10 @@ pub fn on_login(reg: &mut Registry, character: i64) {
 /// **The sweep** (`tick::STAGES`): every [`SWEEP_EVERY_H`] game hours a sweep
 /// begins, and each tick of it settles the [`SWEEP_SLICE`] longest-unsettled
 /// parked agents that are not online, until none is due. An agent whose
-/// character is online (a row a crash left) loses its row.
+/// character is online (a row a crash left) loses its row. A sweep a
+/// rollover started settles up to its targets instead, every piece late
+/// (after that day's fold), and at its end prints each target's
+/// `[econ] late` line, oldest first.
 pub fn tick(reg: &mut Registry, _: Instant, ft: BlueTime) {
     let every = crate::game_clock::of(reg).span((SWEEP_EVERY_H * 3600.0 * 1.0e7) as i64);
     let book = reg.ext_mut::<Book>();
@@ -679,39 +721,54 @@ pub fn tick(reg: &mut Registry, _: Instant, ft: BlueTime) {
         }
         book.sweeping = true;
         book.swept_at = ft;
-        book.sweep_to = None;
+        book.targets.clear();
     }
-    let to = reg.ext::<Book>().sweep_to.unwrap_or(ft);
-    // A rollover's sweep runs after that day's fold: every piece is late.
-    let late = reg.ext::<Book>().late.is_some();
-    let n = sweep_ordered(reg, to, SWEEP_SLICE, false, late);
-    let book = reg.ext_mut::<Book>();
+    let n = if reg.ext::<Book>().targets.is_empty() {
+        let timed = [timed(reg, ft)];
+        sweep_ordered(reg, &timed, SWEEP_SLICE, false, 0)
+    } else {
+        let targets = reg.ext::<Book>().targets.clone();
+        sweep_ordered(reg, &targets, SWEEP_SLICE, false, usize::MAX)
+    };
     if n == 0 {
+        let book = reg.ext_mut::<Book>();
         book.sweeping = false;
-        book.sweep_to = None;
-        if let Some(late) = book.late.take() {
-            if late.agents > 0 {
-                crate::outln!("{}", late.line());
+        for t in &book.targets {
+            if t.late.agents > 0 {
+                crate::outln!("{}", t.late.line());
             }
-            book.last_late = Some(late);
         }
+        if let Some(t) = book.targets.last() {
+            book.last_late = Some(t.late.clone());
+        }
+        book.targets.clear();
+    }
+}
+
+/// The target of a timed sweep: the tick's time, hours on today's cap.
+fn timed(reg: &Registry, now: BlueTime) -> Target {
+    Target {
+        to: now,
+        work_day: reg.world().day,
+        late: Late::default(),
     }
 }
 
 /// Settle up to `max` due parked agents at `now`; answers how many settled.
 pub(crate) fn sweep(reg: &mut Registry, now: BlueTime, max: usize) -> usize {
-    sweep_ordered(reg, now, max, false, false)
+    let timed = [timed(reg, now)];
+    sweep_ordered(reg, &timed, max, false, 0)
 }
 
-/// [`sweep`], with `gatherers_first` the gatherers go before the rest (each
-/// group longest-unsettled first). With `late`, each settlement is booked
-/// to the running rollover's closed day ([`settle_late`]).
+/// Settle up to `max` due parked agents through `targets`
+/// ([`settle_through`]); with `gatherers_first` the gatherers go before the
+/// rest (each group longest-unsettled first). Answers how many settled.
 fn sweep_ordered(
     reg: &mut Registry,
-    now: BlueTime,
+    targets: &[Target],
     max: usize,
     gatherers_first: bool,
-    late: bool,
+    late_before: usize,
 ) -> usize {
     let mut due: Vec<(bool, BlueTime, i64)> = Vec::new();
     for (ch, a) in parked(reg) {
@@ -727,63 +784,72 @@ fn sweep_ordered(
     due.sort_unstable();
     let mut n = 0;
     for (_, _, ch) in due.into_iter().take(max) {
-        let settled = if late {
-            settle_late(reg, ch, now)
-        } else {
-            settle(reg, ch, now).is_some()
-        };
-        if settled {
+        if settle_through(reg, ch, targets, late_before) {
             n += 1;
         }
     }
     n
 }
 
-/// [`settle`] after the running rollover's fold: book the settlement's
-/// journal rows and goods to that day's `econ` rows
-/// (`econ_ledger::book_late`) and count it in the [`Late`]. True when it
+/// Settle `ch` through every target it is behind, one span per target, each
+/// capped against its own day. A piece for a target before index
+/// `late_before` is late (settled after its day's fold): its journal rows
+/// and goods are booked to that day's `econ` rows
+/// (`econ_ledger::book_late`) and counted in the target's [`Late`], which
+/// `targets` mirrors index for index from [`Book`]'s. True when any piece
 /// settled.
-fn settle_late(reg: &mut Registry, ch: i64, now: BlueTime) -> bool {
-    let Some(day) = reg.ext::<Book>().late.as_ref().map(|l| l.day) else {
-        return settle(reg, ch, now).is_some();
-    };
-    let m = crate::econ_ledger::folded(reg, day).then(|| crate::econ_ledger::mark(reg));
-    let Some(r) = settle(reg, ch, now) else {
-        return false;
-    };
-    let booked = m.and_then(|m| crate::econ_ledger::book_late(reg, day, &m));
-    if let Some(l) = reg.ext_mut::<Book>().late.as_mut() {
-        l.agents += 1;
-        l.isk += r.isk;
-        match booked {
-            Some(b) => {
-                l.faucet += b.faucet;
-                l.sink += b.sink;
+fn settle_through(reg: &mut Registry, ch: i64, targets: &[Target], late_before: usize) -> bool {
+    let mut any = false;
+    for (i, t) in targets.iter().enumerate() {
+        let Some(a) = agent(reg, ch) else { break };
+        if a.settled_to >= t.to {
+            continue;
+        }
+        let late = i < late_before;
+        let m = (late && crate::econ_ledger::folded(reg, t.late.day))
+            .then(|| crate::econ_ledger::mark(reg));
+        let Some(r) = settle_at(reg, ch, t.to, t.work_day) else {
+            continue;
+        };
+        any = true;
+        if late {
+            let booked = m.and_then(|m| crate::econ_ledger::book_late(reg, t.late.day, &m));
+            if let Some(x) = reg.ext_mut::<Book>().targets.get_mut(i) {
+                x.late.agents += 1;
+                x.late.isk += r.isk;
+                match booked {
+                    Some(b) => {
+                        x.late.faucet += b.faucet;
+                        x.late.sink += b.sink;
+                    }
+                    None => x.late.unbooked += 1,
+                }
             }
-            None => l.unbooked += 1,
         }
     }
-    true
+    any
 }
 
 /// **The rollover step** (`rollover_steps::STEPS`): settle at most
 /// [`ROLLOVER_SLICE`] parked agents at the rollover's time, gatherers first
 /// (before the asteroid reset), then mark the book as sweeping up to that
 /// time so [`tick`] settles the rest ([`SWEEP_SLICE`] a tick). The slice
-/// settles before the day's fold. The swept agents' span and work cap stop at
-/// the rollover, and their journal rows and goods are booked to the closed
-/// day's `econ` rows (`econ_ledger::book_late`); a `[econ] late` line counts
-/// them. The step is listed
-/// twice in `rollover_steps`; only the call that starts this rollover's
-/// sweep settles, the other answers 0. A rollover that arrives mid-sweep
-/// takes over the sweep: its time becomes the target and the
-/// longest-unsettled agents go first, so none is settled twice for the same
-/// span or skipped; an agent it had not yet reached settles one merged span
-/// of both days (capped as one span, [`rules::active_hours`]). Every
-/// settlement books its hours to the day the registry now holds, the new
-/// one (`rollover.rs` advances the day before the steps), so the closed day's
-/// last hours eat the new day's cap. Its count is the agents settled in the
-/// slice.
+/// settles before the day's fold. The step is listed twice in
+/// `rollover_steps`; only the call that starts this rollover's sweep
+/// settles, the other answers 0.
+///
+/// Each rollover is a target: its time, the agent day its hours count
+/// against (the day it closed, `d.day - d.days`, since `rollover.rs`
+/// advances the day before the steps, so the closed day's last hours never
+/// eat the new day's cap), and its `econ` day. A rollover that arrives
+/// mid-sweep adds its target: an agent behind both settles one span per
+/// rollover, each capped against its own day ([`rules::active_hours`]), and
+/// the longest-unsettled go first, so none is settled twice for the same
+/// span or skipped. A piece settled after its day's fold (the sweep's, and
+/// the slice's for an older target) is booked to that day's `econ` rows
+/// (`econ_ledger::book_late`), and the next fold subtracts it. Each
+/// target's `[econ] late` line prints when the sweep ends. Its count is the
+/// agents settled in the slice.
 pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
     start_rollover(reg, d, ROLLOVER_SLICE)
 }
@@ -791,24 +857,27 @@ pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
 /// [`on_rollover`] with a slice of `slice` agents. A parameter only so tests
 /// can leave every agent to the sweep.
 fn start_rollover(reg: &mut Registry, d: &crate::rollover::Day, slice: usize) -> usize {
-    if reg.ext::<Book>().sweep_to == Some(d.now) {
-        return 0;
+    if reg.ext::<Book>().targets.last().map(|t| t.to) == Some(d.now) {
+        return 0; // the second STEPS row of the same rollover
     }
-    let n = sweep_ordered(reg, d.now, slice, true, false);
     let book = reg.ext_mut::<Book>();
-    if let Some(prev) = book.late.take() {
-        if prev.agents > 0 {
-            crate::outln!("{}", prev.line());
-        }
-        book.last_late = Some(prev);
+    if !book.sweeping {
+        book.targets.clear();
     }
-    book.late = Some(Late {
-        day: d.day,
-        ..Late::default()
+    book.targets.push(Target {
+        to: d.now,
+        work_day: d.day.saturating_sub(d.days),
+        late: Late {
+            day: d.day,
+            ..Late::default()
+        },
     });
+    let targets = book.targets.clone();
+    // Pieces for older targets are late; the newest's fold is still to come.
+    let n = sweep_ordered(reg, &targets, slice, true, targets.len() - 1);
+    let book = reg.ext_mut::<Book>();
     book.sweeping = true;
     book.swept_at = d.now;
-    book.sweep_to = Some(d.now);
     n
 }
 

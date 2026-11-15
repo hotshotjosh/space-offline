@@ -1313,9 +1313,59 @@ fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
             "every agent is settled to the second rollover"
         );
     }
-    // Each agent settled once per span it had: the one the first sweep never
-    // reached skipped the first span, and nobody settled a span twice.
-    assert_eq!(reg.ext::<Book>().settled(), mid + ids.len() as u64);
+    // The agent the first sweep never reached settles each day's span apart;
+    // nobody settles a span twice.
+    assert_eq!(reg.ext::<Book>().settled(), mid + ids.len() as u64 + 1);
+}
+
+#[test]
+fn the_closed_days_hours_do_not_eat_the_new_days_cap() {
+    let mut reg = miner();
+    let now = crate::pyutil::filetime_now();
+    park(&mut reg, BOT, "miner", now).expect("parks");
+    let mut a = agent(&reg, BOT).expect("row");
+    a.settled_to = now - 4 * HOURS6;
+    write(&mut reg, BOT, a);
+    let d = rollover_day(now);
+    reg.deltas_mut().world_mut().expect("world").day = d.day;
+    assert_eq!(on_rollover(&mut reg, &d), 1);
+    assert_eq!(
+        agent(&reg, BOT).expect("row").day,
+        0,
+        "the hours count against the day the rollover closed"
+    );
+    let r = settle(&mut reg, BOT, now + HOURS6).expect("a report");
+    let want = rules::active_hours(6.0 * rules::HOUR_S, 0.0);
+    assert!((r.work_h - want).abs() < 1e-9, "{} != {want}", r.work_h);
+}
+
+#[test]
+fn two_rollovers_settle_an_unreached_agent_one_span_each() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + 1, now);
+    reg.deltas_mut().world_mut().expect("world").day = 1;
+    on_rollover(&mut reg, &rollover_day(now));
+    let behind: Vec<i64> = ids
+        .iter()
+        .copied()
+        .filter(|&id| agent(&reg, id).expect("row").settled_to == now - HOURS6)
+        .collect();
+    assert_eq!(behind.len(), 1, "one agent is unreached");
+    let next = now + 24 * 3_600 * 10_000_000;
+    reg.deltas_mut().world_mut().expect("world").day = 2;
+    on_rollover(
+        &mut reg,
+        &crate::rollover::Day {
+            day: 2,
+            days: 1,
+            now: next,
+        },
+    );
+    // The unreached agent settles twice in the second slice: once per day.
+    assert_eq!(reg.ext::<Book>().settled(), (2 * ROLLOVER_SLICE + 1) as u64);
+    let a = agent(&reg, behind[0]).expect("row");
+    assert_eq!(a.settled_to, next);
+    assert_eq!(a.day, 1, "the second span counts against the day it closed");
 }
 
 /// `day`'s `econ` totals, read back.
