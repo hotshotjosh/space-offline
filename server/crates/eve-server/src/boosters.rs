@@ -299,7 +299,10 @@ fn after_change(reg: &mut Registry, character_id: i64, before: Option<(i64, Inpu
         return;
     }
     let buffs = crate::dbuff::applied(reg, ship);
-    let changes = crate::dbuff::attribute_changes_inputs(table, ship, &old, &new, &buffs);
+    // The module set is the same on both sides, so one roll list serves both.
+    let dynamic = crate::dynamic_item::dynamic_of(reg, &new.modules);
+    let changes =
+        crate::dbuff::attribute_changes_inputs_rolled(table, ship, &old, &new, &buffs, &dynamic);
     let in_space = reg
         .roster()
         .get(character_id)
@@ -1118,5 +1121,116 @@ mod tests {
         put(&mut reg, ALICE, &a);
         put(&mut reg, ALICE * 10, &a);
         assert_eq!(rows(&reg, ALICE).len(), 1);
+    }
+
+    /// #253: taking a booster that moves a fitted module's attribute pushes the
+    /// change from the module's own roll, not the type's row (invented ids:
+    /// source 100, rolled to 3 x that, the booster adds 10 per cent).
+    #[test]
+    fn a_booster_push_reads_a_fitted_mutated_modules_roll() {
+        use crate::modules::muta_fixture::{FACTOR, MUTATOR, SOURCE};
+        const RESULT: i64 = 981_400_103;
+        const SHIP: i64 = 981_400_130;
+        const MODULE: i64 = 981_400_131;
+        const BOOSTER_T: i64 = 981_400_140;
+        const EFFECT: i64 = 981_400_141;
+        const A_MOD: i64 = 981_400_150;
+        let text = format!(
+            "{}{}{}attribute\t{A_MOD}\t0.0\tmodAttr\n\
+             type\t{SOURCE}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=100.0\tSource\n\
+             type\t{RESULT}\t55\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t{A_MOD}=50.0\tResult\n\
+             type\t{BOOSTER_T}\t303\t20\t1\t1\t0.1\t0.0\t0.0\t1.0\t0\t{EFFECT}\t\
+             1087=9.0;330=1000.0;177=10.0\tFixture Booster\n\
+             effect\t{EFFECT}\t0\t0\t0\t0\t0\t0\t0\tfixtureRolled\t\t1\t0\n\
+             modifier\t{EFFECT}\tshipID\tLocationModifier\t{A_MOD}\t177\t6\t\t\n",
+            crate::typedata::FIXTURE,
+            crate::implants::fixture::rows(),
+            type_rows()
+        );
+        let mut content = crate::content::Content::fixture();
+        content.insert(
+            "typedata",
+            crate::typedata::Installed::build(
+                crate::typedata::Table::parse(&text).expect("parses"),
+            ),
+        );
+        content.insert(
+            "mutators",
+            crate::mutator_data::Mutators::parse(
+                &[format!("{MUTATOR}\t{A_MOD}\t{FACTOR}\t{FACTOR}\t1")],
+                &[format!("{MUTATOR}\t{RESULT}\t{SOURCE}")],
+            )
+            .expect("mutators parse"),
+        );
+        let alice = Character {
+            character_id: ALICE,
+            name: "Alice".to_owned(),
+            station_id: Some(STATION),
+            ship_id: SHIP,
+            create_date_time: crate::pyutil::filetime_now() - 1_000 * HOUR,
+            ..Character::default()
+        };
+        let mut reg = Registry::new(SandboxConfig {
+            characters: vec![alice],
+            ..SandboxConfig::default()
+        })
+        .with_content(std::sync::Arc::new(content));
+        let mut items = reg.store().items().to_vec();
+        // The registry seeds the pilot's ship as a capsule: swap in the frigate.
+        items.retain(|i| i.item_id != SHIP);
+        for (id, type_id, group, cat, flag, loc) in [
+            (
+                SHIP,
+                990_000_001,
+                25,
+                crate::typedata::CATEGORY_SHIP,
+                crate::model::FLAG_HANGAR,
+                STATION,
+            ),
+            (MODULE, RESULT, 55, 7, 27, SHIP),
+        ] {
+            items.push(crate::item::Item {
+                item_id: id,
+                type_id,
+                owner_id: ALICE,
+                location_id: loc,
+                flag_id: flag,
+                quantity: 1,
+                group_id: group,
+                category_id: cat,
+                singleton: true,
+            });
+        }
+        reg.apply_snapshot(crate::store::Snapshot {
+            items,
+            next_item_id: MODULE + 100,
+            ..crate::store::Snapshot::default()
+        });
+        crate::dynamic_item::put(
+            &mut reg,
+            &crate::dynamic_item::Row {
+                item_id: MODULE,
+                source_type: SOURCE,
+                mutator_type: MUTATOR,
+                creator: 0,
+                created_at: 0,
+                rolls: vec![(A_MOD, 0.5)],
+            },
+        );
+        let booster = make(&mut reg, BOOSTER_T, 1);
+        take(&mut reg, booster).expect("taken");
+        let far = std::time::Instant::now() + Duration::from_secs(3_600);
+        let sent: Vec<_> = reg.take_due(far).into_iter().map(|p| p.to_push()).collect();
+        let moved = sent
+            .into_iter()
+            .find(|(n, a)| {
+                *n == "OnModuleAttributeChange" && a.get(1) == Some(&PyValue::Int(MODULE))
+            })
+            .expect("the module's attribute moved");
+        let (PyValue::Real(new), PyValue::Real(old)) = (&moved.1[4], &moved.1[5]) else {
+            panic!("not reals: {:?}", moved.1)
+        };
+        assert_eq!(*old, 100.0 * FACTOR);
+        assert!((new - 100.0 * FACTOR * 1.1).abs() < 1e-9, "{new}");
     }
 }
