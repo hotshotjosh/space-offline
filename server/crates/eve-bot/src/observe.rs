@@ -419,6 +419,21 @@ pub fn fold_row(hall: &Hall, mind: &Mutex<Mind>, me: i64, s: &Seen, now: u64) ->
     } else {
         out.fights.push((s.victim.character_id, true));
     }
+    // The acquaintance book (#209): the killer, the victim, the helpers.
+    {
+        use crate::know::{Met, note};
+        let name = mind.lock().map(|m| m.name.clone()).unwrap_or_default();
+        if s.victim.character_id == me {
+            if let Some(h) = s.hits.first() {
+                note(&name, h.who.character_id, Met::KilledMe, s.system, now);
+            }
+        } else {
+            note(&name, s.victim.character_id, Met::IKilled, s.system, now);
+        }
+        for f in &helps {
+            note(&name, f.actor.character_id, Met::HelpedMe, s.system, now);
+        }
+    }
     let mut hall_deltas = Vec::new();
     for hf in &facts {
         let loss = relations::deltas(&hf.loss, &t);

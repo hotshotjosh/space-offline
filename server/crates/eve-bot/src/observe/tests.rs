@@ -656,3 +656,27 @@ fn review_fix_the_accept_bonus_needs_an_offer_this_bot_sent() {
     // An offer is per bot: another bot's reply does not count.
     assert_eq!(talk_gate(&h, THIRD, MATE, true, NOW), Some(false));
 }
+
+#[test]
+fn fold_row_notes_the_killer_as_an_acquaintance() {
+    let h = hall(&[(ME_CORP, ME), (MATE_CORP, MATE)]);
+    let name = "Invented Book Keeper";
+    let m = Mutex::new(Mind::seeded(name, 7, CAREERS, &Signals::default(), 0));
+    let s = seen(
+        41,
+        aff(ME, ME_CORP),
+        vec![hit(FOE, FOE_CORP, 60), hit(MATE, MATE_CORP, 40)],
+    );
+    fold_row(&h, &m, ME, &s, NOW);
+    let a = crate::know::recall(name, FOE).expect("the killer is in the book");
+    assert_eq!(a.last_kind, crate::know::Met::KilledMe);
+    assert_eq!((a.killed_me, a.system, a.last), (1, SYSTEM, NOW));
+    // The row is folded once: a second report of it adds nothing.
+    fold_row(&h, &m, ME, &s, NOW + 1);
+    assert_eq!(crate::know::recall(name, FOE).unwrap().killed_me, 1);
+    // A kill of mine puts the victim in the book.
+    let t = seen(42, aff(THIRD, THIRD_CORP), vec![hit(ME, ME_CORP, 100)]);
+    fold_row(&h, &m, ME, &t, NOW + 2);
+    let v = crate::know::recall(name, THIRD).unwrap();
+    assert_eq!((v.last_kind, v.i_killed), (crate::know::Met::IKilled, 1));
+}

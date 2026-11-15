@@ -280,6 +280,13 @@ pub fn save(dir: &Path, m: &Mind) -> std::io::Result<PathBuf> {
         f.sync_all()?;
     }
     std::fs::rename(&tmp, &path)?;
+    // The acquaintance book beside the mind; its failure never fails `save`.
+    if let Err(e) = crate::know::flush(dir, &m.name) {
+        eprintln!(
+            "eve-bot: acquaintance book of {:?} not written: {e}",
+            m.name
+        );
+    }
     Ok(path)
 }
 
@@ -293,6 +300,7 @@ pub fn load_or_seed(
     s: &Signals,
     now: u64,
 ) -> (Mind, Source) {
+    crate::know::attach(dir, name);
     let fresh = || Mind::seeded(name, seed, table, s, now);
     let src = match std::fs::read(path_for(dir, name)) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (fresh(), Source::Fresh),
@@ -440,6 +448,24 @@ mod tests {
         assert_eq!(
             load_or_seed(&dir, &m.name, 3, CAREERS, &Signals::default(), 50).1,
             Source::Fresh
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_flushes_the_book_beside_the_mind() {
+        let m = full();
+        let dir = scratch("book");
+        let (_, _) = load_or_seed(&dir, &m.name, 1, CAREERS, &Signals::default(), 0);
+        crate::know::note(&m.name, 4242, crate::know::Met::KilledMe, 77, 900);
+        save(&dir, &m).unwrap();
+        let book = crate::know::path_for(&dir, &m.name);
+        assert!(book.exists(), "the book is beside the mind");
+        assert_ne!(book, path_for(&dir, &m.name));
+        let text = std::fs::read_to_string(&book).unwrap();
+        assert!(
+            text.contains("pilot\t4242\t900\t900\t77\tkilled_me\t1\t0\t0"),
+            "{text}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
