@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (208 of 323) · **92% built** (297 of 323) · 3 parked, not counted.
+**64% proved** (208 of 324) · **92% built** (298 of 324) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -135,6 +135,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bot logins at a process rate (token bucket) instead of a serial stagger; GM spawns exempt: *built-unproved*, eve-bot/src/login_gate.rs (Bucket, reserve_now; unit tests), eve-bots --login-rate (default 2/s [A], 0 = old stagger), driver Bot::queue_with (stop or release during the queue exits cleanly); not yet measured at 1,000 (bench_ramp always passes --ramp)
 - [ ] Bots online budget: --max-online with an hour-of-day profile; bots leased to a human's system first, then fleets: *built-unproved*, eve-bot budget.rs (budget::tests incl. a turnover day with a dropping limit), bubble::is_busy shared with the bubble's shed, driver await_budget and the Slot guard. proof: tools/soak.sh --society --day-secs 3600, 1000 personas, --max-online 300: [soc] online never above 300
 - [ ] Each bot keeps a short decision log under --state (career switch, budget wait, release, park); /bots inspect shows the last 20: *partial*, eve-bot persona_log.rs (rotates at 256 kB [A], keeps one .1; never blocks a turn on disk errors), state::log_path_for (safe file names), control.rs inspect; goal, corp and bubble lease/wake lines not wired yet (#273)
+- [ ] Bot temperament: escort repair and retreat thresholds follow the risk trait; bots greet known pilots as a regular, a killer or a helper: *built-unproved*, eve-bot mind.rs Temperament::of (median traits when no seed), escort.rs thresholds (shown in dock_reason, not chat), greeting categories (Scene.known empty until P3b); tests escort::tests::a_timid_escort_leaves_where_a_reckless_one_stays; needs an owner-watched escort fight and a Local chat check
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 
 ### 3.8 Remote clients, hosting
@@ -174,7 +175,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 11 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 18 | 12 | 0 | 0 | 0 |
-| Bots | 11 | 28 | 3 | 0 | 2 |
+| Bots | 11 | 29 | 3 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 9 | 2 | 0 | 0 | 0 |
@@ -369,7 +370,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 44 proved, 33 open</summary>
+<details><summary><b>Bots</b>: 11 of 45 proved, 34 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets do not honour the reserve yet (#159); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -415,6 +416,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Bots run co-op abyss: entrance threat, short gangs, key stacks, stale board: *built-unproved*, abyss_run.rs entrance_verdict (threat = an NPC shooting the leader, or a homing), book_short_gang (a short run and its death are one loss), needs_stack + Op::Stack (StackAll at the dock), Board::purge (OFFER_TTL, GANG_TTL [A]); driver.rs: a no-gate try does not count as a failure; abyss::WaveTable (a test's own wave table in the bundle); socket tests in tests/bots/abyss_run.rs (stack then deploy, waves fought before each gate, no-gate try fails); not yet seen on a client. GANG_TTL and shooting-only threat [A]
 - [ ] Bot corps anchor and live in an Upwell structure (BOT-UPWELL-HOME): *built-unproved*, eve-bot upwell_home.rs (planner, gate, unit tests); tests/bots/upwell_home.rs (socket: board a hauler, warp to a planet, anchor, wait, dock, control; refusal words); brain gate test; soak later
 - [ ] Mission bots earn Evermarks and fly their corp logo: *built-unproved*, bot missioner.rs heraldry pass (packaged items it holds, at most 5e6 ISK), lp_spend.rs keeps Evermarks out of ISK conversion, emblem_use.rs buys the hull's corp-logo licence and sends Display; pure tests; no scenario yet
+- [ ] Bot temperament: escort repair and retreat thresholds follow the risk trait; bots greet known pilots as a regular, a killer or a helper: *built-unproved*, eve-bot mind.rs Temperament::of (median traits when no seed), escort.rs thresholds (shown in dock_reason, not chat), greeting categories (Scene.known empty until P3b); tests escort::tests::a_timid_escort_leaves_where_a_reckless_one_stays; needs an owner-watched escort fight and a Local chat check
 
 </details>
 
