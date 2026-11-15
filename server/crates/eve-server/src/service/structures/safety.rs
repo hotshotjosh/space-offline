@@ -216,12 +216,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             ]))
         }
         "GetWrapNames" => {
-            let ids: Vec<i64> = match a.get(0) {
-                Some(PyValue::List(l) | PyValue::Tuple(l)) => {
-                    l.iter().filter_map(|v| as_int(Some(v))).collect()
-                }
-                _ => return Err(a.bad("GetWrapNames(wrapIDs)")),
-            };
+            let ids: Vec<i64> = a
+                .need_list(0)?
+                .iter()
+                .filter_map(|v| as_int(Some(v)))
+                .collect();
             Ok(dict_kv(ids.into_iter().filter_map(|id| {
                 safety::get(reg.deltas(), id).map(|w| (PyValue::Int(id), PyValue::Unicode(w.name)))
             })))

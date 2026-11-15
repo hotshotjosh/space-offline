@@ -646,10 +646,7 @@ pub fn capital_call(
         settle_capital(reg, alliance, now);
         return Some(Ok(PyValue::None));
     }
-    let Some(system) = (match args.first() {
-        Some(PyValue::Int(n)) => Some(*n),
-        _ => None,
-    }) else {
+    let Some(system) = crate::service::args::as_int(args.first()) else {
         return Some(Err(ServiceError::BadArguments {
             service: "allianceRegistry".to_owned(),
             method: method.to_owned(),

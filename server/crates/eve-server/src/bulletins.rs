@@ -430,9 +430,7 @@ fn write(
             None => return Err(a.bad("(bulletinID,)")),
         },
         _ => {
-            let Some(ids) = a.list(0) else {
-                return Err(a.bad("(bulletinIDs,)"));
-            };
+            let ids = a.need_list(0)?;
             let ids: Vec<i64> = ids.iter().filter_map(|v| as_int(Some(v))).collect();
             order(reg, ch, scope, owner, &ids)
         }
@@ -674,8 +672,14 @@ mod tests {
         )
         .expect("ordered");
         assert_eq!(list(&reg, mine)[0].id, b);
-        let e = call_as(&mut reg, ALICE, "UpdateBulletinOrder", &[PyValue::Int(a)], &[])
-            .unwrap_err();
+        let e = call_as(
+            &mut reg,
+            ALICE,
+            "UpdateBulletinOrder",
+            &[PyValue::Int(a)],
+            &[],
+        )
+        .unwrap_err();
         assert!(matches!(e, ServiceError::BadArguments { .. }), "{e:?}");
     }
 }

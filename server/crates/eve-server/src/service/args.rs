@@ -265,7 +265,6 @@ impl<'a> Args<'a> {
         self.strict(i, "a string", as_text)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     pub fn need_list(&self, i: usize) -> Result<&'a [PyValue], ArgError> {
         self.strict(i, "a list", as_list)
     }
@@ -422,6 +421,26 @@ pub fn as_int_list(v: Option<&PyValue>) -> Vec<i64> {
     as_list(v).map_or_else(Vec::new, |l| {
         l.iter().filter_map(|e| as_int(Some(e))).collect()
     })
+}
+
+/// A bare integer as a list of one, or the integers of a list or tuple
+/// (other entries skipped); empty for anything else. Read by the arms that
+/// take "an id or a list of ids" (`MultiAdd`, `GetGroupsMany`,
+/// `CheckMyDockingAccessToStructures`, `GetMultiAllianceShortNamesEx` and the
+/// like).
+pub fn as_id_or_ids(v: Option<&PyValue>) -> Vec<i64> {
+    as_int(v).map_or_else(|| as_int_list(v), |n| vec![n])
+}
+
+/// An integer, or a real with no fractional part read as one (a skill-point
+/// count may arrive as either); `None` for a fractional or non-finite real
+/// and for anything else. Read by the free-skill-point and injector arms.
+pub fn as_int_whole(v: Option<&PyValue>) -> Option<i64> {
+    match v {
+        Some(PyValue::Int(i)) => Some(*i),
+        Some(PyValue::Real(r)) if r.fract() == 0.0 => Some(*r as i64),
+        _ => None,
+    }
 }
 
 /// A list of integers where every entry must be one; a bare integer is a
@@ -819,5 +838,29 @@ mod tests {
                 }
             );
         });
+    }
+
+    #[test]
+    fn id_or_ids_takes_a_bare_int_a_list_or_a_tuple() {
+        use PyValue::{Bool, Int, List, Real, Tuple};
+        assert_eq!(as_id_or_ids(Some(&Int(5))), vec![5]);
+        let mixed = List(vec![Int(1), Bool(true), Real(2.0), Int(3)]);
+        assert_eq!(as_id_or_ids(Some(&mixed)), vec![1, 3]);
+        assert_eq!(as_id_or_ids(Some(&Tuple(vec![Int(4)]))), vec![4]);
+        for other in [Real(5.0), Bool(true), PyValue::None] {
+            assert_eq!(as_id_or_ids(Some(&other)), Vec::<i64>::new(), "{other:?}");
+        }
+        assert_eq!(as_id_or_ids(None), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn int_whole_reads_a_whole_real_and_refuses_a_fraction() {
+        use PyValue::{Bool, Int, Real};
+        assert_eq!(as_int_whole(Some(&Int(7))), Some(7));
+        assert_eq!(as_int_whole(Some(&Real(7.0))), Some(7));
+        assert_eq!(as_int_whole(Some(&Real(7.5))), None);
+        assert_eq!(as_int_whole(Some(&Real(f64::NAN))), None);
+        assert_eq!(as_int_whole(Some(&Bool(true))), None);
+        assert_eq!(as_int_whole(None), None);
     }
 }

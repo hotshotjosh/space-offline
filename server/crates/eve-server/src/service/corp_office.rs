@@ -1023,15 +1023,6 @@ fn deliveries_rows(reg: &Registry, actor: Option<i64>) -> Vec<PyValue> {
         .collect()
 }
 
-fn item_ids(v: Option<&PyValue>) -> Vec<i64> {
-    match args::as_int(v) {
-        Some(n) => vec![n],
-        None => args::as_list(v)
-            .map(|l| l.iter().filter_map(|x| args::as_int(Some(x))).collect())
-            .unwrap_or_default(),
-    }
-}
-
 /// Run `one` for each id; the first refusal is raised once all have been
 /// tried (the reply is discarded by the client, so the raise is the only
 /// news a refusal can be), unless nothing at all went through.
@@ -1064,7 +1055,7 @@ fn deliver_to_corp_hangar(reg: &mut Registry, req: &Request<'_>) -> Result<PyVal
     let (Some(_from), Some(station)) = (a.int(0), a.int(1)) else {
         return Err(Args::new(req).bad("(fromID, stationID, itemIDs, qty, ownerID, flag)"));
     };
-    let ids = item_ids(a.get(2));
+    let ids = args::as_id_or_ids(a.get(2));
     let qty = a.int(3).filter(|_| ids.len() == 1);
     let flag = a.int(5);
     let Some((corp, s)) = standing(reg, actor) else {
@@ -1119,7 +1110,7 @@ pub(crate) fn inventory_call(
     }
     // A drag *out* of a corporation hangar onto any other inventory.
     if matches!(req.method, "Add" | "MultiAdd") {
-        let ids = item_ids(Args::new(req).get(0));
+        let ids = args::as_id_or_ids(Args::new(req).get(0));
         let first = ids.first().copied()?;
         kept(reg, first)?;
         let actor = req.actor?;
@@ -1194,7 +1185,7 @@ fn office_call(
         }
         "MultiAdd" => {
             let actor = req.actor?;
-            let ids = item_ids(Args::new(req).get(0));
+            let ids = args::as_id_or_ids(Args::new(req).get(0));
             let flag = Args::new(req).int_kw("flag");
             Some(each(ids, |i| deposit(reg, actor, office, i, None, flag)))
         }

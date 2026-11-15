@@ -893,10 +893,7 @@ pub fn sync_characters(reg: &mut Registry) {
 /// `eveCfg.allianceshortnameRowHeader` declares **[V]**. Only ids that name
 /// an alliance come back; the client remembers the rest as unknown.
 pub fn multi_short_names(reg: &Registry, args: &[PyValue]) -> PyValue {
-    let ids: Vec<i64> = match crate::service::args::as_int(args.first()) {
-        Some(i) => vec![i],
-        None => crate::service::args::as_int_list(args.first()),
-    };
+    let ids: Vec<i64> = crate::service::args::as_id_or_ids(args.first());
     let mut rs = eve_rowset::Rowset::new(&["allianceID", "shortName"]).expect("a fixed header");
     for id in ids {
         if let Some(short) = short_name_of(reg.deltas(), id) {

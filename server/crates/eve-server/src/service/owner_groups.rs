@@ -6,21 +6,11 @@
 //! Lists come back as lists, groups as `KeyVal`s (the client assigns to
 //! `.name`), failures as `(memberID, reason)` tuples.
 
-use super::args::{Args, as_int};
+use super::args::{Args, as_id_or_ids, as_int};
 use super::*;
 use crate::owner_groups as og;
 
 pub(crate) const SERVICES: &[&str] = &["ownerGroupManager"];
-
-fn ids(v: Option<&PyValue>) -> Vec<i64> {
-    match v {
-        Some(PyValue::Int(n)) => vec![*n],
-        Some(PyValue::List(items) | PyValue::Tuple(items)) => {
-            items.iter().filter_map(|i| as_int(Some(i))).collect()
-        }
-        _ => Vec::new(),
-    }
-}
 
 fn refuse(r: og::Refusal) -> ServiceError {
     let words = match r {
@@ -67,7 +57,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             .and_then(|g| og::group(reg, g))
             .map_or(PyValue::None, |g| og::group_value_for(reg, &g, me))),
         "GetGroupsMany" => Ok(PyValue::List(
-            ids(a.get(0))
+            as_id_or_ids(a.get(0))
                 .into_iter()
                 .filter_map(|g| og::group(reg, g))
                 .map(|g| og::group_value_for(reg, &g, me))
@@ -78,14 +68,14 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             None => Err(a.bad("(groupID,)")),
         },
         // `{groupID: [KeyVal]}` (`_GetUncachedMembers` iterates `iteritems()`).
-        "GetMembersForMultipleGroups" => {
-            Ok(crate::pyutil::dict_kv(ids(a.get(0)).into_iter().map(|g| {
+        "GetMembersForMultipleGroups" => Ok(crate::pyutil::dict_kv(
+            as_id_or_ids(a.get(0)).into_iter().map(|g| {
                 (
                     PyValue::Int(g),
                     og::members_value(&visible_members(reg, g, me)),
                 )
-            })))
-        }
+            }),
+        )),
         "Create" => match a.text(0) {
             Some(name) => {
                 let desc = a.text(1).unwrap_or_default();
@@ -121,13 +111,13 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             _ => Err(a.bad("(groupID, {memberID: type})")),
         },
         "UpdateMembershipTypes" => match (gid, a.int(2)) {
-            (Some(g), Some(t)) => og::retype(reg, me, g, &ids(a.get(1)), t)
+            (Some(g), Some(t)) => og::retype(reg, me, g, &as_id_or_ids(a.get(1)), t)
                 .map(failures)
                 .map_err(refuse),
             _ => Err(a.bad("(groupID, [ids], type)")),
         },
         "DeleteMembers" => match gid {
-            Some(g) => og::remove_members(reg, me, g, &ids(a.get(1)))
+            Some(g) => og::remove_members(reg, me, g, &as_id_or_ids(a.get(1)))
                 .map(failures)
                 .map_err(refuse),
             None => Err(a.bad("(groupID, [ids])")),

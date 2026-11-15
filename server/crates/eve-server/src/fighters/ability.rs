@@ -897,13 +897,13 @@ fn activate_one(
             ),
         ),
         TargetMode::ItemTargeted => {
-            let Some(PyValue::Int(target)) = args.first() else {
+            let Some(target) = crate::service::args::as_int(args.first()) else {
                 return Err(Refusal::text("That ability needs a target."));
             };
-            if *target == ship || state(w).squadron(*target).is_some() {
+            if target == ship || state(w).squadron(target).is_some() {
                 return Err(Refusal::text("A squadron cannot target its own ship."));
             }
-            let victim = target_in(w, s.solar_system_id, *target)
+            let victim = target_in(w, s.solar_system_id, target)
                 .ok_or_else(|| Refusal::text("That target is not in this system."))?;
             if effects::is_target_ewar(info.effect)
                 && let Some(me) = w.roster().get(id).map(|p| p.motion.position)
@@ -923,7 +923,7 @@ fn activate_one(
                     args: r.args,
                 });
             }
-            (Some(*target), None)
+            (Some(target), None)
         }
     };
     if info.duration_ms <= 0 {

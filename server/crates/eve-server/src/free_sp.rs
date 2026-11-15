@@ -30,7 +30,7 @@
 //! deliver). The client's own injection path makes no prerequisite check.
 //! Falsifier: the owner says TQ allows it.
 
-use crate::service::args::Args;
+use crate::service::args::{Args, as_int_whole};
 use crate::service::{Registry, Request, ServiceError};
 use crate::skill::{MAX_LEVEL, level_for_points, sp_for_level};
 use eve_marshal::PyValue;
@@ -251,18 +251,6 @@ fn refuse(label: &str, fields: Vec<(&str, PyValue)>) -> ServiceError {
     ServiceError::Raise(eve_proto::user_error(label, crate::pyutil::pypairs(fields)))
 }
 
-/// Kept local: also reads a whole-number real as an integer (the client's
-/// skill-point counts may arrive as either), which `Args::int` refuses.
-// Documented exception (#139): a whole-valued `Real` is a count too, which no
-// `args` reader accepts (`as_int_real` also truncates a fractional one).
-fn int(v: Option<&PyValue>) -> Option<i64> {
-    match v {
-        Some(PyValue::Int(i)) => Some(*i),
-        Some(PyValue::Real(r)) if r.fract() == 0.0 => Some(*r as i64),
-        _ => None,
-    }
-}
-
 /// `ApplyFreeSkillPoints(typeID, points)`: one skill, returns the new pool.
 ///
 /// The client has already clamped to level V and raised the three refusals;
@@ -273,7 +261,7 @@ pub(crate) fn apply_one(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue
         return Ok(PyValue::None);
     };
     let a = Args::new(req);
-    let (Some(type_id), Some(points)) = (int(a.get(0)), int(a.get(1))) else {
+    let (Some(type_id), Some(points)) = (as_int_whole(a.get(0)), as_int_whole(a.get(1))) else {
         return Err(Args::new(req).bad("(typeID, points)"));
     };
     if points <= 0 {
@@ -337,7 +325,7 @@ pub(crate) fn pairs(req: &Request<'_>) -> Result<Vec<(i64, i64)>, ServiceError> 
         .iter()
         .map(|p| {
             let v = crate::service::args::as_list(Some(p))?;
-            Some((int(v.first())?, int(v.get(1))?))
+            Some((as_int_whole(v.first())?, as_int_whole(v.get(1))?))
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| Args::new(req).bad("an entry that is not (typeID, level)"))

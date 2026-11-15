@@ -7,7 +7,7 @@
 //! The same reference reaches the other pilot inside `OnTradeInitiate`, and
 //! `dispatch.rs` resolves it from `Registry::world_objects`.
 
-use super::args::{Args, as_float, as_int};
+use super::args::{Args, as_float, as_id_or_ids, as_int};
 use super::*;
 use crate::pyutil::keyval;
 use crate::trade::{self as tr, Refusal};
@@ -29,17 +29,6 @@ fn refuse(r: Refusal) -> ServiceError {
             crate::pyutil::pypairs(vec![("notify", crate::pyutil::bstr(text))]),
         ),
     })
-}
-
-/// Item ids from a single id or a list of them.
-fn ids(v: Option<&PyValue>) -> Vec<i64> {
-    match v {
-        Some(PyValue::Int(n)) => vec![*n],
-        Some(PyValue::List(items) | PyValue::Tuple(items)) => {
-            items.iter().filter_map(|i| as_int(Some(i))).collect()
-        }
-        _ => Vec::new(),
-    }
 }
 
 pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
@@ -81,9 +70,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         }
         // `Add(itemID, sourceLocation, qty=, flag=)`.
         (tr::BOUND, "Add") => {
-            let Some(item) = a.int(0) else {
-                return Err(a.bad("(itemID, sourceLocation, qty=, flag=)"));
-            };
+            let item = a.need_int(0)?;
             // the keyword wins over position 2
             let qty = as_int(a.kw("qty").or_else(|| a.get(2)));
             tr::add(reg, me, &[item], qty).map_err(refuse)?;
@@ -91,7 +78,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         }
         // `MultiAdd(itemIDs, sourceLocation, flag=)`.
         (tr::BOUND, "MultiAdd") => {
-            tr::add(reg, me, &ids(a.get(0)), None).map_err(refuse)?;
+            tr::add(reg, me, &as_id_or_ids(a.get(0)), None).map_err(refuse)?;
             Ok(PyValue::None)
         }
         (tr::BOUND, "OfferMoney") => {

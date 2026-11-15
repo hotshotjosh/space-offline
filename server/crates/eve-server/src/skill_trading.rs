@@ -49,7 +49,7 @@
 
 use crate::item::{Edit, Item, ItemType, Slot};
 use crate::module::Deltas;
-use crate::service::args::Args;
+use crate::service::args::{Args, as_int_whole};
 use crate::service::{Registry, Request, ServiceError};
 use crate::skill::{MAX_LEVEL, level_for_points, sp_for_level};
 use eve_marshal::PyValue;
@@ -245,16 +245,6 @@ fn refuse(label: &str, fields: Vec<(&str, PyValue)>) -> ServiceError {
     ServiceError::Raise(eve_proto::user_error(label, crate::pyutil::pypairs(fields)))
 }
 
-/// Kept local: also reads a whole-number real as an integer (the client's
-/// skill-point counts may arrive as either), which `Args::int` refuses.
-fn int(v: Option<&PyValue>) -> Option<i64> {
-    match v {
-        Some(PyValue::Int(i)) => Some(*i),
-        Some(PyValue::Real(r)) if r.fract() == 0.0 => Some(*r as i64),
-        _ => None,
-    }
-}
-
 /// The pilot's total for the table: trained points plus the unallocated pool.
 fn total_of(reg: &Registry, id: i64) -> i64 {
     reg.skills.get(&id).map_or(0, |s| s.total_points()) + crate::free_sp::of(reg, id)
@@ -324,7 +314,10 @@ fn check_quantity(item: &Item, quantity: i64) -> Result<(), ServiceError> {
 }
 
 fn item_and_quantity(req: &Request<'_>) -> Result<(i64, i64), ServiceError> {
-    match (int(Args::new(req).get(0)), int(Args::new(req).get(1))) {
+    match (
+        as_int_whole(Args::new(req).get(0)),
+        as_int_whole(Args::new(req).get(1)),
+    ) {
         (Some(i), Some(q)) => Ok((i, q)),
         _ => Err(Args::new(req).bad("(itemID, quantity)")),
     }
@@ -350,8 +343,10 @@ pub(crate) fn check_injection(
 /// the points the stack would give this pilot now. The third argument is
 /// ignored: non-diminishing injections are 0.
 pub(crate) fn diminished_sp(reg: &Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
-    let (Some(type_id), Some(quantity)) = (int(Args::new(req).get(0)), int(Args::new(req).get(1)))
-    else {
+    let (Some(type_id), Some(quantity)) = (
+        as_int_whole(Args::new(req).get(0)),
+        as_int_whole(Args::new(req).get(1)),
+    ) else {
         return Err(Args::new(req).bad("(typeID, quantity, nonDiminishing)"));
     };
     let total = req.actor.map_or(0, |id| total_of(reg, id));
@@ -433,7 +428,7 @@ fn extraction_dict(req: &Request<'_>) -> Result<Vec<(i64, i64)>, ServiceError> {
     };
     let mut out: Vec<(i64, i64)> = Vec::new();
     for (value, key) in entries {
-        let (Some(t), Some(p)) = (int(Some(key)), int(Some(value))) else {
+        let (Some(t), Some(p)) = (as_int_whole(Some(key)), as_int_whole(Some(value))) else {
             return Err(Args::new(req).bad("a skill entry that is not ints"));
         };
         if out.iter().any(|e| e.0 == t) {
@@ -519,7 +514,7 @@ pub(crate) fn extract(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, 
         return Ok(PyValue::None);
     };
     let take = extraction_dict(req)?;
-    let Some(extractor_id) = int(Args::new(req).get(1)) else {
+    let Some(extractor_id) = as_int_whole(Args::new(req).get(1)) else {
         return Err(Args::new(req).bad("(skills, itemID, token)"));
     };
     if reg.docked_station(actor).is_none() {

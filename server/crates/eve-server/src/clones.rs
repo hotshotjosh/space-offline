@@ -842,9 +842,7 @@ pub(crate) fn set_home_station(
         return Err(clones_refusal("No character is selected."));
     };
     let a = Args::new(req);
-    let Some(station_id) = a.int(0) else {
-        return Err(a.bad("(new_home_station_id, allow_remote)"));
-    };
+    let station_id = a.need_int(0)?;
     let Some(here) = docked_at(reg, actor) else {
         return Err(clones_refusal(
             "Dock in a station to make it your home station.",
@@ -1074,9 +1072,7 @@ pub(crate) fn destroy_jump_clone(
         return Err(clones_refusal("No character is selected."));
     };
     let a = Args::new(req);
-    let Some(id) = a.int(0) else {
-        return Err(a.bad("(cloneID,)"));
-    };
+    let id = a.need_int(0)?;
     if reg.clones.owned(actor, id).is_none() {
         return Err(clones_refusal("That jump clone is not yours."));
     }

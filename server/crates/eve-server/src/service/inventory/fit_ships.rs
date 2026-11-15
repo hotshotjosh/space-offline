@@ -79,14 +79,10 @@ fn kw<'a>(req: &'a Request<'_>, name: &str) -> Option<&'a PyValue> {
     Args::new(req).kw(name)
 }
 
-fn int_of(v: Option<&PyValue>) -> Option<i64> {
-    args::as_int(v)
-}
-
 /// Read the keyword arguments; `None` when the shape is not the client's.
 pub(super) fn decode(req: &Request<'_>) -> Option<Order> {
-    let ship_type_id = int_of(kw(req, "shipTypeID"))?;
-    let num_to_fit = int_of(kw(req, "numToFit"))?;
+    let ship_type_id = args::as_int(kw(req, "shipTypeID"))?;
+    let num_to_fit = args::as_int(kw(req, "numToFit"))?;
     let fit_info = kw(req, "fitInfo")?;
     let at = |n: &str| crate::contracts::attr(fit_info, n);
     let mut modules = BTreeMap::new();
@@ -107,10 +103,10 @@ pub(super) fn decode(req: &Request<'_>) -> Option<Order> {
     let name = args::as_text(kw(req, "name"));
     Some(Order {
         ship_type_id,
-        station_id: int_of(kw(req, "itemLocationID")),
+        station_id: args::as_int(kw(req, "itemLocationID")),
         name,
         num_to_fit,
-        container: int_of(kw(req, "itemContainerID")),
+        container: args::as_int(kw(req, "itemContainerID")),
         fit_rigs: args::as_flag_lax(kw(req, "fitRigs")),
         modules,
         cargo,

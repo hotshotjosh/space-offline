@@ -81,10 +81,6 @@ mod vulnerability;
 
 // -- small helpers -----------------------------------------------------------
 
-fn ids(v: Option<&PyValue>) -> Vec<i64> {
-    as_int(v).map_or_else(|| args::as_int_list(v), |n| vec![n])
-}
-
 /// A refusal the player reads (`CustomNotify`) **[A]**.
 fn notify(msg: &str) -> ServiceError {
     ServiceError::Raise(eve_proto::user_error(
@@ -450,7 +446,7 @@ fn directory(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceEr
             let Some(me) = me else {
                 return Ok(PyValue::List(vec![]));
             };
-            let wanted = ids(Args::new(req).get(0));
+            let wanted = args::as_id_or_ids(Args::new(req).get(0));
             Ok(PyValue::List(
                 structure::all(reg.deltas())
                     .iter()
@@ -653,7 +649,10 @@ fn profiles(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceErr
         }
         "ChangeProfiles" => {
             let corp = manager_corp(reg, me)?;
-            let (Some(id), wanted) = (Args::new(req).int(1), ids(Args::new(req).get(0))) else {
+            let (Some(id), wanted) = (
+                Args::new(req).int(1),
+                args::as_id_or_ids(Args::new(req).get(0)),
+            ) else {
                 return Err(Args::new(req).bad("([structureID], profileID)"));
             };
             let moved = sp::assign(reg, corp, &wanted, id).map_err(refuse)?;

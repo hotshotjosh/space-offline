@@ -432,9 +432,7 @@ fn docked(reg: &Registry, actor: i64) -> Option<(Character, i64)> {
 /// is left alone.
 pub fn assemble(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
     let a = Args::new(req);
-    let Some(item_id) = a.int(0) else {
-        return Err(a.bad("(itemID, name, ?)"));
-    };
+    let item_id = a.need_int(0)?;
     let Some(actor) = req.actor else {
         return Err(notify("No character is selected."));
     };
