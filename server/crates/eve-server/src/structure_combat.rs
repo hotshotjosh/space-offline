@@ -18,6 +18,12 @@
 //!   3354-3356, 5770 `CanHaveAutoRepair`, 5771 `CanHaveArmorPhases`
 //!   (`C:dogma/const.py`); `OfferLockTarget` has no structure exclusion, so the
 //!   client asks to lock one.
+//! - **[V]** 2744 is `attributeServiceModuleFullPowerStateHitpointMultiplier`
+//!   (`C:dogma/const.py:880`). **[I]** from that name: it applies in the
+//!   full-power state only.
+//! - **[I]** the bars are fractions, so a Full to Low change keeps the
+//!   fractions and shrinks the points. Falsifier: a client Show Info on a
+//!   structure that just lost power, showing the same absolute shield.
 //! - **[I]** 2743 is the hull's own HP multiplier (every structure hull
 //!   carries 1.0 [V-data]); the limit is on damage *taken* per second.
 //! - **[A]** [`FULL_POWER_HP_MULTIPLIER`], [`UNDER_FIRE_WINDOW_SECS`], damage
@@ -85,7 +91,8 @@ pub struct Layers {
 
 /// `type_id`'s [`Layers`] from the content. `full_power` is a structure with
 /// its service modules online (the multiplier is [`FULL_POWER_HP_MULTIPLIER`]
-/// [A]); else the hull's own 2743 (default 1.0) **[I]**.
+/// [A]); else the hull's own 2743 (default 1.0) **[I]**. The caller passes
+/// [`full_power`]`(s)`.
 pub fn layers(content: &crate::content::Content, type_id: i64, full_power: bool) -> Layers {
     use crate::damage::attr;
     use crate::typedata::{attribute_in, own_attribute_in};
@@ -115,6 +122,16 @@ pub fn layers(content: &crate::content::Content, type_id: i64, full_power: bool)
         ],
         pause_dps: ATTR_PAUSE_REPAIR_DPS.map(cap),
     }
+}
+
+/// Whether the structure is in its full-power state: Low and Abandoned are
+/// not; an unset upkeep counts as Full **[I]**: the client switches an
+/// unrecognised upkeep to Full on its next update (`C:structures/structure.py:609-610`).
+fn full_power(s: &Structure) -> bool {
+    !matches!(
+        s.upkeep,
+        Some(structure::Upkeep::Low | structure::Upkeep::Abandoned)
+    )
 }
 
 /// The layer a shot lands on first, by state: ShieldVulnerable 0,
@@ -460,7 +477,7 @@ pub fn hit(w: &mut Registry, v: Volley, now: BlueTime) {
     let mut dealt = [0.0; 3];
     let mut dead = false;
     if landing {
-        let l = layers(w.content(), s.type_id, true);
+        let l = layers(w.content(), s.type_id, full_power(&s));
         let taken = w.ext::<Fire>().taken_this_second(s.id, v.at);
         let a = apply(&l, &s, v.damage, taken);
         dealt = a.dealt;
@@ -1137,6 +1154,57 @@ pub(crate) mod tests {
             SMALL,
             "recorded for the per-second limit"
         );
+    }
+
+    /// One kinetic volley of `d` on a structure with `upkeep`; the shield bar.
+    fn shield_bar_after_volley(upkeep: Upkeep, d: f64) -> (f64, f64) {
+        let (mut reg, id) = shoot_world(&attr_text(""));
+        let mut s = structure::get(reg.deltas(), id).unwrap();
+        s.upkeep = Some(upkeep);
+        structure::put(reg.deltas_mut(), &s);
+        hit(&mut reg, volley(id, kinetic(d), 3), blue_now());
+        let hp = |full| layers(reg.content(), ASTRAHUS, full).hp[0];
+        assert!(d < hp(false), "the volley stays inside the bare layer");
+        assert_ne!(
+            hp(true),
+            hp(false),
+            "the fixture's full-power multiplier changes the layer"
+        );
+        let bar = bars(&reg, id).0;
+        (bar, 1.0 - d / hp(upkeep == Upkeep::Full))
+    }
+
+    #[test]
+    fn a_low_power_structure_takes_the_volley_on_its_bare_shield() {
+        let (bar, want) = shield_bar_after_volley(Upkeep::Low, SMALL);
+        assert!((bar - want).abs() < 1e-9, "{bar} vs {want}");
+    }
+
+    #[test]
+    fn an_abandoned_structure_takes_the_volley_on_its_bare_shield() {
+        let (bar, want) = shield_bar_after_volley(Upkeep::Abandoned, SMALL);
+        assert!((bar - want).abs() < 1e-9, "{bar} vs {want}");
+    }
+
+    #[test]
+    fn a_full_power_structure_still_uses_the_full_power_layers() {
+        let (bar, want) = shield_bar_after_volley(Upkeep::Full, SMALL);
+        assert!((bar - want).abs() < 1e-9, "{bar} vs {want}");
+    }
+
+    #[test]
+    fn full_power_counts_unset_upkeep_as_full() {
+        let (reg, id) = shoot_world(&attr_text(""));
+        let mut s = structure::get(reg.deltas(), id).unwrap();
+        for (u, want) in [
+            (None, true),
+            (Some(Upkeep::Full), true),
+            (Some(Upkeep::Low), false),
+            (Some(Upkeep::Abandoned), false),
+        ] {
+            s.upkeep = u;
+            assert_eq!(full_power(&s), want, "{u:?}");
+        }
     }
 
     #[test]
