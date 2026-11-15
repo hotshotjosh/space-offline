@@ -39,6 +39,7 @@ fn bot(
     diligence: f64,
     hall: &Arc<Hall>,
     addr: std::net::SocketAddr,
+    state: &std::path::Path,
 ) -> (Handle, std::thread::JoinHandle<()>) {
     let now = driver::unix_now();
     let mut mind = Mind::seeded(name, 1, TABLE, &Signals::default(), now);
@@ -54,10 +55,19 @@ fn bot(
     let mut soc = Society::new(mind, TABLE, Signals::default());
     soc.decide_every = Duration::from_secs(3_600);
     soc.hall = Some(Arc::clone(hall));
+    soc.state = Some(state.to_path_buf());
     let mut config = BotConfig::new(name, addr, Pace::Fast).with_society(soc);
     config.chat = false;
     config.policy.gm_setup = false;
     driver::spawn(config)
+}
+
+/// A per-test persona-log directory (#273), empty.
+fn state_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("cofound-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
 }
 
 fn server() -> std::net::SocketAddr {
@@ -91,7 +101,8 @@ fn three_bots_pledge_one_founds_and_two_join() {
     let addr = server();
     fund(addr, true);
     let hall = Arc::new(Hall::new(DAY).with_every(0));
-    let (ann, ta) = bot("Ann", 1.0, &hall, addr);
+    let dir = state_dir("found");
+    let (ann, ta) = bot("Ann", 1.0, &hall, addr, &dir);
     // Ann is the only candidate until the others arrive: nobody pledges.
     // Wait until the hall has seen her: the others log in on their own
     // threads, and one that registered first would be chosen founder (the
@@ -106,8 +117,8 @@ fn three_bots_pledge_one_founds_and_two_join() {
         "Ann never registered:\n{}",
         dump(&ann)
     );
-    let (ben, tb) = bot("Ben", 0.9, &hall, addr);
-    let (cas, tc) = bot("Cas", 0.8, &hall, addr);
+    let (ben, tb) = bot("Ben", 0.9, &hall, addr, &dir);
+    let (cas, tc) = bot("Cas", 0.8, &hall, addr, &dir);
     let done = until(Duration::from_secs(90), || {
         let st = hall.snapshot();
         let corp = st.members.get(&ANN).map(|m| m.corp);
@@ -166,6 +177,13 @@ fn three_bots_pledge_one_founds_and_two_join() {
         "{:?}",
         st.acts
     );
+    // The driver's corp diff reaches the persona log (#273): the founder
+    // and each joiner have a `corp join` line.
+    for who in ["Ann", "Ben", "Cas"] {
+        let tail = eve_bot::persona_log::tail(&dir, who, 50).join("\n");
+        assert!(tail.contains(" corp join "), "{who}:\n{tail}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -174,9 +192,10 @@ fn a_pool_that_cannot_found_is_refunded_at_the_deadline() {
     // No Corporation Management for Ann: the pool fills and cannot found.
     fund(addr, false);
     let hall = Arc::new(Hall::new(DAY).with_every(0));
-    let (ann, ta) = bot("Ann", 1.0, &hall, addr);
-    let (ben, tb) = bot("Ben", 0.9, &hall, addr);
-    let (cas, tc) = bot("Cas", 0.8, &hall, addr);
+    let dir = state_dir("refund");
+    let (ann, ta) = bot("Ann", 1.0, &hall, addr, &dir);
+    let (ben, tb) = bot("Ben", 0.9, &hall, addr, &dir);
+    let (cas, tc) = bot("Cas", 0.8, &hall, addr, &dir);
     let refunded = until(Duration::from_secs(120), || {
         let st = hall.snapshot();
         st.pool.journal.iter().any(|e| e.kind == Kind::Pledge)

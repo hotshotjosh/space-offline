@@ -7297,11 +7297,17 @@ impl Bot {
             && matches!(self.obs.place, Place::Docked { .. })
         {
             let corps_before = soc.lock().corps.clone();
-            let lines = crate::corpmind::turn(conn, hall, &soc.mind, soc.table, now)?;
-            let corps_after = soc.lock().corps.clone();
-            for (kind, text) in mind::corp_changes(&corps_before, &corps_after) {
-                self.decision(kind, &text);
+            let turned = crate::corpmind::turn(conn, hall, &soc.mind, soc.table, now);
+            // Log before `?`: a stint made before a later wire error is
+            // still a real join. A turn that did nothing changed no stint
+            // (every `stint` call is followed by a line), so skip the diff.
+            if !turned.as_ref().is_ok_and(|l| l.is_empty()) {
+                let corps_after = soc.lock().corps.clone();
+                for (kind, text) in mind::corp_changes(&corps_before, &corps_after) {
+                    self.decision(kind, &text);
+                }
             }
+            let lines = turned?;
             // R-REL-3: the friendly humans a fleet commander invites.
             {
                 let (regard, loyalty) = {
@@ -8472,6 +8478,14 @@ mod tests {
         assert!(!h.is_live());
         assert_eq!(online.load(Ordering::SeqCst), 0);
         assert_eq!(connects(&h), 1, "it stays off while released");
+        // The shed note is written before this act.
+        assert!(
+            wait_for(&h, Duration::from_secs(30), |log| log
+                .iter()
+                .any(|e| e.what.starts_with("offline: released by the bubble"))),
+            "{:#?}",
+            h.log()
+        );
         let kinds = |dir: &PathBuf| crate::persona_log::tail(dir, NAME, 50).join("\n");
         assert!(kinds(&dir).contains(" shed "), "{}", kinds(&dir));
         h.wake();
@@ -8484,6 +8498,40 @@ mod tests {
         h.stop();
         let _ = t.join();
         assert!(kinds(&dir).contains(" wake "), "{}", kinds(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A bot stopped while released logs a shed and no wake** (#273): it
+    /// never logs on again.
+    #[test]
+    fn a_released_bot_stopped_while_off_logs_no_wake() {
+        const NAME: &str = "Invented Stopbot";
+        let addr = society_server(&[NAME]);
+        let signals = Signals::default();
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let dir = scratch("stopped");
+        let mut soc = Society::new(mind, FIXTURE, signals);
+        soc.state = Some(dir.clone());
+        let (h, t) = spawn(society_bot(NAME, addr, soc));
+        h.watch();
+        assert!(
+            wait_for(&h, Duration::from_secs(30), |_| h.is_live()),
+            "{:#?}",
+            h.log()
+        );
+        h.release();
+        assert!(
+            wait_for(&h, Duration::from_secs(60), |log| log
+                .iter()
+                .any(|e| e.what.starts_with("offline: released by the bubble"))),
+            "{:#?}",
+            h.log()
+        );
+        h.stop();
+        let _ = t.join();
+        let notes = crate::persona_log::tail(&dir, NAME, 50).join("\n");
+        assert!(notes.contains(" shed "), "{notes}");
+        assert!(!notes.contains(" wake "), "{notes}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

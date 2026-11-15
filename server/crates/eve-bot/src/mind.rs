@@ -654,9 +654,12 @@ pub fn decision_line(m: &Mind, e: &Evaluation) -> String {
 
 /// **The goal pushes and pops between two stacks** (#273), as persona-log
 /// `(kind, text)` pairs. A `Wallet` counts as one goal whatever its amount
-/// (the amount moves with prices, so comparing by value would log on every
-/// rescore) **[I]**; every other goal counts by value. A changed active
-/// goal adds an `active` line.
+/// **[I]**: today the amount is the constant `WALLET_GOAL`, and the key
+/// guards against a future price-tracking amount logging on every rescore.
+/// Every other goal counts by value. The known churn risk is `Rung(h)`
+/// pushing and popping as its `feasible` flag flips at the hull price;
+/// falsifier: a soak `.log` showing `goal push Rung` and `goal pop Rung`
+/// alternating across passes. A changed active goal adds an `active` line.
 pub fn goal_changes(before: &[Goal], after: &[Goal]) -> Vec<(&'static str, String)> {
     fn same(a: &Goal, b: &Goal) -> bool {
         match (a, b) {
@@ -1215,6 +1218,32 @@ mod tests {
         };
         let c = corp_changes(&[open], &[closed]);
         assert_eq!(c, vec![("corp", "leave 7001".to_owned())]);
+        // A rejoin of a corp left earlier is a join.
+        let again = Stint {
+            joined: 30,
+            left: None,
+            ..open
+        };
+        let c = corp_changes(&[closed], &[closed, again]);
+        assert_eq!(c, vec![("corp", "join 7001".to_owned())]);
+        // A switch in one diff: a leave, then a join.
+        let next = Stint {
+            corp: 7_002,
+            joined: 30,
+            left: None,
+        };
+        let shut = Stint {
+            left: Some(30),
+            ..open
+        };
+        let c = corp_changes(&[open], &[shut, next]);
+        assert_eq!(
+            c,
+            vec![
+                ("corp", "leave 7001".to_owned()),
+                ("corp", "join 7002".to_owned())
+            ]
+        );
     }
 
     #[test]
