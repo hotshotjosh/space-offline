@@ -1028,10 +1028,16 @@ fn set_state(reg: &mut Registry, h: &Hub, state: HubState, offline_days: u32) {
 /// A claim with a real hub goes through [`lapse`]; a stand-in claim (no
 /// hub row) is cleared and announced, with its peers told.
 pub fn on_alliance_closed(reg: &mut Registry, alliance_id: i64, now: i64) {
-    for c in sov::claims_of(reg.deltas(), alliance_id) {
+    let claims = sov::claims_of(reg.deltas(), alliance_id);
+    crate::errln!(
+        "[sov] alliance {alliance_id} closed: {} claim(s) lapse",
+        claims.len()
+    );
+    for c in claims {
         match hub(reg.deltas(), c.system_id) {
             Some(h) => lapse(reg, &h, now),
             None => {
+                crate::entosis::forget(reg, c.system_id, c.hub_id);
                 let before = crate::sov_workforce::before(reg, c.system_id, true);
                 if let Some(change) = sov::set_claim(reg.deltas_mut(), c.system_id, None, now) {
                     sov::announce(reg, &change);

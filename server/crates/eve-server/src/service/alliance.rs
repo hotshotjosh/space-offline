@@ -1623,15 +1623,6 @@ mod tests {
         .expect("export");
         configure(&mut reg, H1, ALICE, Mode::Import([S0].into())).expect("import");
         // Hubs named by the StateChangedNotices queued since the last look.
-        let told = |reg: &mut Registry| -> Vec<i64> {
-            let mut v: Vec<i64> = crate::gateway_out::take(reg)
-                .iter()
-                .filter(|(t, _, _)| t.ends_with("StateChangedNotice"))
-                .filter_map(|(_, p, _)| crate::sov_proto::read_id(p, 4).map(|h| h as i64))
-                .collect();
-            v.sort_unstable();
-            v
-        };
         let bind = PyValue::Tuple(vec![PyValue::Int(id), PyValue::Int(1)]);
         let _ = told(&mut reg);
 
@@ -1700,14 +1691,15 @@ mod tests {
         assert!(told(&mut reg).is_empty(), "nothing moved, nobody is told");
     }
 
-    /// #272: the last corp out closes the alliance and its claims lapse; a
-    /// corp leaving an alliance that stays open keeps them.
-    #[test]
-    fn the_last_corp_quitting_lapses_every_claim_and_tells_the_peers() {
-        const S0: i64 = 39_200_000;
-        const S1: i64 = 39_200_001;
-        const H0: i64 = 43_200_000;
-        const H1: i64 = 43_200_001;
+    const S0: i64 = 39_200_000;
+    const S1: i64 = 39_200_001;
+    const STAND_IN: i64 = 39_200_003;
+    const H0: i64 = 43_200_000;
+    const H1: i64 = 43_200_001;
+
+    /// Two systems with a hub each, exporting S0 -> S1, a skyhook of corp A over S0,
+    /// a stand-in claim, and another alliance's claim. Returns (reg, a, b, alliance).
+    fn two_hub_world() -> (Registry, i64, i64, i64) {
         let text = format!(
             "star\t41200000\t9000\t1000\t0\t0\t0\t{S0}\t0\t0\n\
              planet\t41200001\t9002\t100\t2\t0\t0\t{S0}\t0\t0\n\
@@ -1750,6 +1742,8 @@ mod tests {
         }
         // A third system held by another alliance, which must be left alone.
         crate::sov::set_claim(reg.deltas_mut(), 39_200_002, Some((id + 1, a + 1)), 1);
+        // A stand-in claim (no hub row), held by the closing alliance (#272).
+        crate::sov::set_claim(reg.deltas_mut(), STAND_IN, Some((id, a)), 1);
         crate::skyhook::put(
             reg.deltas_mut(),
             &crate::skyhook::Skyhook {
@@ -1780,15 +1774,24 @@ mod tests {
         )
         .expect("export");
         configure(&mut reg, H1, ALICE, Mode::Import([S0].into())).expect("import");
-        let told = |reg: &mut Registry| -> Vec<i64> {
-            let mut v: Vec<i64> = crate::gateway_out::take(reg)
-                .iter()
-                .filter(|(t, _, _)| t.ends_with("StateChangedNotice"))
-                .filter_map(|(_, p, _)| crate::sov_proto::read_id(p, 4).map(|h| h as i64))
-                .collect();
-            v.sort_unstable();
-            v
-        };
+        (reg, a, b, id)
+    }
+
+    fn told(reg: &mut Registry) -> Vec<i64> {
+        let mut v: Vec<i64> = crate::gateway_out::take(reg)
+            .iter()
+            .filter(|(t, _, _)| t.ends_with("StateChangedNotice"))
+            .filter_map(|(_, p, _)| crate::sov_proto::read_id(p, 4).map(|h| h as i64))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// #272: the last corp out closes the alliance and its claims lapse; a
+    /// corp leaving an alliance that stays open keeps them.
+    #[test]
+    fn the_last_corp_quitting_lapses_every_claim() {
+        let (mut reg, a, b, id) = two_hub_world();
         let bind = PyValue::Tuple(vec![PyValue::Int(id), PyValue::Int(1)]);
         let _ = told(&mut reg);
 
@@ -1833,9 +1836,38 @@ mod tests {
             Some(id + 1),
             "another alliance keeps its claim"
         );
+        assert_eq!(
+            crate::sov::holder(reg.deltas(), STAND_IN),
+            None,
+            "stand-in claim lapsed"
+        );
+        assert!(
+            crate::sov::claim(reg.deltas(), STAND_IN).is_none(),
+            "stand-in row dropped"
+        );
+    }
+
+    /// #272: the hook itself tells the peers. The skyhook's corp is still in
+    /// the alliance, so no membership change has moved any hub's state.
+    #[test]
+    fn on_alliance_closed_lapses_hubs_and_stand_ins_and_tells_the_peers() {
+        let (mut reg, _a, _b, id) = two_hub_world();
+        let _ = told(&mut reg);
+        crate::sov_hub::on_alliance_closed(&mut reg, id, 5);
         assert!(
             told(&mut reg).contains(&H1),
             "the importing peer is told its source went"
+        );
+        for s in [S0, S1, STAND_IN] {
+            assert_eq!(crate::sov::holder(reg.deltas(), s), None, "claim {s}");
+        }
+        assert!(crate::sov_hub::hub(reg.deltas(), S0).is_none());
+        assert!(crate::sov_hub::hub(reg.deltas(), S1).is_none());
+        assert!(crate::sov::claim(reg.deltas(), STAND_IN).is_none());
+        assert_eq!(
+            crate::sov::holder(reg.deltas(), 39_200_002),
+            Some(id + 1),
+            "another alliance keeps its claim"
         );
     }
 
