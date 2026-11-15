@@ -943,8 +943,12 @@ pub fn window(reg: &Registry) -> Summary {
         }
     }
     s.by_ref.retain(|_, x| x.rows > 0);
-    s.faucet -= late.faucet;
-    s.sink -= late.sink;
+    // Never below 0: with no live rows, f64 regrouping can leave -1e-9; and
+    // after a hard crash the snapshot (with the `late` rows) can be newer
+    // than the ledger log's last flushed rows, so the window lacks some of
+    // what `late` subtracts.
+    s.faucet = (s.faucet - late.faucet).max(0.0);
+    s.sink = (s.sink - late.sink).max(0.0);
     s.unclassified = s.unclassified.saturating_sub(late.unclassified);
     s
 }
@@ -1924,6 +1928,21 @@ mod tests {
         assert!((r.credit - 140.0).abs() < 1e-9, "{r:?}");
         assert_eq!(r.rows, 2);
         assert_eq!(late_rows(&w), 0, "the fold cleared the late rows");
+    }
+
+    #[test]
+    fn the_window_never_goes_below_zero() {
+        let mut w = reg();
+        step(&mut w, &day(1), false);
+        // A `late` row with no live journal row under it: a crash's snapshot
+        // newer than the ledger log.
+        w.deltas_mut().put(
+            KIND,
+            vec![LATE.to_owned(), "sum".to_owned()],
+            vec!["40".to_owned(), "5".to_owned(), "0".to_owned()],
+        );
+        let s = window(&w);
+        assert_eq!((s.faucet, s.sink), (0.0, 0.0), "{s:?}");
     }
 
     #[test]
