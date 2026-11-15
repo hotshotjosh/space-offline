@@ -132,10 +132,10 @@ pub const FLAG_FUEL_BAY: i64 = 133;
 /// retail ship that spends cargo ozone while its bay holds some.
 pub const FUEL_FLAGS: [i64; 2] = [FLAG_FUEL_BAY, FLAG_CARGO];
 
-/// Field ids come from here: above the missile range
-/// (`missile::ID_END`) and below `u64`'s fakes **[A]** (no other range here;
-/// `field_ids_clear_of_every_other_range` lists the ones known). Falsified by
-/// an id that two systems mint.
+/// Field ids come from here: 9.8e12, above the survey probes
+/// (`moon_scan::ID_END`) and below the bubbles (`bubble::ID_BASE`) **[A]**.
+/// `id_bands_do_not_overlap` (in `cyno/tests.rs`) lists every band this
+/// server mints and fails on a clash. Falsified by an id that two systems mint.
 pub const FIELD_ID_BASE: i64 = 9_800_000_000_000;
 pub const FIELD_ID_END: i64 = 9_900_000_000_000;
 

@@ -99,10 +99,15 @@ pub const CHARGE_GROUP_ATTRS: [i64; 4] = [604, 605, 606, 609];
 const EFFECT_USE_MISSILES: i64 = 101;
 
 /// The first survey probe id, and one past the last. Clear of every other
-/// range this server mints (a test lists them): scan probes 9.0e12, missiles
-/// 9.5e12, command nodes 9.6e12, moon rocks 9.7e12, NPC orders 1.0e13.
-pub const ID_BASE: i64 = 9_800_000_000_000;
-pub const ID_END: i64 = 9_900_000_000_000;
+/// range this server mints: it sits above the moon rocks (9.7e12, plus the
+/// survey sites' ids just over `moon_belt::MOON_END`) and below the cyno
+/// fields (9.8e12), bubbles (9.9e12) and NPC orders (1.0e13). Scan probes
+/// (9.0e12), missiles (9.5e12) and command nodes (9.6e12) are lower still.
+/// `id_bands_do_not_overlap` (in `cyno/tests.rs`) lists every band and fails
+/// on a clash; a new band goes in that list. Not persisted (see [`Probes`]),
+/// so an id from the old 9.8e12 band cannot outlive a restart.
+pub const ID_BASE: i64 = 9_750_000_000_000;
+pub const ID_END: i64 = 9_800_000_000_000;
 
 /// **[A]** how many survey probes one pilot may have out at once. The client
 /// states no limit; this one only keeps a held key from spending a hold of
