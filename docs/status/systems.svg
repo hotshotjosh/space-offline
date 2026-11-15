@@ -141,7 +141,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="258.8" y="93.5" width="3" height="3" class="proved"/>
 <rect x="262.8" y="93.5" width="3" height="3" class="proved"/>
 <rect x="266.8" y="93.5" width="3" height="3" class="proved"/>
-<rect x="270.8" y="93.5" width="3" height="3" class="built"/>
+<rect x="270.8" y="93.5" width="3" height="3" class="proved"/>
 <rect x="274.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="278.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="282.8" y="93.5" width="3" height="3" class="built"/>
@@ -153,7 +153,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="306.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="310.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="314.8" y="93.5" width="3" height="3" class="built"/>
-<text x="322.8" y="98.0" class="s xs">18/30</text>
+<text x="322.8" y="98.0" class="s xs">19/30</text>
 <text x="16.0" y="114.0" class="t">Bots</text>
 <rect x="198.8" y="109.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="109.5" width="3" height="3" class="proved"/>
@@ -341,7 +341,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="318.8" y="221.5" width="3" height="3" class="proved"/>
 <rect x="322.8" y="221.5" width="3" height="3" class="proved"/>
 <rect x="326.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="330.8" y="221.5" width="3" height="3" class="built"/>
+<rect x="330.8" y="221.5" width="3" height="3" class="proved"/>
 <rect x="334.8" y="221.5" width="3" height="3" class="built"/>
 <rect x="338.8" y="221.5" width="3" height="3" class="built"/>
 <rect x="342.8" y="221.5" width="3" height="3" class="built"/>
@@ -350,7 +350,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="354.8" y="221.5" width="3" height="3" class="built"/>
 <rect x="358.8" y="221.5" width="3" height="3" class="built"/>
 <rect x="362.8" y="221.5" width="3" height="3" class="built"/>
-<text x="370.8" y="226.0" class="s xs">33/42</text>
+<text x="370.8" y="226.0" class="s xs">34/42</text>
 <text x="16.0" y="242.0" class="t">Tools and remote clients</text>
 <rect x="198.8" y="237.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="237.5" width="3" height="3" class="proved"/>
