@@ -227,6 +227,42 @@ class Loot(unittest.TestCase):
         })
 
 
+class LootLauncherSize(unittest.TestCase):
+    """#128: a launcher has no charge size; its group's size stands in."""
+    MOD = npr.CATEGORY_MODULE
+
+    def setUp(self):
+        self.saved = npr.LAUNCHER_SIZE
+        npr.LAUNCHER_SIZE = {98101: 2}
+
+    def tearDown(self):
+        npr.LAUNCHER_SIZE = self.saved
+
+    def _weapons(self, types, sizes):
+        f = {P1: {"ammo_groups": {1: 99201, 2: 99201, 3: 99201}}}
+        rows = npr.loot_rows(f, types, sizes, lambda t: "")
+        got = collections.defaultdict(list)
+        for r in rows:
+            if r[2] == "weapon":
+                got[r[4]].append(r[1])
+        return dict(got)
+
+    def test_a_launcher_is_at_its_group_size_only(self):
+        t1 = {"category": self.MOD, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+              "charge_groups": (99201,), "groupID": 98101}
+        self.assertEqual(self._weapons({990701: t1}, {}), {990701: [2]})
+
+    def test_an_unsized_launcher_group_stays_size_free(self):
+        t1 = {"category": self.MOD, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+              "charge_groups": (99201,), "groupID": 98199}
+        self.assertEqual(self._weapons({990702: t1}, {}), {990702: [1, 2, 3]})
+
+    def test_turret_weapon_rows_keep_their_charge_size(self):
+        t1 = {"category": self.MOD, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+              "charge_groups": (99201,), "groupID": 98101}
+        self.assertEqual(self._weapons({990703: t1}, {990703: 3}), {990703: [3]})
+
+
 class LootSizeBounds(unittest.TestCase):
     MOD, CHG = npr.CATEGORY_MODULE, npr.CATEGORY_CHARGE
 

@@ -431,11 +431,16 @@ def loot_rows(factions, types, sizes, name, needs=None):
             if t["category"] == CATEGORY_MODULE and (t.get("volume") or 0) >= CAPITAL_VOLUME:
                 continue  # a capital module: XL and rapid torpedo launchers too (#176)
             fits = [size] if size is not None else list(SIZES)
+            # A launcher has no charge size: its group's size stands in (#128),
+            # so a light launcher is not drawn by a battleship rat. A turret
+            # keeps its charge size; a group in neither is size-free.
+            wsize = size if size is not None else LAUNCHER_SIZE.get(t.get("groupID"))
+            wfits = [wsize] if wsize else list(SIZES)
             pools = []
             if t["category"] == CATEGORY_MODULE and t.get("metaGroupID") == META_TECH1:
                 pools += [(s, k, "base") for k, s in _equipment_pools(
                     f, t.get("groupID"), name(tid), (needs or {}).get(fid, ()))]
-                pools += [(s, "weapon", "base") for s in fits
+                pools += [(s, "weapon", "base") for s in wfits
                           if ammo.get(s) is not None and ammo[s] in t.get("charge_groups", ())]
             if t["category"] == CATEGORY_CHARGE and t.get("metaGroupID") in (None, META_TECH1):
                 pools += [(s, "ammo", "base") for s in fits
@@ -745,6 +750,11 @@ def check(ctx):
             bad.append("npc_regions: pirates with no belt groups in factions.tsv: %s"
                        % sorted(pset - parsed))
     bad += check_clone_tags(ctx)
+    if os.path.isfile(path):
+        for f in content.read_rows(path):
+            if f[6] and not f[9]:
+                ctx.note("npc/factions.tsv: faction %s (%s) has no ammo_groups, so no weapon or "
+                         "ammo rows (C6 section 2.6, #128)" % (f[0], f[-1]))
     kinds = collections.Counter(r[2] for r in content.read_rows(ctx.path("npc/loot.tsv")))
     ctx.note("npc/loot.tsv: rows by kind %s" % dict(sorted(kinds.items())))
     if os.path.isfile(path):
