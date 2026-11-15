@@ -43,19 +43,25 @@
 //! ## Match types
 //!
 //! A schedule row says *when*; the match type says *what* (filament, fleets,
-//! restrictions, rewards). The match types are client data and arrive with
-//! PG-1a (`proving/match_types.tsv`, not yet in the bundle). Until then the
-//! catalogue is built with **none**: an event gets a blank match type (id 0,
-//! no filament), so [`Catalogue::by_filament`] finds nothing and nothing
-//! panics. [`Catalogue::new`] takes the match types as a parameter so that
-//! wiring the bundle in is a change in [`load_table`] alone.
+//! restrictions, rewards). The match types are client data: [`load_table`]
+//! reads the bundle's `proving/match_types.tsv` and `proving/match_rewards.tsv`
+//! (PG-1a, #64; PG-1d) through [`MatchType::parse_rows`]. A bundle without the
+//! files (made before PG-1a) and a run with no bundle give **no** match types:
+//! an event gets a blank match type (id 0, no filament), so
+//! [`Catalogue::by_filament`] finds nothing and nothing panics.
+//!
+//! The loader has no type names, so [`MatchType::filament_name`] stays empty
+//! and a schedule row with a `name_has` word matches nothing; that row is
+//! [`Catalogue::unserved`] and logged. A row with no word (the shipped QA
+//! row) resolves by format alone.
 //!
 //! ## The [A]s (each with its falsifier)
 //!
 //! - **A blank match type sends `None` for every id the client resolves**
-//!   (`eventNameID`, the hint ids, the list ids). Falsified by a traceback in
-//!   the Proving Grounds window naming `GetByMessageID` or `GetTypeIDsByListID`
-//!   (then send `0`, or load the real match types).
+//!   (`eventNameID`, the hint ids, the list ids). It only serves a run with
+//!   no match types (no bundle, or a pre-PG-1a one). Falsified by a traceback
+//!   in the Proving Grounds window naming `GetByMessageID` or
+//!   `GetTypeIDsByListID` (then send `0`).
 //! - **The shipped row is a 2x1 QA event** (`content/pve/proving-events.tsv`):
 //!   always active, hidden from the window's list. Falsified by the client
 //!   listing the QA event in Neocom (then QA is not what hides it), or the
@@ -63,6 +69,10 @@
 //! - **A match type is chosen by format and a word of the filament's name**
 //!   ([`Catalogue::resolve`]). Falsified by PG-1a's table naming the schedule
 //!   in a column of its own.
+//! - **The first match type of the QA row's format, by id, is the QA event's**
+//!   (the shipped row has no `name_has`, so format alone picks it). Falsified
+//!   by the client window naming a different event than the filament it asks
+//!   for.
 //!
 //! ## The [I]s
 //!
@@ -87,8 +97,9 @@
 //!   (`movementFunctions.py`), is unrouted and answers no-such-method.
 //! - **Rows with no match type.** A row that is not QA is served only with a
 //!   match type: with a blank one the window would call `GetName(0)` and
-//!   `GetByMessageID(None)`. Until PG-1a loads the match types such a row is
-//!   dropped at load ([`Catalogue::unserved`]) and logged once.
+//!   `GetByMessageID(None)`. A row with no fitting match type is dropped at
+//!   load ([`Catalogue::unserved`]) and logged once. That holds for a row
+//!   with a `name_has` word until the loader has type names.
 
 use crate::authored::Row;
 use crate::content::{Boxed, Sources, TableSpec};
@@ -115,19 +126,37 @@ pub const TABLE: TableSpec = TableSpec {
     fixture: || Box::new(Catalogue::default()) as Boxed,
 };
 
-/// The schedule rows; the match types are PG-1a's and not here yet, so none.
+/// The schedule rows and the bundle's match types (none when the bundle has
+/// no `proving/match_types.tsv`, or there is no bundle).
 fn load_table(src: &Sources) -> Result<Boxed, String> {
     let file = src.authored(FILE, SHIPPED, HEADER)?;
     let schedules = file.parse_rows(Schedule::from_row);
-    let cat = Catalogue::new(schedules, Vec::new());
+    let match_types = match src.bundle {
+        Some(b) if b.path(TYPES_FILE).is_some() => {
+            src.note(crate::content::Origin::Bundle);
+            MatchType::parse_rows(
+                &b.data_lines(TYPES_FILE, TYPES_HEADER)?,
+                &b.data_lines(REWARDS_FILE, REWARDS_HEADER)?,
+            )?
+        }
+        _ => Vec::new(),
+    };
+    let cat = Catalogue::new(schedules, match_types);
     if !cat.unserved().is_empty() {
         crate::outln!(
-            "[proving] {FILE}: schedule row(s) {:?} are not served: they need the match types (PG-1a)",
+            "[proving] {FILE}: schedule row(s) {:?} are not served: no match type fits them",
             cat.unserved()
         );
     }
     Ok(Box::new(cat))
 }
+
+/// The bundle's match types and their header (`docs/content/schema.md`).
+pub const TYPES_FILE: &str = "proving/match_types.tsv";
+pub const TYPES_HEADER: &str = "#match_type_id\tfilament_type_id\tfleets\tfleet_size\tmin_queue_multiplier\tship_restrictions\tmax_of_ship_type\tmax_of_ship_group\tmeta_level_cap\tbanned_modules_list\tlimited_modules_list\tlimited_modules_count\tloot_table_id\tevent_name_id\tevent_description_id\tfilament_description_id\trestrictions_description_id\trewards_hint_id\trules_hint_id\tship_restrictions_hint_id";
+/// Their rewards, one row per entry.
+pub const REWARDS_FILE: &str = "proving/match_rewards.tsv";
+pub const REWARDS_HEADER: &str = "#match_type_id\tamount\ttype_id";
 
 /// The `PVPJumpError` code for "the event is not active" **[V]**
 /// `pvpFilaments/error.py` (`EVENT_NOT_ACTIVE = 33`).
@@ -236,6 +265,98 @@ pub struct MatchType {
 }
 
 impl MatchType {
+    /// The match types of the two files' data lines (`match_types.tsv` and
+    /// `match_rewards.tsv`, columns as `tools/content_proving.py` writes
+    /// them); an empty optional cell is `None`, and each reward is attached
+    /// to its match type in file order. A short row, a bad number, a repeated
+    /// match type or a reward of an unknown one is an error naming the file
+    /// and the data line. [`MatchType::filament_name`] stays empty (the
+    /// module doc).
+    pub fn parse_rows<S: AsRef<str>>(types: &[S], rewards: &[S]) -> Result<Vec<MatchType>, String> {
+        let mut out: Vec<MatchType> = Vec::new();
+        for (i, line) in types.iter().enumerate() {
+            let bad = |why: &str| {
+                format!(
+                    "{TYPES_FILE}: data line {}: {why}: {:?}",
+                    i + 1,
+                    line.as_ref()
+                )
+            };
+            let f: Vec<&str> = line.as_ref().split('\t').collect();
+            if f.len() != 20 {
+                return Err(bad("want 20 columns"));
+            }
+            let int = |c: usize| f[c].parse::<i64>().map_err(|_| bad("not an integer"));
+            let opt = |c: usize| -> Result<Option<i64>, String> {
+                if f[c].is_empty() {
+                    Ok(None)
+                } else {
+                    int(c).map(Some)
+                }
+            };
+            let m = MatchType {
+                id: int(0)?,
+                filament_type_id: int(1)?,
+                filament_name: String::new(),
+                number_of_fleets: int(2)?,
+                fleet_size: int(3)?,
+                minimum_queue_size_multiplier: if f[4].is_empty() {
+                    None
+                } else {
+                    Some(
+                        f[4].parse::<f64>()
+                            .ok()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| bad("not a number"))?,
+                    )
+                },
+                ship_restrictions: opt(5)?,
+                max_of_ship_type_restriction: opt(6)?,
+                max_of_ship_group_restriction: opt(7)?,
+                module_and_implant_meta_level_restrictions: opt(8)?,
+                banned_modules_type_list_id: opt(9)?,
+                limited_amount_of_modules_type_list_id: opt(10)?,
+                number_of_limited_modules: opt(11)?,
+                proving_ground_loot_table_id: opt(12)?,
+                event_name_id: opt(13)?,
+                event_description_id: opt(14)?,
+                filament_description_id: opt(15)?,
+                restrictions_description_id: opt(16)?,
+                rewards_hint_id: opt(17)?,
+                rules_hint_id: opt(18)?,
+                ship_restrictions_hint_id: opt(19)?,
+                rewards: Vec::new(),
+            };
+            if m.number_of_fleets < 1 || m.fleet_size < 1 {
+                return Err(bad("a format needs at least one fleet of one pilot"));
+            }
+            if out.iter().any(|o| o.id == m.id) {
+                return Err(bad("the match type is repeated"));
+            }
+            out.push(m);
+        }
+        for (i, line) in rewards.iter().enumerate() {
+            let bad = |why: &str| {
+                format!(
+                    "{REWARDS_FILE}: data line {}: {why}: {:?}",
+                    i + 1,
+                    line.as_ref()
+                )
+            };
+            let f: Vec<&str> = line.as_ref().split('\t').collect();
+            let [id, amount, type_id] = f[..] else {
+                return Err(bad("want 3 columns"));
+            };
+            let int = |s: &str| s.parse::<i64>().map_err(|_| bad("not an integer"));
+            let (id, amount, type_id) = (int(id)?, int(amount)?, int(type_id)?);
+            let Some(m) = out.iter_mut().find(|m| m.id == id) else {
+                return Err(bad("no such match type"));
+            };
+            m.rewards.push((type_id, amount));
+        }
+        Ok(out)
+    }
+
     /// The match type of an event whose real one is not loaded **[A]**.
     pub fn blank(number_of_fleets: i64, fleet_size: i64) -> MatchType {
         MatchType {

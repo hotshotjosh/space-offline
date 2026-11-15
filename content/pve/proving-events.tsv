@@ -4,12 +4,13 @@
 #
 # schedule_id: a positive id, unique; it is the `scheduleID` the client sends back.
 # format: FLEETSxSIZE (2x1: two fleets of one pilot).
-# name_has: a word of the filament type's name (case-insensitive), or empty. With the
-#   match types loaded (PG-1a) it picks the match type; until then it is not read.
+# name_has: a word of the filament type's name (case-insensitive), or empty. The loader
+#   has no type names (PG-1d), so a row with a word matches no match type and is not
+#   served; leave it empty and the format alone picks the match type.
 # start, end: YYYY-MM-DD. The window opens at downtime on `start` and closes at
 #   downtime on `end` (11:00 UTC). May be empty on a QA row.
-# A row with qa=0 is served only when a match type fits it (PG-1a loads them); until
-#   then it is dropped at load and the log says so.
+# A row with qa=0 is served only when a match type fits it; else it is dropped at load
+#   and the log says so.
 # qa: 1 = always active and never listed in the window (the client hides QA events),
 #   0 = active between start and end.
 #

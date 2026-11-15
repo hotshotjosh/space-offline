@@ -642,3 +642,173 @@ fn join_is_refused_with_event_not_active_and_leave_answers_none() {
         "the client's LeaveQueue does not catch an error"
     );
 }
+
+// ---- the bundle's match types (PG-1d) --------------------------------------
+
+/// One `match_types.tsv` data line: id, filament, format, then the optional
+/// cells given as `(column index in the line, text)`; every other optional
+/// cell is empty and every id cell is a number.
+fn type_line(id: i64, filament: i64, fleets: i64, size: i64, set: &[(usize, &str)]) -> String {
+    let mut f: Vec<String> = vec![String::new(); 20];
+    f[0] = id.to_string();
+    f[1] = filament.to_string();
+    f[2] = fleets.to_string();
+    f[3] = size.to_string();
+    for (c, cell) in f.iter_mut().enumerate().skip(13) {
+        *cell = (990_700_000 + c as i64).to_string();
+    }
+    for (c, v) in set {
+        f[*c] = (*v).to_owned();
+    }
+    f.join("\t")
+}
+
+#[test]
+fn match_types_parse_with_empty_optional_cells() {
+    let full = type_line(
+        MATCH_X,
+        FIL_X,
+        2,
+        1,
+        &[
+            (4, "1.5"),
+            (5, "990700005"),
+            (6, "2"),
+            (7, "3"),
+            (8, "4"),
+            (9, "990700009"),
+            (10, "990700010"),
+            (11, "5"),
+            (12, "990700012"),
+        ],
+    );
+    let bare = type_line(MATCH_Y, FIL_Y, 4, 4, &[]);
+    let v = MatchType::parse_rows(&[full, bare], &[] as &[String]).unwrap();
+    assert_eq!(v.len(), 2);
+    let (a, b) = (&v[0], &v[1]);
+    assert_eq!((a.id, a.filament_type_id), (MATCH_X, FIL_X));
+    assert_eq!((a.number_of_fleets, a.fleet_size), (2, 1));
+    assert_eq!(a.minimum_queue_size_multiplier, Some(1.5));
+    assert_eq!(a.ship_restrictions, Some(990_700_005));
+    assert_eq!(a.max_of_ship_type_restriction, Some(2));
+    assert_eq!(a.max_of_ship_group_restriction, Some(3));
+    assert_eq!(a.module_and_implant_meta_level_restrictions, Some(4));
+    assert_eq!(a.banned_modules_type_list_id, Some(990_700_009));
+    assert_eq!(a.limited_amount_of_modules_type_list_id, Some(990_700_010));
+    assert_eq!(a.number_of_limited_modules, Some(5));
+    assert_eq!(a.proving_ground_loot_table_id, Some(990_700_012));
+    assert_eq!(a.event_name_id, Some(990_700_013));
+    assert_eq!(a.ship_restrictions_hint_id, Some(990_700_019));
+    assert_eq!(a.filament_name, "", "the loader has no type names");
+    assert_eq!(b.minimum_queue_size_multiplier, None);
+    assert_eq!(b.ship_restrictions, None);
+    assert_eq!(b.max_of_ship_type_restriction, None);
+    assert_eq!(b.max_of_ship_group_restriction, None);
+    assert_eq!(b.module_and_implant_meta_level_restrictions, None);
+    assert_eq!(b.banned_modules_type_list_id, None);
+    assert_eq!(b.limited_amount_of_modules_type_list_id, None);
+    assert_eq!(b.number_of_limited_modules, None);
+    assert_eq!(b.proving_ground_loot_table_id, None);
+    assert_eq!(b.event_name_id, Some(990_700_013));
+}
+
+#[test]
+fn rewards_group_by_match_type() {
+    let types = [
+        type_line(MATCH_X, FIL_X, 2, 1, &[]),
+        type_line(MATCH_Y, FIL_Y, 4, 4, &[]),
+    ];
+    // `match_type_id, amount, type_id`, interleaved.
+    let rewards = [
+        format!("{MATCH_X}\t3\t990880901"),
+        format!("{MATCH_Y}\t1\t990880902"),
+        format!("{MATCH_X}\t7\t990880903"),
+    ];
+    let v = MatchType::parse_rows(&types, &rewards).unwrap();
+    assert_eq!(v[0].rewards, vec![(990_880_901, 3), (990_880_903, 7)]);
+    assert_eq!(v[1].rewards, vec![(990_880_902, 1)]);
+    let err = MatchType::parse_rows(&types, &["990999999\t1\t990880901".to_owned()]).unwrap_err();
+    assert!(
+        err.contains("match_rewards.tsv") && err.contains("data line 1"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_bad_row_names_its_line() {
+    let good = type_line(MATCH_X, FIL_X, 2, 1, &[]);
+    let short = "990881002\t990880002\t4".to_owned();
+    let err = MatchType::parse_rows(&[good.clone(), short], &[] as &[String]).unwrap_err();
+    assert!(
+        err.contains("match_types.tsv") && err.contains("data line 2"),
+        "{err}"
+    );
+    assert!(err.contains("20 columns"), "{err}");
+    let nan = type_line(MATCH_Y, FIL_Y, 2, 1, &[(4, "abc")]);
+    let err = MatchType::parse_rows(&[good.clone(), nan], &[] as &[String]).unwrap_err();
+    assert!(
+        err.contains("data line 2") && err.contains("not a number"),
+        "{err}"
+    );
+    let word = type_line(MATCH_Y, FIL_Y, 2, 1, &[(5, "x")]);
+    let err = MatchType::parse_rows(&[good.clone(), word], &[] as &[String]).unwrap_err();
+    assert!(
+        err.contains("data line 2") && err.contains("not an integer"),
+        "{err}"
+    );
+    let again = type_line(MATCH_X, FIL_Y, 2, 1, &[]);
+    let err = MatchType::parse_rows(&[good.clone(), again], &[] as &[String]).unwrap_err();
+    assert!(
+        err.contains("data line 2") && err.contains("repeated"),
+        "{err}"
+    );
+    let zero = type_line(MATCH_Y, FIL_Y, 0, 1, &[]);
+    let err = MatchType::parse_rows(&[zero], &[] as &[String]).unwrap_err();
+    assert!(err.contains("data line 1"), "{err}");
+    let err = MatchType::parse_rows(&[good], &["x\ty".to_owned()]).unwrap_err();
+    assert!(
+        err.contains("match_rewards.tsv") && err.contains("3 columns"),
+        "{err}"
+    );
+}
+
+#[test]
+fn the_qa_row_resolves_by_format() {
+    // The shipped row is QA, 2x1, no name word.
+    let types = MatchType::parse_rows(
+        &[
+            type_line(MATCH_Y, FIL_Y, 4, 4, &[]),
+            type_line(MATCH_X, FIL_X, 2, 1, &[]),
+        ],
+        &[] as &[String],
+    )
+    .unwrap();
+    let c = Catalogue::parse(SHIPPED, types).expect("the shipped file parses");
+    let now = ft(3001, 3, 11, 12);
+    let active = c.active(now);
+    assert_eq!(active.len(), 1);
+    assert!(active[0].schedule.qa);
+    assert_eq!(
+        active[0].match_type.id, MATCH_X,
+        "the 2x1 type, not the 4x4 one"
+    );
+    assert_eq!(
+        c.by_filament(now, FIL_X).map(|e| e.match_type.id),
+        Some(MATCH_X)
+    );
+    assert!(c.unserved().is_empty());
+}
+
+#[test]
+fn a_name_has_row_without_names_is_unserved() {
+    let types =
+        MatchType::parse_rows(&[type_line(MATCH_X, FIL_X, 2, 1, &[])], &[] as &[String]).unwrap();
+    let text = format!(
+        "{}{}",
+        header(),
+        row(SCHED_A, "2x1", "frobnicator", "3001-03-10", "3001-03-12", 0)
+    );
+    let c = Catalogue::parse(&text, types).unwrap();
+    assert_eq!(c.unserved(), &[SCHED_A]);
+    assert!(c.is_empty());
+}

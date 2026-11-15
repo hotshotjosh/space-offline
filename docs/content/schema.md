@@ -194,8 +194,8 @@ comment exactly as shown.
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
 | `mining/geodes.tsv` | L6A GEODES (`content_geodes.py`, the `geodes` section) | L6A (`eve-mod-econ` `geode`: the geode crate types) |
 | `mining/geode-candidates.tsv` | L6A GEODES (`content_geodes.py`) | the owner, to pick from; the server does not read it |
-| `proving/match_types.tsv` | #64 PG-1a (`content_proving.py`, the `proving` section) | #64 PG-1b/c (`proving`: not read yet) |
-| `proving/match_rewards.tsv` | #64 PG-1a (`content_proving.py`) | #64 PG-1b/c (`proving`: not read yet) |
+| `proving/match_types.tsv` | #64 PG-1a (`content_proving.py`, the `proving` section) | #64 PG-1d (`proving::TABLE`) |
+| `proving/match_rewards.tsv` | #64 PG-1a (`content_proving.py`) | #64 PG-1d (`proving::TABLE`) |
 | `dbuffs/modifiers.tsv` | K-BOOST | K-BOOST (`dbuff_data`) |
 | `mutators/ranges.tsv` | #222 MUTA-DATA (`content_mutators.py`, the `mutators` section) | #222 (`mutator_data`) |
 | `mutators/mappings.tsv` | #222 MUTA-DATA (`content_mutators.py`) | #222 (`mutator_data`) |
@@ -1857,7 +1857,7 @@ The weights of what a geode holds are the authored `content/econ/geode-loot.tsv`
 ### `proving/match_types.tsv` and `proving/match_rewards.tsv` (#64 PG-1a)
 
 - **Writer:** `tools/content_proving.py`, the `proving` section of `content.py`. Input: the client's `pvpfilamentmatchtypes` (stride 96, `findings/pyd-schemas.tsv`) and `types`. `check` re-derives both files and fails on any `filamentTypeID` outside group 4050 (the filament group).
-- **Readers:** none yet. PG-1b's `proving::Catalogue` leaves the match type blank until a later lane reads these. Optional.
+- **Readers:** `proving::TABLE` (`proving::MatchType::parse_rows`, #64 PG-1d). Optional: a bundle without them leaves every event's match type blank. An empty cell is `None`; a short row, a bad number, a repeated match type or a reward of an unknown one is an error naming the file and line. The loader has no type names, so a schedule row with a `name_has` word is unserved.
 - **Key:** `match_type_id` (the client's table key). `match_rewards.tsv` has one row per `rewards` entry, in the client's list order.
 - **Empty fields:** an optional field whose presence bit the client row leaves clear is written empty (the client's getter returns `None`, `[V]` `findings/pyd-schemas.tsv` `optional(bit, word=+92)` and the `fsd.py` generic decoder). They are `min_queue_multiplier`, `max_of_ship_type`, `max_of_ship_group`, `meta_level_cap`, `banned_modules_list`, `limited_modules_list`, `limited_modules_count` and `loot_table_id`.
 
@@ -2439,7 +2439,7 @@ tier	cache	group	name_has	chance_ppm	qty_min	qty_max	copy	why
 ### `content/pve/proving-events.tsv`
 
 - **Owner (writer):** #64 PG-1b.
-- **Readers:** `proving::TABLE` (`proving::Catalogue`). The match types (PG-1a, `proving/match_types.tsv`) are not read yet: until they are, every event has a blank match type.
+- **Readers:** `proving::TABLE` (`proving::Catalogue`). The match types (PG-1a, `proving/match_types.tsv`) are read from the bundle (PG-1d); with none, every event has a blank match type.
 - **Key:** `schedule_id` (a repeated id keeps its first row).
 - **Stable ids and delta keys (ruling 4):** `schedule_id` is the `scheduleID` the client sends back.
 
