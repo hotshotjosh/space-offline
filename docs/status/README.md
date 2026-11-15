@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**69% proved** (226 of 326) · **93% built** (302 of 326) · 3 parked, not counted.
+**70% proved** (227 of 326) · **93% built** (302 of 326) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -76,7 +76,6 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Skyhooks: *built-unproved*, skyhook.rs launch, activation, wall-clock harvest by the client's rule, held-system rule, Get/GetAllLocal/ByCorp, Activate/Deactivate, extract to ship clipped to the hold, acquire and destroy by the hub owner corp with the claim fee; fci_skyhook (green 33/33 on 11-15, var/ci-1115q-b; acquire, destroy and the claim fee are not in the scenario); clamps on claim_time and the corp's join time (Rust tests); slim carries dunRotation [A]; /skyhook age credits cycles now (ci-1110) and re-sends the system snapshot then the stocks notice [I] (ci-1111)
 - [ ] Skyhook theft windows and raids: *built-unproved*, skyhook_theft.rs: scheduled windows and notices, the silo ball (typedata.rs admits the celestial silo group as a singleton item), InitiateLink, the unsecured stock to the thief [A]; fci_skyhook_raid (green 31/31 and 19/19 on 11-15, var/ci-1115q-b; the scheduled windows and notices are not in the scenario)
 - [ ] Space-component call seam (beyonce.CallComponentFromClient): the dispatch table the skyhook and merc-den handlers plug into: *built-unproved*, space_component.rs CALLS routes four components: the skyhook (authorisation, extract), the reagent silo link (#82), the mercenary den extract (#83) and the Ansiblex info (#86); space_component.rs tests
-- [ ] Cyno jammers: *built-unproved*, sov_jammer.rs: an online Tenebrex marks its system jammed (pending/on); GetCynoJammerState and the OnCynoJammerChanged push; fci_cyno_jammer green (regress-w29a): the client's jammer state None, then 0 and the icon ON by the push alone; the upgrade requirement is behind JAMMER_NEEDS_UPGRADE, false by default, so a jammer runs without the cyno_jammer upgrade; cyno.rs refuses a non-covert cyno in a jammed system (CynosuralGenerationJammed) and ends a lit one at its next cycle; one jammer per system at anchor; fci_cyno_jam written, not yet run
 - [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; the gate's capacitor (recharge curve, zone cost from the capital, GM /jbridge charge), holder-alliance and profile access, hull list seam (jump-bridges.tsv, absent until ANSI-2b); fci_ansiblex green 47/47 including steps 6-9 (var/ci-1115e-b, 11-15); the Stargate Engine service rule is ANSI-2c
 - [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point
 - [ ] Scoreboard: *missing*, card fw-7
@@ -163,7 +162,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 10 | 1 | 0 | 0 | 0 |
-| Sovereignty | 6 | 7 | 1 | 0 | 0 |
+| Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 1 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
@@ -473,7 +472,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Sovereignty</b>: 6 of 14 proved, 8 open</summary>
+<details><summary><b>Sovereignty</b>: 7 of 14 proved, 7 open</summary>
 
 - [x] Sov claim, cache, indices, capital, lapse: *client-proved*, fci_sov W10
 - [x] Sov icon on the location panel: *client-proved*, fci_sov_panel W10
@@ -487,7 +486,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Sov system power and workforce: *client-proved*, sov_resources.rs: planet and star definitions, hub GetResources, content/sov tables [A]; fci_sov_resources green on 11-08 (ci-1108b); since #81 available = active held skyhooks + star (Rust tests and fci_skyhook, not run); (Rust tests only, #256:) StateChangedNotice from skyhook changes incl. the own hub; upgrade budget net of den draw; claim callers pending (#270); (Rust tests only, #270:) StateChangedNotice from the claim (entosis claim, /sov set, lapse peers), alliance join/leave (snapshot before save) and skyhook budget paths; a score tick sends none; the client refreshes from ResourcesSimulatedNotice, not this notice
 - [x] Sov workforce transfer between hubs: *client-proved*, sov_workforce.rs (configure, state, net_workforce, gateway arm), sov_resources::harvested, scenario fci_sov_workforce (green 22/22 on 11-15, var/ci-1115q-b)
 - [ ] Space-component call seam (beyonce.CallComponentFromClient): the dispatch table the skyhook and merc-den handlers plug into: *built-unproved*, space_component.rs CALLS routes four components: the skyhook (authorisation, extract), the reagent silo link (#82), the mercenary den extract (#83) and the Ansiblex info (#86); space_component.rs tests
-- [ ] Cyno jammers: *built-unproved*, sov_jammer.rs: an online Tenebrex marks its system jammed (pending/on); GetCynoJammerState and the OnCynoJammerChanged push; fci_cyno_jammer green (regress-w29a): the client's jammer state None, then 0 and the icon ON by the push alone; the upgrade requirement is behind JAMMER_NEEDS_UPGRADE, false by default, so a jammer runs without the cyno_jammer upgrade; cyno.rs refuses a non-covert cyno in a jammed system (CynosuralGenerationJammed) and ends a lit one at its next cycle; one jammer per system at anchor; fci_cyno_jam written, not yet run
+- [x] Cyno jammers: *client-proved*, sov_jammer.rs: an online Tenebrex marks its system jammed (pending/on); GetCynoJammerState and the OnCynoJammerChanged push; fci_cyno_jammer green (regress-w29a): the client's jammer state None, then 0 and the icon ON by the push alone; the upgrade requirement is behind JAMMER_NEEDS_UPGRADE, false by default, so a jammer runs without the cyno_jammer upgrade; cyno.rs refuses a non-covert cyno in a jammed system (CynosuralGenerationJammed) and ends a lit one at its next cycle; one jammer per system at anchor; fci_cyno_jam green 35/35 on 11-15 (var/ci-1115r-a): the fuelled generator is refused with CynosuralGenerationJammed in a jammed system with its ozone untouched, and lights in a jammer-free one
 - [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; the gate's capacitor (recharge curve, zone cost from the capital, GM /jbridge charge), holder-alliance and profile access, hull list seam (jump-bridges.tsv, absent until ANSI-2b); fci_ansiblex green 47/47 including steps 6-9 (var/ci-1115e-b, 11-15); the Stargate Engine service rule is ANSI-2c
 
 </details>

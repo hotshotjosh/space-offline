@@ -268,7 +268,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="210.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="214.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="218.8" y="173.5" width="3" height="3" class="proved"/>
-<rect x="222.8" y="173.5" width="3" height="3" class="built"/>
+<rect x="222.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="226.8" y="173.5" width="3" height="3" class="built"/>
 <rect x="230.8" y="173.5" width="3" height="3" class="built"/>
 <rect x="234.8" y="173.5" width="3" height="3" class="built"/>
@@ -276,7 +276,7 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="242.8" y="173.5" width="3" height="3" class="built"/>
 <rect x="246.8" y="173.5" width="3" height="3" class="built"/>
 <rect x="251.3" y="174.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.8" y="175.0" width="3" height="1.5" class="part-f"/>
-<text x="258.8" y="178.0" class="s xs">6/14</text>
+<text x="258.8" y="178.0" class="s xs">7/14</text>
 <text x="16.0" y="194.0" class="t">Upwell structures</text>
 <rect x="198.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="189.5" width="3" height="3" class="proved"/>
