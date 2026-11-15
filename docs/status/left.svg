@@ -130,11 +130,12 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="379.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="384.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="389.8" y="109.0" width="4" height="4" class="built"/>
-<rect x="395.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="394.8" y="111.0" width="4" height="2.0" class="part-f"/>
+<rect x="394.8" y="109.0" width="4" height="4" class="built"/>
 <rect x="400.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="399.8" y="111.0" width="4" height="2.0" class="part-f"/>
-<rect x="404.8" y="109.0" width="4" height="4" class="unknown"/>
+<rect x="405.3" y="109.5" width="3" height="3" fill="none" class="part-o"/><rect x="404.8" y="111.0" width="4" height="2.0" class="part-f"/>
 <rect x="409.8" y="109.0" width="4" height="4" class="unknown"/>
-<text x="418.8" y="114.0" class="s xs">36</text>
+<rect x="414.8" y="109.0" width="4" height="4" class="unknown"/>
+<text x="423.8" y="114.0" class="s xs">37</text>
 <text x="16.0" y="130.0" class="t">3.8 Remote clients, hosting</text>
 <rect x="234.8" y="125.0" width="4" height="4" class="built"/>
 <rect x="239.8" y="125.0" width="4" height="4" class="built"/>
