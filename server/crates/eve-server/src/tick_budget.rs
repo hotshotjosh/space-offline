@@ -156,7 +156,11 @@ pub const RULES: &[StageRule] = &[
     r("remote_rep", Rule::Every, "running rep cycles only"),
     r("overheat", Rule::Every, "heated racks only"),
     r("weapon_bank", Rule::Every, "banks only"),
-    r("dbuff", Rule::Every, "running bursts only"),
+    r(
+        "dbuff",
+        Rule::IdleIsIdentity,
+        "settles only ships a pulse reached this tick, ships with a timed input expired, and ships gone from space; a held-only ship costs a set lookup, a roster lookup and one first-input read per aggregator",
+    ),
     r("combat", Rule::Every, "cycles just started only"),
     r("mining", Rule::Every, "cycles just ended only"),
     r("hacking", Rule::Every, "armed and linked games only"),
@@ -537,7 +541,7 @@ mod tests {
         skipping.sort_unstable();
         assert_eq!(
             skipping,
-            ["entosis", "npc", "site", "tackle", "wormhole"],
+            ["dbuff", "entosis", "npc", "site", "tackle", "wormhole"],
             "the stages that skip idle units"
         );
         let mut names: Vec<&str> = RULES.iter().map(|r| r.stage).collect();

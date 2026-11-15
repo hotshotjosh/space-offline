@@ -242,6 +242,11 @@ impl Aggregator {
         self.inputs = result;
     }
 
+    /// The soonest timed input's expiry, if any.
+    fn first_expiry(&self) -> Option<BlueTime> {
+        self.inputs.first().map(|(e, _)| *e)
+    }
+
     /// `DiscardExpiredTimedInputs` [V]: inputs whose expiry is before `now`.
     pub fn discard_expired(&mut self, now: BlueTime) {
         while self.inputs.first().is_some_and(|(e, _)| *e < now) {
@@ -363,6 +368,11 @@ pub struct Boosts {
     ships: BTreeMap<i64, ShipBuffs>,
     /// Burst module -> the cycles already pulsed.
     cycles: BTreeMap<i64, i64>,
+    /// Ships a pulse reached since their last settle.
+    dirty: BTreeSet<i64>,
+    /// How many times [`settle`] ran (for the tests).
+    #[cfg(test)]
+    settles: u64,
 }
 
 impl Boosts {
@@ -757,10 +767,27 @@ pub fn tick(w: &mut Registry, _: std::time::Instant, now: BlueTime) {
 /// the expiry of each buff that ran out, and what each pilot is told.
 pub fn reconcile(w: &mut Registry, now: BlueTime, d: &dyn Data) {
     pulse(w, now, d);
-    let ships: Vec<i64> = w.ext::<Boosts>().ships.keys().copied().collect();
-    for ship in ships {
+    // Only ships a pulse reached, ships with a timed input expired and ships
+    // gone from space change; settle is the identity for the rest.
+    let due: Vec<i64> = {
+        let b = w.ext::<Boosts>();
+        b.ships
+            .iter()
+            .filter(|(s, st)| {
+                b.dirty.contains(s)
+                    || w.roster().by_ship(**s).is_none()
+                    || st
+                        .buffs
+                        .values()
+                        .any(|a| a.first_expiry().is_some_and(|e| e < now))
+            })
+            .map(|(s, _)| *s)
+            .collect()
+    };
+    for ship in due {
         settle(w, ship, now);
     }
+    w.ext_mut::<Boosts>().dirty.clear();
 }
 
 /// Every running burst module whose cycle is new: its buffs onto each
@@ -813,6 +840,7 @@ fn pulse(w: &mut Registry, now: BlueTime, d: &dyn Data) {
             if w.roster().by_ship(*ship).is_none() {
                 continue;
             }
+            w.ext_mut::<Boosts>().dirty.insert(*ship);
             let state = w
                 .ext_mut::<Boosts>()
                 .ships
@@ -982,6 +1010,14 @@ fn recompute(state: &mut ShipBuffs, c: i64, mode: Option<Aggregate>) {
 /// One ship: its expired inputs dropped, its pilot told the new state, the
 /// engine given the new buffs and the pilot told every attribute that moved.
 fn settle(w: &mut Registry, ship: i64, now: BlueTime) {
+    {
+        let b = w.ext_mut::<Boosts>();
+        #[cfg(test)]
+        {
+            b.settles += 1;
+        }
+        b.dirty.remove(&ship);
+    }
     let Some(key) = w.roster().by_ship(ship).map(|p| p.character_id) else {
         // Gone (docked, jumped, died, logged off): the session change
         // re-primes the ship, and the client's tracker resets itself.
@@ -2003,6 +2039,73 @@ mod tests {
         // And a ship not in space holds nothing.
         hold(&mut reg, BOB_SHIP, SRC_A, &[(C_PCT_MAX, 20.0)], t);
         assert!(held_by(&reg, BOB_SHIP, SRC_A).is_empty());
+    }
+
+    fn settles(reg: &Registry) -> u64 {
+        reg.ext::<Boosts>().settles
+    }
+
+    #[test]
+    fn a_held_ship_is_not_settled_on_an_idle_tick() {
+        let mut reg = world();
+        let t = now();
+        hold(&mut reg, ALICE_SHIP, SRC_A, &[(C_PCT_MAX, 20.0)], t);
+        let _ = pushes(&mut reg);
+        let before = settles(&reg);
+        for s in 1..=10 {
+            reconcile(&mut reg, t + s * 1000 * MSEC, &PLAIN);
+        }
+        assert_eq!(settles(&reg), before);
+        assert_eq!(applied(&reg, ALICE_SHIP).len(), 1);
+        assert!(pushes(&mut reg).is_empty());
+    }
+
+    #[test]
+    fn a_held_ship_that_leaves_is_settled_and_dropped() {
+        let mut reg = world();
+        let t = now();
+        hold(&mut reg, BOB_SHIP, SRC_A, &[(C_PCT_MAX, 20.0)], t);
+        let before = settles(&reg);
+        reg.roster_mut().leave(BOB);
+        reconcile(&mut reg, t + MSEC, &PLAIN);
+        assert_eq!(settles(&reg), before + 1);
+        assert!(reg.ext::<Boosts>().boosted().is_empty());
+        reconcile(&mut reg, t + 2 * MSEC, &PLAIN);
+        assert_eq!(settles(&reg), before + 1);
+    }
+
+    #[test]
+    fn a_timed_input_is_settled_when_it_expires_and_not_before() {
+        let mut reg = world();
+        let t = now();
+        run(&mut reg, EFFECT_ARMOR, 1, t);
+        reconcile(&mut reg, t, &PLAIN);
+        let _ = pushes(&mut reg);
+        let end = t + (DURATION_MS * MSEC as f64) as i64;
+        let before = settles(&reg);
+        reconcile(&mut reg, t + MSEC, &PLAIN);
+        reconcile(&mut reg, end, &PLAIN);
+        assert_eq!(settles(&reg), before, "not before the expiry");
+        reconcile(&mut reg, end + 1, &PLAIN);
+        assert_eq!(settles(&reg), before + 2, "both ships, at the expiry");
+        reconcile(&mut reg, end + 2, &PLAIN);
+        assert_eq!(settles(&reg), before + 2);
+    }
+
+    #[test]
+    fn each_new_cycle_marks_its_recipients_dirty() {
+        let mut reg = world();
+        let t = now();
+        run(&mut reg, EFFECT_ARMOR, 1, t);
+        reconcile(&mut reg, t, &PLAIN);
+        let first = settles(&reg);
+        assert_eq!(first, 2, "alice and bob, once");
+        reconcile(&mut reg, t + MSEC, &PLAIN);
+        assert_eq!(settles(&reg), first, "same cycle: nothing");
+        let t2 = t + PERIOD_MS * MSEC;
+        run(&mut reg, EFFECT_ARMOR, 2, t);
+        reconcile(&mut reg, t2, &PLAIN);
+        assert_eq!(settles(&reg), first + 2, "once per cycle");
     }
 
     #[test]
