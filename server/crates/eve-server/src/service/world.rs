@@ -41,7 +41,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         "map" => match req.method {
             // MAP-STATS: `GetHistory(statID, hours)`, the hourly jump and
             // kill counter as a `CachedMethodCallResult` (`map_stats.rs`).
-            "GetHistory" => Ok(crate::map_stats::history_answer(reg, req.args)),
+            "GetHistory" => Ok(crate::map_stats::history_answer(reg, Args::new(req))),
             // The incursion report, **a list of mutable rows**.
             // `contentProviderIncursions.py(39) GetAllIncursions` does
             // `sorted(incursions, key=self._GetSortKey)`, and `sorted(None)`

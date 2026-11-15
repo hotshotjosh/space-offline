@@ -614,7 +614,7 @@ pub fn capital_system_info(reg: &Registry, alliance: Option<i64>) -> PyValue {
 pub fn capital_call(
     reg: &mut Registry,
     method: &str,
-    args: &[PyValue],
+    args: crate::service::args::Args<'_>,
     alliance: Option<i64>,
     allowed: bool,
 ) -> Option<Result<PyValue, ServiceError>> {
@@ -648,7 +648,7 @@ pub fn capital_call(
         settle_capital(reg, alliance, now);
         return Some(Ok(PyValue::None));
     }
-    let Some(system) = crate::service::args::as_int(args.first()) else {
+    let Some(system) = args.int(0) else {
         return Some(Err(ServiceError::BadArguments {
             service: "allianceRegistry".to_owned(),
             method: method.to_owned(),
@@ -966,6 +966,7 @@ pub fn slash(reg: &mut Registry, actor: Option<i64>, args: &[&str]) -> String {
 mod tests {
     use super::*;
     use crate::pyutil::dict_get;
+    use crate::service::args::Args;
 
     // Invented ids: nothing here is a client value.
     const SYSTEM: i64 = 30_900_101;
@@ -1634,7 +1635,7 @@ mod tests {
             let got = capital_call(
                 &mut reg,
                 "SetCapitalSystem",
-                std::slice::from_ref(&bad),
+                Args::of(std::slice::from_ref(&bad)),
                 Some(ALLIANCE),
                 true,
             );
@@ -1643,7 +1644,13 @@ mod tests {
                 "{bad:?}: {got:?}"
             );
         }
-        let got = capital_call(&mut reg, "SetCapitalSystem", &[], Some(ALLIANCE), true);
+        let got = capital_call(
+            &mut reg,
+            "SetCapitalSystem",
+            Args::of(&[]),
+            Some(ALLIANCE),
+            true,
+        );
         assert!(matches!(got, Some(Err(ServiceError::BadArguments { .. }))));
     }
 }

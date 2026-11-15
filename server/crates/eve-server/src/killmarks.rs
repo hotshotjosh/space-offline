@@ -61,8 +61,8 @@ pub fn on_kill(w: &mut Registry, ev: &KillEvent) {
 }
 
 /// **The `shipKillCounter.GetItemKillCountPlayer` answer.**
-pub fn count_call(w: &Registry, args: &[PyValue]) -> PyValue {
-    let Some(ship) = crate::service::args::as_int(args.first()) else {
+pub fn count_call(w: &Registry, args: crate::service::args::Args<'_>) -> PyValue {
+    let Some(ship) = args.int(0) else {
         return PyValue::Int(0);
     };
     PyValue::Int(count(w, ship))
@@ -82,6 +82,7 @@ pub fn slim_extras(w: &Registry, ids: &[i64]) -> crate::slim_extra::SlimExtras {
 mod tests {
     use super::*;
     use crate::combat::tests::{ALICE, ALICE_POD, ALICE_SHIP, BOB, BOB_SHIP, alice_has_bob_locked};
+    use crate::service::args::Args;
 
     fn event(victim: i64, ship: i64, ship_type: i64, killer: Option<i64>) -> KillEvent {
         KillEvent {
@@ -105,7 +106,7 @@ mod tests {
         assert_eq!(count(&reg, ALICE_SHIP), 2);
         assert_eq!(count(&reg, BOB_SHIP), 0);
         assert_eq!(
-            count_call(&reg, &[PyValue::Int(ALICE_SHIP)]),
+            count_call(&reg, Args::of(&[PyValue::Int(ALICE_SHIP)])),
             PyValue::Int(2)
         );
         let extras = slim_extras(&reg, &[ALICE_SHIP, BOB_SHIP]);
@@ -138,7 +139,7 @@ mod tests {
         let mut reg = alice_has_bob_locked();
         on_kill(&mut reg, &event(BOB, BOB_SHIP, 587, Some(ALICE)));
         assert_eq!(
-            count_call(&reg, &[PyValue::Int(ALICE_SHIP)]),
+            count_call(&reg, Args::of(&[PyValue::Int(ALICE_SHIP)])),
             PyValue::Int(1)
         );
         for a in [
@@ -146,8 +147,8 @@ mod tests {
             PyValue::Bytes(vec![]),
             PyValue::Bool(true),
         ] {
-            assert_eq!(count_call(&reg, &[a]), PyValue::Int(0));
+            assert_eq!(count_call(&reg, Args::of(&[a])), PyValue::Int(0));
         }
-        assert_eq!(count_call(&reg, &[]), PyValue::Int(0));
+        assert_eq!(count_call(&reg, Args::of(&[])), PyValue::Int(0));
     }
 }

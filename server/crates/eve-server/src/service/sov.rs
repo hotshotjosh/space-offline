@@ -198,7 +198,13 @@ pub(crate) fn alliance_registry(
         "GetCapitalSystemInfo" => Ok(crate::sov_index::capital_system_info(reg, alliance)),
         "SetCapitalSystem" | "CancelCapitalSystemTransition" => {
             let allowed = executor_director(reg, req.actor, alliance);
-            return crate::sov_index::capital_call(reg, req.method, req.args, alliance, allowed);
+            return crate::sov_index::capital_call(
+                reg,
+                req.method,
+                Args::new(req),
+                alliance,
+                allowed,
+            );
         }
         _ => return None,
     })

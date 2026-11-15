@@ -1467,11 +1467,11 @@ fn along(from: [f64; 3], direction: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-fn triple(args: &[PyValue]) -> Option<[f64; 3]> {
+fn triple(args: args::Args<'_>) -> Option<[f64; 3]> {
     Some([
-        args::as_float_lax_finite(args.first())?,
-        args::as_float_lax_finite(args.get(1))?,
-        args::as_float_lax_finite(args.get(2))?,
+        args.float_lax_finite(0)?,
+        args.float_lax_finite(1)?,
+        args.float_lax_finite(2)?,
     ])
 }
 
@@ -1507,12 +1507,12 @@ pub fn is_command(method: &str) -> bool {
     COMMANDS.contains(&method)
 }
 
-pub fn command(ball: i64, method: &str, args: &[PyValue]) -> Option<Action> {
+pub fn command(ball: i64, method: &str, args: args::Args<'_>) -> Option<Action> {
     match method {
         "CmdSetSpeedFraction" => Some(Action::SetSpeedFraction {
             ball,
             // The client's own throttle is 0..1; a 5.0 would be a speed hack.
-            fraction: args::as_float_lax_finite(args.first())?.clamp(0.0, 1.0),
+            fraction: args.float_lax_finite(0)?.clamp(0.0, 1.0),
         }),
         // `CmdSteerDirection` maps here too, and that is **[I]**: there is no
         // `SteerDirection` in any of the client's three dispatch sets and no
@@ -1534,21 +1534,21 @@ pub fn command(ball: i64, method: &str, args: &[PyValue]) -> Option<Action> {
         "CmdStop" => Some(Action::Stop { ball }),
         // A ship cannot follow or orbit itself, and a range is not negative.
         "CmdFollowBall" => {
-            let target = args::as_int_real(args.first())?;
+            let target = args.int_real(0)?;
             (target != ball).then_some(())?;
             Some(Action::FollowBall {
                 ball,
                 target,
-                range: args::as_float_lax_finite(args.get(1))?.max(0.0),
+                range: args.float_lax_finite(1)?.max(0.0),
             })
         }
         "CmdOrbit" => {
-            let target = args::as_int_real(args.first())?;
+            let target = args.int_real(0)?;
             (target != ball).then_some(())?;
             Some(Action::Orbit {
                 ball,
                 target,
-                range: args::as_float_lax_finite(args.get(1))?.max(0.0),
+                range: args.float_lax_finite(1)?.max(0.0),
             })
         }
         _ => None,
@@ -2348,6 +2348,11 @@ mod tests {
         );
     }
     use super::*;
+
+    /// The tests hand `command` a slice; the arm hands it an [`args::Args`].
+    fn command(ball: i64, method: &str, args: &[PyValue]) -> Option<Action> {
+        super::command(ball, method, args::Args::of(args))
+    }
 
     /// **A moving ball is encoded as of the second boundary, not of now**
     /// (EVEJS-MOTION 7.1): 0.4 s past the boundary at 300 m/s is 120 m back.

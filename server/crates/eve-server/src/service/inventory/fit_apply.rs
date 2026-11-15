@@ -116,9 +116,9 @@ fn set_map(v: Option<&PyValue>) -> BTreeMap<i64, BTreeSet<i64>> {
 }
 
 /// Read the seven arguments; `None` when the shape is not the client's.
-pub(super) fn decode(args: &[PyValue]) -> Option<Wish> {
-    let ship_id = args::as_int(args.first())?;
-    let ship_type_id = args::as_int(args.get(1))?;
+pub(super) fn decode(args: Args<'_>) -> Option<Wish> {
+    let ship_id = args.int(0)?;
+    let ship_type_id = args.int(1)?;
     let fitting = args.get(4)?;
     let at = |n: &str| crate::contracts::attr(fitting, n);
     let modules_by_flag = at("modulesByFlag")?;
@@ -145,7 +145,7 @@ pub(super) fn decode(args: &[PyValue]) -> Option<Wish> {
         drones: int_map(at("dronesByType")),
         fighters: int_map(at("fightersByTypeID")),
         rigs_to_cargo: int_map(args.get(5)),
-        fit_rigs: args::as_flag_lax(args.get(6)),
+        fit_rigs: args.flag_lax(6),
     })
 }
 
@@ -259,7 +259,7 @@ fn docked_active(reg: &Registry, req: &Request<'_>) -> Result<(i64, i64, i64), S
 
 /// `invbroker.FitFitting`, on the active ship's inventory.
 pub(super) fn fit_fitting(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
-    let wish = decode(req.args).ok_or_else(|| {
+    let wish = decode(Args::new(req)).ok_or_else(|| {
         module_bad_args(
             req,
             "(shipID, shipTypeID, itemsToFit, stationID, fitting, cargoItemsByType, fitRigs)",
@@ -636,7 +636,7 @@ mod tests {
     fn decode_reads_a_defaultdict_of_sets_and_a_plain_dict() {
         let plain = PyValue::Dict(vec![(PyValue::List(vec![int(11), int(12)]), int(GUN))]);
         for p in [pool(&[(GUN, &[11, 12])]), plain] {
-            let w = decode(&args(
+            let w = decode(Args::of(&args(
                 5,
                 HULL,
                 Fit {
@@ -647,7 +647,7 @@ mod tests {
                     rigs_to_cargo: &[],
                     fit_rigs: true,
                 },
-            ))
+            )))
             .expect("decodes");
             assert_eq!(w.pool[&GUN], BTreeSet::from([11, 12]));
             assert_eq!(w.modules, BTreeMap::from([(HI0, GUN), (MED0, SHIELD)]));
@@ -655,7 +655,7 @@ mod tests {
             assert_eq!(w.drones, BTreeMap::from([(DRONE, 2)]));
             assert!(w.fit_rigs);
         }
-        assert_eq!(decode(&[int(1)]), None);
+        assert_eq!(decode(Args::of(&[int(1)])), None);
     }
 
     #[test]

@@ -1554,7 +1554,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `standing`.
             "GetStandingCompositions" => Ok(crate::corp_standings::compositions_value(
                 reg,
-                req.args,
+                args::Args::new(req),
                 crate::pyutil::filetime_now(),
             )),
             _ => Err(reg.no_method(req)),

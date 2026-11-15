@@ -30,7 +30,7 @@ use crate::content::Content;
 use crate::model::Target;
 use crate::notify::Push;
 use crate::pyutil::{as_bytes, dict_get, keyval};
-use crate::service::args::{as_float_lax, as_int, as_int_list};
+use crate::service::args::{Args, as_float_lax, as_int};
 use crate::service::{Registry, ServiceError};
 use eve_marshal::PyValue;
 use std::collections::BTreeMap;
@@ -444,16 +444,13 @@ fn celestial_group(content: &Content, kind: crate::celestial::Kind, type_id: i64
 pub fn cone_scan(
     w: &mut Registry,
     actor: Option<i64>,
-    args: &[PyValue],
+    args: Args<'_>,
 ) -> Result<PyValue, ServiceError> {
-    let (Some(angle), Some(range)) = (as_float_lax(args.first()), as_float_lax(args.get(1))) else {
+    let (Some(angle), Some(range)) = (args.float_lax(0), args.float_lax(1)) else {
         return Err(bad_args("ConeScan", "(scanAngle, scanRange, x, y, z)"));
     };
-    let (Some(x), Some(y), Some(z)) = (
-        as_float_lax(args.get(2)),
-        as_float_lax(args.get(3)),
-        as_float_lax(args.get(4)),
-    ) else {
+    let (Some(x), Some(y), Some(z)) = (args.float_lax(2), args.float_lax(3), args.float_lax(4))
+    else {
         return Err(bad_args("ConeScan", "(scanAngle, scanRange, x, y, z)"));
     };
     let Some(actor) = actor else {
@@ -696,17 +693,17 @@ impl Push for ScanStopped {
 pub fn launch_probes(
     w: &mut Registry,
     actor: Option<i64>,
-    args: &[PyValue],
+    args: Args<'_>,
     now: i64,
 ) -> Result<PyValue, ServiceError> {
-    let (Some(module_id), wanted) = (as_int(args.first()), args.get(1)) else {
+    let Some(module_id) = args.int(0) else {
         return Err(ServiceError::BadArguments {
             service: "dogmaIM".to_owned(),
             method: "LaunchProbes".to_owned(),
             why: "(moduleID, numProbes)".to_owned(),
         });
     };
-    let wanted = as_int(wanted).unwrap_or(MAX_PROBES as i64);
+    let wanted = args.int(1).unwrap_or(MAX_PROBES as i64);
     let Some(character_id) = actor else {
         return Ok(PyValue::None);
     };
@@ -831,7 +828,7 @@ fn probe_request(v: &PyValue) -> (Option<[f64; 3]>, Option<f64>, Option<i64>) {
 pub fn request_scans(
     w: &mut Registry,
     actor: Option<i64>,
-    args: &[PyValue],
+    args: Args<'_>,
     now: i64,
 ) -> Result<PyValue, ServiceError> {
     let Some(character_id) = actor else {
@@ -839,7 +836,7 @@ pub fn request_scans(
     };
     w.scan_mut().prune(now);
     let mut moved: Vec<i64> = Vec::new();
-    if let Some(PyValue::Dict(entries)) = args.first() {
+    if let Some(PyValue::Dict(entries)) = args.get(0) {
         for (value, key) in entries {
             let PyValue::Int(probe_id) = key else {
                 continue;
@@ -913,14 +910,14 @@ pub fn request_scans(
 pub fn recover_probes(
     w: &mut Registry,
     actor: Option<i64>,
-    args: &[PyValue],
+    args: Args<'_>,
     now: i64,
 ) -> Result<PyValue, ServiceError> {
     let Some(character_id) = actor else {
         return Ok(PyValue::List(vec![]));
     };
     w.scan_mut().prune(now);
-    let ids: Vec<i64> = as_int_list(args.first());
+    let ids: Vec<i64> = args.int_list(0);
     let ship_id = w.roster().get(character_id).map(|p| p.ship_id);
     let mut back = Vec::new();
     for id in ids {
@@ -968,8 +965,8 @@ fn return_to_cargo(w: &mut Registry, character_id: i64, ship_id: i64, type_id: i
 /// callback to `probeTracker.DestroyProbe`, which deletes its own record
 /// after (`:173-174`) **[V]**. Return discarded. Nothing is pushed: the
 /// client already forgot it.
-pub fn destroy_probe(w: &mut Registry, actor: Option<i64>, args: &[PyValue]) -> PyValue {
-    if let (Some(character_id), Some(id)) = (actor, as_int(args.first()))
+pub fn destroy_probe(w: &mut Registry, actor: Option<i64>, args: Args<'_>) -> PyValue {
+    if let (Some(character_id), Some(id)) = (actor, args.int(0))
         && w.scan().get(id).is_some_and(|p| p.owner_id == character_id)
     {
         w.scan_mut().probes.remove(&id);
@@ -1404,7 +1401,9 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
                 PyValue::Real(0.0),
                 PyValue::Real(0.0),
             ];
-            let PyValue::List(rows) = cone_scan(reg, Some(ALICE), &args).expect("answered") else {
+            let PyValue::List(rows) =
+                cone_scan(reg, Some(ALICE), Args::of(&args)).expect("answered")
+            else {
                 unreachable!("a list")
             };
             rows.iter()
@@ -1441,7 +1440,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
             PyValue::Real(0.0),
             PyValue::Real(0.0),
         ];
-        let count = |reg: &mut Registry| match cone_scan(reg, Some(ALICE), &args) {
+        let count = |reg: &mut Registry| match cone_scan(reg, Some(ALICE), Args::of(&args)) {
             Ok(PyValue::List(rows)) => rows
                 .iter()
                 .filter(|r| attr(r, "id") == Some(&PyValue::Int(100_000_002)))
@@ -1476,7 +1475,9 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
             PyValue::Real(0.0),
             PyValue::Real(0.0),
         ];
-        let PyValue::List(rows) = cone_scan(&mut reg, Some(ALICE), &args).expect("answered") else {
+        let PyValue::List(rows) =
+            cone_scan(&mut reg, Some(ALICE), Args::of(&args)).expect("answered")
+        else {
             panic!("a list: the palette slices it");
         };
         let bob: Vec<_> = rows
@@ -1505,7 +1506,8 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
             PyValue::Real(0.0),
             PyValue::Real(0.0),
         ];
-        let PyValue::List(rows) = cone_scan(&mut reg, Some(ALICE), &behind).expect("answered")
+        let PyValue::List(rows) =
+            cone_scan(&mut reg, Some(ALICE), Args::of(&behind)).expect("answered")
         else {
             panic!("a list");
         };
@@ -1520,7 +1522,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
     #[test]
     fn a_cone_scan_needs_five_numbers() {
         let mut reg = world();
-        assert!(cone_scan(&mut reg, Some(ALICE), &[PyValue::Real(1.0)]).is_err());
+        assert!(cone_scan(&mut reg, Some(ALICE), Args::of(&[PyValue::Real(1.0)])).is_err());
     }
 
     /// **A perfect result carries a tuple, anything less a float** --
@@ -1678,7 +1680,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
         launch_probes(
             &mut reg,
             Some(ALICE),
-            &[PyValue::Int(LAUNCHER_ITEM), PyValue::Int(8)],
+            Args::of(&[PyValue::Int(LAUNCHER_ITEM), PyValue::Int(8)]),
             0,
         )
         .expect("answered");
@@ -1702,7 +1704,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
         let back = recover_probes(
             &mut reg,
             Some(ALICE),
-            &[PyValue::List(vec![PyValue::Int(probe)])],
+            Args::of(&[PyValue::List(vec![PyValue::Int(probe)])]),
             0,
         )
         .expect("answered");
@@ -1763,7 +1765,9 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
             PyValue::Real(0.0),
             PyValue::Real(0.0),
         ];
-        let PyValue::List(rows) = cone_scan(&mut reg, Some(ALICE), &args).expect("answered") else {
+        let PyValue::List(rows) =
+            cone_scan(&mut reg, Some(ALICE), Args::of(&args)).expect("answered")
+        else {
             panic!("a list");
         };
         let row = rows
@@ -1784,7 +1788,7 @@ type\t990581011\t479\t8\t1\t1\t1.0\t0.0\t1.0\t1.0\t0\t\t281=600000.0;1370=0.5;13
         put(&mut reg, ALICE, 100_000_001, [0.0; 3]);
         let _ = reg.take_pending();
         let before = reg.scheduled_count();
-        request_scans(&mut reg, Some(ALICE), &[PyValue::None], 0).expect("answered");
+        request_scans(&mut reg, Some(ALICE), Args::of(&[PyValue::None]), 0).expect("answered");
         let names: Vec<_> = reg
             .take_pending()
             .into_iter()

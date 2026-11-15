@@ -107,6 +107,24 @@ impl<'a> Args<'a> {
         }
     }
 
+    /// The arguments of a call known only by their values, for a unit test of
+    /// a callee that reads an [`Args`].
+    #[cfg(test)]
+    pub fn of(args: &'a [PyValue]) -> Self {
+        Args {
+            service: "svc",
+            method: "Meth",
+            args,
+            kwargs: &[],
+        }
+    }
+
+    /// This call's service and method over other values (a line of a rowset
+    /// the call carried), so a refusal still names the call.
+    pub fn over(&self, args: &'a [PyValue]) -> Args<'a> {
+        Args { args, ..*self }
+    }
+
     // ---- raw ---------------------------------------------------------------
 
     /// Positional argument `i`.
@@ -129,7 +147,6 @@ impl<'a> Args<'a> {
         self.args.len()
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     pub fn is_empty(&self) -> bool {
         self.args.is_empty()
     }
@@ -177,6 +194,27 @@ impl<'a> Args<'a> {
     /// As [`Args::float`], but a non-finite real is refused.
     pub fn float_finite(&self, i: usize) -> Option<f64> {
         as_float_finite(self.get(i))
+    }
+
+    /// As [`as_float_lax`], positional `i`: a real, an integer widened, or a
+    /// `Bool` as 0.0 or 1.0.
+    pub fn float_lax(&self, i: usize) -> Option<f64> {
+        as_float_lax(self.get(i))
+    }
+
+    /// As [`as_float_lax_finite`], positional `i`.
+    pub fn float_lax_finite(&self, i: usize) -> Option<f64> {
+        as_float_lax_finite(self.get(i))
+    }
+
+    /// As [`as_int_real`], positional `i`.
+    pub fn int_real(&self, i: usize) -> Option<i64> {
+        as_int_real(self.get(i))
+    }
+
+    /// As [`as_id_or_ids`], positional `i`.
+    pub fn id_or_ids(&self, i: usize) -> Vec<i64> {
+        as_id_or_ids(self.get(i))
     }
 
     /// As [`Args::flag_lax_or_kw`], positional `i` only.
@@ -243,24 +281,20 @@ impl<'a> Args<'a> {
         self.strict(i, "an integer", as_int)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     /// An integer that must fit `i32`.
     pub fn need_i32(&self, i: usize) -> Result<i32, ArgError> {
         let n = self.need_int(i)?;
         i32::try_from(n).map_err(|_| self.err(format!("#{i}"), ArgFault::OutOfRange))
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     pub fn need_float(&self, i: usize) -> Result<f64, ArgError> {
         self.strict(i, "a number", as_float)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     pub fn need_bool(&self, i: usize) -> Result<bool, ArgError> {
         self.strict(i, "a bool", as_bool)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     pub fn need_text(&self, i: usize) -> Result<String, ArgError> {
         self.strict(i, "a string", as_text)
     }
@@ -269,7 +303,6 @@ impl<'a> Args<'a> {
         self.strict(i, "a list", as_list)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     /// The keyword `name`, which must be an integer.
     pub fn need_int_kw(&self, name: &str) -> Result<i64, ArgError> {
         match self.kw(name) {
@@ -279,7 +312,6 @@ impl<'a> Args<'a> {
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     /// An optional integer: absent or `None` is `Ok(None)`, a mistyped value
     /// is an error.
     pub fn opt_int(&self, i: usize) -> Result<Option<i64>, ArgError> {
@@ -291,7 +323,6 @@ impl<'a> Args<'a> {
         }
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "no arm reads it yet"))]
     /// An optional string, as [`Args::opt_int`].
     pub fn opt_text(&self, i: usize) -> Result<Option<String>, ArgError> {
         match self.get(i) {

@@ -378,13 +378,13 @@ fn an_off_grid_ship_is_absent_from_the_park_but_on_dscan() {
     let seen = crate::scan::cone_scan(
         &mut reg,
         Some(ALICE),
-        &[
+        crate::service::args::Args::of(&[
             PyValue::Real(0.5),
             PyValue::Real(2.0 * AU),
             PyValue::Real(to_bob[0]),
             PyValue::Real(to_bob[1]),
             PyValue::Real(to_bob[2]),
-        ],
+        ]),
     )
     .expect("a scan");
     assert!(

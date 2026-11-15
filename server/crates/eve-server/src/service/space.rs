@@ -532,17 +532,23 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // reaches the same object through `scanSvc.GetScanMan()` and
             // calls `ConeScan(scanAngle, scanRange, *direction)` **[V]**.
             // `crate::scan::cone_scan` has the shape.
-            "ConeScan" => crate::scan::cone_scan(reg, req.actor, req.args),
+            "ConeScan" => crate::scan::cone_scan(reg, req.actor, Args::new(req)),
             // Probe work (P5.10, `docs/lanes/scan.md`). Each is
             // `GetScanMan().<method>` in `scanSvc.pyc`; `crate::scan` has
             // the call and result shapes with their lines.
-            "RequestScans" => {
-                crate::scan::request_scans(reg, req.actor, req.args, crate::pyutil::filetime_now())
-            }
-            "RecoverProbes" => {
-                crate::scan::recover_probes(reg, req.actor, req.args, crate::pyutil::filetime_now())
-            }
-            "DestroyProbe" => Ok(crate::scan::destroy_probe(reg, req.actor, req.args)),
+            "RequestScans" => crate::scan::request_scans(
+                reg,
+                req.actor,
+                Args::new(req),
+                crate::pyutil::filetime_now(),
+            ),
+            "RecoverProbes" => crate::scan::recover_probes(
+                reg,
+                req.actor,
+                Args::new(req),
+                crate::pyutil::filetime_now(),
+            ),
+            "DestroyProbe" => Ok(crate::scan::destroy_probe(reg, req.actor, Args::new(req))),
             "ReconnectToLostProbes" => Ok(crate::scan::reconnect(
                 reg,
                 req.actor,
@@ -1381,7 +1387,7 @@ fn fly(reg: &mut Registry, req: &Request<'_>) {
         // somebody's park that nothing would ever remove.
         return;
     };
-    let Some(action) = crate::space_state::command(here.ship_id, req.method, req.args) else {
+    let Some(action) = crate::space_state::command(here.ship_id, req.method, Args::new(req)) else {
         return;
     };
     // **A ship in the warp tunnel takes no orders** (MOVE-VALIDATE). Past

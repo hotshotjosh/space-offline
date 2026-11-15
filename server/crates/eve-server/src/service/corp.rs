@@ -3535,21 +3535,21 @@ fn apply_title(
 }
 
 /// A title edit read off the wire: the id, the name, the eight masks.
-fn title_from_line(
-    req: &Request<'_>,
-    line: &[PyValue],
-) -> Result<(i64, crate::corp_titles::Title), ServiceError> {
-    let id =
-        args::as_int_lax(line.first()).ok_or_else(|| Args::new(req).bad("titleID is not an id"))?;
+fn title_from_line(line: Args<'_>) -> Result<(i64, crate::corp_titles::Title), ServiceError> {
+    let id = line
+        .int_lax(0)
+        .ok_or_else(|| line.bad("titleID is not an id"))?;
     if !crate::corp_titles::is_title_id(id) {
-        return Err(Args::new(req).bad("titleID is not one of the sixteen titles"));
+        return Err(line.bad("titleID is not one of the sixteen titles"));
     }
-    let name = args::as_text(line.get(1))
-        .ok_or_else(|| Args::new(req).bad("titleName is not a string"))?;
+    let name = line
+        .text(1)
+        .ok_or_else(|| line.bad("titleName is not a string"))?;
     let mut masks = [0; 8];
     for (i, m) in masks.iter_mut().enumerate() {
-        *m = args::as_int_lax(line.get(2 + i))
-            .ok_or_else(|| Args::new(req).bad("a role mask is not an integer"))?;
+        *m = line
+            .int_lax(2 + i)
+            .ok_or_else(|| line.bad("a role mask is not an integer"))?;
     }
     Ok((id, crate::corp_titles::Title::sanitized(&name, masks)))
 }
@@ -3559,7 +3559,7 @@ fn title_from_line(
 /// grantableRolesAtOther)` **[V]** (`bco_titles.UpdateTitle`).
 fn update_title(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
     let corp = director_corp(reg, req.actor, "edit titles")?;
-    let (id, title) = title_from_line(req, req.args)?;
+    let (id, title) = title_from_line(Args::new(req))?;
     apply_title(reg, corp, id, title, false);
     Ok(PyValue::None)
 }
@@ -3593,7 +3593,7 @@ fn update_titles(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servi
         .ok_or_else(|| Args::new(req).bad("titles is not a rowset"))?;
     let mut edits = Vec::new();
     for line in &lines {
-        edits.push(title_from_line(req, line)?);
+        edits.push(title_from_line(Args::new(req).over(line))?);
     }
     for (id, title) in edits {
         apply_title(reg, corp, id, title, false);

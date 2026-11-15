@@ -641,9 +641,12 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             "AbortSafeLogoff" => Ok(crate::safe_logoff::abort(reg, req.actor)),
             // GAP-SELFDESTRUCT: the 2-minute sequence; see `crate::self_destruct`.
-            "SelfDestruct" => {
-                crate::self_destruct::start(reg, req.actor, req.args, crate::pyutil::filetime_now())
-            }
+            "SelfDestruct" => crate::self_destruct::start(
+                reg,
+                req.actor,
+                Args::new(req),
+                crate::pyutil::filetime_now(),
+            ),
             "AbortSelfDestruct" => Ok(crate::self_destruct::abort(
                 reg,
                 req.actor,
@@ -813,7 +816,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // `if not killmarksCount: return`, which proves falsy is
         // expected.
         "shipKillCounter" => match req.method {
-            "GetItemKillCountPlayer" => Ok(crate::killmarks::count_call(reg, req.args)),
+            "GetItemKillCountPlayer" => Ok(crate::killmarks::count_call(reg, Args::new(req))),
             _ => Err(reg.no_method(req)),
         },
         // Fighters. **A 3-tuple, and the third element must be a dict.**
@@ -1125,9 +1128,12 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `LaunchProbes(moduleID, numProbes)` -- the probe scanner
             // window's launch (`scanSvc.FindModuleAndLaunchProbes:558`)
             // [V]. Return discarded. `crate::scan` has the rest.
-            "LaunchProbes" => {
-                crate::scan::launch_probes(reg, req.actor, req.args, crate::pyutil::filetime_now())
-            }
+            "LaunchProbes" => crate::scan::launch_probes(
+                reg,
+                req.actor,
+                Args::new(req),
+                crate::pyutil::filetime_now(),
+            ),
             // `Deactivate(itemID, effectName)`, two positional `[V]`
             // (`godma:2471`).
             "Deactivate" => match (Args::new(req).int(0), Args::new(req).text(1)) {

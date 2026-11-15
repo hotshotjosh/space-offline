@@ -167,8 +167,11 @@ pub fn on_jump(w: &mut crate::service::Registry, system: i64) {
 /// re-reads only when the cached-call version moves) sees changes. The
 /// version is the adler32 of the marshalled rowset, so it moves exactly when
 /// the numbers do (the same wrapper as `marketProxy.GetOrders`).
-pub fn history_answer(w: &crate::service::Registry, args: &[PyValue]) -> PyValue {
-    let int = |i: usize, default: i64| crate::service::args::as_int(args.get(i)).unwrap_or(default);
+pub fn history_answer(
+    w: &crate::service::Registry,
+    args: crate::service::args::Args<'_>,
+) -> PyValue {
+    let int = |i: usize, default: i64| args.int(i).unwrap_or(default);
     let now = crate::pyutil::filetime_now();
     let rows = w.ext::<MapStats>().rows(int(0, 0), int(1, 1), now);
     let columns = ["solarSystemID", "value1", "value2", "value3"]
@@ -233,6 +236,7 @@ pub fn pilot_counts(w: &crate::service::Registry) -> PyValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::args::Args;
 
     const SYS: i64 = 30_900_001;
     const T: BlueTime = 133_000_000_000_000_000;
@@ -386,7 +390,7 @@ mod tests {
         fn a_float_bool_or_text_history_stat_reads_as_its_default() {
             let mut reg = world();
             on_jump(&mut reg, A);
-            let body = |a: &[PyValue]| match history_answer(&reg, a) {
+            let body = |a: &[PyValue]| match history_answer(&reg, Args::of(a)) {
                 PyValue::Instance { state, .. } => match *state {
                     PyValue::Tuple(t) => t[1].clone(),
                     other => panic!("a tuple, got {other:?}"),
@@ -452,8 +456,8 @@ mod tests {
                 _ => panic!("a CachedMethodCallResult"),
             };
             let args = [PyValue::Int(1), PyValue::Int(24)];
-            let (v1, b1) = parts(&history_answer(&reg, &args));
-            let (v2, _) = parts(&history_answer(&reg, &args));
+            let (v1, b1) = parts(&history_answer(&reg, Args::of(&args)));
+            let (v2, _) = parts(&history_answer(&reg, Args::of(&args)));
             assert_eq!(v1, v2);
             let PyValue::Bytes(bytes) = b1 else {
                 panic!("bytes")
@@ -461,7 +465,7 @@ mod tests {
             crate::wire::loads(&bytes).expect("the rowset marshals back");
             assert!(bytes.windows(6).any(|w| w == b"value3"));
             on_jump(&mut reg, B);
-            let (v3, _) = parts(&history_answer(&reg, &args));
+            let (v3, _) = parts(&history_answer(&reg, Args::of(&args)));
             assert_ne!(v1, v3);
         }
     }

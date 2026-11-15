@@ -168,10 +168,10 @@ pub fn is_running(reg: &Registry, ship_id: i64) -> bool {
 pub fn start(
     reg: &mut Registry,
     actor: Option<i64>,
-    args: &[PyValue],
+    args: crate::service::args::Args<'_>,
     now: BlueTime,
 ) -> Result<PyValue, ServiceError> {
-    let ship_id = crate::service::args::as_int(args.first());
+    let ship_id = args.int(0);
     let pilot = actor
         .and_then(|a| reg.roster().get(a).copied())
         .filter(|p| Some(p.ship_id) == ship_id)
@@ -446,6 +446,7 @@ mod tests {
     use crate::combat::tests::{
         ALICE, ALICE_POD, ALICE_SHIP, BOB, BOB_SHIP, alice_has_bob_locked, due,
     };
+    use crate::service::args::Args;
 
     const T0: BlueTime = 1_000_000 * DURATION;
     const RIFTER: i64 = 587;
@@ -480,7 +481,7 @@ mod tests {
     }
 
     fn start_alice(reg: &mut Registry, now: BlueTime) {
-        start(reg, Some(ALICE), &[PyValue::Int(ALICE_SHIP)], now).expect("starts");
+        start(reg, Some(ALICE), Args::of(&[PyValue::Int(ALICE_SHIP)]), now).expect("starts");
     }
 
     fn slim_field(reg: &Registry, ship: i64) -> Option<PyValue> {
@@ -548,14 +549,14 @@ mod tests {
         assert!(raised(start(
             &mut reg,
             Some(ALICE),
-            &[PyValue::Int(BOB_SHIP)],
+            Args::of(&[PyValue::Int(BOB_SHIP)]),
             T0
         )));
-        assert!(raised(start(&mut reg, Some(ALICE), &[], T0)));
+        assert!(raised(start(&mut reg, Some(ALICE), Args::of(&[]), T0)));
         assert!(raised(start(
             &mut reg,
             None,
-            &[PyValue::Int(ALICE_SHIP)],
+            Args::of(&[PyValue::Int(ALICE_SHIP)]),
             T0
         )));
         assert!(reg.ext::<State>().runs.is_empty());
@@ -644,7 +645,7 @@ mod tests {
         assert_eq!(pod, ALICE_POD);
         let wrecks = reg.combat().wrecks().count();
         let now = crate::pyutil::filetime_now();
-        start(&mut reg, Some(ALICE), &[PyValue::Int(pod)], now).expect("starts");
+        start(&mut reg, Some(ALICE), Args::of(&[PyValue::Int(pod)]), now).expect("starts");
         let what_said = remote(&mut reg);
         let said = what_said
             .iter()
@@ -819,7 +820,7 @@ mod tests {
             PyValue::Bytes(vec![]),
             PyValue::Bool(true),
         ] {
-            assert!(raised(start(&mut reg, Some(ALICE), &[a], T0)));
+            assert!(raised(start(&mut reg, Some(ALICE), Args::of(&[a]), T0)));
         }
     }
 }

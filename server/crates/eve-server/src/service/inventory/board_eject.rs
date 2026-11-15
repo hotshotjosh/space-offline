@@ -1251,8 +1251,13 @@ mod tests {
     fn eject_cancels_a_running_self_destruct() {
         let mut reg = world();
         let now = crate::pyutil::filetime_now();
-        crate::self_destruct::start(&mut reg, Some(ALICE), &[PyValue::Int(ALICE_SHIP)], now)
-            .expect("starts");
+        crate::self_destruct::start(
+            &mut reg,
+            Some(ALICE),
+            Args::of(&[PyValue::Int(ALICE_SHIP)]),
+            now,
+        )
+        .expect("starts");
         assert!(crate::self_destruct::is_running(&reg, ALICE_SHIP));
         let _ = reg.take_pending();
         eject_it(&mut reg, ALICE).expect("ejected");

@@ -120,7 +120,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             "GetMultiCorpTickerNamesEx" => Ok(reg.multi_corp_tickers(req)),
             "GetMultiLocationsEx" => Ok(reg.multi_locations(req)),
             // SOC-C1: `cfg.allianceshortnames`.
-            "GetMultiAllianceShortNamesEx" => Ok(crate::alliance::multi_short_names(reg, req.args)),
+            "GetMultiAllianceShortNamesEx" => Ok(crate::alliance::multi_short_names(
+                reg,
+                args::Args::new(req),
+            )),
             _ => Err(reg.no_method(req)),
         },
         // Fire-and-forget telemetry the client sends as it shuts down.

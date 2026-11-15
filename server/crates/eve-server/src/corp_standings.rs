@@ -167,11 +167,12 @@ pub(crate) fn corp_standings_value(reg: &Registry, actor: Option<i64>, now: i64)
 /// is in the average ([`corp_standings`]). Empty for anything that is not a
 /// player corp (a character, an NPC corp: there the panel shows
 /// transactions, not this).
-pub(crate) fn compositions_value(reg: &Registry, args: &[PyValue], now: i64) -> PyValue {
-    let (Some(from_id), Some(corp)) = (
-        crate::service::args::as_int(args.first()),
-        crate::service::args::as_int(args.get(1)),
-    ) else {
+pub(crate) fn compositions_value(
+    reg: &Registry,
+    args: crate::service::args::Args<'_>,
+    now: i64,
+) -> PyValue {
+    let (Some(from_id), Some(corp)) = (args.int(0), args.int(1)) else {
         return PyValue::List(vec![]);
     };
     if !is_player_corp(reg, corp) {
@@ -281,6 +282,7 @@ pub(crate) fn announce(reg: &mut Registry, was: Before, exclude: Option<i64>) ->
 mod tests {
     use super::*;
     use crate::model::{Character, SandboxConfig};
+    use crate::service::args::Args;
 
     const CORP: i64 = 98_000_777;
     const NPC_A: i64 = 1_000_777;
@@ -404,7 +406,11 @@ mod tests {
         let mut reg = world();
         corp_with(&mut reg, [30, 30, 2]);
         reg.standings.set(90_000_701, NPC_A, 5.0);
-        let v = compositions_value(&reg, &[PyValue::Int(NPC_A), PyValue::Int(CORP)], NOW);
+        let v = compositions_value(
+            &reg,
+            Args::of(&[PyValue::Int(NPC_A), PyValue::Int(CORP)]),
+            NOW,
+        );
         let PyValue::List(rows) = v else {
             panic!("a list, got {v:?}")
         };
@@ -424,10 +430,17 @@ mod tests {
         assert_eq!(got, vec![(90_000_701, 5.0), (90_000_702, 0.0)]);
         // Anything that is not a player corp, or a malformed call, is empty.
         assert_eq!(
-            compositions_value(&reg, &[PyValue::Int(NPC_A), PyValue::Int(1_980_001)], NOW),
+            compositions_value(
+                &reg,
+                Args::of(&[PyValue::Int(NPC_A), PyValue::Int(1_980_001)]),
+                NOW
+            ),
             PyValue::List(vec![])
         );
-        assert_eq!(compositions_value(&reg, &[], NOW), PyValue::List(vec![]));
+        assert_eq!(
+            compositions_value(&reg, Args::of(&[]), NOW),
+            PyValue::List(vec![])
+        );
     }
 
     #[test]
@@ -496,7 +509,7 @@ mod tests {
             vec![PyValue::Real(1.0), PyValue::Int(CORP)],
             vec![PyValue::Bool(true), PyValue::Int(CORP)],
         ] {
-            assert_eq!(compositions_value(&reg, &args, NOW), empty);
+            assert_eq!(compositions_value(&reg, Args::of(&args), NOW), empty);
         }
     }
 }
