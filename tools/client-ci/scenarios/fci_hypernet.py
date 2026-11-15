@@ -1557,7 +1557,11 @@ def eoci_main(EOCI_NAME):
             check('get_type_statistics has all eight keys and active_count >= 1',
                   ok and all([k in st for k in keys]) and st['active_count'] >= 1, text(st)[:300])
 
-            # 7. buy one ticket
+            # 7. buy one ticket. A fresh character without --dev has an empty
+            # wallet, so the GM gives it enough for a few tickets first.
+            ok, reply = gm('/giveisk %d' % (10 * PRICE))
+            check('GM: ISK for the tickets', bool(ok), text(reply)[:200])
+            wait_for(lambda: (wallet() or 0) >= PRICE, timeout_ms=8000)
             w0 = wallet()
             ok, upd = safe(lambda: svc.buy_ticket(rid, 0))
             check('buy_ticket(id, 0) answers', ok, text(upd)[:300])
@@ -1565,15 +1569,29 @@ def eoci_main(EOCI_NAME):
                                and abs((w0 - wallet()) - PRICE) < 0.01, timeout_ms=8000)
             check('the wallet fell by ticket_price', bool(got), '%s -> %s' % (text(w0), text(wallet())))
             ok, one = safe(lambda: svc.get_raffle(rid))
-            tk = one.get_ticket(0) if ok else None
-            check('the ticket 0 owner is the character',
-                  tk is not None and getattr_safe(tk, 'owner_id') == sess.charid, text(tk))
+            # The client's Raffle has no get_ticket; read its sold_tickets, whose
+            # entries are Ticket objects or (running_id, raffle_id, owner_id,
+            # number) tuples [I] (the server sends the tuples, raffle.py's
+            # __setstate__ may wrap them).
+            def ticket_owner(raffle, number):
+                for t in (getattr_safe(raffle, 'sold_tickets') or []):
+                    if isinstance(t, (tuple, list)) and len(t) >= 4:
+                        if t[3] == number:
+                            return t[2]
+                    elif getattr_safe(t, 'number') == number:
+                        return getattr_safe(t, 'owner_id')
+                return None
+            owner = ticket_owner(one, 0) if ok else None
+            check('the ticket 0 owner is the character', owner == sess.charid,
+                  'owner %s, sold %s' % (text(owner), text(getattr_safe(one, 'sold_tickets'))[:200]))
 
             # 8. the same number again: the exception CLASS
             ok, err = safe(lambda: svc.buy_ticket(rid, 0))
-            import raffles
             check('the second buy_ticket(id, 0) raises raffles.TicketUnavailableError',
-                  (not ok) and isinstance(err, raffles.TicketUnavailableError), text(err)[:300])
+                  # `safe` hands back the failure as 'Type: message', so the
+                  # exception class is read by its name.
+                  (not ok) and text(err).startswith('TicketUnavailableError:'),
+                  text(err)[:300])
 
             # 9. expire it
             w1 = wallet()
