@@ -36,7 +36,7 @@
 //! ## State (delta kind `emblem`)
 //!
 //! - `own char ship_type cosmetic_type -> 1`: a licence the pilot owns.
-//! - `slot ship_item backend_slot -> cosmetic_type`: an enabled slot. Rows of
+//! - `slot ship_item backend_slot -> cosmetic_type writer`: an enabled slot. Rows of
 //!   an item that no longer exists are ignored on read and dropped by
 //!   [`prune`] (run on every Display).
 //!
@@ -272,13 +272,21 @@ fn slots_of(reg: &Registry, ship: i64) -> Vec<(i64, i64)> {
         .map_or((0, 0), |i| (i.owner_id, i.type_id));
     let s = ship.to_string();
     let from = vec![SLOT.to_owned(), s.clone(), String::new()];
-    // A row counts only while the ship's CURRENT owner owns the licence: a
-    // hull given to a pilot without it shows no logo.
+    // A row counts only while the ship's CURRENT owner owns the licence and
+    // wrote the row: a hull given to a pilot without it shows no logo, and a
+    // new owner who buys the same licence does not inherit the old owner's
+    // slots. A one-field row (written before the writer field existed) has no
+    // writer and keeps the licence-only rule: a migration choice, not an
+    // assumption about the client.
     let mut v: Vec<(i64, i64)> = d
         .range(from..)
         .take_while(|(k, _)| k.len() == 3 && k[0] == SLOT && k[1] == s)
-        .filter_map(|(k, val)| Some((k[2].parse().ok()?, val.first()?.parse().ok()?)))
-        .filter(|&(_, c)| owns(reg, owner, hull, c))
+        .filter_map(|(k, val)| {
+            let writer: Option<i64> = val.get(1).and_then(|w| w.parse().ok());
+            Some((k[2].parse().ok()?, val.first()?.parse().ok()?, writer))
+        })
+        .filter(|&(_, c, writer)| owns(reg, owner, hull, c) && writer.is_none_or(|w| w == owner))
+        .map(|(slot, c, _)| (slot, c))
         .collect();
     v.sort_unstable();
     v
@@ -341,7 +349,8 @@ pub fn prune(reg: &mut Registry) {
 /// `spaceObject/ship.py:269-271`, `CosmeticsLoader.py:35-38`]. A ship of an
 /// owner with no licence keeps no key, unless it has slot rows from a
 /// previous owner: it then gets `[]` so a boarding pilot's client drops the
-/// old logo. The rows stay, so a hull handed back shows the logo again [A].
+/// old logo. The rows light only for the pilot who wrote them, while they own
+/// the licence. The rows stay, so a hull handed back shows the logo again [A].
 pub fn slim(reg: &Registry, ids: &[i64]) -> SlimExtras {
     if reg.deltas().of(KIND).is_empty() {
         return Vec::new();
@@ -414,8 +423,11 @@ pub fn display(
         return Err(Refused::NoAlliance);
     }
     prune(reg);
-    reg.deltas_mut()
-        .put(KIND, slot_key(ship, slot), vec![cosmetic.to_string()]);
+    reg.deltas_mut().put(
+        KIND,
+        slot_key(ship, slot),
+        vec![cosmetic.to_string(), actor.to_string()],
+    );
     reg.mark_dirty();
     announce(reg, actor, ship, slot, cosmetic);
     Ok(())
@@ -871,6 +883,58 @@ mod tests {
             "Bob has no licence, the old slot row must clear the drawn logo"
         );
         assert_eq!(enabled(&reg, ALICE, ship), PyValue::Dict(vec![]));
+    }
+
+    #[test]
+    fn a_new_owner_who_buys_the_same_licence_does_not_inherit_the_old_slots() {
+        let mut reg = world();
+        let ship = ship_of(&reg, ALICE);
+        let mv = |reg: &mut Registry, who: i64| {
+            reg.apply_items(&[crate::item::Edit::Move {
+                item_id: ship,
+                to: crate::item::Slot::new(who, STATION, crate::model::FLAG_HANGAR),
+            }])
+            .expect("moves");
+        };
+        grant(&mut reg, ALICE, FRIGATE, CORPORATION_LOGO);
+        display(&mut reg, ALICE, ship, 0, CORPORATION_LOGO).unwrap();
+        mv(&mut reg, BOB);
+        grant(&mut reg, BOB, FRIGATE, CORPORATION_LOGO);
+        assert_eq!(enabled(&reg, BOB, ship), PyValue::Dict(vec![]));
+        assert_eq!(cosmetics_items(&reg, ship), Some(PyValue::List(vec![])));
+        display(&mut reg, BOB, ship, 3, CORPORATION_LOGO).unwrap();
+        assert_eq!(
+            enabled(&reg, BOB, ship),
+            crate::pyutil::dict_kv([(PyValue::Int(3), PyValue::Int(CORPORATION_LOGO))])
+        );
+        mv(&mut reg, ALICE);
+        assert_eq!(
+            enabled(&reg, ALICE, ship),
+            crate::pyutil::dict_kv([(PyValue::Int(0), PyValue::Int(CORPORATION_LOGO))])
+        );
+    }
+
+    #[test]
+    fn a_slot_row_without_a_writer_still_shows_for_a_licensed_owner() {
+        let mut reg = world();
+        let ship = ship_of(&reg, ALICE);
+        grant(&mut reg, ALICE, FRIGATE, CORPORATION_LOGO);
+        reg.deltas_mut()
+            .put(KIND, slot_key(ship, 0), vec![CORPORATION_LOGO.to_string()]);
+        assert_eq!(
+            enabled(&reg, ALICE, ship),
+            crate::pyutil::dict_kv([(PyValue::Int(0), PyValue::Int(CORPORATION_LOGO))])
+        );
+    }
+
+    #[test]
+    fn has_slot_rows_matches_the_whole_ship_id_not_a_prefix() {
+        let mut reg = world();
+        reg.deltas_mut()
+            .put(KIND, slot_key(12, 0), vec!["1".to_owned()]);
+        assert!(!has_slot_rows(&reg, 1));
+        assert!(!has_slot_rows(&reg, 123));
+        assert!(has_slot_rows(&reg, 12));
     }
 
     #[test]
