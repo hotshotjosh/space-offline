@@ -9,9 +9,13 @@ fleet of one (the sharpest case: without the window a dropped connection
 removes the last member and disbands the fleet at once), logs off to the
 character screen (`gameui.LogOffCharacter`), waits out the session-change
 lockout and selects the character again, as `fci_upwell_relog` does.  It is
-back well inside 120 s (a PRECONDITION measures that).  Then:
+back well inside 120 s (a PRECONDITION measures that).  Before the log-off
+the boss makes a second wing and squad (on the remote fleet object) and moves
+himself into them, so a one-member fleet can sit away from the default seat
+and no second client is needed (#1).  Then:
 
-1. `session.fleetid` is the fleet it was;
+1. `session.fleetid` is the fleet it was, and `session.wingid` and
+   `session.squadid` are the second wing and squad it was;
 2. the client's fleet service holds its server object again and `GetMembers`
    lists the pilot;
 3. the server still lists the pilot in `GetFleetComposition` and answers
@@ -1467,6 +1471,48 @@ def eoci_main(EOCI_NAME):
                                                      text(member_ids(fleet_svc)), text(waited)))
         if not up:
             return
+        # Move the boss into a second wing and squad.  The remote object is
+        # called, not the service: `fleetSvc.CreateWing` makes a squad by itself
+        # and returns None, and `fleetSvc.MoveMember` runs
+        # `CheckIfIsOKWithDemotion`, which can open a modal [V fleetSvc.py:501-506,
+        # 561-565].  `fleetRoleMember` is 4 [V evefleet/const.py:12].
+        handler0 = getattr_safe(fleet_svc, 'fleet')
+        precondition('the fleet service holds its server object', handler0 is not None, '')
+        if handler0 is None:
+            return
+        ok, old_wings = safe(lambda: list(fleet_svc.GetWings().keys()))
+        old_wings = old_wings if ok else []
+        try:
+            role_member = getattr_safe(getattr_safe(__import__('evefleet'), 'const'),
+                                       'fleetRoleMember', 4)
+        except Exception:
+            role_member = 4
+        ok, wing_id = safe(lambda: handler0.CreateWing())
+        check('CreateWing answered', ok and bool(wing_id), text(wing_id)[:200])
+        if not ok or not wing_id:
+            return
+        ok, squad_id = safe(lambda: handler0.CreateSquad(wing_id))
+        check('CreateSquad answered', ok and bool(squad_id), text(squad_id)[:200])
+        if not ok or not squad_id:
+            return
+        precondition('the new wing is not the fleet\'s first wing', wing_id not in old_wings,
+                     'new %s, existing %s' % (text(wing_id), text(old_wings)))
+        if wing_id in old_wings:
+            return
+        ok, v = safe(lambda: handler0.MoveMember(me, wing_id, squad_id, role_member))
+        check('MoveMember answered', ok, text(v)[:200])
+        if not ok:
+            return
+        moved, waited = wait_for(lambda: getattr_safe(builtin('session'), 'wingid') == wing_id
+                                 and getattr_safe(builtin('session'), 'squadid') == squad_id,
+                                 timeout_ms=30000, step_ms=500)
+        check('the pilot sits in the second wing and squad (session.wingid, squadid)',
+              bool(moved), 'wing %s squad %s, wanted %s/%s after %s ms' % (
+                  text(getattr_safe(builtin('session'), 'wingid')),
+                  text(getattr_safe(builtin('session'), 'squadid')),
+                  text(wing_id), text(squad_id), text(waited)))
+        if not moved:
+            return
         # A fleet of one is the sharpest case: without the window a dropped
         # connection removes the last member and disbands the fleet at once.
         sleep_ms(10000)
@@ -1504,6 +1550,16 @@ def eoci_main(EOCI_NAME):
         same, waited = wait_for(lambda: my_fleet() == fleet_id, timeout_ms=60000, step_ms=1000)
         check('session.fleetid is the fleet it was', bool(same),
               'fleetid %s, was %s, after %s ms' % (text(my_fleet()), text(fleet_id), text(waited)))
+        w_same, waited = wait_for(lambda: getattr_safe(builtin('session'), 'wingid') == wing_id,
+                                  timeout_ms=60000, step_ms=1000)
+        check('session.wingid is the wing it was', bool(w_same),
+              'wingid %s, was %s, after %s ms' % (
+                  text(getattr_safe(builtin('session'), 'wingid')), text(wing_id), text(waited)))
+        s_same, waited = wait_for(lambda: getattr_safe(builtin('session'), 'squadid') == squad_id,
+                                  timeout_ms=60000, step_ms=1000)
+        check('session.squadid is the squad it was', bool(s_same),
+              'squadid %s, was %s, after %s ms' % (
+                  text(getattr_safe(builtin('session'), 'squadid')), text(squad_id), text(waited)))
         svc2 = get_svc('fleet')
         precondition('the fleet service is running after the login', svc2 is not None, text(svc2))
         if svc2 is None:

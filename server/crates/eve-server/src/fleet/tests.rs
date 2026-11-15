@@ -1577,6 +1577,101 @@ fn accepting_from_a_held_seat_reseats_without_a_join() {
     assert!(f.invite_of(BOB).is_none());
 }
 
+/// Alice's fleet with a second wing and squad, and Bob seated in it as `role`.
+/// The ids are the fleet's own, and differ from the default seat.
+fn with_bob_in_a_second_squad(role: i64) -> (Fleets, i64, i64, i64) {
+    let (mut f, id) = with_alice_and_bob();
+    let (w2, _) = f.create_wing(ALICE, id).expect("wing");
+    let (s2, _) = f.create_squad(ALICE, id, w2).expect("squad");
+    f.move_member(ALICE, id, BOB, Some(w2), Some(s2), Some(role))
+        .expect("move");
+    assert_ne!(
+        (Some(w2), Some(s2)),
+        f.fleet(id).expect("fleet").first_wing_and_squad(),
+        "the seat is not the default one"
+    );
+    (f, id, w2, s2)
+}
+
+#[test]
+fn a_held_pilot_in_a_second_wing_is_reseated_in_that_wing_and_squad() {
+    let (mut f, id, w2, s2) = with_bob_in_a_second_squad(ROLE_MEMBER);
+    f.character_disconnected(BOB, T0);
+    f.offer_rejoins(T0, &[BOB]);
+    f.offer_rejoins(T0 + REJOIN_DELAY, &[BOB]);
+    let (ok, fx) = f
+        .accept_invite(BOB, id, Some(SHIP_TYPE), None, None)
+        .expect("accept");
+    assert!(ok);
+    assert!(
+        fx.sessions.iter().any(|s| s.character_id == BOB
+            && s.fleet_id == Some(id)
+            && s.wing_id == Some(w2)
+            && s.squad_id == Some(s2)),
+        "his second wing and squad come back: {:?}",
+        fx.sessions
+    );
+    let bob = &f.fleet(id).expect("fleet").members[&BOB];
+    assert_eq!((bob.wing_id, bob.squad_id, bob.role), (w2, s2, ROLE_MEMBER));
+}
+
+#[test]
+fn a_held_squad_commander_keeps_his_seat_and_nobody_takes_it_meanwhile() {
+    let (mut f, id, w2, s2) = with_bob_in_a_second_squad(ROLE_SQUAD_CMDR);
+    f.invite(ALICE, id, CAROL, None, None, None)
+        .expect("invite");
+    f.accept_invite(CAROL, id, Some(SHIP_TYPE), Some(STATION), Some(SYSTEM))
+        .expect("accept");
+    f.character_disconnected(BOB, T0);
+    assert!(
+        f.move_member(ALICE, id, CAROL, Some(w2), Some(s2), Some(ROLE_SQUAD_CMDR))
+            .is_err(),
+        "the held commander still counts as sitting in the seat"
+    );
+    f.offer_rejoins(T0, &[BOB]);
+    f.offer_rejoins(T0 + REJOIN_DELAY, &[BOB]);
+    f.accept_invite(BOB, id, Some(SHIP_TYPE), None, None)
+        .expect("accept");
+    let bob = &f.fleet(id).expect("fleet").members[&BOB];
+    assert_eq!(
+        (bob.wing_id, bob.squad_id, bob.role),
+        (w2, s2, ROLE_SQUAD_CMDR)
+    );
+}
+
+#[test]
+fn a_held_members_squad_and_wing_cannot_be_deleted_under_him() {
+    let (mut f, id, w2, s2) = with_bob_in_a_second_squad(ROLE_MEMBER);
+    f.character_disconnected(BOB, T0);
+    assert_eq!(
+        f.delete_squad(ALICE, id, s2),
+        Err(FleetError::CannotDeleteNonEmptySquad)
+    );
+    assert_eq!(
+        f.delete_wing(ALICE, id, w2),
+        Err(FleetError::CannotDeleteNonEmptyWing)
+    );
+}
+
+#[test]
+fn a_lazy_reconnect_reseats_in_the_second_wing_too() {
+    let (mut f, id, w2, s2) = with_bob_in_a_second_squad(ROLE_MEMBER);
+    f.character_disconnected(BOB, T0);
+    f.reconnect_lazy(BOB, id, T0).expect("seated");
+    f.offer_rejoins(T0, &[BOB]);
+    let (ok, fx) = f
+        .accept_invite(BOB, id, Some(SHIP_TYPE), None, None)
+        .expect("accept");
+    assert!(ok);
+    assert!(
+        fx.sessions
+            .iter()
+            .any(|s| s.character_id == BOB && s.wing_id == Some(w2) && s.squad_id == Some(s2)),
+        "{:?}",
+        fx.sessions
+    );
+}
+
 #[test]
 fn a_reconnect_or_expiry_drops_the_offer() {
     let (mut f, id) = with_alice_and_bob();
