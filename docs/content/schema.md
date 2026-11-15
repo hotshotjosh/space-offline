@@ -89,7 +89,7 @@ source	res:/staticdata/systems.static	<md5 hex from resfileindex.txt>
 
 | kind | fields | rule |
 |---|---|---|
-| `format` | `MAJOR.MINOR` | `Bundle::open` refuses a `MAJOR` other than 1. A header change or a new file bumps `MINOR` (**1.7**: `mutators/ranges.tsv` and `mutators/mappings.tsv`; **1.6**: `econ/prices.tsv` gains its last column `build_min`; **1.5**: `universe/system-effects.tsv`; **1.4**: `dbuffs/collections.tsv` and `dbuffs/modifiers.tsv`; **1.3**: `fighters/abilities.tsv` and `fighters/slots.tsv`; **1.2**: `universe/centers.tsv`; an older reader ignores it, and a bundle without it still loads, except **1.6**: a pre-1.6 server refuses a 1.6 bundle, because it checks the prices header exactly, while a 1.6 server reads a 1.5 bundle's eight-column prices file with no `build_min`, so the markup and the cap take effect only after a re-extract); a change to this grammar or to §1.1's encoding bumps `MAJOR`. Exactly one line |
+| `format` | `MAJOR.MINOR` | `Bundle::open` refuses a `MAJOR` other than 1. A header change or a new file bumps `MINOR` (**1.8**: `npc/factions.tsv` gains its last column `missile_groups`, a pre-1.8 server refuses a 1.8 bundle; a 1.8 server reads a 1.7 bundle's 19-column factions file; **1.7**: `mutators/ranges.tsv` and `mutators/mappings.tsv`; **1.6**: `econ/prices.tsv` gains its last column `build_min`; **1.5**: `universe/system-effects.tsv`; **1.4**: `dbuffs/collections.tsv` and `dbuffs/modifiers.tsv`; **1.3**: `fighters/abilities.tsv` and `fighters/slots.tsv`; **1.2**: `universe/centers.tsv`; an older reader ignores it, and a bundle without it still loads, except **1.6**: a pre-1.6 server refuses a 1.6 bundle, because it checks the prices header exactly, while a 1.6 server reads a 1.5 bundle's eight-column prices file with no `build_min`, so the markup and the cap take effect only after a re-extract); a change to this grammar or to §1.1's encoding bumps `MAJOR`. Exactly one line |
 | `client_build` | build number | the build of the install it was read from (any build `tools/builds.tsv` accepts). `Bundle::open` accepts it when it is in the server's accepted set (`--client-build`, default every `pinned`/`equivalent` build of `eve_marshal::build::BUILDS`), or when `data_hash` equals one the registry proved for a build in that set. Exactly one line |
 | `extractor` | sha256 hex | plan §1.1: over `tools/content*.py` and every reader they import (`fsd dogma pyd_schema loctable celestials asteroids pi_statics typedata skills`), in sorted path order, each file's bytes. C1's "git sha" is superseded. Exactly one line |
 | `systems` | `all`, or a comma list of system ids | the `--systems` restriction. Exactly one line |
@@ -266,6 +266,7 @@ Invented example row:
 | `wormhole_class_id` | `i64?` | `regions.static.wormholeClassID` |
 | `neighbours` | `list<i64>` | `regions.static.neighbours` |
 | `name` | `text` | `nameID` through the en-us table |
+| `missile_groups` | `map<i64,i64>` | **format 1.8** (#128): `size=charge_group_id`, the vote of the Asteroid types with MISSILE in `needs` over their `entityMissileTypeID` (attribute 507) charge group at their class size; empty where no rat launches a missile. Appended after `name`, so the column indexes before it are unchanged |
 
 Invented example row:
 
@@ -887,7 +888,7 @@ Invented example row:
 - **Stable client ids and delta keys (ruling 4):** `faction_id` is stable and is the `occupier` value of the `fwvp` delta.
 
 ```
-#faction_id	corporation_id	militia_corporation_id	system_id	member_races	owner_corp_id	groups	wrecks	damage_profile	ammo_groups	tank	tags	base_prefix	elite_prefix	commander_prefix	deadspace_stems	officers	sof_faction	name
+#faction_id	corporation_id	militia_corporation_id	system_id	member_races	owner_corp_id	groups	wrecks	damage_profile	ammo_groups	tank	tags	base_prefix	elite_prefix	commander_prefix	deadspace_stems	officers	sof_faction	name	missile_groups
 ```
 
 | column | type | source and meaning |
@@ -915,7 +916,7 @@ Invented example row:
 Invented example row:
 
 ```
-599001	1999001		39000001	1	1999002	99101,99102	Frigate=990080;Cruiser=990081	0.1,0.4,0.4,0.1	1=99201;2=99202	shield	990090,990091	Example	Arch Example	Dread Example	Exi,Exior,Exum,Exatis,Ex	Exa	examplecorp	Example Cartel
+599001	1999001		39000001	1	1999002	99101,99102	Frigate=990080;Cruiser=990081	0.1,0.4,0.4,0.1	1=99201;2=99202	shield	990090,990091	Example	Arch Example	Dread Example	Exi,Exior,Exum,Exatis,Ex	Exa	examplecorp	Example Cartel	1=99301;2=99302
 ```
 
 - One row for **every** faction. C1's six columns come from the `factions` table, which K1 decodes (checked: `corporationID memberRaces militiaCorporationID nameID solarSystemID` [V]). C6 R1's columns are filled for the factions the §2.1 grammar parses and are empty on every other row.

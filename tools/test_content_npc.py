@@ -197,11 +197,32 @@ class NpcSection(unittest.TestCase):
         self.assertEqual(other["owner_corp_id"], OTHER_CORP)   # no spawner: the executor
         self.assertIsNone(other["tank"])
 
+    def test_a_missile_only_rat_votes_a_missile_group_at_its_class_size(self):
+        data = fixture()
+        data["groups"][99301] = (N.CATEGORY_CHARGE, "Example Missile")
+        data["groups"][99302] = (N.CATEGORY_CHARGE, "Example Rocket")
+        data["types"][990501] = _type(99301, "")
+        data["types"][990502] = _type(99302, "")
+        data["types"][990503] = _type(99301, "")
+        # the three Example Hull frigates (size 1) launch 990501, 990501 and a T2 in the same group
+        data["types"][990503]["meta"] = 2
+        for i, m in enumerate((990501, 990501, 990503)):
+            data["dogma"][990101 + i][0].update({N.A_MISSILE_TYPE: float(m)})
+            data["dogma"][990101 + i][0].update({114: 0.0, 116: 0.0, 117: 0.0, 118: 0.0})
+            data["dogma"][990101 + i][1][:] = []   # no turret effect: MISSILE only
+        # the commander frigate rats (size 1) launch an item that is no charge
+        data["dogma"][990131][0][N.A_MISSILE_TYPE] = float(990201)
+        fac = dict(zip(N.FACTIONS_HEADER, _by_key(N.derive(data)[0]["npc/factions.tsv"])[EX]))
+        self.assertEqual(fac["missile_groups"], {1: 99301})
+        # an unvoted size has no entry, and a faction with no missile rats has none at all
+        other = dict(zip(N.FACTIONS_HEADER, _by_key(N.derive(data)[0]["npc/factions.tsv"])[OTHER]))
+        self.assertEqual(other["missile_groups"], {})
+
     def test_a_faction_outside_the_grammar_has_empty_r1_columns(self):
         row = _by_key(self.derive()["npc/factions.tsv"])[PLAIN]
         self.assertEqual(row[:5], (PLAIN, OTHER_CORP, 1999004, 39000003, [2, 4]))
-        self.assertTrue(all(v in (None, [], {}) for v in row[5:-1]))
-        self.assertEqual(row[-1], "Plain State")
+        self.assertTrue(all(v in (None, [], {}) for v in row[5:-2] + row[-1:]))
+        self.assertEqual(row[-2], "Plain State")
 
     def test_a_faction_with_no_executor_is_left_out(self):
         data = fixture()

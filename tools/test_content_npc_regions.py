@@ -172,7 +172,7 @@ class Files(unittest.TestCase):
         row = ("599001\t1999001\t\t39000001\t1\t1999002\t99101,99102\t"
                "Frigate=990080;Cruiser=990081\t0.1,0.4,0.4,0.1\t1=99201;2=99202\tshield\t"
                "990090,990091\tExample\tArch Example\tDread Example\tExi,Exior,Exum,Exatis,Ex\t"
-               "Exa\texamplecorp\tExample Cartel")
+               "Exa\texamplecorp\tExample Cartel\t1=99301;2=99302")
         with tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False,
                                          encoding="utf-8") as fh:
             path = fh.name
@@ -185,7 +185,8 @@ class Files(unittest.TestCase):
         self.assertEqual(got, {599001: {
             "ammo_groups": {1: 99201, 2: 99202}, "tank": "shield", "tags": [990090, 990091],
             "commander_prefix": "Dread Example",
-            "deadspace_stems": ["Exi", "Exior", "Exum", "Exatis", "Ex"], "officers": ["Exa"]}})
+            "deadspace_stems": ["Exi", "Exior", "Exum", "Exatis", "Ex"], "officers": ["Exa"],
+            "missile_groups": {1: 99301, 2: 99302}}})
 
 
 class Loot(unittest.TestCase):
@@ -261,6 +262,32 @@ class LootLauncherSize(unittest.TestCase):
         t1 = {"category": self.MOD, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
               "charge_groups": (99201,), "groupID": 98101}
         self.assertEqual(self._weapons({990703: t1}, {990703: 3}), {990703: [3]})
+
+    def test_a_missile_group_makes_its_launcher_and_charge_rows_at_one_size(self):
+        mod, chg = self.MOD, npr.CATEGORY_CHARGE
+        f = {P1: {"missile_groups": {2: 99301}}}
+        types = {
+            990711: {"category": mod, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+                     "charge_groups": (99301,), "groupID": 98101},    # size-2 launcher
+            990712: {"category": chg, "metaGroupID": None, "groupID": 99301},   # its charge
+            990713: {"category": chg, "metaGroupID": npr.META_FACTION, "groupID": 99301},
+        }
+        rows = npr.loot_rows(f, types, {}, lambda t: "")
+        got = {(r[2], r[4]): sorted(x[1] for x in rows if x[2:5] == r[2:5]) for r in rows}
+        self.assertEqual(got, {("weapon", 990711): [2], ("ammo", 990712): [2]})
+
+    def test_a_faction_with_both_columns_has_turret_and_launcher_rows_at_one_size(self):
+        mod = self.MOD
+        f = {P1: {"ammo_groups": {2: 99201}, "missile_groups": {2: 99301}}}
+        types = {
+            990721: {"category": mod, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+                     "charge_groups": (99201,), "groupID": 98199},    # turret
+            990722: {"category": mod, "metaGroupID": npr.META_TECH1, "metaLevel": 0,
+                     "charge_groups": (99301,), "groupID": 98101},    # launcher
+        }
+        rows = npr.loot_rows(f, types, {990721: 2}, lambda t: "")
+        self.assertEqual({(r[1], r[2], r[4]) for r in rows},
+                         {(2, "weapon", 990721), (2, "weapon", 990722)})
 
 
 class LootSizeBounds(unittest.TestCase):

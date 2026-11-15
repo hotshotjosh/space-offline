@@ -31,7 +31,7 @@ CFSD = ("types", "groups", "typedogma", "dogmaeffects", "graphicids", "factions"
 FACTIONS_HEADER = tuple(
     "faction_id corporation_id militia_corporation_id system_id member_races "
     "owner_corp_id groups wrecks damage_profile ammo_groups tank tags base_prefix "
-    "elite_prefix commander_prefix deadspace_stems officers sof_faction name".split())
+    "elite_prefix commander_prefix deadspace_stems officers sof_faction name missile_groups".split())
 CORPORATIONS_HEADER = tuple(
     "corp_id faction_id station_id system_id friend_id enemy_id tax_rate "
     "min_security main_activity_id size extent lp_offer_tables ticker name".split())
@@ -303,6 +303,30 @@ def _ammo_groups(members, charges):
     return {s: _mode(list(votes[s].elements())) for s in sorted(votes)}
 
 
+def _missile_groups(members, data):
+    """Per size, the charge group of the missiles the faction's Asteroid
+    types fire: each member with MISSILE in `needs` and `entityMissileTypeID`
+    (507) above 0 votes its missile's market group at its class size; the
+    mode wins (#128). [I] the missile type is the one the rat launches.
+    [A] a non-T1 missile (`metaGroupID` not 1 or absent, or unpublished) votes
+    its own group, because a T2 or faction missile sits in its T1's group;
+    falsifier: a voted group whose types are all non-T1, or a missile whose
+    group differs from its T1's. A type that is not a charge, or an unknown
+    one, casts no vote."""
+    votes = collections.defaultdict(collections.Counter)
+    for n in members:
+        size = size_of(n["cls"])
+        m = int(n["attrs"].get(A_MISSILE_TYPE) or 0)
+        if n["context"] != "Asteroid" or size is None or "MISSILE" not in n["needs"] or m <= 0:
+            continue
+        t = data["types"].get(m)
+        g = data["groups"].get(t["group"]) if t else None
+        if g is None or g[0] != CATEGORY_CHARGE:
+            continue
+        votes[size][t["group"]] += 1
+    return {s: _mode(list(votes[s].elements())) for s in sorted(votes)}
+
+
 def faction_profile(members, data, tags):
     """C6 R1's derived columns for one parsed faction."""
     by = collections.defaultdict(list)
@@ -350,7 +374,8 @@ def faction_profile(members, data, tags):
             "damage": damage, "ammo": _ammo_groups(members, data["charges"]),
             "tank": tank, "tags": tag_ids, "base": base, "elite": elite,
             "commander": commander, "stems": stems if any(stems) else [],
-            "officers": officers, "sof": sof}
+            "officers": officers, "sof": sof,
+            "missile": _missile_groups(members, data)}
 
 
 def tier_of(n, prof):
@@ -420,7 +445,8 @@ def derive(data):
             row += (owner, p["groups"], p["wrecks"], p["damage"], p["ammo"], p["tank"],
                     p["tags"], p["base"], p["elite"], p["commander"], p["stems"],
                     p["officers"], p["sof"])
-        fac_rows.append(row + (f.get("name") or "",))
+        row += (f.get("name") or "", p["missile"] if p else {})
+        fac_rows.append(row)
 
     type_rows = []
     for tid in sorted(npcs):

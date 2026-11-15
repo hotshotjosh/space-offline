@@ -394,14 +394,15 @@ def loot_rows(factions, types, sizes, name, needs=None):
     (counts, chances, meta caps by tier) is code in CP22, not rows.
 
     - weapon/base: a Tech I module (meta level kept for the tier cap) firing
-      the faction's ammo group at that size; tank/prop/ewar/base: a Tech I
+      the faction's ammo group (turret) or missile group (launcher, at its
+      group's size) at that size; tank/prop/ewar/base: a Tech I
       module of the faction's tank groups, of propulsion, or of the ewar
       groups its NPCs need (`needs`, `{faction_id: {need}}` from
       `npc/types.tsv`), at the size [`module_size`] its name gives (a size-free
       ewar module at all three); named and compact modules are metaGroup 1
       with a higher meta level [V: the market table], so they drop up to the
       tier cap; ammo/base: a charge of that
-      group and size, not meta 2-6;
+      group (turret or missile) and size, not meta 2-6;
     - faction/commander, officer/officer, deadspace/deadspace: published types
       of meta group 4/5/6 named `<commander prefix> `, `<officer>'s `,
       `<stem> `; tag/base: the faction's tags. A type with a charge size of 1-3
@@ -414,6 +415,7 @@ def loot_rows(factions, types, sizes, name, needs=None):
     for fid in sorted(factions):
         f = factions[fid]
         ammo = f.get("ammo_groups") or {}
+        missile = f.get("missile_groups") or {}
         named = [("faction", "commander", META_FACTION,
                   [f["commander_prefix"] + " "] if f.get("commander_prefix") else []),
                  ("officer", "officer", META_OFFICER, [o + "'s " for o in f.get("officers") or ()]),
@@ -441,10 +443,12 @@ def loot_rows(factions, types, sizes, name, needs=None):
                 pools += [(s, k, "base") for k, s in _equipment_pools(
                     f, t.get("groupID"), name(tid), (needs or {}).get(fid, ()))]
                 pools += [(s, "weapon", "base") for s in wfits
-                          if ammo.get(s) is not None and ammo[s] in t.get("charge_groups", ())]
+                          if any(g.get(s) is not None and g[s] in t.get("charge_groups", ())
+                                 for g in (ammo, missile))]
             if t["category"] == CATEGORY_CHARGE and t.get("metaGroupID") in (None, META_TECH1):
                 pools += [(s, "ammo", "base") for s in fits
-                          if ammo.get(s) is not None and ammo[s] == t.get("groupID")]
+                          if t.get("groupID") in (ammo.get(s), missile.get(s))
+                          and t.get("groupID") is not None]
             for kind, tier, meta, prefixes in named:
                 if (t["category"] == CATEGORY_MODULE
                         and is_capital_named(t.get("groupID"), name(tid))):
@@ -502,6 +506,7 @@ def read_factions_tsv(path):
             "commander_prefix": f[14] or None,
             "deadspace_stems": content.decode_list(f[15], str),
             "officers": content.decode_list(f[16], str),
+            "missile_groups": content.decode_map(f[19], int, int) if len(f) > 19 else {},
         }
     return out
 
@@ -752,9 +757,10 @@ def check(ctx):
     bad += check_clone_tags(ctx)
     if os.path.isfile(path):
         for f in content.read_rows(path):
-            if f[6] and not f[9]:
-                ctx.note("npc/factions.tsv: faction %s (%s) has no ammo_groups, so no weapon or "
-                         "ammo rows (C6 section 2.6, #128)" % (f[0], f[-1]))
+            if f[6] and not f[9] and not (len(f) > 19 and f[19]):
+                ctx.note("npc/factions.tsv: faction %s (%s) has neither ammo_groups nor "
+                         "missile_groups, so no weapon or ammo rows (C6 section 2.6, #128)"
+                         % (f[0], f[18]))
     kinds = collections.Counter(r[2] for r in content.read_rows(ctx.path("npc/loot.tsv")))
     ctx.note("npc/loot.tsv: rows by kind %s" % dict(sorted(kinds.items())))
     if os.path.isfile(path):

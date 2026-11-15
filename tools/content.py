@@ -65,8 +65,9 @@ import tempfile  # noqa: E402
 #: The manifest's `format` (`schema.md` §1.2). A header change bumps MINOR.
 #: 1.1 (BA-3) adds the `data_hash` record; 1.0 bundles still read and merge.
 #: 1.6 adds `econ/prices.tsv`'s last column, `build_min`.
+#: 1.8 adds the last column `missile_groups` to `npc/factions.tsv` (#128).
 #: 1.7 adds `mutators/ranges.tsv` and `mutators/mappings.tsv`.
-FORMAT = "1.7"
+FORMAT = "1.8"
 MANIFEST = "MANIFEST.tsv"
 MANIFEST_BANNER = "# eve-offline content bundle. CCP's data: never commit this directory."
 

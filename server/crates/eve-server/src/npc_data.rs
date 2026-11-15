@@ -51,8 +51,13 @@ fn load_table(src: &Sources) -> Result<Boxed, String> {
 /// The bundle files and their header lines, copied from `schema.md` (X1).
 pub const FACTIONS: (&str, &str) = (
     "npc/factions.tsv",
-    "#faction_id\tcorporation_id\tmilitia_corporation_id\tsystem_id\tmember_races\towner_corp_id\tgroups\twrecks\tdamage_profile\tammo_groups\ttank\ttags\tbase_prefix\telite_prefix\tcommander_prefix\tdeadspace_stems\tofficers\tsof_faction\tname",
+    "#faction_id\tcorporation_id\tmilitia_corporation_id\tsystem_id\tmember_races\towner_corp_id\tgroups\twrecks\tdamage_profile\tammo_groups\ttank\ttags\tbase_prefix\telite_prefix\tcommander_prefix\tdeadspace_stems\tofficers\tsof_faction\tname\tmissile_groups",
 );
+/// The header of a format 1.7 `npc/factions.tsv` (nineteen columns, no
+/// `missile_groups`), exactly as it was before 1.8. A 1.7 bundle is still the
+/// live one until the next re-extract, so [`Table::from_files`] accepts it;
+/// its factions have no missile group.
+pub const FACTIONS_HEADER_1_7: &str = "#faction_id\tcorporation_id\tmilitia_corporation_id\tsystem_id\tmember_races\towner_corp_id\tgroups\twrecks\tdamage_profile\tammo_groups\ttank\ttags\tbase_prefix\telite_prefix\tcommander_prefix\tdeadspace_stems\tofficers\tsof_faction\tname";
 pub const CORPORATIONS: (&str, &str) = (
     "npc/corporations.tsv",
     "#corp_id\tfaction_id\tstation_id\tsystem_id\tfriend_id\tenemy_id\ttax_rate\tmin_security\tmain_activity_id\tsize\textent\tlp_offer_tables\tticker\tname",
@@ -590,7 +595,17 @@ impl Table {
             check_header(rel, &text, header)?;
             Ok(text)
         };
-        for f in rows(FACTIONS, &file(FACTIONS)?)? {
+        let text = read(FACTIONS.0)?;
+        let text = match text {
+            Some(t) if t.lines().next() == Some(FACTIONS_HEADER_1_7) => t,
+            _ => file(FACTIONS)?,
+        };
+        let header = if text.lines().next() == Some(FACTIONS_HEADER_1_7) {
+            FACTIONS_HEADER_1_7
+        } else {
+            FACTIONS.1
+        };
+        for f in rows((FACTIONS.0, header), &text)? {
             let f = faction(&f)?;
             t.factions.insert(f.faction_id, f);
         }
@@ -699,9 +714,9 @@ impl Table {
         let text = |(rel, header): (&str, &str)| {
             let body = match rel {
                 "npc/factions.tsv" => {
-                    "599011\t1999011\t\t39000011\t\t1999019\t99111\tFrigate=990380;Cruiser=990381\t0.1,0.4,0.4,0.1\t1=99211\tshield\t\tFixa\tArch Fixa\tDread Fixa\t\t\t\tFixture Cartel\n\
-                     599012\t1999012\t\t39000012\t\t\t99112\tFrigate=990382\t0.5,0.0,0.0,0.5\t\tarmor\t\tFixb\t\t\t\t\t\tFixture Syndicate\n\
-                     599002\t1999002\t1999003\t39000002\t1\t\t\t\t\t\t\t\t\t\t\t\t\t\tFixture Empire\n"
+                    "599011\t1999011\t\t39000011\t\t1999019\t99111\tFrigate=990380;Cruiser=990381\t0.1,0.4,0.4,0.1\t1=99211\tshield\t\tFixa\tArch Fixa\tDread Fixa\t\t\t\tFixture Cartel\t\n\
+                     599012\t1999012\t\t39000012\t\t\t99112\tFrigate=990382\t0.5,0.0,0.0,0.5\t\tarmor\t\tFixb\t\t\t\t\t\tFixture Syndicate\t\n\
+                     599002\t1999002\t1999003\t39000002\t1\t\t\t\t\t\t\t\t\t\t\t\t\t\tFixture Empire\t\n"
                 }
                 "npc/corporations.tsv" => {
                     "1999011\t599011\t\t\t\t\t0.0\t\t5\tM\tR\t\tFXA\tFixture Corp\n"
@@ -1094,11 +1109,27 @@ fn map<K: Ord, V>(
 mod tests {
     use super::*;
 
+    /// A 1.7 bundle's nineteen-column factions file loads; invented row.
+    #[test]
+    fn a_1_7_factions_file_without_missile_groups_still_loads() {
+        let row = "990100\t990110\t\t990120\t7,9\t\t\t\t\t\t\t\t\t\t\t\t\t\tFixture";
+        assert_eq!(row.split('\t').count(), 19);
+        let t = Table::from_files(|rel| {
+            Ok((rel == "npc/factions.tsv").then(|| format!("{FACTIONS_HEADER_1_7}\n{row}\n")))
+        })
+        .expect("a 1.7 factions file loads");
+        assert_eq!(t.factions[&990_100].member_races, vec![7, 9]);
+        // Any other header is still refused.
+        let bad =
+            Table::from_files(|rel| Ok((rel == "npc/factions.tsv").then(|| "#nope\n".to_owned())));
+        assert!(bad.is_err());
+    }
+
     /// NW-8: `member_races` is kept and the group-99 rows of `types/market.tsv`
     /// become `(race, type)`, unpublished or not; invented ids.
     #[test]
     fn member_races_and_sentry_types_are_read() {
-        let faction = "990100\t990110\t\t990120\t7,9\t\t\t\t\t\t\t\t\t\t\t\t\t\tFixture\n";
+        let faction = "990100\t990110\t\t990120\t7,9\t\t\t\t\t\t\t\t\t\t\t\t\t\tFixture\t\n";
         let market = |rows: &[&str]| {
             let mut t = format!("{}\n", crate::econ_exchange::MARKET.1);
             for r in rows {
@@ -1130,7 +1161,7 @@ mod tests {
     const EXAMPLES: &[((&str, &str), &str)] = &[
         (
             FACTIONS,
-            "599001\t1999001\t\t39000001\t1\t1999002\t99101,99102\tFrigate=990080;Cruiser=990081\t0.1,0.4,0.4,0.1\t1=99201;2=99202\tshield\t990090,990091\tExample\tArch Example\tDread Example\tExi,Exior,Exum,Exatis,Ex\tExa\texamplecorp\tExample Cartel",
+            "599001\t1999001\t\t39000001\t1\t1999002\t99101,99102\tFrigate=990080;Cruiser=990081\t0.1,0.4,0.4,0.1\t1=99201;2=99202\tshield\t990090,990091\tExample\tArch Example\tDread Example\tExi,Exior,Exum,Exatis,Ex\tExa\texamplecorp\tExample Cartel\t1=99301;2=99302",
         ),
         (
             CORPORATIONS,
