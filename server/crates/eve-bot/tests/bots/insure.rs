@@ -194,3 +194,22 @@ fn a_bots_insured_hull_dies_and_the_payout_arrives() {
         "the contract ended with the ship"
     );
 }
+
+#[test]
+fn a_held_back_wallet_buys_no_insurance() {
+    let (addr, _content) = start();
+    let level = PACKAGES[3];
+    let mut bob = login(addr, "Bob");
+    let bob_ship = board_frigate(&mut bob);
+    eve_bot::acquire::hold_back(bob.cash_balance().expect("a wallet") * 10.0);
+    let held = insure::cover_with(&mut bob, level, |t| t == FRIGATE);
+    // Reset before any assert can panic: the thread-local outlives the test.
+    eve_bot::acquire::hold_back(0.0);
+    let note = held.expect("covers");
+    assert!(note.contains("TooPoor"), "{note}");
+    assert!(contract_of(&mut bob, bob_ship).is_none());
+
+    let note = insure::cover_with(&mut bob, level, |t| t == FRIGATE).expect("covers");
+    assert!(note.contains("insured"), "{note}");
+    assert!(contract_of(&mut bob, bob_ship).is_some());
+}

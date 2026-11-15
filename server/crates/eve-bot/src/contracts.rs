@@ -580,7 +580,7 @@ pub fn collect_copies(conn: &mut Conn, makes_wanted: &dyn Fn(i64) -> bool) -> Re
         return Ok(0);
     };
     let listings = search_here(conn, station)?;
-    let wallet = conn.cash_balance()?;
+    let wallet = crate::acquire::spendable(conn)?;
     let mut taken = 0;
     for l in pick_copies(&listings, makes_wanted, wallet, me) {
         let out = conn.call(
@@ -676,7 +676,7 @@ pub fn take_underpriced_gated(
         });
     };
     let listings = search_here(conn, station)?;
-    let wallet = conn.cash_balance()?;
+    let wallet = crate::acquire::spendable(conn)?;
     // Who sells: each issuer once, with the affiliation the server tells.
     let mut gates: BTreeMap<i64, crate::effects::Gate> = BTreeMap::new();
     for l in &listings {

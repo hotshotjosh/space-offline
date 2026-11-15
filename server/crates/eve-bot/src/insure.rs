@@ -163,7 +163,7 @@ pub fn cover_with(conn: &mut Conn, level: f64, combat: impl Fn(i64) -> bool) -> 
         )?
         .value(),
     );
-    let wallet = conn.cash_balance()?;
+    let wallet = crate::acquire::spendable(conn)?;
     match plan(true, false, full, wallet, level) {
         Plan::Skip(why) => Ok(format!("insurance: none ({why:?})")),
         Plan::Buy { fraction, premium } => {

@@ -6116,7 +6116,7 @@ impl Bot {
     /// **Bid for what a doctrine order still lacks** (FE-DEMAND,
     /// [`crate::hull_choice::replenish`]), docked.
     fn replace_by_bid(&mut self, conn: &mut Conn, order: &crate::acquire::Order) -> Result<()> {
-        let wallet = conn.cash_balance()?;
+        let wallet = crate::acquire::spendable(conn)?;
         let mut prices = match crate::pricing::Prices::read(conn) {
             Ok(p) => p,
             Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
@@ -7844,6 +7844,18 @@ fn tackle_lines(policy: &crate::brain::Policy, drill: Option<&str>, foe: bool) -
 
 #[cfg(test)]
 mod tests {
+    /// #159: the doctrine bids budget the wallet less the founder's pledges.
+    #[test]
+    fn replace_by_bid_budgets_the_spendable_wallet() {
+        let src = include_str!("driver.rs");
+        let head = ["    fn replace_by_bid", "(&mut self"].concat();
+        let at = src.find(&head).expect("the fn");
+        let body = &src[at..];
+        let body = &body[..body.find("\n    }\n").expect("its end")];
+        assert!(body.contains("acquire::spendable("), "{body}");
+        assert!(!body.contains("cash_balance()"), "{body}");
+    }
+
     #[test]
     fn only_an_abyss_no_gate_try_is_exempt_from_the_failure_count() {
         let no_gate = Verdict::NotSent(crate::abyss_run::NO_GATE.to_owned());

@@ -292,3 +292,72 @@ fn a_bot_cannot_take_its_own_contract_or_one_it_cannot_afford() {
         "the price is over the spend share of that wallet"
     );
 }
+
+#[test]
+fn a_held_back_wallet_takes_no_bargain() {
+    let addr = start();
+    let mut alice = login(addr, "Alice");
+    gm(&mut alice, &format!("/createitem {GOOD} {UNITS}"));
+    let station = alice.session().station_id().expect("docked");
+    let item = stack(&mut alice, GOOD);
+    let price = (UNIT * UNITS as f64 * contracts::UNDERPRICED_BELOW * 0.5).round();
+    let id = contracts::create(
+        &mut alice,
+        station,
+        &Offer {
+            item_id: item,
+            type_id: GOOD,
+            quantity: UNITS,
+            price,
+        },
+    )
+    .expect("the call is answered")
+    .expect("the server creates it");
+    let alice_before = alice.cash_balance().expect("a wallet");
+
+    let mut bob = login(addr, "Bob");
+    let bob_before = bob.cash_balance().expect("a wallet");
+    eve_bot::acquire::hold_back(bob_before * 10.0);
+    let held = contracts::take_underpriced_with(&mut bob, &prices());
+    // Reset before any assert can panic: the thread-local outlives the test.
+    eve_bot::acquire::hold_back(0.0);
+    let held = held.expect("looks");
+    assert_eq!(held.contract_id, None, "{}", held.note);
+    assert_eq!(bob.cash_balance().expect("a wallet"), bob_before);
+    assert_eq!(alice.cash_balance().expect("a wallet"), alice_before);
+
+    let taken = contracts::take_underpriced_with(&mut bob, &prices()).expect("accepts");
+    assert_eq!(taken.contract_id, Some(id), "{}", taken.note);
+}
+
+#[test]
+fn a_held_back_builder_collects_no_copies() {
+    let addr = start();
+    let mut alice = login(addr, "Alice");
+    gm(&mut alice, &format!("/createitem {BP}"));
+    let station = alice.session().station_id().expect("docked");
+    let item = stack(&mut alice, BP);
+    contracts::create(
+        &mut alice,
+        station,
+        &Offer {
+            item_id: item,
+            type_id: BP,
+            quantity: 1,
+            price: 20_000.0,
+        },
+    )
+    .expect("the call is answered")
+    .expect("the server creates it");
+
+    let mut bob = login(addr, "Bob");
+    let makes = |t: i64| t == BP;
+    eve_bot::acquire::hold_back(bob.cash_balance().expect("a wallet") * 10.0);
+    let held = contracts::collect_copies(&mut bob, &makes);
+    eve_bot::acquire::hold_back(0.0);
+    assert_eq!(held.expect("looks"), 0);
+    assert_eq!(
+        contracts::collect_copies(&mut bob, &makes).expect("takes"),
+        1
+    );
+}
