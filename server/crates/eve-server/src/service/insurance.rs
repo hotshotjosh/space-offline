@@ -659,6 +659,7 @@ fn pay_out(w: &mut Registry, ev: &KillEvent, type_id: i64, paid: &[(i64, f64, bo
     if paid.is_empty() {
         return;
     }
+    crate::sov_hub::clock_flush(w);
     let before = w.take_pending_raw();
     let mut total = 0.0;
     for (to, amount, default) in paid {
@@ -1157,6 +1158,29 @@ mod tests {
         for p in &sent {
             assert_eq!(p.audience(), Some(vec![ALICE]), "{p:?}");
         }
+    }
+
+    /// #258: a payout inside an open clock follows the outer call's earlier
+    /// push (Bob's wallet mark), and Alice's own pushes come after it.
+    #[test]
+    fn a_payout_inside_the_clock_follows_the_outer_calls_pushes() {
+        let mut reg = docked();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.charge(BOB, -1.0, REF_INSURANCE, BOB, RIFTER);
+            on_kill(r, &loss(ALICE, ALICE_SHIP));
+        });
+        let sent = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(1));
+        assert_eq!(
+            sent.first().and_then(|p| p.audience()),
+            Some(vec![BOB]),
+            "the outer call's mark goes first: {sent:?}"
+        );
+        assert!(
+            sent.iter()
+                .skip(1)
+                .any(|p| p.audience() == Some(vec![ALICE])),
+            "Alice's payout pushes follow: {sent:?}"
+        );
     }
 
     /// #258 (the refilter landing's follow-up): a removal already queued when a

@@ -689,6 +689,40 @@ fn a_destroyed_structure_sets_the_ejected_pilot_up_before_the_hull_goes() {
     );
 }
 
+/// Inside an open clock the outer call's pushes leave before evacuation's
+/// and the Kill (`sov_hub::clock_flush`, #258).
+#[test]
+fn a_structure_destroyed_inside_the_clock_sends_the_outer_pushes_first() {
+    use crate::sov_hub::fixture::Mark;
+    let (mut reg, id) = world();
+    dock_call(&mut reg, BOSS, id).unwrap();
+    let _ = reg.take_session_changes();
+    let s = structure::get(reg.deltas(), id).unwrap();
+    crate::sov_hub::on_the_clock(&mut reg, |r| {
+        r.push(Mark("a"));
+        crate::structure_combat::destroy(r, &s, Some(FOE), crate::pyutil::filetime_now());
+    });
+    let sent = crate::combat::tests::due(&mut reg);
+    let mark = sent
+        .iter()
+        .position(|(_, name, _)| *name == "a")
+        .unwrap_or_else(|| panic!("no mark: {sent:?}"));
+    let at = |needle: &str| {
+        sent.iter().position(|(to, name, args)| {
+            *name == "DoDestinyUpdate"
+                && to.contains(&BOSS)
+                && format!("{args:?}").contains(&format!("{:?}", needle.as_bytes()))
+        })
+    };
+    let set = at("SetState").unwrap_or_else(|| panic!("no SetState: {sent:?}"));
+    let gone = at("RemoveBall").expect("and the hull's RemoveBall");
+    assert!(mark < set, "mark {mark} before SetState {set}: {sent:?}");
+    assert!(
+        set < gone,
+        "SetState {set} before RemoveBall {gone}: {sent:?}"
+    );
+}
+
 /// An observer in space on grid, with a modelled park, gets the ejected
 /// ship's `AddBalls2` when the structure dies: the pushes set aside and put
 /// back by `destroy` are not run through the grid filter twice (the filter

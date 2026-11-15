@@ -109,7 +109,6 @@ use crate::damage::BlueTime;
 use crate::fitting::{FLAG_CARGO, Refusal};
 use crate::item::{Change, Edit, Item, Slot};
 use crate::model::Character;
-use crate::notify::Addressed;
 use crate::service::args::{Args, as_int};
 use crate::service::{Registry, Request, ServiceError};
 use crate::world_ext::{Boxed, SlotSpec};
@@ -411,17 +410,9 @@ pub(crate) fn plan_refused(e: crate::item::EditError) -> ServiceError {
     notify("The server could not move that item.")
 }
 
-/// Run `f` and send whatever the store pushed on the clock's behalf, the way
-/// the salvager does from a tick.
+/// [`crate::sov_hub::on_the_clock`], which is nest-safe (#258).
 fn on_clock<R>(w: &mut Registry, f: impl FnOnce(&mut Registry) -> R) -> R {
-    let before = w.take_pending_raw();
-    let out = f(w);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    for (_, p) in ours {
-        w.schedule(Duration::ZERO, Addressed { to: None, inner: p });
-    }
-    out
+    crate::sov_hub::on_the_clock(w, f)
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,5 +1115,19 @@ mod clock_wrapper_tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// #258: inside an open `sov_hub::on_the_clock` the wrapper shares its
+    /// depth, so the outer call's pushes keep their order.
+    #[test]
+    fn mtu_on_clock_inside_the_clock_keeps_push_order() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "b", "c"]);
     }
 }

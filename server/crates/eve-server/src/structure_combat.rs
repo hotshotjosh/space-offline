@@ -645,6 +645,9 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     // is its own queue, drained after the tick); a normal undock sends them
     // the other way round. Falsifier: the B side of fci_upwell_kill (the
     // pilot's client must be in space, not stuck, after the hull goes).
+    // Inside an open clock the outer call's pushes so far leave first
+    // (`sov_hub::clock_flush`).
+    crate::sov_hub::clock_flush(w);
     let before = w.take_pending_raw();
     crate::structure_dock::evacuate(w, s);
     let ours = w.take_pending_raw();
@@ -694,34 +697,15 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     );
 }
 
-/// A copy of `combat::apply_on_the_clock_to` (combat.rs is a hot file, so
-/// it is not made `pub(crate)` here); keep the two in step.
-///
-/// `combat`'s on-the-clock store apply, to any audience: the plan's
-/// pushes go to `to` as scheduled events, never to whoever spoke next (a
-/// structure dies inside the world tick, where nobody's call is being
-/// answered). An empty `to` drops them.
+/// [`crate::sov_hub::apply_items_on_the_clock_to`]: the plan's pushes go to
+/// `to` as scheduled events, never to whoever spoke next (a structure dies
+/// inside the world tick). An empty `to` drops them. Nest-safe (#258).
 fn apply_on_the_clock_to(
     w: &mut Registry,
     to: &[i64],
     edits: &[crate::item::Edit],
 ) -> Result<Vec<crate::item::Change>, crate::item::EditError> {
-    let before = w.take_pending_raw();
-    let applied = w.apply_items(edits);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    if applied.is_ok() && !to.is_empty() {
-        for (_, p) in ours {
-            w.schedule(
-                std::time::Duration::ZERO,
-                crate::notify::Addressed {
-                    to: Some(to.to_vec()),
-                    inner: p,
-                },
-            );
-        }
-    }
-    applied
+    crate::sov_hub::apply_items_on_the_clock_to(w, to, edits)
 }
 
 /// A missile lands: a [`Volley`] at [`crate::combat::HIT_QUALITY`].

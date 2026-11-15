@@ -2358,18 +2358,9 @@ fn destroy(w: &mut Registry, can_id: i64, via: Deliver) {
     }
 }
 
-/// Run `f`, and send what it put on `pending` from the clock instead
-/// (`targeting::unlock` answers through `pending`, which only a payload
-/// drains); what was there before goes back untouched.
+/// [`crate::sov_hub::on_the_clock`], which is nest-safe (#258).
 fn on_clock(w: &mut Registry, f: impl FnOnce(&mut Registry)) {
-    use crate::notify::Addressed;
-    let before = w.take_pending_raw();
-    f(w);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    for (_, p) in ours {
-        w.schedule(std::time::Duration::ZERO, Addressed { to: None, inner: p });
-    }
+    crate::sov_hub::on_the_clock(w, f)
 }
 
 /// `OnSlimItemChange` for `can_id` to everyone in its system: its slim with
@@ -2583,6 +2574,20 @@ mod tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// #258: inside an open `sov_hub::on_the_clock` the wrapper shares its
+    /// depth, so the outer call's pushes keep their order.
+    #[test]
+    fn hacking_on_clock_inside_the_clock_keeps_push_order() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "b", "c"]);
     }
     use super::*;
     use crate::pyutil::dict_get;

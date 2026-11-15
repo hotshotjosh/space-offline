@@ -55,28 +55,13 @@ pub(crate) fn read_id(body: &[u8], field: u64) -> Option<u64> {
 /// bay and upgrade installs waited about 20 s, `var/ci-1111-sov`). What was on
 /// `pending` already belongs to another turn and is put back raw
 /// (`drones::apply_held`, `combat::apply_on_the_clock`). On `Err` nothing was
-/// applied and nothing is sent.
+/// applied and nothing is sent. Nest-safe (`sov_hub::clock_flush`).
 pub(crate) fn apply_items_on_clock(
     reg: &mut crate::service::Registry,
     owner: i64,
     edits: &[crate::item::Edit],
 ) -> Result<Vec<crate::item::Change>, crate::item::EditError> {
-    let before = reg.take_pending_raw();
-    let applied = reg.apply_items(edits);
-    let ours = reg.take_pending_raw();
-    reg.restore_pending(before);
-    if applied.is_ok() {
-        for (_, p) in ours {
-            reg.schedule(
-                std::time::Duration::ZERO,
-                crate::notify::Addressed {
-                    to: Some(vec![owner]),
-                    inner: p,
-                },
-            );
-        }
-    }
-    applied
+    crate::sov_hub::apply_items_on_the_clock_to(reg, &[owner], edits)
 }
 
 /// The log line of a gateway 403: the wire status carries no reason, so the
@@ -113,6 +98,31 @@ pub(crate) fn status(code: u32) -> Reply {
 mod tests {
     use super::*;
     use crate::gateway::put_bytes;
+
+    /// #258: an addressed apply inside the clock sends after the outer
+    /// call's earlier pushes, and the outer call's later ones follow it.
+    #[test]
+    fn an_addressed_apply_inside_the_clock_follows_the_outer_calls_pushes() {
+        use crate::sov_hub::fixture::*;
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            apply_items_on_clock(
+                r,
+                ALICE,
+                &[crate::item::Edit::Consume {
+                    item_id: ALICE_FUEL,
+                    quantity: 1,
+                }],
+            )
+            .expect("applies");
+            r.push(Mark("c"));
+        });
+        let names = due_names(&mut reg);
+        assert!(names.len() >= 3, "the plan pushed: {names:?}");
+        assert_eq!(names.first(), Some(&"a"), "{names:?}");
+        assert_eq!(names.last(), Some(&"c"), "{names:?}");
+    }
 
     #[test]
     fn negative_int32_is_ten_bytes_ending_one() {

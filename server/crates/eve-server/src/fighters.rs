@@ -753,6 +753,7 @@ type Held = Vec<(Duration, Box<dyn Push>)>;
 /// Apply a plan and hold its pushes (`drones::apply_held`'s reasoning: what
 /// was already pending belongs to somebody else's turn).
 fn apply_held(w: &mut Registry, edits: &[Edit]) -> Option<(Vec<crate::item::Change>, Held)> {
+    crate::sov_hub::clock_flush(w);
     let before = w.take_pending_raw();
     let applied = w.apply_items(edits);
     let ours = w.take_pending_raw();
@@ -1912,6 +1913,22 @@ mod tests {
         );
     }
     use super::*;
+
+    /// #258: a held apply inside the clock follows the outer call's earlier
+    /// pushes, and the caller's next clock send follows the release.
+    #[test]
+    fn a_held_apply_inside_the_clock_follows_the_outer_calls_pushes() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            let (_, held) = apply_held(r, &[]).expect("an empty plan applies");
+            release(r, Via::Clock, crate::sov_hub::fixture::ALICE, held);
+            r.schedule(Duration::ZERO, Mark("k"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "k"]);
+    }
+
     use crate::fighters_data::attr as fa;
     use std::time::Instant;
 

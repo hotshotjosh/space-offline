@@ -80,7 +80,7 @@
 //! not worth it until belts respawn on a schedule anyway.
 
 use crate::modules::{self, Cycle};
-use crate::notify::{Addressed, Push};
+use crate::notify::Push;
 use crate::service::{Registry, ServiceError};
 use eve_marshal::PyValue;
 use std::time::Duration;
@@ -1065,22 +1065,9 @@ fn in_system(w: &Registry, solar_system_id: i64) -> Vec<i64> {
         .collect()
 }
 
-/// Run `f` and send what it put on `pending` from the clock instead.
-///
-/// `apply_items` and `targeting::unlock` both answer through `pending`,
-/// which only a payload turn drains. Whatever was on `pending` before is
-/// someone else's turn's and goes back untouched; what `f` added is ours and
-/// is scheduled, keeping its own audience (`apply_items` already addresses
-/// item pushes to their owners).
+/// [`crate::sov_hub::on_the_clock`], which is nest-safe (#258).
 fn on_clock<R>(w: &mut Registry, f: impl FnOnce(&mut Registry) -> R) -> R {
-    let before = w.take_pending_raw();
-    let out = f(w);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    for (_, p) in ours {
-        w.schedule(Duration::ZERO, Addressed { to: None, inner: p });
-    }
-    out
+    crate::sov_hub::on_the_clock(w, f)
 }
 
 /// `SetBallRadius(ballID, radius)` in a `DoDestinyUpdate`: a mined rock's new
@@ -1295,6 +1282,33 @@ mod tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// #258: inside an open `sov_hub::on_the_clock` the wrapper shares its
+    /// depth, so the outer call's pushes keep their order.
+    #[test]
+    fn mining_on_clock_inside_the_clock_keeps_push_order() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "b", "c"]);
+    }
+
+    /// The same, roles swapped: `on_clock` outer, the shared clock inner.
+    #[test]
+    fn the_clock_inside_mining_on_clock_keeps_push_order() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        on_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            crate::sov_hub::on_the_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "b", "c"]);
     }
     use super::*;
     use crate::asteroid::{Field, Law, Rock};

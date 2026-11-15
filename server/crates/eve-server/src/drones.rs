@@ -983,10 +983,13 @@ fn send(w: &mut Registry, via: Via, p: impl Push + 'static) {
 /// (`combat::apply_on_the_clock`'s reasoning, "a house trap"): set aside and
 /// restored **raw** (`take_pending_raw`), because a filtering take would
 /// write the park model and the final drain would filter it a second time
-/// (#258).
+/// (#258). Inside an open clock it first sends the outer call's pushes so far
+/// (`sov_hub::clock_flush`), so `release` and the caller's `Via::Clock` sends
+/// follow them.
 type Held = Vec<(Duration, Box<dyn Push>)>;
 
 fn apply_held(w: &mut Registry, edits: &[Edit]) -> Option<(Vec<crate::item::Change>, Held)> {
+    crate::sov_hub::clock_flush(w);
     let before = w.take_pending_raw();
     let applied = w.apply_items(edits);
     let ours = w.take_pending_raw();
@@ -3272,6 +3275,21 @@ pub fn scoop_call(w: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// #258: a held apply inside the clock follows the outer call's earlier
+    /// pushes, and the caller's next clock send follows the release.
+    #[test]
+    fn a_held_apply_inside_the_clock_follows_the_outer_calls_pushes() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            let (_, held) = apply_held(r, &[]).expect("an empty plan applies");
+            release(r, Via::Clock, crate::sov_hub::fixture::ALICE, held);
+            r.schedule(Duration::ZERO, Mark("k"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "k"]);
+    }
 
     pub(super) const ALICE: i64 = 90_000_001;
     const BOB: i64 = 90_000_002;

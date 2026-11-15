@@ -1100,6 +1100,69 @@ impl Drop for Depth {
     }
 }
 
+/// Whether an [`on_the_clock`] call is open on this thread.
+pub(crate) fn clock_open() -> bool {
+    CLOCK_DEPTH.with(|d| d.get() > 0)
+}
+
+/// Schedule `pushes` at ZERO in their order, each keeping its own audience.
+fn clock_all(reg: &mut Registry, pushes: Vec<(std::time::Duration, Box<dyn crate::notify::Push>)>) {
+    for (_, p) in pushes {
+        reg.schedule(
+            std::time::Duration::ZERO,
+            crate::notify::Addressed { to: None, inner: p },
+        );
+    }
+}
+
+/// **Inside an open [`on_the_clock`], send what its `f` has pushed so far by
+/// the clock now.** Every set-aside outside `combat.rs` that schedules its
+/// own pushes directly calls this first (combat's own two follow later), so its pushes, and whatever its caller schedules after
+/// them, follow the outer call's earlier pushes instead of jumping ahead.
+/// What is pending inside an open call is that call's `f`'s alone: the
+/// outermost call set the turn's pending aside. That holds while no other
+/// set-aside's window is open inside the call; a flush inside one would send
+/// that set-aside's pushes unaddressed, and no path does that today. Outside
+/// a call it does nothing, because what is pending then belongs to a turn and stays.
+/// (Lives here to avoid a new `lib.rs` module line; move it freely.)
+pub(crate) fn clock_flush(reg: &mut Registry) {
+    if clock_open() {
+        let so_far = reg.take_pending_raw();
+        clock_all(reg, so_far);
+    }
+}
+
+/// `apply_items` from the world tick, its pushes addressed to `to` and on
+/// the clock (`combat`'s, `structure_combat`'s and `sov_proto`'s helper,
+/// once). An empty `to` drops them, and on `Err` nothing was applied and
+/// nothing is sent. What was pending is put back raw (#258). Nest-safe by
+/// [`clock_flush`]. It does not open a clock level: `apply_items` reaches no
+/// `on_the_clock` [I] (service.rs `apply_items`), and a level would
+/// re-address such a call's pushes to `to`.
+pub(crate) fn apply_items_on_the_clock_to(
+    reg: &mut Registry,
+    to: &[i64],
+    edits: &[crate::item::Edit],
+) -> Result<Vec<crate::item::Change>, crate::item::EditError> {
+    clock_flush(reg);
+    let before = reg.take_pending_raw();
+    let applied = reg.apply_items(edits);
+    let ours = reg.take_pending_raw();
+    reg.restore_pending(before);
+    if applied.is_ok() && !to.is_empty() {
+        for (_, p) in ours {
+            reg.schedule(
+                std::time::Duration::ZERO,
+                crate::notify::Addressed {
+                    to: Some(to.to_vec()),
+                    inner: p,
+                },
+            );
+        }
+    }
+    applied
+}
+
 /// Run `f` and send what it pushed **by the clock**: the rollover runs on
 /// the world tick, whose drain is `take_due`, not `take_pending` (the
 /// house pattern, `drones::apply_held`). What was already pending belongs
@@ -1111,8 +1174,13 @@ impl Drop for Depth {
 /// outer call's earlier ones, and a Destiny batch relies on its order.) A
 /// panicking `f` drops what was set aside; no production caller catches a
 /// panic.
+///
+/// The plain `on_clock` wrappers in `mining`, `salvage`, `hacking` and `mtu`
+/// are this function. The addressed set-asides outside `combat.rs` call
+/// [`clock_flush`] first; `combat::apply_on_the_clock_to` and `combat::revive`
+/// keep their own unguarded copies for now.
 pub(crate) fn on_the_clock<T>(reg: &mut Registry, f: impl FnOnce(&mut Registry) -> T) -> T {
-    if CLOCK_DEPTH.with(|d| d.get()) > 0 {
+    if clock_open() {
         return f(reg);
     }
     let _depth = Depth::enter();
@@ -1120,12 +1188,7 @@ pub(crate) fn on_the_clock<T>(reg: &mut Registry, f: impl FnOnce(&mut Registry) 
     let out = f(reg);
     let ours = reg.take_pending_raw();
     reg.restore_pending(before);
-    for (_, p) in ours {
-        reg.schedule(
-            std::time::Duration::ZERO,
-            crate::notify::Addressed { to: None, inner: p },
-        );
-    }
+    clock_all(reg, ours);
     out
 }
 
@@ -1495,6 +1558,26 @@ pub(crate) mod fixture {
         )
     }
 
+    /// A push that only carries a name, for the order tests.
+    #[derive(Debug)]
+    pub struct Mark(pub &'static str);
+    impl crate::notify::Push for Mark {
+        fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+            (self.0, vec![])
+        }
+        fn audience(&self) -> Option<Vec<i64>> {
+            Some(vec![ALICE])
+        }
+    }
+
+    /// The names of everything the clock has due in the next ten minutes, in order.
+    pub fn due_names(reg: &mut Registry) -> Vec<&'static str> {
+        reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(600))
+            .iter()
+            .map(|p| p.to_push().0)
+            .collect()
+    }
+
     /// The world: four pilots in space in [`SYSTEM`] at the launch spot,
     /// their corps and alliances, the items, the star.
     pub fn world() -> (Registry, i64, i64) {
@@ -1637,18 +1720,6 @@ mod tests {
         );
     }
 
-    /// A push that only carries a name, for the order tests.
-    #[derive(Debug)]
-    struct Mark(&'static str);
-    impl crate::notify::Push for Mark {
-        fn to_push(&self) -> (&'static str, Vec<PyValue>) {
-            (self.0, vec![])
-        }
-        fn audience(&self) -> Option<Vec<i64>> {
-            Some(vec![ALICE])
-        }
-    }
-
     /// An inner `on_the_clock` does not schedule its pushes ahead of the
     /// outer call's earlier ones: the outermost call sends all, in push order.
     #[test]
@@ -1681,6 +1752,21 @@ mod tests {
             ["a", "b"],
             "the turn's push is not on the clock; ours leave in push order"
         );
+        let pending: Vec<&str> = reg
+            .take_pending_raw()
+            .iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert_eq!(pending, ["turn"]);
+    }
+
+    /// Outside a clock `clock_flush` leaves the turn's push pending.
+    #[test]
+    fn clock_flush_outside_a_clock_leaves_the_turn_pending() {
+        let (mut reg, _a, _d) = world();
+        reg.push(Mark("turn"));
+        clock_flush(&mut reg);
+        assert!(due_names(&mut reg).is_empty());
         let pending: Vec<&str> = reg
             .take_pending_raw()
             .iter()

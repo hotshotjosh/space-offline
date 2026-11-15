@@ -62,7 +62,6 @@
 
 use crate::content::{Boxed, Bundle, Sources, TableSpec};
 use crate::modules::{self, Cycle};
-use crate::notify::Addressed;
 use crate::seed::{self, Stream};
 use crate::service::{Registry, ServiceError};
 use eve_marshal::PyValue;
@@ -535,17 +534,9 @@ pub fn on_completed(w: &mut Registry, done: &[Cycle]) {
     }
 }
 
-/// Run `f` and send what it put on `pending` from the clock instead
-/// (`mining::on_clock`'s trade).
+/// [`crate::sov_hub::on_the_clock`], which is nest-safe (#258).
 fn on_clock<R>(w: &mut Registry, f: impl FnOnce(&mut Registry) -> R) -> R {
-    let before = w.take_pending_raw();
-    let out = f(w);
-    let ours = w.take_pending_raw();
-    w.restore_pending(before);
-    for (_, p) in ours {
-        w.schedule(Duration::ZERO, Addressed { to: None, inner: p });
-    }
-    out
+    crate::sov_hub::on_the_clock(w, f)
 }
 
 /// One ended salvager cycle.
@@ -833,6 +824,20 @@ mod tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// #258: inside an open `sov_hub::on_the_clock` the wrapper shares its
+    /// depth, so the outer call's pushes keep their order.
+    #[test]
+    fn salvage_on_clock_inside_the_clock_keeps_push_order() {
+        use crate::sov_hub::fixture::{Mark, due_names, world};
+        let (mut reg, _, _) = world();
+        crate::sov_hub::on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        assert_eq!(due_names(&mut reg), ["a", "b", "c"]);
     }
     use super::*;
 
