@@ -2395,7 +2395,17 @@ fn soft<T>(r: Result<T>) -> Result<std::result::Result<T, String>> {
     }
 }
 
-fn corp_call(
+/// Offers already made (status accepted by the corporation) and still fresh,
+/// from a `GetApplications` answer: each still holds a seat.
+pub(crate) fn fresh_offers(v: &PyValue, ft: i64, day: u64) -> usize {
+    grouped_rows(v)
+        .iter()
+        .filter(|row| attr_i64(row, "status") == Some(APP_ACCEPTED_BY_CORPORATION))
+        .filter(|row| offer_is_fresh(attr_i64(row, "applicationDateTime"), ft, day))
+        .count()
+}
+
+pub(crate) fn corp_call(
     conn: &mut Conn,
     corp: i64,
     method: &str,
@@ -3023,11 +3033,7 @@ fn execute(
             // Offers already made but not yet taken up still hold a seat,
             // until they are [`OFFER_STALE_DAYS`] old.
             let (day, ft) = (hall.lock().day, eve_server::pyutil::filetime_now());
-            let offers = grouped_rows(&v)
-                .iter()
-                .filter(|row| attr_i64(row, "status") == Some(APP_ACCEPTED_BY_CORPORATION))
-                .filter(|row| offer_is_fresh(attr_i64(row, "applicationDateTime"), ft, day))
-                .count();
+            let offers = fresh_offers(&v, ft, day);
             let mut accepted_now = 0usize;
             for row in grouped_rows(&v) {
                 if !matches!(

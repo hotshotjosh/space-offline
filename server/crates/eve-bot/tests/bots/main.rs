@@ -25,6 +25,7 @@ mod capital;
 mod co_found;
 mod concord;
 mod contracts;
+mod corp_ads;
 mod corp_buy;
 mod corp_ceo;
 mod corp_office;

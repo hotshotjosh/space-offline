@@ -18,11 +18,15 @@
 //! and `applied corp=ID via=finder`; the corp turn's echo puts `[soc] NAME
 //! corp ` in front of them (`driver::corp_echo`).
 //!
+//! Open offers count: a corp whose seats are all held by members and by
+//! offers made but not yet taken up (`GetApplications`, as `Plan::Recruit`
+//! reads them) is full and takes its advert down.
+//!
 //! **[A]** An advert carries no filters (all masks 0), so every finder
 //! search matches it. Falsified by a soak where `advert posted` lines appear
 //! and no `via=finder` line ever follows although corpless bots apply.
 
-use crate::corpmind::{Hall, db_i64, db_rows};
+use crate::corpmind::{Hall, corp_call, db_i64, db_rows, fresh_offers};
 use crate::society::{self, Offer};
 use crate::{Conn, Result};
 use eve_marshal::PyValue;
@@ -43,9 +47,10 @@ pub enum AdAct {
 
 /// **The advert decision** (pure): a corp of `size` that has room under
 /// [`society::CORP_SIZE_CAP`] keeps exactly one advert up; a full one none.
-/// `own` are the ids of its live adverts.
-pub fn decide(size: usize, own: &[i64]) -> AdAct {
-    let recruiting = society::room(size, 0, 0);
+/// `offers` are the open offers, which each hold a seat; `own` are the ids of
+/// its live adverts.
+pub fn decide(size: usize, offers: usize, own: &[i64]) -> AdAct {
+    let recruiting = society::room(size, offers, 0);
     match (recruiting, own.is_empty()) {
         (true, true) => AdAct::Post,
         (false, false) => AdAct::Remove(own.to_vec()),
@@ -108,7 +113,14 @@ pub fn tend(conn: &mut Conn, hall: &Hall, me: i64, corp: i64) -> Result<Vec<Stri
                 .unwrap_or_default(),
         )
     };
-    match decide(size, &own) {
+    let offers = match corp_call(conn, corp, "GetApplications", vec![])?.value {
+        Some(v) => {
+            let day = hall.lock().day;
+            fresh_offers(&v, eve_server::pyutil::filetime_now(), day)
+        }
+        None => 0,
+    };
+    match decide(size, offers, &own) {
         AdAct::Keep => {}
         AdAct::Post => {
             let o = conn.call(
@@ -196,22 +208,31 @@ mod tests {
 
     #[test]
     fn a_corp_with_room_and_no_advert_posts_one() {
-        assert_eq!(decide(3, &[]), AdAct::Post);
+        assert_eq!(decide(3, 0, &[]), AdAct::Post);
     }
 
     #[test]
     fn a_corp_with_room_and_an_advert_keeps_it() {
-        assert_eq!(decide(3, &[41]), AdAct::Keep);
+        assert_eq!(decide(3, 0, &[41]), AdAct::Keep);
     }
 
     #[test]
     fn a_full_corp_takes_its_adverts_down() {
         assert_eq!(
-            decide(society::CORP_SIZE_CAP, &[41, 42]),
+            decide(society::CORP_SIZE_CAP, 0, &[41, 42]),
             AdAct::Remove(vec![41, 42])
         );
-        assert_eq!(decide(society::CORP_SIZE_CAP, &[]), AdAct::Keep);
-        assert_eq!(decide(society::CORP_SIZE_CAP - 1, &[]), AdAct::Post);
+        assert_eq!(decide(society::CORP_SIZE_CAP, 0, &[]), AdAct::Keep);
+        assert_eq!(decide(society::CORP_SIZE_CAP - 1, 0, &[]), AdAct::Post);
+    }
+
+    #[test]
+    fn open_offers_that_fill_the_corp_take_the_advert_down() {
+        assert_eq!(
+            decide(society::CORP_SIZE_CAP - 1, 1, &[7]),
+            AdAct::Remove(vec![7])
+        );
+        assert_eq!(decide(society::CORP_SIZE_CAP - 2, 1, &[]), AdAct::Post);
     }
 
     #[test]
