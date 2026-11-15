@@ -57,6 +57,11 @@ pub const COMMANDS: &[Command] = &[
         run: crate::dynamic_item::slash,
     },
     Command {
+        name: "vote",
+        usage: "/vote close <voteCaseID>",
+        run: crate::corp_votes::slash,
+    },
+    Command {
         name: "giveisk",
         usage: "/giveisk [character] <amount>",
         run: giveisk,
