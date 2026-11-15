@@ -1471,6 +1471,34 @@ def eoci_main(EOCI_NAME):
                                                      text(member_ids(fleet_svc)), text(waited)))
         if not up:
             return
+        # The fleet window's MyFleetPanel fills `members` only after a
+        # SleepWallclock(1000) in DoHandleFleetChanged, and
+        # OnFleetMemberChanged_Local indexes `self.members[charID]` bare
+        # [V fleet.py:277-278, 424-435], so a MoveMember inside that second
+        # raises KeyError in the client.
+        def fleet_panel_state():
+            try:
+                from eve.client.script.ui.shared.fleet.fleetwindow import FleetWindow
+            except Exception:
+                return 'no-import'
+            ok, w = safe(lambda: FleetWindow.GetIfOpen())
+            if not ok or w is None:
+                return 'no-window'
+            panel = getattr_safe(w, 'myFleetPanel')
+            if panel is None:
+                return 'no-panel'
+            return 'ready' if me in (getattr_safe(panel, 'members') or {}) else 'loading'
+
+        ready, waited = wait_for(lambda: fleet_panel_state() in ('ready', 'no-window', 'no-import'),
+                                 timeout_ms=15000, step_ms=250)
+        state = fleet_panel_state()
+        precondition('the fleet window has loaded the pilot (or is closed)', bool(ready),
+                     '%s after %s ms' % (state, text(waited)))
+        if not ready:
+            return
+        if state != 'ready':
+            # No panel to race: still give any panel opened just now its first load.
+            sleep_ms(2000)
         # Move the boss into a second wing and squad.  The remote object is
         # called, not the service: `fleetSvc.CreateWing` makes a squad by itself
         # and returns None [V fleetSvc.py:561-565], and `fleetSvc.MoveMember` runs
