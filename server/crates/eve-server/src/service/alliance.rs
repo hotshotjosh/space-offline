@@ -1006,6 +1006,8 @@ fn delete_member(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servi
     // the leaver takes the alliance's wars with it.
     if left.closed {
         crate::war::on_alliance_closed(reg, alliance_id);
+        // #272: its sov claims lapse with it **[A]**, see the helper.
+        crate::sov_hub::on_alliance_closed(reg, alliance_id, now);
     } else {
         crate::war_deal::on_corp_left_alliance(reg, target, alliance_id);
     }
@@ -1696,6 +1698,145 @@ mod tests {
         )
         .expect("quits");
         assert!(told(&mut reg).is_empty(), "nothing moved, nobody is told");
+    }
+
+    /// #272: the last corp out closes the alliance and its claims lapse; a
+    /// corp leaving an alliance that stays open keeps them.
+    #[test]
+    fn the_last_corp_quitting_lapses_every_claim_and_tells_the_peers() {
+        const S0: i64 = 39_200_000;
+        const S1: i64 = 39_200_001;
+        const H0: i64 = 43_200_000;
+        const H1: i64 = 43_200_001;
+        let text = format!(
+            "star\t41200000\t9000\t1000\t0\t0\t0\t{S0}\t0\t0\n\
+             planet\t41200001\t9002\t100\t2\t0\t0\t{S0}\t0\t0\n\
+             star\t41200010\t9000\t1000\t0\t0\t0\t{S1}\t0\t0\n\
+             gate\t42200000\t16\t1000\t0\t0\t0\t{S0}\t42200001\t{S1}\n\
+             gate\t42200001\t16\t1000\t0\t0\t0\t{S1}\t42200000\t{S0}\n"
+        );
+        let mut content = crate::content::Content::fixture();
+        content.insert("sov planets", crate::sov_resources::fixture_planets());
+        content.insert("sov stars", crate::sov_resources::fixture_stars());
+        let mut reg = crate::testkit::registry_with(|c| {
+            c.characters = [ALICE, BOB]
+                .iter()
+                .map(|&id| Character {
+                    character_id: id,
+                    name: format!("Pilot {id}"),
+                    ship_id: id + 10_000_000,
+                    balance: 5_000_000.0,
+                    solar_system_id: Some(S0),
+                    ..Character::default()
+                })
+                .collect();
+            c.celestials = crate::celestial::Catalogue::parse(&text);
+        })
+        .with_content(std::sync::Arc::new(content));
+        let (a, b, id) = two_corp_alliance(&mut reg);
+        for h in [(H0, S0), (H1, S1)] {
+            crate::sov_hub::put(
+                reg.deltas_mut(),
+                &crate::sov_hub::Hub {
+                    system_id: h.1,
+                    hub_id: h.0,
+                    position: [0.0; 3],
+                    launcher_id: None,
+                    launch_time: 0,
+                    offline_days: 0,
+                },
+            );
+            crate::sov::set_claim(reg.deltas_mut(), h.1, Some((id, a)), 1);
+        }
+        // A third system held by another alliance, which must be left alone.
+        crate::sov::set_claim(reg.deltas_mut(), 39_200_002, Some((id + 1, a + 1)), 1);
+        crate::skyhook::put(
+            reg.deltas_mut(),
+            &crate::skyhook::Skyhook {
+                id: 1,
+                planet: 41_200_001,
+                system: S0,
+                corp: a,
+                active: true,
+                activated_at: 1,
+                built_until: 1,
+                secured: 0,
+                unsecured: 0,
+                last_cycle: 0,
+                vuln_start: 0,
+                vuln_end: 0,
+                state: 0,
+            },
+        );
+        use crate::sov_workforce::{Mode, configure};
+        configure(
+            &mut reg,
+            H0,
+            ALICE,
+            Mode::Export {
+                amount: 15,
+                dest: Some(S1),
+            },
+        )
+        .expect("export");
+        configure(&mut reg, H1, ALICE, Mode::Import([S0].into())).expect("import");
+        let told = |reg: &mut Registry| -> Vec<i64> {
+            let mut v: Vec<i64> = crate::gateway_out::take(reg)
+                .iter()
+                .filter(|(t, _, _)| t.ends_with("StateChangedNotice"))
+                .filter_map(|(_, p, _)| crate::sov_proto::read_id(p, 4).map(|h| h as i64))
+                .collect();
+            v.sort_unstable();
+            v
+        };
+        let bind = PyValue::Tuple(vec![PyValue::Int(id), PyValue::Int(1)]);
+        let _ = told(&mut reg);
+
+        // B quits; the alliance stays open and keeps both claims.
+        call(
+            &mut reg,
+            "allianceRegistry",
+            "DeleteMember",
+            BOB,
+            vec![PyValue::Int(b)],
+            Some(&bind),
+        )
+        .expect("quits");
+        assert_eq!(crate::sov::holder(reg.deltas(), S0), Some(id));
+        assert_eq!(crate::sov::holder(reg.deltas(), S1), Some(id));
+        assert!(crate::sov_hub::hub(reg.deltas(), S0).is_some());
+        let _ = told(&mut reg);
+
+        // A, the last, quits: the alliance closes and both claims lapse.
+        call(
+            &mut reg,
+            "allianceRegistry",
+            "DeleteMember",
+            ALICE,
+            vec![PyValue::Int(a)],
+            Some(&bind),
+        )
+        .expect("quits");
+        for s in [S0, S1] {
+            assert_eq!(
+                crate::sov::holder(reg.deltas(), s),
+                None,
+                "claim {s} lapsed"
+            );
+            assert!(
+                crate::sov_hub::hub(reg.deltas(), s).is_none(),
+                "hub {s} gone"
+            );
+        }
+        assert_eq!(
+            crate::sov::holder(reg.deltas(), 39_200_002),
+            Some(id + 1),
+            "another alliance keeps its claim"
+        );
+        assert!(
+            told(&mut reg).contains(&H1),
+            "the importing peer is told its source went"
+        );
     }
 
     #[test]

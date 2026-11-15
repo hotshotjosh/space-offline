@@ -1022,6 +1022,26 @@ fn set_state(reg: &mut Registry, h: &Hub, state: HubState, offline_days: u32) {
     );
 }
 
+/// #272: an alliance closed (its last corp left), so every system it holds
+/// lapses at once. **[A]** TQ does not keep a disbanded alliance's claim for
+/// a grace period; falsifier: a TQ log of a claim outliving its alliance.
+/// A claim with a real hub goes through [`lapse`]; a stand-in claim (no
+/// hub row) is cleared and announced, with its peers told.
+pub fn on_alliance_closed(reg: &mut Registry, alliance_id: i64, now: i64) {
+    for c in sov::claims_of(reg.deltas(), alliance_id) {
+        match hub(reg.deltas(), c.system_id) {
+            Some(h) => lapse(reg, &h, now),
+            None => {
+                let before = crate::sov_workforce::before(reg, c.system_id, true);
+                if let Some(change) = sov::set_claim(reg.deltas_mut(), c.system_id, None, now) {
+                    sov::announce(reg, &change);
+                }
+                claim_changed_since(reg, c.system_id, &before);
+            }
+        }
+    }
+}
+
 /// **The claim lapses and the hub goes**: the holder lost (a `sovact` row
 /// and D1's pushes), the fuel and the hub item destroyed, both rows
 /// dropped, the ball taken out of every park in the system.
