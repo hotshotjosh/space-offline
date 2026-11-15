@@ -98,12 +98,12 @@ pub const CHARGE_GROUP_ATTRS: [i64; 4] = [604, 605, 606, 609];
 /// `useMissiles` **[V-data]** (`dogmaeffects[101]`).
 const EFFECT_USE_MISSILES: i64 = 101;
 
-/// The first survey probe id, and one past the last. Clear of every other
-/// range this server mints: it sits above the moon rocks (9.7e12, plus the
+/// The first survey probe id, and one past the last. Clear of the other
+/// listed id bands: it sits above the moon rocks (9.7e12, plus the
 /// survey sites' ids just over `moon_belt::MOON_END`) and below the cyno
 /// fields (9.8e12), bubbles (9.9e12) and NPC orders (1.0e13). Scan probes
 /// (9.0e12), missiles (9.5e12) and command nodes (9.6e12) are lower still.
-/// `id_bands_do_not_overlap` (in `cyno/tests.rs`) lists every band and fails
+/// `id_bands_do_not_overlap` (in `site.rs` tests) lists the known bands and fails
 /// on a clash; a new band goes in that list. Not persisted (see [`Probes`]),
 /// so an id from the old 9.8e12 band cannot outlive a restart.
 pub const ID_BASE: i64 = 9_750_000_000_000;
@@ -610,7 +610,8 @@ fn finish(w: &mut Registry, s: &Survey) {
 pub const ARCHETYPE_ORE: i64 = crate::signal_tracker::ARCHETYPE_ORE;
 
 /// The id of the ore site a belt shows as: one past the moon rock band, by
-/// the belt's sequence. Nothing else mints it (a test lists the bands).
+/// the belt's sequence (below `moon_belt::SEQS`). `id_bands_do_not_overlap`
+/// lists it.
 pub fn site_id(seq: u64) -> i64 {
     crate::moon_belt::MOON_END + seq as i64
 }

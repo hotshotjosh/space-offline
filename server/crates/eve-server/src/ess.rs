@@ -508,7 +508,7 @@ pub const TYPE_BEACON: i64 = 15;
 pub const BEACON_ID_BASE: i64 = 3_000_000_000_000;
 
 /// The system ids a stand-in id can name: known space and a little more.
-const SYSTEM_ID_END: i64 = 40_000_000;
+pub(crate) const SYSTEM_ID_END: i64 = 40_000_000;
 
 /// `ESS_MAX_LINK_DISTANCE_METERS` **[V]** (`dynamicresources/common/ess/const.py`).
 pub const MAX_LINK_DISTANCE: f64 = 10_000.0;

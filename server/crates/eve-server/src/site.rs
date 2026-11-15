@@ -66,12 +66,17 @@ fn make(_: &Content) -> Boxed {
 }
 
 /// The instance-object band, plan §3.4:
-/// `8_700_000_000 + (seq % 300,000)·1,000 + n`.
+/// `8_700_000_000 + (seq % 100,000)·1,000 + n`. Listed in
+/// `id_bands_do_not_overlap` (`site.rs` tests).
 pub const INSTANCE_BASE: i64 = 8_700_000_000;
-/// One past the band (escrow starts here, `item::is_escrow`).
-pub const INSTANCE_END: i64 = 9_000_000_000;
-/// Instance sequence numbers before the band wraps.
-pub const SEQS: u64 = 300_000;
+/// One past the band (war HQ items start here, `war::HQ_ITEM_BASE`; the sov
+/// stand-in hubs sit above them). Those two persist, so this band shrinks to
+/// stay clear of them. Instances are not persisted.
+pub const INSTANCE_END: i64 = 8_800_000_000;
+/// Instance sequence numbers before the band wraps. [`Sites::alloc`] skips
+/// a sequence number that is still live, so a wrap never reuses a live id;
+/// 100,000 live instances at once is far above any real count.
+pub const SEQS: u64 = 100_000;
 /// Ids per instance: the largest dungeon has 813 objects [V, plan §3.4].
 pub const IDS_PER_INSTANCE: usize = 1_000;
 
@@ -1783,5 +1788,113 @@ mod tests {
         );
         assert!(!nothing_to_check(&w, SYSTEM), "an open site may be vacated");
         assert!(nothing_to_check(&w, SYSTEM + 1), "another system is cold");
+    }
+
+    /// Every runtime id band this server mints in the item, ball, site and
+    /// escrow-location space, as `(name, start, end)` with `end` one past
+    /// the last id. **A new band goes in this list.** The list is hand-kept:
+    /// a band nobody adds here is not checked. Where a module has no end
+    /// const, the width is a design cap of this server's allocator (not a
+    /// client fact); the system-id bound is `ess::SYSTEM_ID_END` **[A]**
+    /// (falsified by a system id at or above it in the bundle). Left out as
+    /// other namespaces: mail list ids and the market's order and
+    /// transaction ids. Escrow locations are listed because a location id
+    /// and an item id share one space.
+    fn id_bands() -> Vec<(&'static str, i64, i64)> {
+        use crate::{abyss, asteroid, bubble, command_nodes, contracts, cyno, econ_exchange};
+        use crate::{ess, item, missile, moon_belt, moon_scan, npc, planet, population, scan};
+        use crate::{sov, trade, war};
+        // Design caps of the allocators below (no end const of their own).
+        const SPAN: i64 = 100_000_000_000;
+        // `service::market::ESCROW_TICKET_BASE` (private there): market
+        // escrow locations are `item::escrow_location(1e12 + order_id)`.
+        let market_escrow = item::ESCROW_BASE + 1_000_000_000_000;
+        let sys = ess::SYSTEM_ID_END;
+        vec![
+            ("static and npc-owner ids", 0, asteroid::MIN_ROCK_ID),
+            (
+                "asteroid rocks",
+                asteroid::MIN_ROCK_ID,
+                asteroid::END_ROCK_ID,
+            ),
+            // The store counter is persisted and unbounded; this cap leaves
+            // 6.9e9 items of headroom below the npc ships.
+            ("player items", item::MIN_PLAYER_ITEM, npc::MIN_NPC_ID),
+            ("npc ships", npc::MIN_NPC_ID, npc::END_NPC_ID),
+            (
+                "customs offices",
+                planet::FIRST_CUSTOMS_OFFICE_ID,
+                abyss::SITE_BASE,
+            ),
+            ("abyss sites", abyss::SITE_BASE, abyss::SITE_END),
+            (
+                "population sites",
+                population::SITE_BASE,
+                population::SITE_END,
+            ),
+            ("site instances", INSTANCE_BASE, INSTANCE_END),
+            ("war hq items", war::HQ_ITEM_BASE, sov::STAND_IN_HUB_BASE),
+            (
+                "sov stand-in hubs",
+                sov::STAND_IN_HUB_BASE,
+                sov::STAND_IN_HUB_BASE + sys,
+            ),
+            (
+                "contract escrow",
+                item::escrow_location(contracts::FIRST_CONTRACT_ID),
+                planet::FIRST_PIN_ID,
+            ),
+            ("planet pins", planet::FIRST_PIN_ID, market_escrow),
+            ("market escrow", market_escrow, trade::TICKET_BASE),
+            ("trade tickets", trade::TICKET_BASE, ess::BEACON_ID_BASE),
+            (
+                "ess beacons",
+                ess::BEACON_ID_BASE,
+                ess::BEACON_ID_BASE + sys,
+            ),
+            ("ess", ess::ESS_ID_BASE, ess::ESS_ID_BASE + sys),
+            (
+                "scan probes",
+                scan::PROBE_ID_BASE,
+                scan::PROBE_ID_BASE + SPAN,
+            ),
+            ("missiles", missile::ID_BASE, missile::ID_END),
+            (
+                "command nodes",
+                command_nodes::NODE_ID_BASE,
+                command_nodes::NODE_ID_END,
+            ),
+            ("moon rocks", moon_belt::MOON_BASE, moon_belt::MOON_END),
+            (
+                "moon survey sites",
+                moon_belt::MOON_END,
+                moon_belt::MOON_END + moon_belt::SEQS as i64,
+            ),
+            ("survey probes", moon_scan::ID_BASE, moon_scan::ID_END),
+            ("cyno fields", cyno::FIELD_ID_BASE, cyno::FIELD_ID_END),
+            ("bubbles", bubble::ID_BASE, bubble::ID_END),
+            (
+                "npc orders",
+                econ_exchange::NPC_ORDER_BASE,
+                econ_exchange::NPC_ORDER_END,
+            ),
+        ]
+    }
+
+    /// No two of the listed id bands overlap, and none is empty.
+    #[test]
+    fn id_bands_do_not_overlap() {
+        let bands = id_bands();
+        for (name, lo, hi) in &bands {
+            assert!(lo < hi, "{name} is empty or reversed");
+        }
+        for (i, (an, alo, ahi)) in bands.iter().enumerate() {
+            for (bn, blo, bhi) in &bands[i + 1..] {
+                assert!(
+                    ahi <= blo || bhi <= alo,
+                    "{an} {alo}..{ahi} overlaps {bn} {blo}..{bhi}"
+                );
+            }
+        }
     }
 }
