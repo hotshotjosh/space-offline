@@ -1182,34 +1182,58 @@ fn the_info_asked_mid_jump_is_none_not_a_refusal() {
     jump(&mut reg, ALICE, 11).unwrap();
     assert!(reg.jumps().contains(ALICE));
     assert_eq!(component_call(&mut reg, ALICE, 11).unwrap(), PyValue::None);
-    // The partner gate, not in the system the session names, is still refused.
-    assert!(component_call(&mut reg, ALICE, 22).is_err());
-    // Someone who is not jumping and not in space still gets the refusal.
-    assert!(component_call(&mut reg, STRANGER, 11).is_err());
+    // The partner gate, not in the system the session names, is quiet too.
+    assert_eq!(component_call(&mut reg, ALICE, 22).unwrap(), PyValue::None);
+    // Someone who is not jumping and not in space asks about a known gate: quiet.
+    assert_eq!(
+        component_call(&mut reg, STRANGER, 11).unwrap(),
+        PyValue::None
+    );
+    // Not a gate at all: still the refusal.
+    assert!(component_call(&mut reg, ALICE, 9_999).is_err());
 }
 
 #[test]
-fn only_the_info_of_a_pilot_mid_jump_is_quiet() {
+fn only_the_info_of_a_known_gate_is_quiet() {
     let mut reg = world();
     pair(&mut reg);
     near_gate_a(&mut reg, ALICE, ALICE_SHIP);
     let info = "GetJumpBridgeInfo";
-    assert!(!quiet_in_transit(&reg, ALICE, 11, COMPONENT, info));
+    // In space beside the gate: the router answers it for real.
+    assert!(!quiet_info(&reg, ALICE, 11, COMPONENT, info));
     jump(&mut reg, ALICE, 11).unwrap();
-    // Departing: the session still names the origin, where gate 11 is.
-    assert!(quiet_in_transit(&reg, ALICE, 11, COMPONENT, info));
-    // The partner gate is not in the session's system; an unknown item is nowhere.
-    assert!(!quiet_in_transit(&reg, ALICE, 22, COMPONENT, info));
-    assert!(!quiet_in_transit(&reg, ALICE, 9_999, COMPONENT, info));
-    assert!(!quiet_in_transit(
-        &reg,
-        ALICE,
-        11,
-        COMPONENT,
-        "SomethingElse"
-    ));
-    assert!(!quiet_in_transit(&reg, ALICE, 11, "otherComponent", info));
-    assert!(!quiet_in_transit(&reg, STRANGER, 11, COMPONENT, info));
+    assert!(quiet_info(&reg, ALICE, 11, COMPONENT, info));
+    assert!(quiet_info(&reg, ALICE, 22, COMPONENT, info));
+    assert!(quiet_info(&reg, STRANGER, 11, COMPONENT, info));
+    // An unknown item is nowhere.
+    assert!(!quiet_info(&reg, ALICE, 9_999, COMPONENT, info));
+    assert!(!quiet_info(&reg, ALICE, 11, COMPONENT, "SomethingElse"));
+    assert!(!quiet_info(&reg, ALICE, 11, "otherComponent", info));
+}
+
+/// Past the session change the session names the destination while the window
+/// still asks about the origin's gate.
+#[test]
+fn the_info_asked_after_the_session_change_is_none() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    jump(&mut reg, ALICE, 11).unwrap();
+    let late = Instant::now() + crate::jump::JUMP_DELAY + Duration::from_millis(50);
+    let _ = reg.take_due(late);
+    crate::jump::tick(&mut reg, late);
+    assert_eq!(component_call(&mut reg, ALICE, 11).unwrap(), PyValue::None);
+}
+
+/// A pilot in space, not jumping, asking about a gate in another system (after
+/// a `/tr`, say) gets the window's "no access" too.
+#[test]
+fn the_info_of_a_gate_in_another_system_is_none_for_a_pilot_in_space() {
+    let mut reg = world();
+    pair(&mut reg);
+    near_gate_a(&mut reg, ALICE, ALICE_SHIP);
+    assert!(!reg.jumps().contains(ALICE));
+    assert_eq!(component_call(&mut reg, ALICE, 22).unwrap(), PyValue::None);
 }
 
 #[test]

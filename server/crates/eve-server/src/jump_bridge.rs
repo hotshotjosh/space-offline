@@ -76,8 +76,8 @@
 //! and otherwise stores the rest. The window asks
 //! `GetJumpBridgeInfo` (`jumpBridge.py:131-134`), answered by [`info`] with
 //! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`, a
-//! new-style object ([`info_at`]); mid-jump it is `None`
-//! ([`quiet_in_transit`]).
+//! new-style object ([`info_at`]); for a gate not in the caller's
+//! system it is `None` ([`quiet_info`]).
 //! The `jbcap` row (`structure_id -> charge_gj settled_at counter`) holds the
 //! settled charge; the counter is the slim's `component_jumpBridge` etag, so
 //! a change makes the bracket ask again (`jumpBridge.py:56-73`).
@@ -783,37 +783,38 @@ pub fn info(
 }
 
 /// Whether `CallComponentFromClient(item, component, method)` from `actor`
-/// is a `GetJumpBridgeInfo` asked mid-jump about a gate in the system the
-/// jumper's session still names, which the router answers `None` before its
-/// in-space check (`space_component::call_in`).
+/// is a `GetJumpBridgeInfo` about a known gate that the router would refuse
+/// as not in space, which it answers `None` instead (`space_component::call_in`).
 ///
-/// **Why.** A jump takes the pilot out of the roster at once
-/// ([`jump_through`]) while the session, and the client's park with the gate's
-/// window, stay in the origin until the session change
-/// (`jump::Jumps::session_system`). The window refreshes in that gap
-/// (`get_jump_bridge_info` -> `jumpBridge.GetJumpBridgeInfo`, decompiled
-/// `jumpBridgeContController.py:104-106`) [V]; the
-/// router's `CustomNotify` then lands in its `ExceptionEater`
-/// (`jumpBridgeContController.py:75-82`) as `JumpBridgeContController:Failed
-/// to update ui` [V] (seen at both menu jumps of a client run). `None` is what
-/// the window reads as "no access" without a traceback
-/// (`jumpBridgeContController.py:88-89`) [V]. Only this read-only method and
-/// only a gate in the session's system: a `None` for another component's call
-/// is a failure of its own (see `space_component`), and any other gate keeps
+/// **Why.** The gate window refreshes on a 2 s timer (`jumpBridgeCont.py:104-117`)
+/// [V]; the call lands in an `ExceptionEater` (`jumpBridgeContController.py:75-82`)
+/// as `JumpBridgeContController:Failed to update ui` [V] when the router
+/// refuses. `None` is what the window reads as "no access" without a traceback
+/// (`jumpBridgeContController.py:85-89`) [V]. The refusal happens in several
+/// windows, all the same shape (a read-only info about a known gate that is not
+/// in the caller's current system):
+/// - the leg is `Departing`: the pilot is out of the roster, the session
+///   still names the origin ([`jump_through`]);
+/// - the leg is `Arriving`: the session names the destination and the window
+///   still asks about the origin's gate;
+/// - after the bind, the old window asks about the gate left behind;
+/// - after a `/tr` (no `Jumps` entry) the window of a gate in another system.
+///
+/// So the test is: a known gate, and either the actor has a leg
+/// (`jumps().contains`) or the actor's roster system is not the gate's. Only
+/// this read-only method; an unknown item and another component's call keep
 /// the refusal.
-pub fn quiet_in_transit(
-    reg: &Registry,
-    actor: i64,
-    item: i64,
-    component: &str,
-    method: &str,
-) -> bool {
+///
+/// `[A]` TQ answers this, or refuses it, in a way the window also swallows.
+/// Falsifier: a TQ capture of `GetJumpBridgeInfo` for a gate in another system
+/// answering something else visible to the window.
+pub fn quiet_info(reg: &Registry, actor: i64, item: i64, component: &str, method: &str) -> bool {
     component == COMPONENT
         && method == "GetJumpBridgeInfo"
-        && reg
-            .jumps()
-            .session_system(actor)
-            .is_some_and(|s| locate(reg, item) == Some(s))
+        && locate(reg, item).is_some_and(|gate_system| {
+            reg.jumps().contains(actor)
+                || crate::space_component::actor_system(reg, actor) != Some(gate_system)
+        })
 }
 
 // -- the slim -----------------------------------------------------------------------
