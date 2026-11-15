@@ -125,6 +125,144 @@ pub struct Motion {
 /// 888 m for a cruiser. Real, and not the emergency the old table implied.
 const STOP_Y_DAMPING_RATE: f64 = 0.140_229_341_308_650_25;
 
+/// One ball of a scene, for [`translate_followers`].
+#[derive(Debug, Clone, Copy)]
+pub struct SceneBall {
+    pub ship_id: i64,
+    /// The motion as the roster has it, true at the scene's instant.
+    pub now: Motion,
+    /// The same, as [`Motion::at_boundary`] drew it.
+    pub drawn: Motion,
+    /// The hull it flies, for a coasting Stop ball and for a Follow ball
+    /// that follows a ball in the scene (else `None`).
+    pub hull: Option<crate::destiny::hull::Hull>,
+    /// The follow's centre separation ([`crate::orbit::centre_distance`]),
+    /// with the ball it follows. `None` for anything but a Follow.
+    pub follows: Option<(i64, f64)>,
+    /// `since - boundary`, the seconds taken back (at most one is used).
+    pub back: f64,
+    /// The scene's instant (`since`), which a warp's activation is read at.
+    pub since: f64,
+}
+
+/// A follower held at its range is drawn with its leader's rewind: the
+/// roster holds it at range from the leader *now* (a snap, velocity the
+/// leader's, [`Motion::tethered_advance_led`]), so at the boundary it was
+/// where it is plus the leader's displacement, which a straight step on its
+/// own velocity cannot know when the leader's path in the window curved or
+/// slowed (stop-stepback r2).
+///
+/// **Held** is what the snap leaves behind, plus the snap's own speed test:
+/// the follower is at its centre range from the leader now (within
+/// [`HELD_RANGE_TOLERANCE`]; the advance's reach test is on the state
+/// *before* the step and cannot be re-read after it, and with
+/// `TETHER_SLACK` it would let a follower still closing in through) and it
+/// keeps up with the leader's move ([`Motion::keeps_up`]) over `back` s. A
+/// follower that is closing in, whose leader is not in `balls`, or whose
+/// leader is in an activated warp keeps its own step back. A chain resolves
+/// by recursion, leader first, to [`FOLLOW_CHAIN_DEPTH`] links. A chain that
+/// returns to a ball already in it (a ring) keeps every member's own step
+/// back, and so does the ball that follows a ring.
+pub fn translate_followers(balls: &mut [SceneBall]) {
+    let index: std::collections::BTreeMap<i64, usize> = balls
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (b.ship_id, i))
+        .collect();
+    /// What ball `i` is drawn with: displacement, velocity, whether it was
+    /// changed from its own step back, and whether its chain is a ring.
+    type Drawn = ([f64; 3], [f64; 3], bool, bool);
+    fn resolve(
+        balls: &[SceneBall],
+        index: &std::collections::BTreeMap<i64, usize>,
+        chain: &mut Vec<usize>,
+    ) -> Drawn {
+        let i = *chain.last().expect("a chain has a ball");
+        let b = &balls[i];
+        let own = (
+            sub(b.drawn.position, b.now.position),
+            b.drawn.velocity,
+            false,
+            false,
+        );
+        let (Some((leader, range)), Some(h)) = (b.follows, b.hull.as_ref()) else {
+            return own;
+        };
+        let Some(&li) = index.get(&leader) else {
+            return own;
+        };
+        if li == i
+            || chain.len() >= FOLLOW_CHAIN_DEPTH
+            || !matches!(b.now.mode, Mode::Follow { .. })
+        {
+            return own;
+        }
+        if chain.contains(&li) {
+            return (own.0, own.1, false, true);
+        }
+        // A leader in an activated warp is drawn as it is (a warp is a
+        // function of the clock); its follower is not held to it.
+        if balls[li].now.warp_active_at(balls[li].since) {
+            return own;
+        }
+        chain.push(li);
+        let (disp, vel, _, ring) = resolve(balls, index, chain);
+        chain.pop();
+        if ring {
+            return (own.0, own.1, false, true);
+        }
+        let back = b.back.min(1.0);
+        let at_range = (distance(b.now.position, balls[li].now.position) - range).abs()
+            <= HELD_RANGE_TOLERANCE;
+        if back.is_nan()
+            || back <= 0.0
+            || !at_range
+            || !b.now.keeps_up(h, distance(disp, [0.0; 3]), back)
+        {
+            return own;
+        }
+        (disp, vel, true, false)
+    }
+    let out: Vec<_> = (0..balls.len())
+        .map(|i| resolve(balls, &index, &mut vec![i]))
+        .collect();
+    for (b, (disp, vel, changed, _)) in balls.iter_mut().zip(out) {
+        if changed {
+            b.drawn.position = sub(disp, scale(b.now.position, -1.0));
+            b.drawn.velocity = vel;
+        }
+    }
+}
+
+/// How many Follow links [`translate_followers`] resolves.
+const FOLLOW_CHAIN_DEPTH: usize = 8;
+
+/// How far from its centre range a follower may be and still be "at its
+/// range now": the snap puts it there to the rounding of the coordinates.
+const HELD_RANGE_TOLERANCE: f64 = 1e-3;
+
+/// **[I]** A Stop ball that was in Stop for the whole window was, at the
+/// boundary, under thrust just before (at most its hull's top speed) or in
+/// its undock shove (`min(1.75 * max_velocity, 700)`), so a rewound speed
+/// above `max(STOP_REWIND_SPEED_FACTOR * max_velocity, STOP_REWIND_SPEED_FLOOR)`
+/// means the stop was ordered inside the window and the rewind is too long
+/// (`e^(window / tau)`, large for a drone). Falsified by an honest coasting
+/// ball faster than this (an overdrive switched off mid-coast): it costs the
+/// straight step only.
+const STOP_REWIND_SPEED_FACTOR: f64 = 1.75;
+/// See [`STOP_REWIND_SPEED_FACTOR`].
+const STOP_REWIND_SPEED_FLOOR: f64 = 700.0;
+
+/// The time constant of one axis: the hull's `tau`, and on y while stopping
+/// the faster one [`STOP_Y_DAMPING_RATE`] composes with it.
+fn axis_tau(mode: Mode, tau: f64, axis: usize) -> f64 {
+    if axis == 1 && matches!(mode, Mode::Stop) {
+        1.0 / (1.0 / tau + STOP_Y_DAMPING_RATE)
+    } else {
+        tau
+    }
+}
+
 impl Motion {
     /// **A warp has been commanded**: the ship is aligning for it or flying
     /// it. EVE semantics: until the warp activates, aligning is ordinary
@@ -356,25 +494,74 @@ impl Motion {
     /// and a ball encoded at "now" arrives up to a second of travel ahead
     /// (`handback/evejs-motion/report.md` §7.1).
     ///
-    /// A straight step back along the velocity. **[A]**: a ship mid-turn or
-    /// mid-accelerate curves in that second, a difference of centimetres to
-    /// metres against the hundreds of metres it removes; falsified by a moving
-    /// ship that the owner sees jump on being first drawn. A warp is left as
-    /// it is (its position is a function of the clock, not of this record),
-    /// and so is a Stop: the undock shove (up to 700 m/s) is a Stop, and
-    /// stepping a fresh undocker back would put it inside the station's
-    /// 419 m clearance. Also left alone is anything at or before the boundary or with a non-finite
-    /// input. At most one second is taken back.
-    pub fn at_boundary(mut self, since: f64, boundary: f64) -> Motion {
+    /// A straight step back along the velocity for a ship under thrust.
+    /// **[A]**: a ship mid-turn or mid-accelerate curves in that second, a
+    /// difference of centimetres to metres against the hundreds of metres it
+    /// removes; falsified by a moving ship that the owner sees jump on being
+    /// first drawn.
+    /// **A Stop ball is rewound exactly** under `advanced_at`'s Stop law, given
+    /// its hull `h`: it is slowing down, and a straight step at its end speed
+    /// leaves `v*b^2/(2*tau)` behind, which a follower stepped back by its
+    /// leader's mean speed over the step does not share (stop-stepback).
+    /// Without a hull it is stepped straight. **A Stop ball that `entered`
+    /// space inside the window is left as it is:** that is the undock shove
+    /// (up to 700 m/s), and before it the ship was docked, so the boundary
+    /// would put it inside the station's 419 m clearance. A warp is left as it
+    /// is (its position is a function of the clock, not of this record), and so
+    /// is anything at or before the boundary or with a non-finite input. At
+    /// most one second is taken back.
+    pub fn at_boundary(
+        mut self,
+        since: f64,
+        boundary: f64,
+        entered: f64,
+        h: Option<&crate::destiny::hull::Hull>,
+    ) -> Motion {
         let back = since - boundary;
-        if !back.is_finite() || back <= 0.0 || matches!(self.mode, Mode::Warp { .. } | Mode::Stop) {
+        if !back.is_finite() || back <= 0.0 || matches!(self.mode, Mode::Warp { .. }) {
             return self;
         }
         let back = back.min(1.0);
+        if matches!(self.mode, Mode::Stop) {
+            // Entered inside the window (the undock shove), or an unknown
+            // entry (NaN): as it is.
+            if entered.is_nan() || entered > since - back {
+                return self;
+            }
+            if let Some(m) = h.and_then(|h| self.stop_rewound(h, back)) {
+                return m;
+            }
+        }
         for (p, v) in self.position.iter_mut().zip(self.velocity) {
             *p -= v * back;
         }
         self
+    }
+
+    /// A Stop ball `back` s earlier, under [`Self::advanced_at`]'s own Stop law
+    /// run backwards: per axis `v_b = v*e^(back/tau)`,
+    /// `x_b = x - v*tau*(e^(back/tau) - 1)`, so that `advanced_at(h, back, ..)`
+    /// of the answer is `self` again. `None` for a hull with no time constant
+    /// a non-finite answer, or a rewound speed past [`STOP_REWIND_SPEED_FACTOR`]'s
+    /// cap (the caller steps straight).
+    fn stop_rewound(self, h: &crate::destiny::hull::Hull, back: f64) -> Option<Motion> {
+        let tau = f64::from(h.agility) * h.mass / 1.0e6;
+        if !tau.is_finite() || tau <= 0.0 {
+            return None;
+        }
+        let mut m = self;
+        for axis in 0..3 {
+            let t = axis_tau(self.mode, tau, axis);
+            let grow = (back / t).exp();
+            m.position[axis] = self.position[axis] - self.velocity[axis] * t * (grow - 1.0);
+            m.velocity[axis] = self.velocity[axis] * grow;
+        }
+        let cap = (STOP_REWIND_SPEED_FACTOR * f64::from(h.max_velocity))
+            .max(STOP_REWIND_SPEED_FLOOR)
+            * (1.0 + 1e-9);
+        (m.position.iter().chain(&m.velocity).all(|c| c.is_finite())
+            && distance(m.velocity, [0.0; 3]) <= cap)
+            .then_some(m)
     }
 
     /// The same, with the wall clock supplied.
@@ -456,11 +643,7 @@ impl Motion {
         for axis in 0..3 {
             // **The y axis decays faster while stopping, and only while
             // stopping.** See [`STOP_Y_DAMPING_RATE`].
-            let tau_axis = if axis == 1 && matches!(self.mode, Mode::Stop) {
-                1.0 / (1.0 / tau + STOP_Y_DAMPING_RATE)
-            } else {
-                tau
-            };
+            let tau_axis = axis_tau(self.mode, tau, axis);
             let decay = (-dt / tau_axis).exp();
             let gap = self.velocity[axis] - commanded[axis];
             position[axis] =
@@ -1541,6 +1724,13 @@ pub struct Presence {
     /// background task to keep alive and no question of what happens to a
     /// world nobody is looking at.
     pub since: f64,
+    /// When this ball entered space (undock, jump-in, spawn, restore), on
+    /// [`now_seconds`]'s clock. Set once by [`Presence::arriving`]; nothing
+    /// advances it. [`Motion::at_boundary`] reads it so that a Stop ball is
+    /// never drawn where it was before it existed: an undocker's first second
+    /// is its shove out of the mouth, and the boundary before it is inside
+    /// the station.
+    pub entered: f64,
     /// The motion at the last whole **tick**, for a ship advanced on the
     /// client's tick grid (FX9, [`Roster::advance`]): `None` for every ship
     /// the closed form carries in one step, which is every ship not tethered
@@ -1585,14 +1775,16 @@ impl Presence {
     /// The constructor exists so that `since` cannot be forgotten: the one
     /// value that must never be defaulted is the time, because a zero there
     /// means 1970 and the first integration moves the ship by fifty years of
-    /// cruising.
+    /// cruising. `entered` is the same instant.
     pub fn arriving(character_id: i64, ship_id: i64, solar_system_id: i64, motion: Motion) -> Self {
+        let now = now_seconds();
         Presence {
             character_id,
             ship_id,
             solar_system_id,
             motion,
-            since: now_seconds(),
+            since: now,
+            entered: now,
             ticked: None,
         }
     }
@@ -2167,18 +2359,307 @@ mod tests {
             mode: Mode::Goto([9.0e6, 0.0, 5000.0]),
             speed_fraction: 1.0,
         };
-        let back = m.at_boundary(1_000.4, 1_000.0);
+        let back = m.at_boundary(1_000.4, 1_000.0, f64::NEG_INFINITY, None);
         assert!((back.position[0] - 880.0).abs() < 1e-6);
         assert_eq!(back.position[2], 5000.0);
         assert_eq!(back.velocity, m.velocity);
-        // Never forward, never more than a second, never a stop or a warp.
-        assert_eq!(m.at_boundary(999.0, 1_000.0), m);
-        assert!((m.at_boundary(1_005.0, 1_000.0).position[0] - 700.0).abs() < 1e-6);
-        let stopped = Motion {
+        // Never forward, never more than a second, never a warp.
+        assert_eq!(m.at_boundary(999.0, 1_000.0, f64::NEG_INFINITY, None), m);
+        assert!(
+            (m.at_boundary(1_005.0, 1_000.0, f64::NEG_INFINITY, None)
+                .position[0]
+                - 700.0)
+                .abs()
+                < 1e-6
+        );
+    }
+
+    // ---- stop-stepback: a coasting Stop ball is drawn at the boundary ----
+
+    /// A Stop ball is rewound under its own hull's Stop law, so the client's
+    /// forward evolution from the boundary reaches the server's state.
+    #[test]
+    fn a_coasting_stop_ball_is_rewound_to_the_boundary() {
+        let m = Motion {
+            position: [1000.0, 50.0, 5000.0],
+            velocity: [300.0, 40.0, 0.0],
             mode: Mode::Stop,
-            ..m
+            speed_fraction: 0.0,
         };
-        assert_eq!(stopped.at_boundary(1_000.4, 1_000.0), stopped);
+        let back = m.at_boundary(1_000.4, 1_000.0, 990.0, Some(&UNIT_TAU));
+        // It is where the Stop law puts a ball that reaches `m` 0.4 s later.
+        let again = back.advanced_at(&UNIT_TAU, 0.4, 1_000.4);
+        assert!(distance(again.position, m.position) < 1e-9);
+        assert!(distance(again.velocity, m.velocity) < 1e-9);
+        // It was going faster, and is further back than a straight step.
+        assert!(back.velocity[0] > 300.0);
+        assert!(back.position[0] < 1000.0 - 300.0 * 0.4);
+        // No hull: the straight step.
+        let straight = m.at_boundary(1_000.4, 1_000.0, 990.0, None);
+        assert!((straight.position[0] - 880.0).abs() < 1e-6);
+    }
+
+    /// The undock shove is a Stop ball in its first second and is drawn as it
+    /// is; the same ship a second on is rewound.
+    #[test]
+    fn an_undocking_ship_is_not_stepped_back_inside_its_shove() {
+        let shove = Motion::arrived([16_000.0, 0.0, 0.0], [600.0, 0.0, 0.0]);
+        assert_eq!(
+            shove.at_boundary(1_000.4, 1_000.0, 1_000.3, Some(&UNIT_TAU)),
+            shove
+        );
+        assert_eq!(shove.at_boundary(1_000.4, 1_000.0, 1_000.3, None), shove);
+        assert_eq!(
+            shove.at_boundary(1_000.4, 1_000.0, f64::NAN, Some(&UNIT_TAU)),
+            shove
+        );
+        let later = shove.at_boundary(1_001.4, 1_001.0, 1_000.3, Some(&UNIT_TAU));
+        assert!(later.position[0] < shove.position[0]);
+    }
+
+    /// A follower and its coasting leader are drawn at the follow range
+    /// from each other, as the roster has them.
+    #[test]
+    fn a_follower_and_its_coasting_leader_are_drawn_at_their_range() {
+        let t0 = 1_792_800_000.0; // a whole second
+        let mut roster = led_pair(
+            t0,
+            [-CENTRE, 0.0, 0.0],
+            [0.0; 3],
+            Action::FollowBall {
+                ball: SHIP_A,
+                target: SHIP_B,
+                range: CENTRE,
+            },
+            None,
+        );
+        // B coasts after a stop order; A already moves with it.
+        roster.get_mut(2).expect("B").motion.velocity = [200.0, 30.0, 0.0];
+        roster.get_mut(1).expect("A").motion.velocity = [200.0, 30.0, 0.0];
+        for at in [0.6, 1.3, 2.6] {
+            let m = led_movers(&roster, [PAIR_HULL, PAIR_HULL], CENTRE, None);
+            roster.advance(&m, t0 + at);
+            let [pa, pb] = pair_positions(&roster);
+            assert!(
+                (distance(pa, pb) - CENTRE).abs() < 1e-6,
+                "+{at}: A is held at range"
+            );
+            let (a, b) = (roster.get(1).expect("A"), roster.get(2).expect("B"));
+            let boundary = a.since.floor();
+            let da = a.motion.at_boundary(a.since, boundary, a.entered, None);
+            let db = b
+                .motion
+                .at_boundary(b.since, boundary, b.entered, Some(&PAIR_HULL));
+            assert!(
+                (distance(da.position, db.position) - CENTRE).abs() < 1e-6,
+                "+{at}: a state draws A {} m off its range",
+                distance(da.position, db.position) - CENTRE
+            );
+        }
+    }
+
+    /// Invented: a leader that coasts after a stop order, 100 m/s, on
+    /// [`UNIT_TAU`], and the scene's three balls around it.
+    fn scene_ball(ship_id: i64, at: [f64; 3], v: [f64; 3], mode: Mode, back: f64) -> SceneBall {
+        let now = Motion {
+            position: at,
+            velocity: v,
+            mode,
+            speed_fraction: 1.0,
+        };
+        let since = 1_000.0 + back;
+        let hull = matches!(mode, Mode::Follow { .. }).then_some(PAIR_HULL);
+        let rewind_hull = if matches!(mode, Mode::Stop) {
+            Some(UNIT_TAU)
+        } else {
+            None
+        };
+        SceneBall {
+            ship_id,
+            now,
+            drawn: now.at_boundary(since, 1_000.0, 900.0, rewind_hull.as_ref()),
+            hull,
+            follows: match mode {
+                Mode::Follow { ball_id, .. } => Some((ball_id, CENTRE)),
+                _ => None,
+            },
+            back,
+            since,
+        }
+    }
+
+    /// A follower held at its range, whose leader coasts through a window
+    /// the follower's own velocity knows nothing of, is drawn with the
+    /// leader's rewind: the drawn range is the held range.
+    #[test]
+    fn a_held_follower_is_drawn_with_its_coasting_leaders_rewind() {
+        const SHIP_C: i64 = 9_000_000_046;
+        let follow = |of| Mode::Follow {
+            ball_id: of,
+            range: 0.0,
+        };
+        let mut balls = [
+            scene_ball(SHIP_B, [0.0; 3], [100.0, 0.0, 0.0], Mode::Stop, 0.6),
+            scene_ball(SHIP_A, [-CENTRE, 0.0, 0.0], [0.0; 3], follow(SHIP_B), 0.6),
+        ];
+        let leader_moved = distance(balls[0].drawn.position, balls[0].now.position);
+        assert!(leader_moved > 50.0, "the precondition: the window is long");
+        translate_followers(&mut balls);
+        let range = distance(balls[0].drawn.position, balls[1].drawn.position);
+        assert!((range - CENTRE).abs() < 1e-6, "drawn range {range}");
+        assert_eq!(balls[1].drawn.velocity, balls[0].drawn.velocity);
+        // The leader itself keeps its own rewind.
+        assert!(balls[0].drawn.position[0] < 0.0);
+
+        // A chain: C follows A follows B. Both ranges hold.
+        let mut chain = [
+            scene_ball(
+                SHIP_C,
+                [-2.0 * CENTRE, 0.0, 0.0],
+                [0.0; 3],
+                follow(SHIP_A),
+                0.6,
+            ),
+            scene_ball(SHIP_A, [-CENTRE, 0.0, 0.0], [0.0; 3], follow(SHIP_B), 0.6),
+            scene_ball(SHIP_B, [0.0; 3], [100.0, 0.0, 0.0], Mode::Stop, 0.6),
+        ];
+        translate_followers(&mut chain);
+        let [c, a, b] = chain.map(|x| x.drawn.position);
+        assert!((distance(a, b) - CENTRE).abs() < 1e-6, "A to B");
+        assert!((distance(c, a) - CENTRE).abs() < 1e-6, "C to A");
+    }
+
+    /// A follower still closing in (outside what it could have flown in
+    /// the window), or one whose leader is not in the scene, keeps its own
+    /// step back.
+    #[test]
+    fn a_closing_follower_is_not_translated() {
+        let follow = Mode::Follow {
+            ball_id: SHIP_B,
+            range: 0.0,
+        };
+        let mut balls = [
+            scene_ball(SHIP_B, [0.0; 3], [100.0, 0.0, 0.0], Mode::Stop, 0.6),
+            scene_ball(
+                SHIP_A,
+                [-CENTRE - 5_000.0, 0.0, 0.0],
+                [50.0, 0.0, 0.0],
+                follow,
+                0.6,
+            ),
+        ];
+        let own = balls[1].drawn;
+        translate_followers(&mut balls);
+        assert_eq!(balls[1].drawn, own);
+        // Its leader is out of the scene.
+        let mut alone = [balls[1]];
+        alone[0].follows = Some((SHIP_B + 1, CENTRE));
+        alone[0].now.position = [-CENTRE, 0.0, 0.0];
+        let own = alone[0].drawn;
+        translate_followers(&mut alone);
+        assert_eq!(alone[0].drawn, own);
+    }
+
+    /// A stop ordered inside the window is not rewound as if it had been
+    /// in force all of it: a drone-like ball (tau 0.3 s) at 2.5 km/s whose
+    /// stop is 0.05 s old must not be drawn at the 51 km/s `e^(back/tau)`
+    /// gives, which the speed cap turns back into the straight step.
+    #[test]
+    fn a_stop_ordered_inside_the_window_is_not_over_rewound() {
+        let drone = crate::destiny::hull::Hull {
+            max_velocity: 3_000.0,
+            agility: 0.3,
+            ..UNIT_TAU
+        };
+        let m = Motion {
+            position: [0.0; 3],
+            velocity: [2_540.0, 0.0, 0.0],
+            mode: Mode::Stop,
+            speed_fraction: 0.0,
+        };
+        let drawn = m.at_boundary(1_000.9, 1_000.0, 900.0, Some(&drone));
+        let straight = m.at_boundary(1_000.9, 1_000.0, 900.0, None);
+        assert_eq!(drawn, straight);
+        let cap = (STOP_REWIND_SPEED_FACTOR * 3_000.0).max(STOP_REWIND_SPEED_FLOOR);
+        assert!(distance(drawn.velocity, [0.0; 3]) <= cap);
+    }
+
+    /// A follower 1 km outside its range is closing in, whatever the slack
+    /// the advance allows it: it keeps its own step back.
+    #[test]
+    fn a_follower_outside_its_range_inside_the_slack_is_not_translated() {
+        let follow = Mode::Follow {
+            ball_id: SHIP_B,
+            range: 0.0,
+        };
+        let mut balls = [
+            scene_ball(SHIP_B, [0.0; 3], [100.0, 0.0, 0.0], Mode::Stop, 0.6),
+            scene_ball(
+                SHIP_A,
+                [-CENTRE - 1_000.0, 0.0, 0.0],
+                [50.0, 0.0, 0.0],
+                follow,
+                0.6,
+            ),
+        ];
+        let own = balls[1].drawn;
+        translate_followers(&mut balls);
+        assert_eq!(balls[1].drawn, own);
+    }
+
+    /// A follower of a leader in an activated warp keeps its own step.
+    #[test]
+    fn a_follower_of_a_warping_leader_keeps_its_own_step() {
+        let follow = Mode::Follow {
+            ball_id: SHIP_B,
+            range: 0.0,
+        };
+        let warp = Mode::Warp {
+            goto: [1.0e6, 0.0, 0.0],
+            effect_stamp: 1_000,
+            total_distance: 1.0e6,
+            stop_distance: 0.0,
+            warp_factor: 3,
+        };
+        let mut balls = [
+            scene_ball(SHIP_B, [0.0; 3], [5_000.0, 0.0, 0.0], warp, 0.6),
+            scene_ball(SHIP_A, [-CENTRE, 0.0, 0.0], [0.0; 3], follow, 0.6),
+        ];
+        let own = balls[1].drawn;
+        translate_followers(&mut balls);
+        assert_eq!(balls[1].drawn, own);
+    }
+
+    /// A ring of held followers keeps every member's own step, whatever its
+    /// length.
+    #[test]
+    fn a_ring_of_followers_keeps_each_ones_own_step() {
+        const SHIP_C: i64 = 9_000_000_046;
+        let follow = |of| Mode::Follow {
+            ball_id: of,
+            range: 0.0,
+        };
+        let h = CENTRE * 3.0_f64.sqrt() / 2.0;
+        let mut ring = [
+            scene_ball(SHIP_A, [0.0; 3], [10.0, 0.0, 0.0], follow(SHIP_B), 0.6),
+            scene_ball(
+                SHIP_B,
+                [CENTRE, 0.0, 0.0],
+                [0.0, 0.0, 20.0],
+                follow(SHIP_C),
+                0.6,
+            ),
+            scene_ball(
+                SHIP_C,
+                [CENTRE / 2.0, 0.0, h],
+                [5.0, 0.0, 5.0],
+                follow(SHIP_A),
+                0.6,
+            ),
+        ];
+        let own = ring.map(|b| b.drawn);
+        translate_followers(&mut ring);
+        assert_eq!(ring.map(|b| b.drawn), own);
     }
 
     /// **A ship aligning for warp accelerates toward its destination.**
@@ -2511,6 +2992,7 @@ mod tests {
             // A fixed stamp, not `now_seconds()`: a roster test that reads
             // the clock is a roster test that can fail at midnight.
             since: 0.0,
+            entered: 0.0,
             ticked: None,
         }
     }
@@ -3300,6 +3782,7 @@ mod tests {
                 solar_system_id: PAIR_SYSTEM,
                 motion,
                 since: t0,
+                entered: t0,
                 ticked: None,
             });
         }
@@ -3711,6 +4194,7 @@ mod tests {
                 solar_system_id: PAIR_SYSTEM,
                 motion,
                 since: t0,
+                entered: t0,
                 ticked: None,
             });
         }
@@ -4090,7 +4574,9 @@ mod tests {
             "A sits at its range from a ship at rest, yet is sent at {} m/s",
             a.motion.speed()
         );
-        let drawn = a.motion.at_boundary(a.since, a.since.floor());
+        let drawn = a
+            .motion
+            .at_boundary(a.since, a.since.floor(), a.entered, None);
         assert!(
             (distance(drawn.position, b) - CENTRE).abs() < 1e-6,
             "a state draws A {} m from its range",
@@ -4222,7 +4708,9 @@ mod tests {
                 "pair {with_pair}, at +{when} s: A is held at its range, yet is sent at {:?} m/s",
                 a.motion.velocity
             );
-            let drawn = a.motion.at_boundary(a.since, a.since.floor());
+            let drawn = a
+                .motion
+                .at_boundary(a.since, a.since.floor(), a.entered, None);
             assert!(
                 (distance(drawn.position, at) - CENTRE).abs() < 1e-6,
                 "pair {with_pair}, at +{when} s: a state draws A {} m from its range",

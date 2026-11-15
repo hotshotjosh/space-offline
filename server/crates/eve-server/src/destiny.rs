@@ -1425,7 +1425,8 @@ pub fn scene(
     // just brought up to. Blue time, because that is `crate::damage`'s clock.
     let now = crate::pyutil::filetime_now();
     // **Every moving ball as of the stamp's second boundary**, not of now
-    // (`Motion::at_boundary`).
+    // (`Motion::at_boundary`), a coasting Stop ball under its hull's Stop law,
+    // and never one inside its undock shove.
     let boundary = crate::space_state::now_seconds().floor();
     let mut balls = Vec::new();
     let mut slims = Vec::new();
@@ -1439,8 +1440,59 @@ pub fn scene(
     // pilot who undocks into an occupied system has to see who is already
     // there -- the other half, telling *them*, is `on_ballpark_bind`'s
     // `BallsAdded`.
-    for p in w.roster().in_system(solar_system_id) {
-        let at = p.motion.at_boundary(p.since, boundary);
+    let present = w.roster().in_system(solar_system_id);
+    // Every ball's drawn motion first, then a follower held at its range is
+    // drawn with its leader's rewind (`space_state::translate_followers`).
+    let mut seen: Vec<crate::space_state::SceneBall> = present
+        .iter()
+        .map(|p| {
+            // A coasting Stop ball is rewound under its own hull's law, the
+            // hull the roster advanced it with (`Registry::flight_hull`, as
+            // `mover`); a Follow ball's hull is read for the held test.
+            let moving = !p.motion.is_at_rest();
+            // A Follow ball's hull is only read when its leader is in this
+            // scene; a coasting Stop ball's is read for the rewind.
+            let wanted = match p.motion.mode {
+                Mode::Stop => true,
+                Mode::Follow { ball_id, .. } => present.iter().any(|q| q.ship_id == ball_id),
+                _ => false,
+            };
+            let hull = (moving && wanted)
+                .then(|| w.flight_hull(p.character_id))
+                .flatten();
+            let drawn = p.motion.at_boundary(
+                p.since,
+                boundary,
+                p.entered,
+                hull.as_ref()
+                    .filter(|_| matches!(p.motion.mode, Mode::Stop)),
+            );
+            let follows = p
+                .motion
+                .tether()
+                .filter(|_| matches!(p.motion.mode, Mode::Follow { .. }))
+                .and_then(|(leader, range)| {
+                    let h = hull.as_ref()?;
+                    let t = w.ball_target(leader)?;
+                    Some((
+                        leader,
+                        crate::orbit::centre_distance(range, f64::from(h.radius), t.radius),
+                    ))
+                });
+            crate::space_state::SceneBall {
+                ship_id: p.ship_id,
+                now: p.motion,
+                drawn,
+                hull,
+                follows,
+                back: p.since - boundary,
+                since: p.since,
+            }
+        })
+        .collect();
+    crate::space_state::translate_followers(&mut seen);
+    for (p, seen) in present.into_iter().zip(seen) {
+        let at = seen.drawn;
         // **An NPC is in the roster under its own id** and has no character
         // row (`docs/lanes/npc.md` §5): without this branch a pilot who
         // undocks after a spawn is never shown it -- the roster-leak `continue`
@@ -3867,6 +3919,78 @@ mod tests {
             bob_ball.position,
             bob_seed.position
         );
+        let _ = reg.take_pending();
+    }
+
+    /// **A ship coasting after its undock is drawn at the boundary, not at
+    /// its `since` position** (stop-stepback): `scene` passes the entry time
+    /// and the hull, so a Stop ball that has been out of the station for
+    /// longer than the window is rewound under its own Stop law.
+    #[test]
+    fn a_ship_coasting_after_its_undock_is_drawn_at_the_boundary() {
+        const ALICE: i64 = 1_000_001;
+        const BOB: i64 = 1_980_002;
+        let alice = crate::model::Character {
+            character_id: ALICE,
+            name: "Alice".to_owned(),
+            ship_id: 100_000_001,
+            ..crate::model::Character::default()
+        };
+        let bob = crate::model::Character {
+            character_id: BOB,
+            name: "Bob".to_owned(),
+            ship_id: 100_000_002,
+            ..crate::model::Character::default()
+        };
+        let mut reg = Registry::new(crate::model::SandboxConfig {
+            characters: vec![alice, bob],
+            ..crate::model::SandboxConfig::default()
+        });
+        on_ballpark_bind(&mut reg, Some(ALICE));
+        let _ = reg.take_pending();
+        {
+            // Out for five seconds, still coasting in Stop on her shove.
+            let p = reg.roster_mut().get_mut(ALICE).expect("in space");
+            assert!(matches!(p.motion.mode, Mode::Stop));
+            assert!(!p.motion.is_at_rest());
+            p.since -= 5.0;
+            p.entered -= 5.0;
+        }
+        let state = bootstrap_for(&mut reg, BOB).expect("Bob gets a state");
+        let ball = *state
+            .park
+            .balls
+            .iter()
+            .find(|b| b.ball_id == 100_000_001)
+            .expect("Alice's ship is in Bob's park");
+        let h = reg.flight_hull(ALICE).expect("Alice has a hull");
+        let p = *reg.roster().get(ALICE).expect("in space");
+        let drawn_velocity = ball.physics.expect("a ship has physics").velocity;
+        let speed = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        let from = |b: f64| {
+            crate::space_state::Motion {
+                position: ball.position,
+                velocity: drawn_velocity,
+                mode: Mode::Stop,
+                speed_fraction: 0.0,
+            }
+            .advanced_at(&h, p.since - b, p.since)
+        };
+        let floor = p.since.floor();
+        let miss = |b: f64| crate::space_state::distance(from(b).position, p.motion.position);
+        // The scene reads its own clock a moment after the advance and can
+        // cross a second: then it drew her at `since` (nothing taken back),
+        // which is checked as its own branch.
+        if miss(floor) < 1e-3 {
+            assert!(
+                speed(drawn_velocity) > speed(p.motion.velocity),
+                "the boundary velocity is the faster one"
+            );
+        } else {
+            assert_eq!(ball.position, p.motion.position, "drawn at since");
+            assert!((speed(drawn_velocity) - speed(p.motion.velocity)).abs() < 1e-9);
+            assert!(miss(floor + 1.0) < 1e-3);
+        }
         let _ = reg.take_pending();
     }
 
