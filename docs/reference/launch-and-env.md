@@ -517,6 +517,10 @@ rows as optional.
 | `EVE_BOT_ARGS` | `deploy/entrypoint.sh` | `--brawl` | extra bot flags | |
 | `EVE_BOT_CHAT` | `deploy/entrypoint.sh` | `on` | whether bots talk | `EVE_BOT_CHAT=off` |
 | `EVE_BOT_CHAT_HOST` | `deploy/entrypoint.sh` | `127.0.0.1:5222` | where bots dial chat | |
+| `EVE_BOT_NICE` | `deploy/entrypoint.sh` | `10` | niceness of the bots process | `EVE_BOT_NICE=15` |
+| `EVE_BOT_CPUS` | `deploy/stack.yml` | `6` | CPU limit of the bots container (`cpus`) | `EVE_BOT_CPUS=4` |
+| `EVE_BOT_MAX_ONLINE` | `deploy/entrypoint.sh` | unset (unlimited) | `--max-online`: bots logged on at once | `EVE_BOT_MAX_ONLINE=500` |
+| `EVE_BOT_LOGIN_RATE` | `deploy/entrypoint.sh` | unset (eve-bots' 2 a second) | `--login-rate`: logins a second | `EVE_BOT_LOGIN_RATE=4` |
 
 ### Client CI (`tools/client-ci*.sh`, `tools/client-headless.sh`)
 
