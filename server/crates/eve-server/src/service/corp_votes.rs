@@ -528,8 +528,8 @@ pub(crate) fn settle(reg: &mut Registry, now: i64) {
     }
     for due in cv::take_due(reg.deltas_mut(), now) {
         let (corp, id) = (due.case.corp, due.case.id);
-        let done = match due.effect {
-            cv::Effect::Nothing => false,
+        match due.effect {
+            cv::Effect::Nothing => {}
             cv::Effect::NewCeo { candidate } => {
                 let old = reg.corporations().get(corp).map(|c| (c.ceo_id, c.deleted));
                 let member = reg
@@ -539,40 +539,33 @@ pub(crate) fn settle(reg: &mut Registry, now: i64) {
                 match old {
                     Some((old, false)) if member && old != candidate => {
                         super::corp::hand_over(reg, corp, old, candidate);
-                        true
                     }
                     _ => {
                         eprintln!(
                             "[votes] case {id}: new CEO {candidate} skipped: not a member of a live corp {corp}, or already its CEO"
                         );
-                        false
                     }
                 }
             }
             cv::Effect::Expel { target } => {
                 eprintln!("[votes] case {id}: expelling {target} is a sanctioned action");
-                false
             }
             cv::Effect::CreateShares { shares } => {
                 eprintln!(
                     "[votes] case {id}: creating {shares} shares awaits ActivateSanctionedAction"
                 );
-                false
             }
             cv::Effect::LockItem { item, .. } => {
                 eprintln!("[votes] case {id}: locking item {item} awaits ActivateSanctionedAction");
-                false
             }
             cv::Effect::UnlockItem { item, .. } => {
                 eprintln!(
                     "[votes] case {id}: unlocking item {item} awaits ActivateSanctionedAction"
                 );
-                false
             }
-        };
-        if done {
-            tell(reg, corp, id, &["OnVoteCaseChanged"]);
         }
+        // Every settled case moved from open to closed, acted on or not.
+        tell(reg, corp, id, &["OnVoteCaseChanged"]);
     }
 }
 
@@ -1036,6 +1029,22 @@ mod tests {
         settle(&mut reg, later());
         assert_eq!(ceo(&reg, corp), ALICE);
         assert!(cv::is_acted(reg.deltas(), a) && cv::is_acted(reg.deltas(), b));
+    }
+
+    #[test]
+    fn settling_a_lost_vote_still_tells_the_clients_the_case_closed() {
+        let (mut reg, corp) = world();
+        run_for_ceo(&mut reg, BOB);
+        let id = cases_now(&reg, corp)[0].id;
+        call(&mut reg, ALICE, "InsertVote", &[i(corp), i(id), i(1)]).unwrap();
+        pushes(&mut reg);
+        settle(&mut reg, later());
+        assert_eq!(ceo(&reg, corp), ALICE, "the vote lost");
+        let p = pushes(&mut reg);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].0, "OnVoteCaseChanged");
+        settle(&mut reg, later());
+        assert!(pushes(&mut reg).is_empty(), "told once");
     }
 
     #[test]

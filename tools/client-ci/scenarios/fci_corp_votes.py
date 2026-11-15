@@ -1649,11 +1649,21 @@ def eoci_main(EOCI_NAME):
                                timeout_ms=PEER_WAIT_MS, step_ms=2000)
         check('B\'s vote lands: option 0 holds every share', bool(got),
               'tally %s, shares %s after %s ms' % (text(tally(corp, run.voteCaseID)), text(total_now), text(waited)))
-        gm('/vote close %d' % run.voteCaseID)
+        ok, reply = gm('/vote close %d' % run.voteCaseID)
+        closed = bool(ok) and 'closed; it acts' in text(reply)
+        check('a GM closes the vote (/vote close)', closed, text(reply)[:200])
+        if not closed:
+            return
         # One voteManager call that skips the client cache runs the server's settle.
         # [V] voting.py:47 remoteSvc = sm.RemoteSvc('voteManager')
-        safe(lambda: votes_svc().remoteSvc.CanRunForCEO())
-        got, waited = wait_for(lambda: ceo_of_corp(corp) == other, timeout_ms=PEER_WAIT_MS, step_ms=2000)
+        ok, v = safe(lambda: votes_svc().remoteSvc.CanRunForCEO())
+        check('one voteManager call after the close (CanRunForCEO)', ok, text(v)[:200])
+
+        def settled():
+            # Each poll calls the server again, so a failed first call cannot stall the settle.
+            safe(lambda: votes_svc().remoteSvc.CanRunForCEO())
+            return ceo_of_corp(corp) == other
+        got, waited = wait_for(settled, timeout_ms=PEER_WAIT_MS, step_ms=2000)
         check('a won CEO vote with a share majority hands the seat to B', bool(got),
               'ceoID %s, B %s after %s ms' % (text(ceo_of_corp(corp)), text(other), text(waited)))
 

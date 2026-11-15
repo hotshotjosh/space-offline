@@ -666,7 +666,10 @@ pub fn slash(
     let (true, Ok(id)) = (verb.eq_ignore_ascii_case("close"), id.parse::<i64>()) else {
         return text(SLASH_USAGE.to_owned());
     };
-    if close_now(reg.deltas_mut(), id, crate::pyutil::filetime_now()) {
+    let now = crate::pyutil::filetime_now();
+    // Read first: a refusal must not dirty the world.
+    if get(reg.deltas(), id).is_some_and(|c| c.is_open(now)) && close_now(reg.deltas_mut(), id, now)
+    {
         text(format!("vote {id} closed; it acts on the next vote call"))
     } else {
         text(format!("vote {id} is missing or already closed"))
@@ -1315,6 +1318,7 @@ mod tests {
         shares(&mut d);
         let id = typed(&mut d, VOTE_CEO, BOB);
         vote(&mut d, id, ALICE, &[], 0, T0).unwrap();
+        vote(&mut d, id, BOB, &[], 0, T0).unwrap();
         assert!(pending(&d, T0 + 5).is_empty(), "still open");
         assert!(close_now(&mut d, id, T0 + 5));
         assert_eq!(get(&d, id).unwrap().end, T0 + 5);
