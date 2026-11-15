@@ -194,6 +194,8 @@ comment exactly as shown.
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
 | `mining/geodes.tsv` | L6A GEODES (`content_geodes.py`, the `geodes` section) | L6A (`eve-mod-econ` `geode`: the geode crate types) |
 | `mining/geode-candidates.tsv` | L6A GEODES (`content_geodes.py`) | the owner, to pick from; the server does not read it |
+| `proving/match_types.tsv` | #64 PG-1a (`content_proving.py`, the `proving` section) | #64 PG-1b/c (`proving`: not read yet) |
+| `proving/match_rewards.tsv` | #64 PG-1a (`content_proving.py`) | #64 PG-1b/c (`proving`: not read yet) |
 | `dbuffs/modifiers.tsv` | K-BOOST | K-BOOST (`dbuff_data`) |
 | `mutators/ranges.tsv` | #222 MUTA-DATA (`content_mutators.py`, the `mutators` section) | #222 (`mutator_data`) |
 | `mutators/mappings.tsv` | #222 MUTA-DATA (`content_mutators.py`) | #222 (`mutator_data`) |
@@ -1851,6 +1853,32 @@ Invented example rows:
 | `tier` | `1..3` | a higher tier holds more prizes and bigger ones (`tunables::PRIZES_BY_TIER`) |
 
 The weights of what a geode holds are the authored `content/econ/geode-loot.tsv` (`role`, `weight`, `why`), by role and never by type id.
+
+### `proving/match_types.tsv` and `proving/match_rewards.tsv` (#64 PG-1a)
+
+- **Writer:** `tools/content_proving.py`, the `proving` section of `content.py`. Input: the client's `pvpfilamentmatchtypes` (stride 96, `findings/pyd-schemas.tsv`) and `types`. `check` re-derives both files and fails on any `filamentTypeID` outside group 4050 (the filament group).
+- **Readers:** none yet. PG-1b's `proving::Catalogue` leaves the match type blank until a later lane reads these. Optional.
+- **Key:** `match_type_id` (the client's table key). `match_rewards.tsv` has one row per `rewards` entry, in the client's list order.
+- **Empty fields:** an optional field whose presence bit the client row leaves clear is written empty (the client's getter returns `None`, `[V]` `findings/pyd-schemas.tsv` `optional(bit, word=+92)` and the `fsd.py` generic decoder). They are `min_queue_multiplier`, `max_of_ship_type`, `max_of_ship_group`, `meta_level_cap`, `banned_modules_list`, `limited_modules_list`, `limited_modules_count` and `loot_table_id`.
+
+```
+#match_type_id	filament_type_id	fleets	fleet_size	min_queue_multiplier	ship_restrictions	max_of_ship_type	max_of_ship_group	meta_level_cap	banned_modules_list	limited_modules_list	limited_modules_count	loot_table_id	event_name_id	event_description_id	filament_description_id	restrictions_description_id	rewards_hint_id	rules_hint_id	ship_restrictions_hint_id
+#match_type_id	amount	type_id
+```
+
+| column | type | meaning |
+|---|---|---|
+| `match_type_id` | `i64` | the match type's key |
+| `filament_type_id` | `i64` | the filament item that opens it (group 4050) |
+| `fleets`, `fleet_size` | `i64` | `numberOfFleets` teams of `fleetSize` pilots |
+| `min_queue_multiplier` | `i64?` | `minimumQueueSizeMultiplier` |
+| `ship_restrictions` | `i64` | a typelist id of the allowed hulls |
+| `max_of_ship_type`, `max_of_ship_group` | `i64?` | most of one hull or group per team |
+| `meta_level_cap` | `i64?` | `moduleAndImplantMetaLevelRestrictions` |
+| `banned_modules_list`, `limited_modules_list`, `limited_modules_count` | `i64?` | type list ids and the limit |
+| `loot_table_id` | `i64?` | `provingGroundLootTableID`: a table the client does not ship `[V]` (`docs/re/proving-grounds.md` §3.3), carried as an id |
+| `*_id` (names, descriptions, hints) | `i64` | client message ids, not resolved |
+| `amount`, `type_id` | `i64` | one reward entry: a count of an item type |
 
 ### `deploy/units.tsv` (hand-data, #109)
 
