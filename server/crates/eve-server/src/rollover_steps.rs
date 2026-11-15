@@ -12,9 +12,11 @@ use crate::rollover::{Run, Step};
 
 /// Every rollover step, in the order the rollover runs them.
 pub const STEPS: &[Step] = &[
-    // E1: settle every parked bot's offline career up to the rollover while
-    // the rocks are still the day's, before the asteroid reset below resets
-    // every belt. Its count is the agents settled.
+    // E1: settle a slice of the parked bots' offline careers (gatherers first)
+    // up to the rollover while the rocks are still the day's, before the
+    // asteroid reset below. One slice per rollover: the `econ_agents` row below
+    // is a no-op. The sweep settles the rest after the fold. Its count is the
+    // agents settled in the slice.
     Step {
         name: "econ_agents_close",
         run: Run::Once(crate::econ_agents::on_rollover),
@@ -107,9 +109,10 @@ pub const STEPS: &[Step] = &[
         name: "corp_offices",
         run: Run::Once(|w, d| crate::service::corp_office::on_rollover(w, d.now)),
     },
-    // E1: every parked bot's offline career is settled up to the rollover,
-    // so the day's `[econ]` line holds the day's offline flows. Before the
-    // ledger. Its count is the agents settled.
+    // E1: a no-op after `econ_agents_close` in the same rollover (the slice
+    // already ran). The agents the sweep settles later are counted in an
+    // `[econ] late` line and land in the next day's `[econ]` line. Its count
+    // is 0.
     Step {
         name: "econ_agents",
         run: Run::Once(crate::econ_agents::on_rollover),
