@@ -633,7 +633,7 @@ fn a_natural_grammar_spawn_undocks_within_a_bound() {
 /// sockets, the server holds each ship (`crimewatch::logged_off`), and when
 /// the hold ends (read from `held_until`, never a fixed number) the hull is
 /// gone from the roster. The one test that drives the bot driver, not a mock
-/// client, from the words to the hull leaving.
+/// client, from the words to the hold, with the hold's end ticked by hand.
 #[test]
 fn a_despawned_bot_in_space_leaves_the_roster_after_the_log_off_hold() {
     use eve_server::account_book::{Book, ensure_bot_account, find};
@@ -731,7 +731,9 @@ fn a_despawned_bot_in_space_leaves_the_roster_after_the_log_off_hold() {
         panic!("both bots in space (out={out}) with a character each: {ids:?}");
     }
     let in_roster = |id: i64| world.read().expect("world").roster().get(id).is_some();
-    let both_in = ids.iter().all(|id| in_roster(*id));
+    let both_in = until(Duration::from_secs(20), || {
+        ids.iter().all(|id| in_roster(*id))
+    });
     let despawn = slash(&mut gm, "/bots despawn all");
     // Every ship is put under the hold once its socket is shut down.
     let mut holds: Vec<Option<_>> = vec![None; 2];
@@ -754,6 +756,12 @@ fn a_despawned_bot_in_space_leaves_the_roster_after_the_log_off_hold() {
         eve_server::crimewatch::tick(&mut world.write().expect("world"), end);
     }
     let gone: Vec<bool> = ids.iter().map(|id| !in_roster(*id)).collect();
+    let reheld: Vec<_> = {
+        let w = world.read().expect("world");
+        ids.iter()
+            .map(|id| w.combat().crimewatch().held_until(*id))
+            .collect()
+    };
     finish(&stop, thread);
     assert!(both_in, "both hulls were in space before the despawn");
     assert!(despawn.starts_with("despawned"), "{despawn}");
@@ -763,7 +771,11 @@ fn a_despawned_bot_in_space_leaves_the_roster_after_the_log_off_hold() {
     );
     assert!(offline, "the bots' sessions are cleared");
     assert!(still_there, "the hulls stay while the hold runs");
-    assert_eq!(gone, [true, true], "the hulls are gone when the hold ends");
+    assert_eq!(
+        gone,
+        [true, true],
+        "the hulls are gone when the hold ends (re-held: {reheld:?})"
+    );
 }
 
 /// GANG-SUMMON: `/bots come alpha` over the real link calls a group to the
