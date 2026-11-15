@@ -54,8 +54,13 @@
 //!   rows (`econ_ledger::book_late`), which the next fold subtracts. That day's
 //!   money stock, fills and price index stay as the fold saw them, and the
 //!   `[econ]` line and the `econ_report` TSV printed at the rollover do not
-//!   include them; a `[econ] late` line counts them and what was booked.
-//!   Gatherers past the slice still cut the new day's rocks.
+//!   include them; a `[econ] late` line counts them and what was booked,
+//!   and the next day's `[econ]` line carries their net as `late=`.
+//!   Gatherers past the slice still cut the new day's rocks. A restart
+//!   mid-sweep loses the open rollovers ([`Book`] is not persisted): the
+//!   agents not yet reached settle in the next timed sweep, one span to its
+//!   time on the new day's cap, and their flows fall in the next fold
+//!   (nothing counts twice).
 //!
 //! ## The clock
 //!
@@ -134,9 +139,10 @@ pub const SWEEP_SLICE: usize = 2;
 /// At most this many agents settle in one rollover step **[A]**; the rest wait
 /// for the sweep ([`SWEEP_SLICE`] a tick), settled up to the rollover's own
 /// time (span, and work cap against the closed day); their flows are booked
-/// to the closed day's `econ` rows after its `[econ]` line printed. Falsified by a `[world]` rollover
-/// timing over 25 ms with this many parked ratters per rollover (lower it),
-/// or by a `[econ] late` count that is most of the parked agents (raise it).
+/// to the closed day's `econ` rows after its `[econ]` line printed.
+/// Falsified by a `[world]` rollover timing over 25 ms with this many parked
+/// ratters per rollover (lower it), or by a `[econ] late` count that is most
+/// of the parked agents (raise it).
 pub const ROLLOVER_SLICE: usize = 64;
 
 /// How many `[settle]` reports the world remembers for `/settle`.
@@ -462,10 +468,16 @@ impl Report {
 }
 
 /// The agents' world slot: the sweep's clock, the recent reports and the
-/// running totals. Not persisted (the rows are).
+/// running totals. Not persisted (the rows are). A restart mid-sweep loses
+/// the targets: the agents not yet reached settle in the next timed sweep,
+/// one span to its time on the new day's cap, and their flows fall in the
+/// next fold (nothing counts twice: the `late` rows already booked persist).
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Book {
     swept_at: BlueTime,
+    /// The time of the last rollover [`on_rollover`] started: the second
+    /// `STEPS` row of the same rollover answers 0.
+    rolled_at: BlueTime,
     /// A sweep is under way: it began at `swept_at` and has due agents left.
     sweeping: bool,
     /// The rollovers the running sweep settles up to, oldest first: one
@@ -512,7 +524,7 @@ pub struct Late {
 impl Late {
     fn line(&self) -> String {
         format!(
-            "[econ] late day={} agents={} isk={:.0} booked faucet={:.0} sink={:.0}{}: settled up to the rollover, booked to that day's rows",
+            "[econ] late day={} agents={} isk={:.0} booked faucet={:.0} sink={:.0}{}: settled up to the rollover, booked to that day's rows{}",
             self.day,
             self.agents,
             self.isk,
@@ -522,6 +534,11 @@ impl Late {
                 format!(" unbooked={}", self.unbooked)
             } else {
                 String::new()
+            },
+            if self.unbooked > 0 {
+                " except the unbooked"
+            } else {
+                ""
             }
         )
     }
@@ -796,8 +813,10 @@ fn sweep_ordered(
 /// `late_before` is late (settled after its day's fold): its journal rows
 /// and goods are booked to that day's `econ` rows
 /// (`econ_ledger::book_late`) and counted in the target's [`Late`], which
-/// `targets` mirrors index for index from [`Book`]'s. True when any piece
-/// settled.
+/// `targets` mirrors index for index from [`Book`]'s. A piece under
+/// [`rules::MIN_SPAN_S`] is skipped and merges into the next target's span,
+/// on that target's cap and not booked late (seconds of work). True when any
+/// piece settled.
 fn settle_through(reg: &mut Registry, ch: i64, targets: &[Target], late_before: usize) -> bool {
     let mut any = false;
     for (i, t) in targets.iter().enumerate() {
@@ -857,10 +876,11 @@ pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
 /// [`on_rollover`] with a slice of `slice` agents. A parameter only so tests
 /// can leave every agent to the sweep.
 fn start_rollover(reg: &mut Registry, d: &crate::rollover::Day, slice: usize) -> usize {
-    if reg.ext::<Book>().targets.last().map(|t| t.to) == Some(d.now) {
+    if reg.ext::<Book>().rolled_at == d.now {
         return 0; // the second STEPS row of the same rollover
     }
     let book = reg.ext_mut::<Book>();
+    book.rolled_at = d.now;
     if !book.sweeping {
         book.targets.clear();
     }
