@@ -1157,6 +1157,94 @@ fn the_rollover_step_settles_every_parked_agent() {
     assert!(rocks_left(&reg) < 8_000);
 }
 
+/// `n` parked agents with no ship, each six hours behind `now`.
+fn parked_crowd(n: usize, now: BlueTime) -> (Registry, Vec<i64>) {
+    let ids: Vec<i64> = (0..n as i64).map(|i| BOT + 10 + i).collect();
+    let mut reg = Registry::new(SandboxConfig {
+        characters: ids
+            .iter()
+            .map(|&id| character(id, &format!("Invented Agent {id}"), true, 1_000.0))
+            .collect(),
+        ..SandboxConfig::default()
+    });
+    for &id in &ids {
+        park(&mut reg, id, "miner", now).expect("parks");
+        let mut a = agent(&reg, id).expect("row");
+        a.settled_to = now - HOURS6;
+        write(&mut reg, id, a);
+    }
+    (reg, ids)
+}
+
+fn rollover_day(now: BlueTime) -> crate::rollover::Day {
+    crate::rollover::Day {
+        day: 1,
+        days: 1,
+        now,
+    }
+}
+
+#[test]
+fn rollover_settles_at_most_the_slice() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, _) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    assert_eq!(on_rollover(&mut reg, &rollover_day(now)), ROLLOVER_SLICE);
+    assert_eq!(reg.ext::<Book>().settled(), ROLLOVER_SLICE as u64);
+}
+
+#[test]
+fn the_sweep_finishes_what_the_rollover_left() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    on_rollover(&mut reg, &rollover_day(now));
+    // The tick is well past the rollover; the left-over agents still settle
+    // up to the rollover's time, the day they belong to.
+    let late = now + 5 * 3_600 * 10_000_000;
+    let mut ticks = 0;
+    while reg.ext::<Book>().settled() < ids.len() as u64 && ticks < 20 {
+        tick(&mut reg, Instant::now(), late);
+        ticks += 1;
+    }
+    assert_eq!(reg.ext::<Book>().settled(), ids.len() as u64);
+    assert_eq!(ticks, 3usize.div_ceil(SWEEP_SLICE), "a slice a tick");
+    for &id in &ids {
+        assert_eq!(agent(&reg, id).expect("row").settled_to, now);
+    }
+}
+
+#[test]
+fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
+    let now = crate::pyutil::filetime_now();
+    let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + 3, now);
+    on_rollover(&mut reg, &rollover_day(now));
+    tick(&mut reg, Instant::now(), now + 1);
+    let mid = reg.ext::<Book>().settled();
+    assert_eq!(mid, (ROLLOVER_SLICE + SWEEP_SLICE) as u64);
+    // The next day's rollover arrives with one agent still unsettled.
+    let next = now + 24 * 3_600 * 10_000_000;
+    let n = on_rollover(&mut reg, &rollover_day(next));
+    // Every agent has a span to the new time, so the slice settles again.
+    assert_eq!(n, ROLLOVER_SLICE);
+    let mut ticks = 0;
+    while ticks < 20 {
+        tick(&mut reg, Instant::now(), next + 1);
+        ticks += 1;
+        if !reg.ext::<Book>().sweeping {
+            break;
+        }
+    }
+    for &id in &ids {
+        assert_eq!(
+            agent(&reg, id).expect("row").settled_to,
+            next,
+            "every agent is settled to the second rollover"
+        );
+    }
+    // Each agent settled once per span it had: the one the first sweep never
+    // reached skipped the first span, and nobody settled a span twice.
+    assert_eq!(reg.ext::<Book>().settled(), mid + ids.len() as u64);
+}
+
 // ---- the wire -----------------------------------------------------------------
 
 fn econ_agent(reg: &mut Registry, who: Option<i64>, method: &str, args: &[PyValue]) -> PyValue {

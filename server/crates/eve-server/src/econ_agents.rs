@@ -45,7 +45,9 @@
 //!   the offline day and not as one lump at login, and a bot that never
 //!   comes back still works (to the caps).
 //! - **At the rollover** ([`on_rollover`], a `rollover_steps::STEPS` row):
-//!   every parked agent, so the day's `[econ]` line holds its day.
+//!   a slice ([`ROLLOVER_SLICE`]) of the parked agents, then the sweep
+//!   finishes the rest, each settled up to the rollover's time so the
+//!   day's `[econ]` line holds its day.
 //!
 //! ## The clock
 //!
@@ -120,6 +122,13 @@ pub const SWEEP_EVERY_H: f64 = 1.0;
 /// of `econ_agents` above the 25 ms budget (lower it), or by a sweep that
 /// outlasts its period (raise it).
 pub const SWEEP_SLICE: usize = 2;
+
+/// At most this many agents settle in one rollover step **[A]**; the rest wait
+/// for the sweep ([`SWEEP_SLICE`] a tick), settled up to the rollover's own
+/// time so the closed day keeps their output. Falsified by a `[world]`
+/// rollover timing over 25 ms with this many parked ratters (lower it), or a
+/// day line that misses settled output (raise it).
+pub const ROLLOVER_SLICE: usize = 64;
 
 /// How many `[settle]` reports the world remembers for `/settle`.
 pub const KEEP_REPORTS: usize = 20;
@@ -450,6 +459,10 @@ pub struct Book {
     swept_at: BlueTime,
     /// A sweep is under way: it began at `swept_at` and has due agents left.
     sweeping: bool,
+    /// The time the running sweep settles up to: the rollover's, when one
+    /// started it (so the closed day keeps the output); 0 for a timed sweep,
+    /// which settles to the tick's time.
+    sweep_to: BlueTime,
     recent: Vec<Report>,
     settled: u64,
     isk: f64,
@@ -613,9 +626,16 @@ pub fn tick(reg: &mut Registry, _: Instant, ft: BlueTime) {
         }
         book.sweeping = true;
         book.swept_at = ft;
+        book.sweep_to = 0;
     }
-    if sweep(reg, ft, SWEEP_SLICE) == 0 {
-        reg.ext_mut::<Book>().sweeping = false;
+    let to = match reg.ext::<Book>().sweep_to {
+        0 => ft,
+        t => t,
+    };
+    if sweep(reg, to, SWEEP_SLICE) == 0 {
+        let book = reg.ext_mut::<Book>();
+        book.sweeping = false;
+        book.sweep_to = 0;
     }
 }
 
@@ -641,11 +661,20 @@ pub(crate) fn sweep(reg: &mut Registry, now: BlueTime, max: usize) -> usize {
     n
 }
 
-/// **The rollover step** (`rollover_steps::STEPS`): settle every parked
-/// agent, so the day's `[econ]` line holds the day. Its count is the agents
-/// settled.
+/// **The rollover step** (`rollover_steps::STEPS`): settle at most
+/// [`ROLLOVER_SLICE`] parked agents at the rollover's time, then mark the
+/// book as sweeping up to that time so [`tick`] settles the rest
+/// ([`SWEEP_SLICE`] a tick) against the day just closed. A rollover that
+/// arrives mid-sweep takes over the sweep: its time becomes the target and
+/// the longest-unsettled agents go first, so none is settled twice for the
+/// same span or skipped. Its count is the agents settled in the slice.
 pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
-    sweep(reg, d.now, usize::MAX)
+    let n = sweep(reg, d.now, ROLLOVER_SLICE);
+    let book = reg.ext_mut::<Book>();
+    book.sweeping = true;
+    book.swept_at = d.now;
+    book.sweep_to = d.now;
+    n
 }
 
 #[cfg(test)]
