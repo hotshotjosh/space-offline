@@ -36,9 +36,10 @@
 //! ## State (delta kind `emblem`)
 //!
 //! - `own char ship_type cosmetic_type -> 1`: a licence the pilot owns.
-//! - `slot ship_item backend_slot -> cosmetic_type writer`: an enabled slot. Rows of
-//!   an item that no longer exists are ignored on read and dropped by
-//!   [`prune`] (run on every Display).
+//! - `slot ship_item backend_slot -> cosmetic_type writer`: an enabled slot. It
+//!   lights only for the writer while they own the licence. Rows of an item
+//!   that no longer exists are ignored on read and dropped by [`prune`] (run on
+//!   every Display).
 //!
 //! ## Assumptions
 //!
@@ -277,12 +278,16 @@ fn slots_of(reg: &Registry, ship: i64) -> Vec<(i64, i64)> {
     // new owner who buys the same licence does not inherit the old owner's
     // slots. A one-field row (written before the writer field existed) has no
     // writer and keeps the licence-only rule: a migration choice, not an
-    // assumption about the client.
+    // assumption about the client. A row whose writer field does not parse is
+    // ignored.
     let mut v: Vec<(i64, i64)> = d
         .range(from..)
         .take_while(|(k, _)| k.len() == 3 && k[0] == SLOT && k[1] == s)
         .filter_map(|(k, val)| {
-            let writer: Option<i64> = val.get(1).and_then(|w| w.parse().ok());
+            let writer = match val.get(1) {
+                None => None,
+                Some(w) => Some(w.parse::<i64>().ok()?),
+            };
             Some((k[2].parse().ok()?, val.first()?.parse().ok()?, writer))
         })
         .filter(|&(_, c, writer)| owns(reg, owner, hull, c) && writer.is_none_or(|w| w == owner))
@@ -350,7 +355,10 @@ pub fn prune(reg: &mut Registry) {
 /// owner with no licence keeps no key, unless it has slot rows from a
 /// previous owner: it then gets `[]` so a boarding pilot's client drops the
 /// old logo. The rows light only for the pilot who wrote them, while they own
-/// the licence. The rows stay, so a hull handed back shows the logo again [A].
+/// the licence. The rows stay, so a hull handed back shows its old owner's logo again,
+/// except in a slot a later owner displayed into or cleared (one row per
+/// slot) [A]. Falsifier: a Tranquility client where a hull handed back to its
+/// old owner shows no logo until a new Display.
 pub fn slim(reg: &Registry, ids: &[i64]) -> SlimExtras {
     if reg.deltas().of(KIND).is_empty() {
         return Vec::new();
@@ -924,6 +932,22 @@ mod tests {
         assert_eq!(
             enabled(&reg, ALICE, ship),
             crate::pyutil::dict_kv([(PyValue::Int(0), PyValue::Int(CORPORATION_LOGO))])
+        );
+    }
+
+    #[test]
+    fn a_slot_row_with_a_malformed_writer_is_ignored() {
+        let mut reg = world();
+        let ship = ship_of(&reg, ALICE);
+        grant(&mut reg, ALICE, FRIGATE, CORPORATION_LOGO);
+        reg.deltas_mut().put(
+            KIND,
+            slot_key(ship, 0),
+            vec![CORPORATION_LOGO.to_string(), "x".to_owned()],
+        );
+        assert_eq!(
+            enabled(&reg, ALICE, ship),
+            crate::pyutil::dict_kv(Vec::<(PyValue, PyValue)>::new())
         );
     }
 
