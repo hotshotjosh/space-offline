@@ -1,10 +1,11 @@
 //! `pvpFilamentMgr`: the Proving Grounds calendar and its empty boards (#64,
 //! PG-1b). The wire arms only; the rules are `crate::proving`.
 //!
-//! `JoinPVPQueue` refuses with `PVPJumpError` code 33 until PG-1c puts the queue
-//! behind it **[V]** `pvpFilamentController.JoinQueue` (it reads `PVPJumpError`
-//! from the raised `UserError`). `LeavePVPQueue` answers `None`: `LeaveQueue`
-//! does not catch an error, and `Close()` calls it **[V]**.
+//! `JoinPVPQueue` answers the estimate 0 ("unknown"), or raises `PVPJumpError`
+//! with every reason `proving::queue::join_errors` finds **[V]**
+//! `pvpFilamentController.JoinQueue`. `LeavePVPQueue` answers `None` and never
+//! raises: `LeaveQueue` does not catch an error, and `Close()` calls it
+//! **[V]**.
 
 use super::*;
 use crate::proving::{self, Catalogue};
@@ -36,8 +37,24 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             Ok(PyValue::None)
         }
-        "JoinPVPQueue" => Err(proving::refusal(proving::EVENT_NOT_ACTIVE)),
-        "LeavePVPQueue" => Ok(PyValue::None),
+        "JoinPVPQueue" => {
+            let (Some(item), Some(type_id)) = (ar.int(0), ar.int(1)) else {
+                return Err(ar.expected("(itemID, typeID)"));
+            };
+            let Some(me) = req.actor else {
+                return Err(ar.expected("a character"));
+            };
+            match proving::queue::join_slot(reg, me, item, type_id, now) {
+                Ok(estimate) => Ok(PyValue::Int(estimate)),
+                Err(errors) => Err(proving::queue::raise(&errors)),
+            }
+        }
+        "LeavePVPQueue" => {
+            if let Some(me) = req.actor {
+                proving::queue::leave_slot(reg, me);
+            }
+            Ok(PyValue::None)
+        }
         _ => Err(reg.no_method(req)),
     }
 }

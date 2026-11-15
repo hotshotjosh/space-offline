@@ -21,7 +21,7 @@ const DAYS_1601_TO_1970: i64 = 134_774;
 
 /// The FILETIME of `y-m-d hh:00` UTC, by Hinnant's `days_from_civil`: an
 /// oracle that shares no code with the module.
-fn ft(y: i64, m: i64, d: i64, h: i64) -> i64 {
+pub(crate) fn ft(y: i64, m: i64, d: i64, h: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -29,6 +29,10 @@ fn ft(y: i64, m: i64, d: i64, h: i64) -> i64 {
     let doy = (153 * mp + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     (era * 146_097 + doe - 719_468 + DAYS_1601_TO_1970) * DAY + h * HOUR
+}
+
+pub(crate) fn header_for_queue() -> String {
+    header()
 }
 
 fn header() -> String {
@@ -619,23 +623,13 @@ fn unknown_method_is_no_such_method() {
 }
 
 #[test]
-fn join_is_refused_with_event_not_active_and_leave_answers_none() {
+fn join_without_arguments_is_a_bad_call_and_leave_without_a_character_answers_none() {
     let mut reg = world(catalogue(&[]));
+    assert!(matches!(
+        call(&mut reg, "JoinPVPQueue", &[]),
+        Err(ServiceError::BadArguments { .. })
+    ));
     let args = [PyValue::Int(100_880_001), PyValue::Int(FIL_X)];
-    let Err(ServiceError::Raise(v)) = call(&mut reg, "JoinPVPQueue", &args) else {
-        panic!("Join did not raise");
-    };
-    let expected = eve_proto::user_error(
-        "PVPJumpError",
-        crate::pyutil::pypairs(vec![(
-            "errors",
-            PyValue::List(vec![PyValue::Tuple(vec![
-                PyValue::Int(33),
-                PyValue::Tuple(vec![]),
-            ])]),
-        )]),
-    );
-    assert_eq!(v, expected);
     assert_eq!(
         call(&mut reg, "LeavePVPQueue", &args).unwrap(),
         PyValue::None,

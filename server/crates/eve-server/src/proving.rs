@@ -89,8 +89,7 @@
 //!
 //! ## Not here yet
 //!
-//! - **The queue** (`JoinPVPQueue` refuses with code 33; `LeavePVPQueue`
-//!   answers `None`): PG-1c. `Leave` must not raise, because
+//! - **The queue** is [`queue`] (PG-1c). `Leave` never raises, because
 //!   `pvpFilamentController.LeaveQueue` does not catch a `UserError`
 //!   **[V]**.
 //! - **`AbyssalPVPEndGateActivation`**, a third `pvpFilamentMgr` call
@@ -763,19 +762,11 @@ pub fn next_event_date(cat: &Catalogue, now: i64) -> PyValue {
     cat.next_date(now).map_or(PyValue::None, |d| bstr(&d))
 }
 
-/// The refusal a join gets until PG-1c: `UserError('PVPJumpError',
+/// A refusal with one error and no arguments: `UserError('PVPJumpError',
 /// {'errors': [(code, ())]})` **[V]** `pvpFilamentController.py` (`JoinQueue`).
+/// The queue raises its own lists ([`queue::raise`]).
 pub fn refusal(code: i64) -> crate::service::ServiceError {
-    crate::service::ServiceError::Raise(eve_proto::user_error(
-        ERROR,
-        crate::pyutil::pypairs(vec![(
-            "errors",
-            PyValue::List(vec![PyValue::Tuple(vec![
-                PyValue::Int(code),
-                PyValue::Tuple(Vec::new()),
-            ])]),
-        )]),
-    ))
+    queue::raise(&[(code, Vec::new())])
 }
 
 // ---------------------------------------------------------------------------
@@ -875,6 +866,8 @@ pub fn push_statistics(
     }
     known
 }
+
+pub mod queue;
 
 #[cfg(test)]
 mod tests;
