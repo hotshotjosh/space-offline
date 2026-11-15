@@ -21,13 +21,19 @@
 //! - **The day** is every journal row written since the last rollover's
 //!   cursor (the highest transaction id it read, an `econ` delta), so a
 //!   forced rollover or an N-day catch-up never counts a row twice.
+//! - **A late settlement** (#209, [`book_late`]): an offline agent the
+//!   rollover's sweep settles after the fold is booked to the closed day's
+//!   rows (its journal rows by ref and in `day total`, its goods moved out
+//!   of today's), and its rows are kept as `late` rows that the next fold
+//!   subtracts ([`window`]), so no row counts in two days.
 //! - **What persists** ([`KIND`], `econ`): per day and ref, `day ref ->
 //!   credit debit rows` (C5 §7.3's `econ <day> <ref> <sum>`, with the sum
 //!   kept as its two signs); per day, `day total -> faucet sink M_h M_bots
 //!   npc_fills trades dbs_min unclassified`; `day closed -> index indexed
 //!   bot_to_human human_to_bot`; `day goods <class> -> minted destroyed`
 //!   (today's running `goods <class>` rows fold into it); `burn -> on|off`;
-//!   and `cursor -> last_tx`.
+//!   `cursor -> last_tx`; and until the next fold, `late <ref> -> credit
+//!   debit rows` and `late sum -> faucet sink unclassified`.
 //!   [`KEEP_DAYS`] days are kept.
 //! - **The bot burn** ([`burn`], C5 §7.2): a bot's balance above
 //!   [`BOT_WALLET_CAP`] is taken at rollover, journalled as ref 3 with
@@ -848,6 +854,256 @@ fn fold_goods(reg: &mut Registry, day: u32) -> Goods {
     g
 }
 
+// ---- late settlements (#209) ------------------------------------------------------
+
+/// The key head of the rows [`book_late`] keeps until the next fold
+/// subtracts them: `late <ref> -> credit debit rows` and `late sum ->
+/// faucet sink unclassified`. Never a day number, so [`prune`] keeps them
+/// and [`history`] skips them.
+const LATE: &str = "late";
+
+/// Where the journal and today's goods stood before a settlement that is
+/// booked to an already closed day ([`book_late`]).
+#[derive(Debug, Clone)]
+pub struct Mark {
+    next_tx: i64,
+    goods: Goods,
+}
+
+/// The [`Mark`] of the journal and today's goods now.
+pub fn mark(reg: &Registry) -> Mark {
+    Mark {
+        next_tx: reg.journal().next_id(),
+        goods: goods_today(reg),
+    }
+}
+
+/// Whether `day`'s rows are written: its rollover's fold ran.
+pub fn folded(reg: &Registry, day: u32) -> bool {
+    reg.deltas()
+        .of(KIND)
+        .get(&vec![day.to_string(), "total".to_owned()])
+        .is_some()
+}
+
+/// What [`book_late`] booked.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Booked {
+    pub faucet: f64,
+    pub sink: f64,
+    pub rows: usize,
+}
+
+/// **Book what one settlement did since `m` to the closed `day`**:
+/// - its journal rows (every row from `m`'s next transaction id on) are
+///   added to `day <ref>` and to `day total`'s faucet, sink and
+///   unclassified, and are kept in the `late <ref>` and `late sum` rows,
+///   which the next fold subtracts ([`window`]);
+/// - its goods move from today's running rows to `day goods <class>`.
+///
+/// `None` when `day` is not folded yet: the flows then fall in that day's
+/// fold like any other. `day total`'s money stock, fills and the
+/// closed-loop index stay as the fold saw them. The `[econ]` line and the
+/// `econ_report` TSV were already written; the `[econ] late` line
+/// (`econ_agents`) prints what was booked.
+pub fn book_late(reg: &mut Registry, day: u32, m: &Mark) -> Option<Booked> {
+    if !folded(reg, day) {
+        return None;
+    }
+    let s = summarize(
+        reg.journal()
+            .entries()
+            .iter()
+            .rev()
+            .take_while(|e| e.transaction_id >= m.next_tx),
+    );
+    let now = goods_today(reg);
+    let moved = now.minus(&m.goods);
+    put_running_goods(reg, &now, &m.goods);
+    add_day_goods(reg, day, &moved);
+    add_sum_rows(reg, &day.to_string(), &s);
+    add_sum_rows(reg, LATE, &s);
+    Some(Booked {
+        faucet: s.faucet,
+        sink: s.sink,
+        rows: s.by_ref.values().map(|r| r.rows).sum(),
+    })
+}
+
+/// The journal since the cursor, less what [`book_late`] already booked to
+/// a closed day: what the next fold folds and `/econ` shows "so far".
+pub fn window(reg: &Registry) -> Summary {
+    let mut s = since(reg, cursor(reg));
+    let late = late_summary(reg);
+    for (r, l) in &late.by_ref {
+        if let Some(x) = s.by_ref.get_mut(r) {
+            x.credit = (x.credit - l.credit).max(0.0);
+            x.debit = (x.debit - l.debit).max(0.0);
+            x.rows = x.rows.saturating_sub(l.rows);
+        }
+    }
+    s.by_ref.retain(|_, x| x.rows > 0);
+    s.faucet -= late.faucet;
+    s.sink -= late.sink;
+    s.unclassified = s.unclassified.saturating_sub(late.unclassified);
+    s
+}
+
+fn parse_ref_sum(v: &[String]) -> Option<RefSum> {
+    let [c, d, n] = v else { return None };
+    Some(RefSum {
+        credit: c.parse().ok()?,
+        debit: d.parse().ok()?,
+        rows: n.parse().ok()?,
+    })
+}
+
+fn ref_sum_row(r: &RefSum) -> Vec<String> {
+    vec![
+        r.credit.to_string(),
+        r.debit.to_string(),
+        r.rows.to_string(),
+    ]
+}
+
+/// The `late` rows read back: what was booked to a closed day since the
+/// last fold.
+fn late_summary(reg: &Registry) -> Summary {
+    let mut s = Summary::default();
+    for (k, v) in reg.deltas().of(KIND) {
+        match &k[..] {
+            [l, t] if l == LATE && t == "sum" => {
+                if let [f, k, u] = &v[..] {
+                    s.faucet = f.parse().unwrap_or(0.0);
+                    s.sink = k.parse().unwrap_or(0.0);
+                    s.unclassified = u.parse().unwrap_or(0);
+                }
+            }
+            [l, r] if l == LATE => {
+                if let (Ok(r), Some(sum)) = (r.parse::<i64>(), parse_ref_sum(v)) {
+                    s.by_ref.insert(r, sum);
+                }
+            }
+            _ => {}
+        }
+    }
+    s
+}
+
+/// Add `s` to the rows under `k0`: per ref `k0 <ref>`, and `k0 total` (a
+/// day) or `late sum` ([`LATE`]).
+fn add_sum_rows(reg: &mut Registry, k0: &str, s: &Summary) {
+    if s.by_ref.is_empty() {
+        return;
+    }
+    let deltas = reg.deltas_mut();
+    for (r, add) in &s.by_ref {
+        let key = vec![k0.to_owned(), r.to_string()];
+        let mut sum = deltas
+            .of(KIND)
+            .get(&key)
+            .and_then(|v| parse_ref_sum(v))
+            .unwrap_or_default();
+        sum.credit += add.credit;
+        sum.debit += add.debit;
+        sum.rows += add.rows;
+        deltas.put(KIND, key, ref_sum_row(&sum));
+    }
+    if k0 == LATE {
+        let key = vec![LATE.to_owned(), "sum".to_owned()];
+        let (f, k, u) = match deltas.of(KIND).get(&key).map(|v| &v[..]) {
+            Some([f, k, u]) => (
+                f.parse().unwrap_or(0.0),
+                k.parse().unwrap_or(0.0),
+                u.parse().unwrap_or(0),
+            ),
+            _ => (0.0, 0.0, 0usize),
+        };
+        deltas.put(
+            KIND,
+            key,
+            vec![
+                (f + s.faucet).to_string(),
+                (k + s.sink).to_string(),
+                (u + s.unclassified).to_string(),
+            ],
+        );
+    } else if let Ok(day) = k0.parse::<u32>() {
+        let key = vec![k0.to_owned(), "total".to_owned()];
+        if let Some(mut t) = deltas
+            .of(KIND)
+            .get(&key)
+            .and_then(|v| Totals::from_row(day, v))
+        {
+            t.faucet += s.faucet;
+            t.sink += s.sink;
+            t.unclassified += s.unclassified;
+            deltas.put(KIND, key, t.to_row());
+        }
+    }
+}
+
+/// Delete every `late` row: the fold that subtracted them ran.
+fn clear_late(reg: &mut Registry) {
+    let keys: Vec<Vec<String>> = reg
+        .deltas()
+        .of(KIND)
+        .keys()
+        .filter(|k| k.first().is_some_and(|h| h == LATE))
+        .cloned()
+        .collect();
+    let deltas = reg.deltas_mut();
+    for k in keys {
+        deltas.del(KIND, &k);
+    }
+}
+
+impl Goods {
+    /// Per class, `self` less `o`, keeping the classes that differ. The
+    /// running counters only grow within a day, so against an earlier
+    /// snapshot it is never negative.
+    fn minus(&self, o: &Goods) -> Goods {
+        let mut g = Goods::default();
+        for (class, (m, d)) in &self.0 {
+            let (om, od) = o.0.get(class).copied().unwrap_or_default();
+            if (m - om, d - od) != (0, 0) {
+                g.0.insert(class, (m - om, d - od));
+            }
+        }
+        g
+    }
+}
+
+/// Write today's running goods rows back from `now` to `back`: a class in
+/// `now` that `back` lacks loses its row.
+fn put_running_goods(reg: &mut Registry, now: &Goods, back: &Goods) {
+    let deltas = reg.deltas_mut();
+    for class in now.0.keys() {
+        match back.0.get(class) {
+            Some((m, d)) => {
+                deltas.put(KIND, goods_key(class), vec![m.to_string(), d.to_string()]);
+            }
+            None => {
+                deltas.del(KIND, &goods_key(class));
+            }
+        }
+    }
+}
+
+/// Add `g` to `day`'s stored goods rows.
+fn add_day_goods(reg: &mut Registry, day: u32, g: &Goods) {
+    let deltas = reg.deltas_mut();
+    for (class, (m, d)) in &g.0 {
+        let key = vec![day.to_string(), "goods".to_owned(), (*class).to_owned()];
+        let (m0, d0) = deltas
+            .of(KIND)
+            .get(&key)
+            .and_then(|v| read_pair(v))
+            .unwrap_or_default();
+        deltas.put(KIND, key, vec![(m0 + m).to_string(), (d0 + d).to_string()]);
+    }
+}
+
 // ---- E11: the price index and the bot-human flow --------------------------------
 
 /// How many types the price index weighs (R-ECON §2.6: ten).
@@ -1032,7 +1288,8 @@ pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
     step(reg, d, burn)
 }
 
-/// Burn (when `burn_bots`), summarize the journal since the cursor, store
+/// Burn (when `burn_bots`), summarize the journal since the cursor (less
+/// what [`book_late`] already booked to an earlier day, [`window`]), store
 /// the day's rows (the ISK totals, the closed-loop figures and the goods),
 /// prune days older than [`KEEP_DAYS`], and print the `[econ]` line and the
 /// reward line. Returns the journal rows read.
@@ -1040,7 +1297,7 @@ pub fn step(reg: &mut Registry, d: &crate::rollover::Day, burn_bots: bool) -> us
     if burn_bots {
         burn(reg, d.now);
     }
-    let s = since(reg, cursor(reg));
+    let s = window(reg);
     // Lane clock: the days just ended are compressed days.
     let fills_since =
         d.now - crate::game_clock::span(reg, i64::from(d.days.max(1)) * crate::seed::DAY);
@@ -1069,6 +1326,7 @@ pub fn step(reg: &mut Registry, d: &crate::rollover::Day, burn_bots: bool) -> us
     if s.last_tx > 0 {
         deltas.put(KIND, vec!["cursor".to_owned()], vec![s.last_tx.to_string()]);
     }
+    clear_late(reg);
     prune(reg, d.day);
     crate::outln!("{} {}", totals.line(""), closed.part());
     crate::outln!("{}", reward_line(reg, &s));
@@ -1628,6 +1886,66 @@ mod tests {
         on_rollover(&mut w, &day(2));
         assert_eq!(w.character(BOT).unwrap().balance, over);
         assert!(history(&w).iter().all(|t| t.day > 0), "the row is no day");
+    }
+
+    // ---- late settlements (#209) -------------------------------------------------
+
+    fn late_rows(w: &Registry) -> usize {
+        w.deltas()
+            .of(KIND)
+            .keys()
+            .filter(|k| k.first().is_some_and(|h| h == LATE))
+            .count()
+    }
+
+    #[test]
+    fn a_late_booking_moves_its_rows_to_the_closed_day_and_out_of_the_next() {
+        let mut w = with_bots(0.0, 0.0, 0.0);
+        w.charge(HUMAN, -100.0, 85, 1, 0).expect("the human");
+        step(&mut w, &day(1), false);
+        let m = mark(&w);
+        w.charge(HUMAN, -40.0, 85, 1, 0).expect("the human");
+        let b = book_late(&mut w, 1, &m).expect("day 1 is folded");
+        assert!((b.faucet - 40.0).abs() < 1e-9, "{b:?}");
+        assert_eq!(b.rows, 1);
+        // A live new-day row after the late one.
+        w.charge(HUMAN, -7.0, 85, 1, 0).expect("the human");
+        assert!((window(&w).faucet - 7.0).abs() < 1e-9, "{:?}", window(&w));
+        step(&mut w, &day(2), false);
+        let h = history(&w);
+        assert!((h[0].faucet - 140.0).abs() < 1e-9, "{h:?}");
+        assert!((h[1].faucet - 7.0).abs() < 1e-9, "{h:?}");
+        let r = w
+            .deltas()
+            .of(KIND)
+            .get(&vec!["1".to_owned(), "85".to_owned()])
+            .and_then(|v| parse_ref_sum(v))
+            .expect("day 1's ref row");
+        assert!((r.credit - 140.0).abs() < 1e-9, "{r:?}");
+        assert_eq!(r.rows, 2);
+        assert_eq!(late_rows(&w), 0, "the fold cleared the late rows");
+    }
+
+    #[test]
+    fn a_late_booking_moves_goods_from_today_to_the_closed_day() {
+        let mut w = reg();
+        step(&mut w, &day(1), false);
+        let m = mark(&w);
+        let mut g = Goods::default();
+        g.add("ore", 5);
+        add_goods(&mut w, &g);
+        book_late(&mut w, 1, &m).expect("day 1 is folded");
+        assert_eq!(goods_of_day(&w, 1).0.get("ore"), Some(&(5, 0)));
+        assert!(goods_today(&w).0.is_empty(), "{:?}", goods_today(&w));
+    }
+
+    #[test]
+    fn a_booking_for_an_unfolded_day_does_nothing() {
+        let mut w = reg();
+        let rows = w.deltas().of(KIND).len();
+        let m = mark(&w);
+        assert_eq!(book_late(&mut w, 9, &m), None);
+        assert_eq!(w.deltas().of(KIND).len(), rows);
     }
 
     /// The C5 §5.4 reward sanity line agrees with what a kill mission

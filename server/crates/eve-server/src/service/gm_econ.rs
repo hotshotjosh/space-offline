@@ -220,7 +220,7 @@ fn closed(w: &Registry, n: usize) -> String {
 /// `/econ` with no argument.
 fn overview(w: &Registry, now: BlueTime) -> String {
     let world = *w.world();
-    let s = ledger::since(w, ledger::cursor(w));
+    let s = ledger::window(w);
     let today = Totals::of(w, world.day.saturating_add(1), &s, world.last_rollover, now);
     let mut out = vec![today.line(" so far")];
     out.push(match ledger::history(w).last() {

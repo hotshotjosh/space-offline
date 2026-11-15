@@ -1318,6 +1318,88 @@ fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
     assert_eq!(reg.ext::<Book>().settled(), mid + ids.len() as u64);
 }
 
+/// `day`'s `econ` totals, read back.
+fn day_totals(reg: &Registry, day: u32) -> crate::econ_ledger::Totals {
+    *crate::econ_ledger::history(reg)
+        .iter()
+        .find(|t| t.day == day)
+        .expect("the day is folded")
+}
+
+/// Tick the sweep at `at` until it ends, at most 20 ticks.
+fn sweep_out(reg: &mut Registry, at: BlueTime) {
+    let mut ticks = 0;
+    while reg.ext::<Book>().sweeping && ticks < 20 {
+        tick(reg, Instant::now(), at);
+        ticks += 1;
+    }
+    assert!(!reg.ext::<Book>().sweeping, "the sweep ended");
+}
+
+#[test]
+fn a_late_ratters_bounty_is_booked_to_the_closed_day() {
+    let mut reg = ratter(300);
+    let now = crate::pyutil::filetime_now();
+    park(&mut reg, BOT, "ratter", now).expect("parks");
+    let mut a = agent(&reg, BOT).expect("row");
+    a.settled_to = now - HOURS6;
+    write(&mut reg, BOT, a);
+    let d = rollover_day(now);
+    reg.deltas_mut().world_mut().expect("world").day = d.day;
+    // The slice is empty: the ratter is left to the sweep, after the fold.
+    assert_eq!(start_rollover(&mut reg, &d, 0), 0);
+    crate::econ_ledger::step(&mut reg, &d, false);
+    let f0 = day_totals(&reg, 1).faucet;
+    let tx = crate::econ_ledger::cursor(&reg);
+    sweep_out(&mut reg, now + 1);
+    let bounty: f64 = reg
+        .journal()
+        .entries()
+        .iter()
+        .filter(|e| {
+            e.entry_type_id == crate::npc::bounty::REF_BOUNTY_PRIZES && e.transaction_id > tx
+        })
+        .map(|e| e.amount)
+        .sum();
+    assert!(bounty > 0.0, "the ratter was paid");
+    let f1 = day_totals(&reg, 1).faucet;
+    assert!(
+        (f1 - f0 - bounty).abs() < 1e-6,
+        "day 1 holds the bounty: {f0} -> {f1}, bounty {bounty}"
+    );
+    let late = reg.ext::<Book>().last_late().expect("a late count").clone();
+    assert!(late.faucet > 0.0, "{late:?}");
+    assert_eq!(late.unbooked, 0);
+    // The next fold does not count the bounty again.
+    let next = crate::rollover::Day {
+        day: 2,
+        days: 1,
+        now: now + 24 * 3_600 * 10_000_000,
+    };
+    reg.deltas_mut().world_mut().expect("world").day = next.day;
+    crate::econ_ledger::step(&mut reg, &next, false);
+    let f2 = day_totals(&reg, 2).faucet;
+    assert!(f2.abs() < 1e-6, "day 2 counts it again: {f2}");
+}
+
+#[test]
+fn a_late_miners_ore_is_booked_to_the_closed_days_goods() {
+    let mut reg = miner();
+    away_six_hours(&mut reg);
+    let now = crate::pyutil::filetime_now();
+    let d = rollover_day(now);
+    reg.deltas_mut().world_mut().expect("world").day = d.day;
+    assert_eq!(start_rollover(&mut reg, &d, 0), 0);
+    crate::econ_ledger::step(&mut reg, &d, false);
+    let ore = |g: &crate::econ_ledger::Goods| g.0.get("ore").map_or(0, |p| p.0);
+    let g0 = crate::econ_ledger::goods_of_day(&reg, 1);
+    sweep_out(&mut reg, now + 1);
+    let g1 = crate::econ_ledger::goods_of_day(&reg, 1);
+    assert!(ore(&g1) > ore(&g0), "{g0:?} -> {g1:?}");
+    let today = crate::econ_ledger::goods_today(&reg);
+    assert_eq!(ore(&today), 0, "{today:?}");
+}
+
 // ---- the wire -----------------------------------------------------------------
 
 fn econ_agent(reg: &mut Registry, who: Option<i64>, method: &str, args: &[PyValue]) -> PyValue {
