@@ -3937,6 +3937,7 @@ mod tests {
                 now - t0,
                 distance(a, b)
             );
+            moves_as_its_leader(&roster, &format!("at +{:.1} s", now - t0));
         }
     }
 
@@ -3967,6 +3968,7 @@ mod tests {
                 now - t0,
                 distance(a, b)
             );
+            moves_as_its_leader(&roster, &format!("at +{:.1} s", now - t0));
         }
     }
 
@@ -4120,14 +4122,36 @@ mod tests {
             let m = led_movers(&roster, [PAIR_HULL, SLOW_HULL], CENTRE, None);
             roster.advance(&m, t0 + f64::from(k));
         }
-        let a = roster.get(1).expect("A").motion;
-        let b = roster.get(2).expect("B").motion;
         let [pa, pb] = pair_positions(&roster);
         assert!((distance(pa, pb) - CENTRE).abs() < 1e-6, "A held at range");
+        moves_as_its_leader(&roster, "at +30 s");
+        // A read inside a second: the view's displacement over `part`, with
+        // both on the same tick.
+        let m = led_movers(&roster, [PAIR_HULL, SLOW_HULL], CENTRE, None);
+        roster.advance(&m, t0 + 30.4);
+        let [pa, pb] = pair_positions(&roster);
+        assert!((distance(pa, pb) - CENTRE).abs() < 1e-6, "A held at range");
+        moves_as_its_leader(&roster, "at +30.4 s");
+    }
+
+    /// A (character 1) flies as B (character 2) does: the same way, and
+    /// within 5% of B's velocity (B's mean over the step against its end
+    /// velocity, [`Motion::tethered_advance_led`]).
+    fn moves_as_its_leader(roster: &Roster, when: &str) {
+        let a = roster.get(1).expect("A").motion;
+        let b = roster.get(2).expect("B").motion;
+        let along = unit(b.velocity).expect("B is moving");
+        let dot = a.velocity[0] * along[0] + a.velocity[1] * along[1] + a.velocity[2] * along[2];
+        assert!(
+            dot > 0.0,
+            "{when}: A at {:?} m/s flies against B's {:?}",
+            a.velocity,
+            b.velocity
+        );
         let gap = distance(a.velocity, b.velocity);
         assert!(
             gap < 0.05 * b.speed(),
-            "A at {:?} m/s against B's {:?}",
+            "{when}: A at {:?} m/s against B's {:?}",
             a.velocity,
             b.velocity
         );

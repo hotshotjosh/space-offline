@@ -1175,6 +1175,67 @@ mod tests {
         }
     }
 
+    /// `state_with_ship` with OTHER 2.6 km out, flying away along +x, and the
+    /// ego on the same 300 m/s hull following it, arriving sideways; read
+    /// every second to `now + 10`.
+    fn follow_of_a_moving_pilot(now: f64) -> World {
+        let mut w = state_with_ship(now);
+        {
+            let lead = w.balls.get_mut(&OTHER).expect("ship");
+            lead.motion.position = [2_600.0, 0.0, 0.0];
+            lead.own_hull = Some(hull_at(300.0));
+        }
+        {
+            let ego = w.balls.get_mut(&SHIP).expect("ego");
+            ego.motion.velocity = [0.0, 100.0, 0.0];
+            ego.own_hull = Some(hull_at(300.0));
+        }
+        goto(&mut w, OTHER, now);
+        follow(&mut w, OTHER, now);
+        for s in 1..=10 {
+            w.advance_to(now + f64::from(s));
+        }
+        w
+    }
+
+    /// The ego flies as OTHER does: the same way, within 5% of OTHER's
+    /// velocity.
+    fn ego_moves_as(w: &World, leader: i64) {
+        let vf = w.ego_ball().expect("ego").motion.velocity;
+        let vl = w.get(leader).expect("leader").motion.velocity;
+        let speed = space_state::distance(vl, [0.0; 3]);
+        assert!(speed > 100.0, "the leader is moving: {vl:?}");
+        let dot = vf[0] * vl[0] + vf[1] * vl[1] + vf[2] * vl[2];
+        assert!(dot > 0.0, "the follower at {vf:?} flies against {vl:?}");
+        assert!(
+            space_state::distance(vf, vl) < 0.05 * speed,
+            "the follower at {vf:?} against {vl:?}"
+        );
+    }
+
+    #[test]
+    fn a_follower_of_a_moving_pilot_moves_as_its_leader_does() {
+        // Read inside a second: the leader is carried in the same pass, so
+        // the lead is its displacement scaled to the follower's `dt`.
+        let mut w = follow_of_a_moving_pilot(1_000.0);
+        let tether = gap(&w, OTHER);
+        ego_moves_as(&w, OTHER);
+        w.advance_to(1_010.4);
+        assert!((gap(&w, OTHER) - tether).abs() < 1e-6, "held at range");
+        ego_moves_as(&w, OTHER);
+    }
+
+    #[test]
+    fn a_follower_given_an_order_moves_as_its_leader_does() {
+        // An order on the follower advances it alone (`before` empty): the
+        // lead is the leader's velocity times the follower's `dt`.
+        let mut w = follow_of_a_moving_pilot(1_000.0);
+        full_throttle(&mut w, SHIP, 1_010.4);
+        assert_eq!(w.ego_ball().expect("ego").since, 1_010.4);
+        assert_eq!(w.get(OTHER).expect("leader").since, 1_010.0);
+        ego_moves_as(&w, OTHER);
+    }
+
     #[test]
     fn a_warp_lands_where_the_server_says_it_lands() {
         let mut w = state(1_000.0);
