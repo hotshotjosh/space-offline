@@ -1813,7 +1813,7 @@ Invented example rows:
 - **Writer:** `tools/content_lp.py`, the `lp` section of `content.py`: one row per row of the client's `shipcosmeticlicenses` (`findings/pyd-schemas.tsv`), by `licence_id`.
 - **Readers:** `eve-server` `emblem::TABLE` (`emblem::Licences`). Optional: with none, no offer is a licence and the Paragon store hands out items as any other store. The server keeps only emblem rows (`cosmetic_type` 1 corporation logo, 2 alliance logo [V `shipcosmetics/common/const.py:11-12`]).
 - **Key:** `licence_id`; the server keys by `type_id`.
-- **Stable client ids and delta keys (ruling 4):** delta kind `emblem` keys by hull type and cosmetic type, `own char ship_type cosmetic_type -> 1` and `slot ship_item backend_slot -> cosmetic_type`; no licence id and no licence type id is persisted.
+- **Stable client ids and delta keys (ruling 4):** delta kind `emblem` keys by hull type and cosmetic type, `own char ship_type cosmetic_type -> 1` and `slot ship_item backend_slot -> cosmetic_type writer` (the slot lights only for the pilot who wrote it); no licence id and no licence type id is persisted.
 
 ```
 #licence_id	type_id	ship_type_id	cosmetic_type	slot_group
