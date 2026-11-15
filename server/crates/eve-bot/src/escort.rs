@@ -699,13 +699,21 @@ fn in_space_core(m: &mut Memory, o: &Observation) -> Vec<Act> {
         .map(|r| r.item_id)
         .collect();
     if m.homing.is_none() {
+        // Temperament (#209): the thresholds scale with the pilot's risk trait.
+        let temper = crate::mind::temperament(&m.name);
+        let repair_at = REPAIR_ARMOUR * temper.repair;
+        let retreat_at = RETREAT_AT * temper.retreat;
         if o.guns.is_empty() {
             m.homing = Some(Homing::Unarmed);
         } else if o
             .health
-            .is_some_and(|h| h.armour < REPAIR_ARMOUR || h.hull < REPAIR_HULL)
+            .is_some_and(|h| h.armour < repair_at || h.hull < REPAIR_HULL)
         {
             m.homing = Some(Homing::Repair);
+            m.home_why = Some((
+                Homing::Repair,
+                format!("hurt: armour under {repair_at:.2} or hull under {REPAIR_HULL:.2}"),
+            ));
             say(
                 o,
                 &mut said,
@@ -715,10 +723,14 @@ fn in_space_core(m: &mut Memory, o: &Observation) -> Vec<Act> {
             .policy
             .profiles
             .as_deref()
-            .is_some_and(|p| incoming_dps(p, park, &ego) > RETREAT_AT)
+            .is_some_and(|p| incoming_dps(p, park, &ego) > retreat_at)
         {
             // Repairing is a dock and a shop visit, so the repair's way home serves. [A]
             m.homing = Some(Homing::Repair);
+            m.home_why = Some((
+                Homing::Repair,
+                format!("too many guns: incoming dps over {retreat_at:.1}"),
+            ));
             say(
                 o,
                 &mut said,
@@ -2714,6 +2726,53 @@ mod tests {
         park(&mut o).hostiles[1].ball = ball(NPC_2, 1_000_000.0);
         let (m, _) = decide(&above, &o);
         assert_eq!(m.homing, None);
+    }
+
+    /// #209: the same fire is a fight for a reckless escort and a retreat for
+    /// a timid one, and a median escort (no seed: factors 1.0) sits between.
+    #[test]
+    fn a_timid_escort_leaves_where_a_reckless_one_stays() {
+        use crate::mind::{TRAIT_COUNT, Trait, Traits, register};
+        let (timid, bold) = ("Temper Escort Timid", "Temper Escort Bold");
+        for (name, risk) in [(timid, 0.1), (bold, 0.9)] {
+            let mut t = [0.5; TRAIT_COUNT];
+            t[Trait::Risk as usize] = risk;
+            register(name, Traits(t));
+        }
+        let mut o = in_space();
+        park(&mut o).hostiles = vec![
+            rat(NPC, 3_000.0, DPS_RAT, Some(SHIP)),
+            rat(NPC_2, 4_000.0, DPS_RAT, Some(SHIP)),
+        ];
+        // Two rats: the total is twice one rat's dps.
+        let homing = |name: &str, total: f64| {
+            let mut m = with_profiles(&[(DPS_RAT, NpcRole::Dps, "Frigate", 100.0, total / 2.0)]);
+            m.name = name.to_owned();
+            decide(&m, &o).0.homing
+        };
+        // At RETREAT_AT: only the timid leaves.
+        assert_eq!(homing(timid, RETREAT_AT), Some(Homing::Repair));
+        assert_eq!(homing("Escort1", RETREAT_AT), None);
+        assert_eq!(homing(bold, RETREAT_AT), None);
+        // Above it: the median leaves too, the reckless one still stays.
+        assert_eq!(homing("Escort1", RETREAT_AT * 1.1), Some(Homing::Repair));
+        assert_eq!(homing(bold, RETREAT_AT * 1.1), None);
+        // Armour: a hurt-but-not-badly escort docks if timid, not if median or bold.
+        let mut hurt = in_space();
+        hurt.health = Some(Health {
+            shield: 0.0,
+            armour: REPAIR_ARMOUR * 1.1,
+            hull: 1.0,
+        });
+        for (name, home) in [(timid, true), ("Escort1", false), (bold, false)] {
+            let mut m = escort();
+            m.name = name.to_owned();
+            assert_eq!(
+                decide(&m, &hurt).0.homing == Some(Homing::Repair),
+                home,
+                "{name}"
+            );
+        }
     }
 
     #[test]

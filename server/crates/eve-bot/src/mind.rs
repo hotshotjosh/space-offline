@@ -108,6 +108,81 @@ impl Traits {
     }
 }
 
+/// What the traits mean in a fight and a routine. Every factor is **[A]**;
+/// each is 1.0 at a trait of 0.5, so the median bot plays today's constants.
+/// Derived from the traits, never stored. Falsified by escorts that all still
+/// leave together, or by a reckless escort losing more hulls than a person
+/// would.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Temperament {
+    /// Times `escort::RETREAT_AT`: `0.6 + 0.8 x risk` **[A]**.
+    pub retreat: f64,
+    /// Times `escort::REPAIR_ARMOUR`: `1.3 - 0.6 x risk` **[A]**.
+    pub repair: f64,
+    /// Times a docked dwell: `1.5 - diligence` **[A]**. No reader yet (P4).
+    pub linger: f64,
+}
+
+impl Temperament {
+    /// The factors of a trait vector; the median vector gives exactly 1.0 each.
+    pub fn of(t: &Traits) -> Temperament {
+        let risk = t.get(Trait::Risk);
+        Temperament {
+            retreat: 0.6 + 0.8 * risk,
+            repair: 1.3 - 0.6 * risk,
+            linger: 1.5 - t.get(Trait::Diligence),
+        }
+    }
+}
+
+static SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+static REGISTERED: std::sync::RwLock<BTreeMap<String, Traits>> =
+    std::sync::RwLock::new(BTreeMap::new());
+
+/// Set the process's society seed once; a second call is ignored. Without
+/// it, [`seed`] is `driver::SOCIETY_SEED`.
+pub fn set_seed(seed: u64) {
+    let _ = SEED.set(seed);
+}
+
+/// The process's society seed, when one was set. Without it (bots outside a
+/// society) there is no persona and every pilot is the median.
+pub fn seed() -> Option<u64> {
+    SEED.get().copied()
+}
+
+/// A restored mind whose file seed differs from the process seed registers
+/// its own traits here (rare).
+pub fn register(name: &str, t: Traits) {
+    if let Ok(mut g) = REGISTERED.write() {
+        g.insert(name.to_owned(), t);
+    }
+}
+
+/// The traits of `name`: a registered one, else `Traits::draw(name, seed)`
+/// when a seed was set, else the median (`0.5` each), so a bot outside a
+/// society plays today's constants.
+pub fn traits_of(name: &str) -> Traits {
+    traits_for(name, seed())
+}
+
+fn traits_for(name: &str, seed: Option<u64>) -> Traits {
+    if let Ok(g) = REGISTERED.read()
+        && let Some(t) = g.get(name)
+    {
+        return *t;
+    }
+    match seed {
+        Some(seed) => Traits::draw(name, seed),
+        None => Traits([0.5; TRAIT_COUNT]),
+    }
+}
+
+/// The temperament of `name`, from [`traits_of`].
+pub fn temperament(name: &str) -> Temperament {
+    Temperament::of(&traits_of(name))
+}
+
 // ---- the switching rule's constants (all [A]) ------------------------------------
 
 /// How much better the best other career must be, as a fraction of the
@@ -613,6 +688,55 @@ pub fn summary_line(minds: &[&Mind], online: usize, now: u64, day: u64) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temperament_is_one_at_the_median() {
+        let t = Temperament::of(&Traits([0.5; TRAIT_COUNT]));
+        assert_eq!((t.retreat, t.repair, t.linger), (1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn a_timid_pilot_retreats_sooner() {
+        let mut timid = [0.5; TRAIT_COUNT];
+        timid[Trait::Risk as usize] = 0.1;
+        let mut bold = [0.5; TRAIT_COUNT];
+        bold[Trait::Risk as usize] = 0.9;
+        let (a, b) = (
+            Temperament::of(&Traits(timid)),
+            Temperament::of(&Traits(bold)),
+        );
+        assert!(a.retreat < b.retreat);
+        assert!(a.repair > b.repair);
+    }
+
+    #[test]
+    fn traits_of_is_the_draw_unless_registered() {
+        let name = "Temper Test Pilot One";
+        assert_eq!(traits_for(name, Some(77)), Traits::draw(name, 77));
+        let mut mine = [0.5; TRAIT_COUNT];
+        mine[Trait::Risk as usize] = 0.123;
+        register(name, Traits(mine));
+        assert_eq!(traits_of(name), Traits(mine));
+        assert_eq!(traits_for(name, Some(77)), Traits(mine));
+        assert_eq!(temperament(name), Temperament::of(&Traits(mine)));
+        assert_eq!(
+            traits_for("Temper Test Pilot Two", Some(77)),
+            Traits::draw("Temper Test Pilot Two", 77)
+        );
+    }
+
+    /// No society seed (the lib tests never set one): every pilot is the
+    /// median, factors exactly 1.0.
+    #[test]
+    fn without_a_seed_every_pilot_is_the_median() {
+        assert_eq!(seed(), None);
+        assert_eq!(
+            traits_of("Temper Unseeded Pilot"),
+            Traits([0.5; TRAIT_COUNT])
+        );
+        let t = temperament("Temper Unseeded Pilot");
+        assert_eq!((t.retreat, t.repair, t.linger), (1.0, 1.0, 1.0));
+    }
     use crate::career::{Band, Support};
     use crate::roles;
 

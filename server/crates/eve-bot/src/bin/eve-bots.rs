@@ -806,6 +806,7 @@ fn run() -> Result<(), String> {
     let mut board: Option<std::sync::Arc<eve_bot::doctrine_sense::Board>> = None;
     if society {
         let seed = society_seed.unwrap_or(driver::SOCIETY_SEED);
+        eve_bot::mind::set_seed(seed);
         let signals = signals(pvp);
         let now = driver::unix_now();
         let dir = state.as_deref().map(Path::new);
@@ -916,10 +917,17 @@ fn run() -> Result<(), String> {
                     println!("eve-bots: {n}: a torn state file, seeded again: {why}");
                 }
             }
-            let (diligence, mind_seed) = {
+            let (diligence, mind_seed, mind_traits) = {
                 let m = soc.mind.lock().map_err(|_| "a mind's lock")?;
-                (m.traits.get(eve_bot::mind::Trait::Diligence), m.seed)
+                (
+                    m.traits.get(eve_bot::mind::Trait::Diligence),
+                    m.seed,
+                    m.traits,
+                )
             };
+            if mind_seed != seed {
+                eve_bot::mind::register(n, mind_traits);
+            }
             if sessions != Some(false) {
                 soc.timetable = driver::Timetable::weekly(
                     n,
