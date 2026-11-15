@@ -454,7 +454,9 @@ mod tests {
 
     #[test]
     fn save_flushes_the_book_beside_the_mind() {
-        let m = full();
+        let mut m = full();
+        // A name no other test uses: the book registry is process-wide.
+        m.name = "Invented Book Saver".into();
         let dir = scratch("book");
         let (_, _) = load_or_seed(&dir, &m.name, 1, CAREERS, &Signals::default(), 0);
         crate::know::note(&m.name, 4242, crate::know::Met::KilledMe, 77, 900);
