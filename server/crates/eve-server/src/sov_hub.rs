@@ -1074,11 +1074,37 @@ pub fn lapse(reg: &mut Registry, h: &Hub, now: i64) {
     );
 }
 
+thread_local! {
+    /// How many `on_the_clock` calls are open on this thread. Per thread
+    /// because a `&mut Registry` is only ever on one thread (`par` workers
+    /// get `&Registry`).
+    static CLOCK_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Closes one level of [`CLOCK_DEPTH`], also when `f` panics.
+struct Depth;
+
+impl Drop for Depth {
+    fn drop(&mut self) {
+        CLOCK_DEPTH.with(|d| d.set(d.get() - 1));
+    }
+}
+
 /// Run `f` and send what it pushed **by the clock**: the rollover runs on
 /// the world tick, whose drain is `take_due`, not `take_pending` (the
 /// house pattern, `drones::apply_held`). What was already pending belongs
 /// to somebody's turn and is put back untouched.
+///
+/// **Nesting is safe.** A call made inside another call's `f` just runs its
+/// `f`; the outermost call takes and schedules everything, in push order. (An
+/// inner call that scheduled its own pushes would send them ahead of the
+/// outer call's earlier ones, and a Destiny batch relies on its order.)
 pub(crate) fn on_the_clock<T>(reg: &mut Registry, f: impl FnOnce(&mut Registry) -> T) -> T {
+    if CLOCK_DEPTH.with(|d| d.get()) > 0 {
+        return f(reg);
+    }
+    CLOCK_DEPTH.with(|d| d.set(d.get() + 1));
+    let _depth = Depth;
     let before = reg.take_pending_raw();
     let out = f(reg);
     let ours = reg.take_pending_raw();
@@ -1598,6 +1624,50 @@ mod tests {
             the_queued_removal_reached_alice(&mut reg),
             "the removal queued before the wrapper reaches Alice"
         );
+    }
+
+    /// A push that only carries a name, for the order tests.
+    #[derive(Debug)]
+    struct Mark(&'static str);
+    impl crate::notify::Push for Mark {
+        fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+            (self.0, vec![])
+        }
+        fn audience(&self) -> Option<Vec<i64>> {
+            Some(vec![ALICE])
+        }
+    }
+
+    /// An inner `on_the_clock` does not schedule its pushes ahead of the
+    /// outer call's earlier ones: the outermost call sends all, in push order.
+    #[test]
+    fn a_nested_clock_wrapper_keeps_the_outer_calls_order() {
+        let (mut reg, _a, _d) = world();
+        on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_the_clock(r, |r| r.push(Mark("b")));
+            r.push(Mark("c"));
+        });
+        let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(600));
+        let names: Vec<&str> = due.iter().map(|p| p.to_push().0).collect();
+        assert_eq!(names, ["a", "b", "c"]);
+    }
+
+    /// A nested call leaves a push queued by somebody's turn pending.
+    #[test]
+    fn a_nested_clock_wrapper_leaves_the_turns_pushes_pending() {
+        let (mut reg, _a, _d) = world();
+        reg.push(Mark("turn"));
+        on_the_clock(&mut reg, |r| {
+            r.push(Mark("a"));
+            on_the_clock(r, |r| r.push(Mark("b")));
+        });
+        let pending: Vec<&str> = reg
+            .take_pending_raw()
+            .iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert_eq!(pending, ["turn"]);
     }
 
     /// `/sov go` stands a pilot 1 km off the hub's surface from a million
