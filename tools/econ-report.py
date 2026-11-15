@@ -41,7 +41,8 @@ server.log): wallets + corp wallets + open-bid escrow = sum of faucets - sum of 
 by the server's own rule (econ_ledger.rs `classify`). The ref table (`REFS`) and `NPC_ORDER_BASE` are parsed
 from the Rust source at run time (`--src DIR` names the eve-server src dir), never copied. When the day lines
 carry the S1 fields `held=` and `tx=`, each day is checked too, and the server's net against the net of the
-journal ids in (tx of the day before, tx of the day]. A per-day PASS needs at least 3 such day lines
+journal ids in (tx of the day before, tx of the day]; a day line's `late=` (#209: rows booked to an
+earlier closed day after its line printed) counts in its net. A per-day PASS needs at least 3 such day lines
 (spec section 4), else the verdict is inconclusive. Corp journal System rows (a tax skim) must each have the
 mirror row the server writes in the character journal. Exit 1 on FAIL, 3 when inconclusive, 0 on PASS.
 
@@ -508,7 +509,9 @@ def identity(rows, rules, money, days=(), corp_rows=()):
         m = float(k.get("M_h", 0)) + float(k.get("M_bots", 0))
         now = m + float(k["held"])
         tx = int(k["tx"])
-        net = float(k.get("net", 0))
+        # `late=` (#209): rows booked to an earlier closed day after its line printed. They are in this day's
+        # tx range and this day's money growth, so they count in its net here.
+        net = float(k.get("net", 0)) + float(k.get("late", 0))
         mine = sum(r[6] for r in rows if prev_tx < r[0] <= tx and classify(r, rules) in (FAUCET, SINK))
         out["days"].append({"day": d, "m": m, "residual": now - prev_m - net, "net": net, "journal_net": mine})
         prev_m, prev_tx = now, tx

@@ -441,6 +441,18 @@ class Identity(unittest.TestCase):
         v, lines = self.run_id(rows=rows, balances={BOT_A: 10200, BOT_B: 9700}, day_lines=[d1, d2])
         self.assertEqual(v, er.PASS, lines)
 
+    def test_a_late_booking_counts_in_the_next_days_net(self):
+        # #209: row 9 (50) was booked to day 1 after day 1's line printed, so day 2 prints it as `late=`.
+        d1 = "[econ] day 1 faucet=20300 sink=0 net=20300 M_h=0 M_bots=19800 unclassified=0 held=500 tx=7"
+        rows = BASE_ROWS + [jrow(8, 3, 1, BOT_A, 0, 100), jrow(9, 3, 1, BOT_A, 0, 50)]
+        d2 = "[econ] day 2 faucet=100 sink=0 net=100 M_h=0 M_bots=19950 unclassified=0 held=500 tx=9 late=50.00"
+        v, lines = self.run_id(rows=rows, balances={BOT_A: 10250, BOT_B: 9700}, day_lines=[d1, d2])
+        self.assertEqual(v, er.PASS, lines)
+        day2 = [l for l in lines if l.startswith("day 2:")]
+        self.assertEqual(len(day2), 1, lines)
+        self.assertIn("residual +0.00", day2[0])
+        self.assertNotIn("differs", day2[0])
+
     def test_cli_exit_codes(self):
         run, src = make_run(self.td.name, BASE_ROWS, BASE_BAL, BASE_ORDERS)
         script = os.path.join(HERE, "econ-report.py")

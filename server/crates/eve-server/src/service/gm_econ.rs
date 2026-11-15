@@ -9,7 +9,8 @@
 //! by pure functions of the world and a time, so the tests need no clock.
 //!
 //! - `/econ`: the `[econ]` line of the day so far (the journal since the last
-//!   rollover's cursor), the last recorded day's line, the bots over
+//!   rollover's cursor, less the rows booked late to the closed day, whose
+//!   net ends it as `late=`), the last recorded day's line, the bots over
 //!   [`econ_ledger::BOT_WALLET_CAP`], the top ten types by NPC fill value
 //!   since the last rollover, and the C5 §5.4 reward line.
 //! - `/econ price <typeID>`: `P_ref`, its source, the trading index; Tier
@@ -221,7 +222,9 @@ fn closed(w: &Registry, n: usize) -> String {
 fn overview(w: &Registry, now: BlueTime) -> String {
     let world = *w.world();
     let s = ledger::window(w);
-    let today = Totals::of(w, world.day.saturating_add(1), &s, world.last_rollover, now);
+    let mut today = Totals::of(w, world.day.saturating_add(1), &s, world.last_rollover, now);
+    // What the window left out, booked to the closed day (#209).
+    today.late = ledger::late_net(w);
     let mut out = vec![today.line(" so far")];
     out.push(match ledger::history(w).last() {
         // `held` and `tx` are not stored: leave them off a row read back.

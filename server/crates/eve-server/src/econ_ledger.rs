@@ -398,6 +398,11 @@ pub struct Totals {
     pub held: f64,
     /// The journal cursor, the highest transaction id read. Line only.
     pub last_tx: i64,
+    /// Net ISK of the rows [`book_late`] booked to an earlier day and
+    /// [`window`] left out of this one ([`late_net`]). Line only, not stored:
+    /// those rows are in this line's `tx` range and in its money growth, so
+    /// `tools/econ-report.py` adds it to `net` for the #156 identity.
+    pub late: f64,
 }
 
 impl Totals {
@@ -425,14 +430,17 @@ impl Totals {
             held: held(reg),
             // An empty window keeps the cursor, so the next window starts there.
             last_tx: s.last_tx.max(cursor(reg)),
+            late: 0.0,
         }
     }
 
     /// C5 §7.4's line. `label` follows the day (`""`, or `" so far"`).
+    /// ` late=` ends it only when [`Totals::late`] is not zero, so a day with
+    /// no late rows prints the line it always did.
     pub fn line(&self, label: &str) -> String {
         format!(
             "[econ] day {}{label} faucet={:.0} sink={:.0} net={:.0} M_h={:.0} M_bots={:.0} \
-             npc_fills={} trades={} dbs_min={:.2} unclassified={} held={:.0} tx={}",
+             npc_fills={} trades={} dbs_min={:.2} unclassified={} held={:.0} tx={}{}",
             self.day,
             self.faucet,
             self.sink,
@@ -445,6 +453,11 @@ impl Totals {
             self.unclassified,
             self.held,
             self.last_tx,
+            if self.late != 0.0 {
+                format!(" late={:.2}", self.late)
+            } else {
+                String::new()
+            },
         )
     }
 
@@ -478,6 +491,7 @@ impl Totals {
             // Not stored: the row format is unchanged.
             held: 0.0,
             last_tx: 0,
+            late: 0.0,
         })
     }
 }
@@ -860,7 +874,7 @@ fn fold_goods(reg: &mut Registry, day: u32) -> Goods {
 /// subtracts them: `late <ref> -> credit debit rows` and `late sum ->
 /// faucet sink unclassified`. Never a day number, so [`prune`] keeps them
 /// and [`history`] skips them.
-const LATE: &str = "late";
+pub(crate) const LATE: &str = "late";
 
 /// Where the journal and today's goods stood before a settlement that is
 /// booked to an already closed day ([`book_late`]).
@@ -968,6 +982,14 @@ fn ref_sum_row(r: &RefSum) -> Vec<String> {
         r.debit.to_string(),
         r.rows.to_string(),
     ]
+}
+
+/// Net ISK (faucet - sink) [`book_late`] booked to a closed day since the
+/// last fold: what [`window`] leaves out and the next `[econ]` day line
+/// prints as `late=`.
+pub fn late_net(reg: &Registry) -> f64 {
+    let l = late_summary(reg);
+    l.faucet - l.sink
 }
 
 /// The `late` rows read back: what was booked to a closed day since the
@@ -1302,10 +1324,9 @@ pub fn step(reg: &mut Registry, d: &crate::rollover::Day, burn_bots: bool) -> us
         burn(reg, d.now);
     }
     let s = window(reg);
-    // Lane clock: the days just ended are compressed days.
-    let fills_since =
-        d.now - crate::game_clock::span(reg, i64::from(d.days.max(1)) * crate::seed::DAY);
-    let totals = Totals::of(reg, d.day, &s, fills_since, d.now);
+    let fills_since = fills_since(reg, d);
+    // Before `clear_late` below: the line carries what the window left out.
+    let totals = day_totals(reg, d, &s);
     let goods = fold_goods(reg, d.day);
     let closed = Closed::of(reg, fills_since, goods);
     let day = d.day.to_string();
@@ -1335,6 +1356,20 @@ pub fn step(reg: &mut Registry, d: &crate::rollover::Day, burn_bots: bool) -> us
     crate::outln!("{} {}", totals.line(""), closed.part());
     crate::outln!("{}", reward_line(reg, &s));
     s.by_ref.values().map(|r| r.rows).sum()
+}
+
+/// Where the fold of `d` starts counting fills. Lane clock: the days just
+/// ended are compressed days.
+fn fills_since(reg: &Registry, d: &crate::rollover::Day) -> BlueTime {
+    d.now - crate::game_clock::span(reg, i64::from(d.days.max(1)) * crate::seed::DAY)
+}
+
+/// The `[econ]` day line's figures for the fold of `d` over `s`, with
+/// [`late_net`] as `late`. Read before the fold clears the `late` rows.
+fn day_totals(reg: &Registry, d: &crate::rollover::Day, s: &Summary) -> Totals {
+    let mut t = Totals::of(reg, d.day, s, fills_since(reg, d), d.now);
+    t.late = late_net(reg);
+    t
 }
 
 /// Drop every day row more than [`KEEP_DAYS`] before `day`.
@@ -1928,6 +1963,24 @@ mod tests {
         assert!((r.credit - 140.0).abs() < 1e-9, "{r:?}");
         assert_eq!(r.rows, 2);
         assert_eq!(late_rows(&w), 0, "the fold cleared the late rows");
+    }
+
+    #[test]
+    fn the_fold_after_a_late_booking_prints_its_net_as_late() {
+        let mut w = with_bots(0.0, 0.0, 0.0);
+        w.charge(HUMAN, -100.0, 85, 1, 0).expect("the human");
+        let t1 = day_totals(&w, &day(1), &window(&w));
+        assert_eq!(t1.late, 0.0);
+        assert!(!t1.line("").contains("late="), "{}", t1.line(""));
+        step(&mut w, &day(1), false);
+        let m = mark(&w);
+        w.charge(HUMAN, -40.0, 85, 1, 0).expect("the human");
+        book_late(&mut w, 1, &m).expect("day 1 is folded");
+        let t2 = day_totals(&w, &day(2), &window(&w));
+        assert!((t2.late - 40.0).abs() < 1e-9, "{t2:?}");
+        assert!(t2.line("").ends_with(" late=40.00"), "{}", t2.line(""));
+        step(&mut w, &day(2), false);
+        assert_eq!(late_net(&w), 0.0, "the fold cleared the late rows");
     }
 
     #[test]
