@@ -1075,14 +1075,24 @@ pub fn lapse(reg: &mut Registry, h: &Hub, now: i64) {
 }
 
 thread_local! {
-    /// How many `on_the_clock` calls are open on this thread. Per thread
-    /// because a `&mut Registry` is only ever on one thread (`par` workers
-    /// get `&Registry`).
+    /// How many `on_the_clock` calls are open on this thread, for every
+    /// Registry on it. Sound because a `&mut Registry` never leaves its thread
+    /// (`par` workers get `&Registry`). Correct only while no `f` reaches
+    /// `on_the_clock` on a *second* Registry (none does: production builds
+    /// one Registry per server).
     static CLOCK_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 /// Closes one level of [`CLOCK_DEPTH`], also when `f` panics.
 struct Depth;
+
+impl Depth {
+    /// Opens one level; the returned guard closes it.
+    fn enter() -> Self {
+        CLOCK_DEPTH.with(|d| d.set(d.get() + 1));
+        Depth
+    }
+}
 
 impl Drop for Depth {
     fn drop(&mut self) {
@@ -1098,13 +1108,14 @@ impl Drop for Depth {
 /// **Nesting is safe.** A call made inside another call's `f` just runs its
 /// `f`; the outermost call takes and schedules everything, in push order. (An
 /// inner call that scheduled its own pushes would send them ahead of the
-/// outer call's earlier ones, and a Destiny batch relies on its order.)
+/// outer call's earlier ones, and a Destiny batch relies on its order.) A
+/// panicking `f` drops what was set aside; no production caller catches a
+/// panic.
 pub(crate) fn on_the_clock<T>(reg: &mut Registry, f: impl FnOnce(&mut Registry) -> T) -> T {
     if CLOCK_DEPTH.with(|d| d.get()) > 0 {
         return f(reg);
     }
-    CLOCK_DEPTH.with(|d| d.set(d.get() + 1));
-    let _depth = Depth;
+    let _depth = Depth::enter();
     let before = reg.take_pending_raw();
     let out = f(reg);
     let ours = reg.take_pending_raw();
@@ -1653,7 +1664,8 @@ mod tests {
         assert_eq!(names, ["a", "b", "c"]);
     }
 
-    /// A nested call leaves a push queued by somebody's turn pending.
+    /// A nested call leaves the turn's push pending and sends only the
+    /// wrapped pushes, in push order.
     #[test]
     fn a_nested_clock_wrapper_leaves_the_turns_pushes_pending() {
         let (mut reg, _a, _d) = world();
@@ -1662,12 +1674,33 @@ mod tests {
             r.push(Mark("a"));
             on_the_clock(r, |r| r.push(Mark("b")));
         });
+        let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(600));
+        let names: Vec<&str> = due.iter().map(|p| p.to_push().0).collect();
+        assert_eq!(
+            names,
+            ["a", "b"],
+            "the turn's push is not on the clock; ours leave in push order"
+        );
         let pending: Vec<&str> = reg
             .take_pending_raw()
             .iter()
             .map(|(_, p)| p.to_push().0)
             .collect();
         assert_eq!(pending, ["turn"]);
+    }
+
+    /// A panicking closure still closes its level: the next call is outermost.
+    #[test]
+    fn a_panicking_clock_closure_leaves_the_next_call_outermost() {
+        let (mut reg, _a, _d) = world();
+        let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            on_the_clock(&mut reg, |_| panic!("probe"))
+        }));
+        assert!(hit.is_err());
+        on_the_clock(&mut reg, |r| r.push(Mark("x")));
+        let due = reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(600));
+        assert_eq!(due.iter().map(|p| p.to_push().0).collect::<Vec<_>>(), ["x"]);
+        assert!(reg.take_pending_raw().is_empty());
     }
 
     /// `/sov go` stands a pilot 1 km off the hub's surface from a million
