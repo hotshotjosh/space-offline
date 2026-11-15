@@ -349,9 +349,10 @@ mod tests {
         ));
     }
 
-    /// The jump-bridge exception (`jump_bridge::quiet_info`: a read of a known
-    /// gate's info answers `None`) is that component's alone: any other
-    /// component's call from a pilot mid-jump is still refused, about an item in the system the session still names.
+    /// The jump-bridge exception (`jump_bridge::quiet_info`: a read of a
+    /// gate's info that would be refused answers `None`) is that component's
+    /// alone: any other component's call from a pilot mid-jump is still
+    /// refused, about an item in the system the session still names.
     #[test]
     fn a_pilot_mid_jump_is_still_refused_by_any_other_component() {
         let mut reg = world();

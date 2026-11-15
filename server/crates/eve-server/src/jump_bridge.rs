@@ -77,7 +77,7 @@
 //! `GetJumpBridgeInfo` (`jumpBridge.py:131-134`), answered by [`info`] with
 //! `jumpbridge.common.jump_bridge_authorized_info.JumpBridgeAuthorizedInfo`, a
 //! new-style object ([`info_at`]); for a gate not in the caller's
-//! system it is `None` ([`quiet_info`]).
+//! system, or any it would refuse as not in space, it is `None` ([`quiet_info`]).
 //! The `jbcap` row (`structure_id -> charge_gj settled_at counter`) holds the
 //! settled charge; the counter is the slim's `component_jumpBridge` etag, so
 //! a change makes the bracket ask again (`jumpBridge.py:56-73`).
@@ -783,16 +783,17 @@ pub fn info(
 }
 
 /// Whether `CallComponentFromClient(item, component, method)` from `actor`
-/// is a `GetJumpBridgeInfo` about a known gate that the router would refuse
-/// as not in space, which it answers `None` instead (`space_component::call_in`).
+/// is a `GetJumpBridgeInfo` that the router would refuse as not in space
+/// (the caller is not in the roster, or the item is not in the caller's
+/// system), which it answers `None` instead (`space_component::call_in`).
 ///
 /// **Why.** The gate window refreshes on a 2 s timer (`jumpBridgeCont.py:104-117`)
 /// [V]; the call lands in an `ExceptionEater` (`jumpBridgeContController.py:75-82`)
 /// as `JumpBridgeContController:Failed to update ui` [V] when the router
 /// refuses. `None` is what the window reads as "no access" without a traceback
 /// (`jumpBridgeContController.py:85-89`) [V]. The refusal happens in several
-/// windows, all the same shape (a read-only info about a known gate that is not
-/// in the caller's current system):
+/// windows, all the same shape (a read-only info about an item that is not in
+/// the caller's current system):
 /// - the leg is `Departing`: the pilot is out of the roster, the session
 ///   still names the origin ([`jump_through`]);
 /// - the leg is `Arriving`: the session names the destination and the window
@@ -800,21 +801,24 @@ pub fn info(
 /// - after the bind, the old window asks about the gate left behind;
 /// - after a `/tr` (no `Jumps` entry) the window of a gate in another system.
 ///
-/// So the test is: a known gate, and either the actor has a leg
-/// (`jumps().contains`) or the actor's roster system is not the gate's. Only
-/// this read-only method; an unknown item and another component's call keep
-/// the refusal.
+/// A pilot on a leg is out of the roster, so one test covers them all: the
+/// actor has no roster system, or the item's system is not the actor's.
+///
+/// **No existence oracle.** The test does not look the item up as a gate
+/// first: an unknown id is quiet too. Were only known gates quiet, a scripted
+/// client could tell gate ids from other ids by `None` against the refusal.
+/// Only this read-only method of this component is quiet; another component's
+/// call keeps the refusal.
 ///
 /// `[A]` TQ answers this, or refuses it, in a way the window also swallows.
-/// Falsifier: a TQ capture of `GetJumpBridgeInfo` for a gate in another system
-/// answering something else visible to the window.
+/// Falsifier: a TQ capture where `GetJumpBridgeInfo` for a gate outside the
+/// caller's system returns a `JumpBridgeAuthorizedInfo`, or raises a
+/// `UserError` that the client shows as a message.
 pub fn quiet_info(reg: &Registry, actor: i64, item: i64, component: &str, method: &str) -> bool {
-    component == COMPONENT
-        && method == "GetJumpBridgeInfo"
-        && locate(reg, item).is_some_and(|gate_system| {
-            reg.jumps().contains(actor)
-                || crate::space_component::actor_system(reg, actor) != Some(gate_system)
-        })
+    component == COMPONENT && method == "GetJumpBridgeInfo" && {
+        let here = crate::space_component::actor_system(reg, actor);
+        here.is_none() || locate(reg, item) != here
+    }
 }
 
 // -- the slim -----------------------------------------------------------------------

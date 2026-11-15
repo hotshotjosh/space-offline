@@ -1189,12 +1189,15 @@ fn the_info_asked_mid_jump_is_none_not_a_refusal() {
         component_call(&mut reg, STRANGER, 11).unwrap(),
         PyValue::None
     );
-    // Not a gate at all: still the refusal.
-    assert!(component_call(&mut reg, ALICE, 9_999).is_err());
+    // Not a gate at all: quiet too, so the answer does not tell gate ids apart.
+    assert_eq!(
+        component_call(&mut reg, ALICE, 9_999).unwrap(),
+        PyValue::None
+    );
 }
 
 #[test]
-fn only_the_info_of_a_known_gate_is_quiet() {
+fn only_the_info_the_router_would_refuse_is_quiet() {
     let mut reg = world();
     pair(&mut reg);
     near_gate_a(&mut reg, ALICE, ALICE_SHIP);
@@ -1205,8 +1208,9 @@ fn only_the_info_of_a_known_gate_is_quiet() {
     assert!(quiet_info(&reg, ALICE, 11, COMPONENT, info));
     assert!(quiet_info(&reg, ALICE, 22, COMPONENT, info));
     assert!(quiet_info(&reg, STRANGER, 11, COMPONENT, info));
-    // An unknown item is nowhere.
-    assert!(!quiet_info(&reg, ALICE, 9_999, COMPONENT, info));
+    // An unknown item is in no system, so the router refuses it: quiet, the
+    // same as a gate elsewhere (no existence oracle).
+    assert!(quiet_info(&reg, ALICE, 9_999, COMPONENT, info));
     assert!(!quiet_info(&reg, ALICE, 11, COMPONENT, "SomethingElse"));
     assert!(!quiet_info(&reg, ALICE, 11, "otherComponent", info));
 }
@@ -1223,6 +1227,13 @@ fn the_info_asked_after_the_session_change_is_none() {
     let _ = reg.take_due(late);
     crate::jump::tick(&mut reg, late);
     assert_eq!(component_call(&mut reg, ALICE, 11).unwrap(), PyValue::None);
+    // After the bind the pilot is in the roster at the destination and the
+    // old window still asks about gate 11: quiet. Gate 22 answers for real.
+    crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+    assert!(reg.roster().is_in_space(ALICE));
+    assert_eq!(component_call(&mut reg, ALICE, 11).unwrap(), PyValue::None);
+    let beside = component_call(&mut reg, ALICE, 22).unwrap();
+    assert!(matches!(beside, PyValue::ObjectEx { .. }), "{beside:?}");
 }
 
 /// A pilot in space, not jumping, asking about a gate in another system (after
