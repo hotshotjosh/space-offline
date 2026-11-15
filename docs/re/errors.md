@@ -1,7 +1,7 @@
 # The client's error vocabulary (build V24.01, 3619879)
 
 Lane: `error-vocabulary` (churn Wave 1, cross-cutting). Park note:
-[`docs/lanes/error-vocabulary.md`](../lanes/error-vocabulary.md).
+`docs/lanes/error-vocabulary.md`.
 Catalogue: `findings/user-errors.tsv`, 4,280 rows.
 
 Claims are marked **[V]** (read from the client's bytecode, from its own data,

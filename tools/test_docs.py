@@ -22,6 +22,8 @@ directories otherwise, as in a lane's `git archive` copy).
       `docs/review/`, `docs/content/plan.md` and `docs/lanes/`);
   (h) every relative markdown link in `docs/`, `AGENTS.md`, `CLAUDE.md` and `README.md`
       resolves to a file or directory;
+  (i) no Markdown link points into `lanes/` from a .md file outside `docs/lanes/`
+      and `private/` (#244); a plain-text citation stays allowed;
   (g) the human-check card holds at most 6 items and 60 minutes, and its
       total row is the sum.
 
@@ -267,6 +269,30 @@ def check_links(root, files) -> list[str]:
     return fail
 
 
+def check_lanes_links(root, files) -> list[str]:
+    """(i) no Markdown link points into a lanes/ path from outside docs/lanes/ and private/.
+
+    A plain-text `docs/lanes/` citation stays allowed (#244).
+    """
+    fail = []
+    for rel in files:
+        if not rel.endswith(".md") or rel.startswith(("docs/lanes/", "private/")):
+            continue
+        # Code is not a link: blank fenced blocks and inline spans, keeping newlines.
+        text = CODE.sub(lambda m: "\n" * m.group(0).count("\n"), read(root, rel))
+        for m in [*MD_LINK.finditer(text), *MD_REF.finditer(text)]:
+            if LANES_PATH.search(m.group(1).lstrip("<")):
+                line = text.count("\n", 0, m.start()) + 1
+                fail.append(f"{rel}:{line}: Markdown link into lanes/ ({m.group(1)}); cite it as plain text")
+    return sorted(fail)
+
+
+CODE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+# A reference-style link definition: `[label]: target`.
+MD_REF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*<?([^\s>]+)", re.M)
+LANES_PATH = re.compile(r"(^|/)lanes/")
+
+
 def check_packets(root) -> list[str]:
     """(d)"""
     path = os.path.join(root, "docs/packets.tsv")
@@ -420,6 +446,9 @@ class Tree(unittest.TestCase):
     def test_h_relative_links_resolve(self):
         self.assertEqual(check_links(ROOT, self.files), [])
 
+    def test_i_no_markdown_links_into_lanes(self):
+        self.assertEqual(check_lanes_links(ROOT, self.files), [])
+
     def test_d_packets_tsv(self):
         self.assertEqual(check_packets(ROOT), [])
 
@@ -455,6 +484,15 @@ class Negatives(unittest.TestCase):
 
     def files(self):
         return tree_files(self.root)
+
+    def test_i_a_link_into_lanes_fails_and_plain_text_passes(self):
+        self.put("docs/guides/a.md", "see [x](../lanes/x.md)\n\n[r]: ../lanes/y.md\n")
+        self.put("docs/guides/b.md", "see `docs/lanes/x.md` and `[a](../lanes/x.md)`\n"
+                 "```\n[f](../lanes/x.md)\n```\n[p](../planes/x.md)\n")
+        self.put(D + "lanes/c.md", "[y](x.md) and [z](../lanes/x.md)\n")
+        self.assertEqual(check_lanes_links(self.root, self.files()),
+                         [f"{D}guides/a.md:1: Markdown link into lanes/ (../lanes/x.md); cite it as plain text",
+                          f"{D}guides/a.md:3: Markdown link into lanes/ (../lanes/y.md); cite it as plain text"])
 
     def test_a_a_missing_cited_doc_fails_and_a_present_one_passes(self):
         self.put(D + "here.md", "x")

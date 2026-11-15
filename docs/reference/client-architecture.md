@@ -3001,7 +3001,7 @@ flowchart LR
 second one is the useful one.
 
 `settingsSvc` reaches it off `OnCharacterSessionChanged`, and the path is
-`[V]` ([`lanes/ci-trigger.md`](../lanes/ci-trigger.md)):
+`[V]` (`lanes/ci-trigger.md`):
 
 ```text
 sessions.py(659)        sm.ScatterEvent('OnCharacterSessionChanged', old, new)
@@ -3442,5 +3442,5 @@ build's `code.ccp`, `resfileindex.txt` and `manifest.dat`. Having
 | [`docs/reference/bound-objects.md`](bound-objects.md) | the bind protocol in full, and the per-service method inventory |
 | [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) | the **instruments**: `evidence.sh`, `evecap --calls/--alerts/--triage`, `client-log.sh`, and how to tell our protocol's tracebacks from the gateway's |
 | [`docs/reference/threads-and-locks.md`](threads-and-locks.md) | **our** side of §6 — one world, one lock, two clocks, and the lock order |
-| [`docs/archive/plan-client-ci.md`](../archive/plan-client-ci.md), [`lanes/ci-trigger.md`](../lanes/ci-trigger.md), `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
+| [`docs/archive/plan-client-ci.md`](../archive/plan-client-ci.md), `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
 

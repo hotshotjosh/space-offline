@@ -1,7 +1,7 @@
 # The localisation corpus: format, lookup path, and what is in it
 
 Lane: `localization-corpus` (churn Wave 0). Reader: [`tools/loctable.py`](../../tools/loctable.py).
-Park note: [`docs/lanes/localization-corpus.md`](../lanes/localization-corpus.md).
+Park note: `docs/lanes/localization-corpus.md`.
 
 Claims are marked **[V]** (read from client bytecode, or measured from the
 client's own data) or **[I]** (inferred). `unknown` is used where it is honest.
