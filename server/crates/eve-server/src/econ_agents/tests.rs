@@ -1284,6 +1284,7 @@ fn the_rollover_slice_takes_gatherers_first() {
 fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
     let now = crate::pyutil::filetime_now();
     let (mut reg, ids) = parked_crowd(ROLLOVER_SLICE + SWEEP_SLICE + 1, now);
+    reg.deltas_mut().world_mut().expect("world").day = 1;
     on_rollover(&mut reg, &rollover_day(now));
     tick(&mut reg, Instant::now(), now + 1);
     let mid = reg.ext::<Book>().settled();
@@ -1295,7 +1296,15 @@ fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
     assert_eq!(behind, 1, "one agent is still unreached");
     // The next day's rollover arrives with one agent still unsettled.
     let next = now + 24 * 3_600 * 10_000_000;
-    let n = on_rollover(&mut reg, &rollover_day(next));
+    reg.deltas_mut().world_mut().expect("world").day = 2;
+    let n = on_rollover(
+        &mut reg,
+        &crate::rollover::Day {
+            day: 2,
+            days: 1,
+            now: next,
+        },
+    );
     // Every agent has a span to the new time, so the slice settles again.
     assert_eq!(n, ROLLOVER_SLICE);
     let mut ticks = 0;
@@ -1313,8 +1322,8 @@ fn a_second_rollover_mid_sweep_skips_and_repeats_nothing() {
             "every agent is settled to the second rollover"
         );
     }
-    // The agent the first sweep never reached settles each day's span apart;
-    // nobody settles a span twice.
+    // The agent the first sweep never reached settles each day's span apart,
+    // each on its own day's cap; nobody settles a span twice.
     assert_eq!(reg.ext::<Book>().settled(), mid + ids.len() as u64 + 1);
 }
 
@@ -1430,6 +1439,88 @@ fn a_late_ratters_bounty_is_booked_to_the_closed_day() {
     crate::econ_ledger::step(&mut reg, &next, false);
     let f2 = day_totals(&reg, 2).faucet;
     assert!(f2.abs() < 1e-6, "day 2 counts it again: {f2}");
+}
+
+/// The bounty paid in journal rows after transaction `tx`.
+fn bounty_after(reg: &Registry, tx: i64) -> f64 {
+    reg.journal()
+        .entries()
+        .iter()
+        .filter(|e| {
+            e.entry_type_id == crate::npc::bounty::REF_BOUNTY_PRIZES && e.transaction_id > tx
+        })
+        .map(|e| e.amount)
+        .sum()
+}
+
+/// The `econ` rows the next fold still has to subtract.
+fn late_rows(reg: &Registry) -> usize {
+    reg.deltas()
+        .of(crate::econ_ledger::KIND)
+        .keys()
+        .filter(|k| k.first().is_some_and(|h| h == crate::econ_ledger::LATE))
+        .count()
+}
+
+/// The parked ratter six hours behind, day 1's rollover with an empty slice
+/// and its fold: the ratter is owed day 1 late. Answers the time and the
+/// cursor after the fold.
+fn ratter_owed_day_one() -> (Registry, BlueTime, i64) {
+    let mut reg = ratter(300);
+    let now = crate::pyutil::filetime_now();
+    park(&mut reg, BOT, "ratter", now).expect("parks");
+    let mut a = agent(&reg, BOT).expect("row");
+    a.settled_to = now - HOURS6;
+    write(&mut reg, BOT, a);
+    let d1 = rollover_day(now);
+    reg.deltas_mut().world_mut().expect("world").day = d1.day;
+    assert_eq!(start_rollover(&mut reg, &d1, 0), 0);
+    crate::econ_ledger::step(&mut reg, &d1, false);
+    let tx = crate::econ_ledger::cursor(&reg);
+    (reg, now, tx)
+}
+
+#[test]
+fn a_second_rollovers_slice_books_the_older_days_piece_before_its_fold() {
+    let (mut reg, now, tx1) = ratter_owed_day_one();
+    let f1 = day_totals(&reg, 1).faucet;
+    let d2 = crate::rollover::Day {
+        day: 2,
+        days: 1,
+        now: now + 24 * 3_600 * 10_000_000,
+    };
+    reg.deltas_mut().world_mut().expect("world").day = d2.day;
+    // The slice reaches the ratter: one piece per rollover.
+    assert_eq!(start_rollover(&mut reg, &d2, 1), 1);
+    let t = &reg.ext::<Book>().targets;
+    assert_eq!((t[0].late.agents, t[0].late.unbooked), (1, 0), "{t:?}");
+    assert_eq!(t[1].late.agents, 0, "the newest piece is before its fold");
+    crate::econ_ledger::step(&mut reg, &d2, false);
+    let early = day_totals(&reg, 1).faucet - f1;
+    let today = day_totals(&reg, 2).faucet;
+    assert!(early > 0.0, "day 1 holds its piece: {early}");
+    assert!(today > 0.0, "day 2 holds its own: {today}");
+    let bounty = bounty_after(&reg, tx1);
+    assert!(
+        (early + today - bounty).abs() < 1e-6,
+        "{early} + {today} != {bounty}"
+    );
+    assert_eq!(late_rows(&reg), 0, "the fold cleared the late rows");
+}
+
+#[test]
+fn a_bot_logging_in_mid_sweep_books_its_owed_day_late() {
+    let (mut reg, _, tx) = ratter_owed_day_one();
+    let f1 = day_totals(&reg, 1).faucet;
+    assert!(reg.ext::<Book>().sweeping);
+    on_login(&mut reg, BOT);
+    let bounty = bounty_after(&reg, tx);
+    assert!(bounty > 0.0, "the ratter was paid");
+    let rose = day_totals(&reg, 1).faucet - f1;
+    assert!((rose - bounty).abs() < 1e-6, "{rose} != {bounty}");
+    let w = crate::econ_ledger::window(&reg).faucet;
+    assert!(w.abs() < 1e-6, "the next fold would count it again: {w}");
+    assert!(agent(&reg, BOT).is_none(), "the bot is live again");
 }
 
 #[test]
