@@ -628,6 +628,144 @@ fn a_natural_grammar_spawn_undocks_within_a_bound() {
     assert!(undocked, "both undocked; their acts:\n{}", log.join("\n"));
 }
 
+/// **A despawned bot's ship leaves space after the log-off hold** (#161):
+/// `/bots despawn all` through the real driver and link shuts the bots'
+/// sockets, the server holds each ship (`crimewatch::logged_off`), and when
+/// the hold ends (read from `held_until`, never a fixed number) the hull is
+/// gone from the roster. The one test that drives the bot driver, not a mock
+/// client, from the words to the hull leaving.
+#[test]
+fn a_despawned_bot_in_space_leaves_the_roster_after_the_log_off_hold() {
+    use eve_server::account_book::{Book, ensure_bot_account, find};
+    use eve_server::accounts::Accounts;
+    use eve_server::server::Server;
+    use std::sync::atomic::Ordering;
+
+    const GM_PASSWORD: &str = "invented-gm-pass-3";
+    let d = dir("despawn-hull");
+    let mut cfg = config();
+    cfg.dev = true;
+    cfg.bot_control = Some(d.clone());
+    cfg.handshake.accounts = Some(Arc::new(Accounts::in_world(Book::with_iterations(2))));
+    let server = Server::bind(cfg).expect("bind");
+    let addr = server.local_addr().expect("addr");
+    let world = server.world();
+    std::thread::spawn(move || {
+        let _ = server.run();
+    });
+    {
+        let mut w = world.write().expect("world");
+        let row = ensure_bot_account(w.deltas_mut(), "Gina Gm", GM_PASSWORD).expect("account");
+        w.create_owned_character(row.user_id, "Gina Gm".to_owned());
+    }
+    let handles: Arc<Mutex<Vec<eve_bot::driver::Handle>>> = Arc::default();
+    let seen = Arc::clone(&handles);
+    let rows: Arc<Mutex<Vec<Spawn>>> = Arc::default();
+    let heard = Arc::clone(&rows);
+    let hook: eve_bot::control::SpawnHook = Box::new(move |spec: &Spawn| {
+        heard.lock().unwrap().push(spec.clone());
+        let role = eve_bot::roles::parse(&spec.role).ok_or("a role")?;
+        let mut members = Vec::new();
+        for i in 1..=spec.count {
+            let name = format!("{}{i}", spec.group);
+            let token = spec.tokens.get(&name).ok_or("a token")?;
+            let cfg = BotConfig::new(&name, addr, Pace::Fast)
+                .with_role(role)
+                .with_token(token);
+            let (handle, thread) = spawn(cfg);
+            seen.lock().unwrap().push(handle.clone());
+            members.push(Member {
+                name,
+                handle,
+                thread,
+            });
+        }
+        Ok(members)
+    });
+    let controller = Arc::new(Mutex::new(Controller::new(hook)));
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread = run_link(d.clone(), Arc::clone(&controller), Arc::clone(&stop));
+    let mut gm = Conn::connect(addr, Duration::from_secs(10)).expect("connects");
+    gm.handshake_as(&format!("Gina Gm:{GM_PASSWORD}"))
+        .expect("the GM's login");
+    gm.select_character_named("Gina Gm").expect("selects");
+    let mut reply = String::new();
+    assert!(until(Duration::from_secs(20), || {
+        reply = slash(&mut gm, "/bots 2 allied escorts here");
+        !reply.contains("no eve-bots")
+    }));
+    assert!(reply.contains("spawned 2 x escort"), "{reply}");
+    let group = rows.lock().unwrap()[0].group.clone();
+    let in_space = |handles: &[eve_bot::driver::Handle]| {
+        handles.len() == 2
+            && handles.iter().all(|h| {
+                h.observation()
+                    .is_some_and(|o| matches!(o.place, eve_bot::brain::Place::InSpace { .. }))
+            })
+    };
+    let out = until(Duration::from_secs(90), || {
+        in_space(&handles.lock().unwrap().clone())
+    });
+    // Each bot's character id, by the account the book made for its name.
+    let ids: Vec<i64> = {
+        let w = world.read().expect("world");
+        (1..=2)
+            .filter_map(|i| {
+                let row = find(w.deltas(), &format!("{group}{i}"))?;
+                w.config()
+                    .characters
+                    .iter()
+                    .find(|c| c.owner_user_id == Some(row.user_id))
+                    .map(|c| c.character_id)
+            })
+            .collect()
+    };
+    let finish = |stop: &Arc<AtomicBool>, thread: std::thread::JoinHandle<()>| {
+        stop.store(true, Ordering::Relaxed);
+        let _ = thread.join();
+        let _ = std::fs::remove_dir_all(&d);
+    };
+    if !out || ids.len() != 2 {
+        slash(&mut gm, "/bots despawn all");
+        finish(&stop, thread);
+        panic!("both bots in space (out={out}) with a character each: {ids:?}");
+    }
+    let in_roster = |id: i64| world.read().expect("world").roster().get(id).is_some();
+    let both_in = ids.iter().all(|id| in_roster(*id));
+    let despawn = slash(&mut gm, "/bots despawn all");
+    // Every ship is put under the hold once its socket is shut down.
+    let mut holds: Vec<Option<_>> = vec![None; 2];
+    let held = until(Duration::from_secs(40), || {
+        let w = world.read().expect("world");
+        for (i, id) in ids.iter().enumerate() {
+            holds[i] = w.combat().crimewatch().held_until(*id);
+        }
+        holds.iter().all(|h| h.is_some())
+    });
+    let (offline, still_there) = {
+        let w = world.read().expect("world");
+        (
+            ids.iter().all(|id| !w.sessions().is_online(*id)),
+            ids.iter().all(|id| w.roster().get(*id).is_some()),
+        )
+    };
+    let end = holds.iter().flatten().copied().max();
+    if let Some(end) = end {
+        eve_server::crimewatch::tick(&mut world.write().expect("world"), end);
+    }
+    let gone: Vec<bool> = ids.iter().map(|id| !in_roster(*id)).collect();
+    finish(&stop, thread);
+    assert!(both_in, "both hulls were in space before the despawn");
+    assert!(despawn.starts_with("despawned"), "{despawn}");
+    assert!(
+        held,
+        "every bot's ship was held after the despawn: {holds:?}"
+    );
+    assert!(offline, "the bots' sessions are cleared");
+    assert!(still_there, "the hulls stay while the hold runs");
+    assert_eq!(gone, [true, true], "the hulls are gone when the hold ends");
+}
+
 /// GANG-SUMMON: `/bots come alpha` over the real link calls a group to the
 /// GM, who is in space far from the station: the (non-gang) bot is told
 /// `summon <group> <system> <character>`, undocks if it has to and warps to
