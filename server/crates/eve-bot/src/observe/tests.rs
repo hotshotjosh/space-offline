@@ -680,3 +680,19 @@ fn fold_row_notes_the_killer_as_an_acquaintance() {
     let v = crate::know::recall(name, THIRD).unwrap();
     assert_eq!((v.last_kind, v.i_killed), (crate::know::Met::IKilled, 1));
 }
+
+#[test]
+fn fold_row_notes_the_helper_on_my_kill_not_myself() {
+    let h = hall(&[(ME_CORP, ME), (MATE_CORP, MATE)]);
+    let name = "Invented Book Helper";
+    let m = Mutex::new(Mind::seeded(name, 7, CAREERS, &Signals::default(), 0));
+    let s = seen(
+        51,
+        aff(FOE, FOE_CORP),
+        vec![hit(ME, ME_CORP, 50), hit(MATE, MATE_CORP, 50)],
+    );
+    fold_row(&h, &m, ME, &s, NOW);
+    let a = crate::know::recall(name, MATE).expect("the helper is in the book");
+    assert_eq!((a.last_kind, a.helps), (crate::know::Met::HelpedMe, 1));
+    assert_eq!(crate::know::recall(name, ME), None);
+}

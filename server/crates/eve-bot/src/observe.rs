@@ -422,7 +422,7 @@ pub fn fold_row(hall: &Hall, mind: &Mutex<Mind>, me: i64, s: &Seen, now: u64) ->
     // The acquaintance book (#209): the killer, the victim, the helpers.
     {
         use crate::know::{Met, note};
-        let name = mind.lock().map(|m| m.name.clone()).unwrap_or_default();
+        let name = mind.lock().unwrap_or_else(|p| p.into_inner()).name.clone();
         if s.victim.character_id == me {
             if let Some(h) = s.hits.first() {
                 note(&name, h.who.character_id, Met::KilledMe, s.system, now);
