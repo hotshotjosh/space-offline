@@ -636,6 +636,9 @@ fn run() -> Result<(), String> {
             "--bubble reads the server's bubble.tsv from the --control directory".to_owned(),
         );
     }
+    if roster.is_some() && society {
+        return Err("--roster is dev mode only, not for --society runs".to_owned());
+    }
     if control.is_some() && society {
         return Err("--control is not for --society runs (the minds pick the roles)".to_owned());
     }
