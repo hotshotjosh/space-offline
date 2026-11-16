@@ -212,6 +212,8 @@ pub struct SpawnedRow {
     pub pilot: bool,
     /// A pilot row that an alt spawn already took.
     pub paired: bool,
+    /// The group of the alt spawn that took this pilot row.
+    pub paired_by: Option<String>,
 }
 
 impl DevHall {
@@ -278,6 +280,7 @@ impl DevHall {
                     .find(|r| r.pilot && !r.paired && r.side == side && r.count == count)
                     .map(|r| {
                         r.paired = true;
+                        r.paired_by = Some(group.to_owned());
                         r.group.clone()
                     });
             }
@@ -287,6 +290,7 @@ impl DevHall {
                 count,
                 pilot,
                 paired: false,
+                paired_by: None,
             });
         }
         let Some(cap) = found else {
@@ -299,6 +303,42 @@ impl DevHall {
                 (a, b)
             })
             .collect()
+    }
+
+    /// A group was despawned: drop its names, its pair links (on both sides) and its spawn
+    /// rows, so the partner stands unpaired and a respawn under a new group pairs afresh.
+    pub fn forget_group(&self, group: &str, members: &[String]) {
+        let mine: Vec<String> = self
+            .names
+            .lock()
+            .map(|n| n.keys().filter(|k| members.contains(k)).cloned().collect())
+            .unwrap_or_default();
+        if let Ok(mut p) = self.pairs.lock() {
+            let keys: Vec<String> = p.keys().filter(|k| members.contains(k)).cloned().collect();
+            for k in keys {
+                if let Some(other) = p.remove(&k) {
+                    p.remove(&other);
+                }
+            }
+        }
+        if let Ok(mut n) = self.names.lock() {
+            for k in &mine {
+                n.remove(k);
+            }
+        }
+        if let Ok(mut g) = self.groups.lock() {
+            g.remove(group);
+        }
+        if let Ok(mut rows) = self.spawned.lock() {
+            rows.retain(|r| r.group != group);
+            // A capital row that this group's alts had taken is free for the next alt spawn.
+            for r in rows.iter_mut() {
+                if r.pilot && r.paired_by.as_deref() == Some(group) {
+                    r.paired = false;
+                    r.paired_by = None;
+                }
+            }
+        }
     }
 
     /// The group's characters.
@@ -830,6 +870,40 @@ mod tests {
         hall.register_name("altx1", 9_100_002);
         assert_eq!(hall.partner_of("capx1"), Some(9_100_002));
         assert_eq!(hall.partner_of("altx1"), Some(9_100_001));
+    }
+
+    #[test]
+    fn a_despawned_alt_leaves_the_pilot_unpaired_and_a_respawn_pairs_afresh() {
+        let cap = crate::roles::parse("capital").expect("role");
+        let alt = crate::roles::parse("cyno-alt").expect("role");
+        let hall = DevHall::default();
+        hall.link_spawn("capq", cap, "red", 2);
+        assert_eq!(hall.link_spawn("altq", alt, "red", 2).len(), 2);
+        for (n, id) in [("capq1", 1), ("altq1", 2)] {
+            hall.register_name(n, 9_200_000 + id);
+        }
+        assert_eq!(hall.partner_of("capq1"), Some(9_200_002));
+        hall.forget_group("altq", &["altq1".to_owned(), "altq2".to_owned()]);
+        assert_eq!(hall.partner_of("capq1"), None);
+        assert_eq!(hall.partner_name("capq1"), None);
+        assert_eq!(hall.partner_name("capq2"), None);
+        // The pilot is still there; a new alt group pairs with it.
+        assert_eq!(hall.link_spawn("altr", alt, "red", 2).len(), 2);
+        hall.register_name("altr1", 9_200_003);
+        assert_eq!(hall.partner_of("capq1"), Some(9_200_003));
+    }
+
+    #[test]
+    fn forgetting_a_group_leaves_a_group_whose_name_starts_the_same() {
+        let hall = DevHall::default();
+        hall.link("ab1", "cd1");
+        hall.link("ab11", "cd11");
+        hall.link("abc1", "cde1");
+        hall.forget_group("ab", &["ab1".to_owned()]);
+        assert_eq!(hall.partner_name("ab1"), None);
+        assert_eq!(hall.partner_name("cd1"), None);
+        assert_eq!(hall.partner_name("ab11").as_deref(), Some("cd11"));
+        assert_eq!(hall.partner_name("abc1").as_deref(), Some("cde1"));
     }
 
     #[test]

@@ -133,6 +133,9 @@ pub struct Member {
     pub thread: JoinHandle<()>,
 }
 
+/// Called with a despawned group's name.
+pub type DespawnHook = Box<dyn Fn(&str, &[String]) + Send>;
+
 /// Starts the bots of one row; the process supplies it (module header).
 pub type SpawnHook = Box<dyn FnMut(&Spawn) -> Result<Vec<Member>, String> + Send>;
 
@@ -155,6 +158,8 @@ pub struct Controller {
     /// #271: the `--state` directory, where each bot's decision log lives
     /// ([`crate::persona_log`]); `inspect` shows the tail.
     state_dir: Option<std::path::PathBuf>,
+    /// Called with a group's name once it is despawned (the dev hall forgets its pairs).
+    on_despawn: Option<DespawnHook>,
 }
 
 /// The most bots `list` names one by one in a group.
@@ -167,7 +172,13 @@ impl Controller {
             hook,
             loose: Vec::new(),
             state_dir: None,
+            on_despawn: None,
         }
+    }
+
+    /// Run `f` with each group's name as it is despawned.
+    pub fn set_on_despawn(&mut self, f: DespawnHook) {
+        self.on_despawn = Some(f);
     }
 
     /// #271: where the bots' decision logs are (`--state DIR`).
@@ -299,6 +310,10 @@ impl Controller {
             bots += g.members.len();
             for m in &g.members {
                 m.handle.stop();
+            }
+            if let Some(f) = &self.on_despawn {
+                let names: Vec<String> = g.members.iter().map(|m| m.name.clone()).collect();
+                f(&g.spec.group, &names);
             }
         }
         let loose = std::mem::take(&mut self.loose);
@@ -531,6 +546,10 @@ impl Controller {
                 // the link must keep answering meanwhile.
                 for m in &g.members {
                     m.handle.stop();
+                }
+                if let Some(f) = &self.on_despawn {
+                    let names: Vec<String> = g.members.iter().map(|m| m.name.clone()).collect();
+                    f(&g.spec.group, &names);
                 }
             }
         }
@@ -960,6 +979,17 @@ mod tests {
     }
 
     #[test]
+    fn a_despawn_tells_the_hook_which_group_went() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = Arc::clone(&seen);
+        let mut c = Controller::new(empty_hook());
+        c.set_on_despawn(Box::new(move |g, _| log.lock().unwrap().push(g.to_owned())));
+        c.handle(spec_words());
+        c.handle("despawn ALPHA");
+        assert_eq!(*seen.lock().unwrap(), vec!["alpha".to_owned()]);
+    }
+
+    #[test]
     fn side_list_and_despawn_work_on_groups() {
         let mut c = Controller::new(empty_hook());
         c.handle("spawn g red mine 1 all5 merlin");
@@ -1068,6 +1098,12 @@ mod tests {
     #[test]
     fn pause_resume_inspect_and_stop_all_reach_the_bots() {
         let mut c = crew_controller();
+        type Seen = Vec<(String, Vec<String>)>;
+        let seen: Arc<Mutex<Seen>> = Arc::default();
+        let log = Arc::clone(&seen);
+        c.set_on_despawn(Box::new(move |g, n| {
+            log.lock().unwrap().push((g.to_owned(), n.to_vec()));
+        }));
         c.handle("spawn Crew red mine 2 all5 merlin");
         // Names match without regard to case.
         let r = c.handle("pause CREW");
@@ -1099,6 +1135,13 @@ mod tests {
             "stopped 1 group(s), 2 bot(s), and 0 bot(s) started at launch"
         );
         assert_eq!(c.handle("list"), "no bot groups");
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![(
+                "Crew".to_owned(),
+                vec!["Crew1".to_owned(), "Crew2".to_owned()]
+            )]
+        );
     }
 
     #[test]

@@ -72,8 +72,8 @@ is refused at load. A lone row of either role pairs with nobody. `/bots` spawns 
 way: a `cyno-alt` spawn pairs with the newest unpaired `capital` spawn of its side and count,
 and eve-bots prints `capital pair: <a> <-> <b>` on its output. Each bot learns its partner's character once
 the partner has logged in. The alt's dev kit is a cynosural field generator, the pair never
-forms a group fleet, and the dev market supplies the hull, generator and fuel (dev only). Despawn and respawn a pair's two groups together; despawning one half leaves
-the other bound to it.
+forms a group fleet, and the dev market supplies the hull, generator and fuel (dev only). Despawning one half unpairs the other: its partner clears on its next turn, and a respawned
+alt under a new group pairs afresh with the unpaired capital row.
 
 Shipped: `content/bots/dev/mining.tsv` (two Orca foremen + five Hulks each),
 `pvp.tsv` (ten Rifters against ten Merlins, a roaming gang of six

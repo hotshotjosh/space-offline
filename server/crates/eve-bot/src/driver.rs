@@ -2141,6 +2141,17 @@ impl Bot {
                     vec![],
                     Verdict::Ok,
                 );
+            } else if let Some(old) = self.memory.policy.partner
+                && dev.hall.partner_name(&self.config.name).is_none()
+            {
+                // The partner's group was despawned: stand unpaired.
+                self.memory.policy.partner = None;
+                self.record(
+                    ActKind::Capital,
+                    format!("capital pair: partner {old} is gone"),
+                    vec![],
+                    Verdict::Ok,
+                );
             }
         }
         let docked = matches!(self.obs.place, Place::Docked { .. });

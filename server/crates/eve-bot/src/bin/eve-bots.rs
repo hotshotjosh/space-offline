@@ -1117,6 +1117,7 @@ fn run() -> Result<(), String> {
     let control_thread = control.as_deref().map(|dir| {
         let wing_hall = wing_hall.clone();
         let spawn_hall = spawn_hall.clone();
+        let despawn_hall = spawn_hall.clone();
         let (tokens, friends, profiles, rules, doctrine, sov_hall, wants, map, marker, tables) = (
             tokens.clone(),
             friends.clone(),
@@ -1229,6 +1230,10 @@ fn run() -> Result<(), String> {
             Ok(members)
         });
         let mut ctl = eve_bot::control::Controller::new(hook);
+        {
+            let hall = std::sync::Arc::clone(&despawn_hall);
+            ctl.set_on_despawn(Box::new(move |g, n| hall.forget_group(g, n)));
+        }
         ctl.adopt_loose(launched.clone());
         ctl.set_state_dir(state.as_deref().map(std::path::PathBuf::from));
         let controller = std::sync::Arc::new(std::sync::Mutex::new(ctl));
