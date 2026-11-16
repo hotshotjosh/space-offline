@@ -64,6 +64,9 @@ pub struct DoctrineWorld {
     /// catalog was built ([`Live::abyss_changed_on`] asks if the world has
     /// moved since).
     pub abyssal: bool,
+    /// Hull types of the capital groups ([`crate::capital::JUMPER_GROUPS`]),
+    /// which count as enemy capitals in a picture. Empty without type data.
+    pub cap_hulls: BTreeSet<i64>,
 }
 
 impl DoctrineWorld {
@@ -76,6 +79,7 @@ impl DoctrineWorld {
             feat,
             seeds: Default::default(),
             abyssal: false,
+            cap_hulls: BTreeSet::new(),
         }
     }
 
@@ -156,6 +160,9 @@ impl DoctrineWorld {
         let mut world = DoctrineWorld::new(catalog, Lens::of_library(&lib), feat);
         world.seeds = seeds;
         world.abyssal = abyssal;
+        world.cap_hulls = crate::capital::hull_types(content, &crate::capital::JUMPER_GROUPS)
+            .into_iter()
+            .collect();
         Some(world)
     }
 
@@ -362,6 +369,9 @@ pub struct Readiness {
     /// Jumps to systems it knows the way to.
     pub jumps_to: BTreeMap<i64, u32>,
     pub at: u64,
+    /// The bot is a capital pilot (a dreadnought, carrier or force auxiliary
+    /// pair): it counts as a capital, not a line ship ([`HallState::caps_for`]).
+    pub capital: bool,
 }
 
 impl Default for Readiness {
@@ -374,6 +384,7 @@ impl Default for Readiness {
             ship: None,
             jumps_to: BTreeMap::new(),
             at: 0,
+            capital: false,
         }
     }
 }
@@ -386,6 +397,23 @@ pub struct Leader {
     pub ceo: i64,
     pub name: String,
     pub corps: Vec<i64>,
+}
+
+/// **Enemy capitals in a picture** (#35): the ships whose hull type is in
+/// `cap_hulls`, of the groups the leader is hostile to.
+pub fn enemy_caps(
+    picture: &doctrine_sense::Picture,
+    cap_hulls: &BTreeSet<i64>,
+    hostile: &dyn Fn(Group) -> bool,
+) -> u32 {
+    picture
+        .theirs
+        .iter()
+        .filter(|e| hostile(e.group))
+        .flat_map(|e| e.hulls.iter())
+        .filter(|(h, _)| cap_hulls.contains(h))
+        .map(|(_, n)| *n)
+        .sum()
 }
 
 /// Is a career one that flies fighting ships?
@@ -666,20 +694,33 @@ impl HallState {
 
     /// The corp members of a leader, as the machine's assets for `system`.
     fn assets_for(&self, l: &Leader, system: i64) -> Vec<Asset> {
+        self.assets_where(l, system, false)
+    }
+
+    /// The group's capital pilots as assets (#35). A capital pilot that has
+    /// not reported a hull holds none ([`Ship::Nobody`]): a capital is never
+    /// filled from nothing, so it is not counted.
+    fn caps_for(&self, l: &Leader, system: i64) -> Vec<Asset> {
+        self.assets_where(l, system, true)
+    }
+
+    fn assets_where(&self, l: &Leader, system: i64, capital: bool) -> Vec<Asset> {
         self.fighters(l)
             .iter()
+            .filter(|(c, _)| self.readiness.get(c).is_some_and(|r| r.capital) == capital)
             .map(|(c, _)| {
                 let r = self.readiness.get(c).cloned().unwrap_or_default();
                 let jumps = match r.system {
                     Some(s) if s == system => Some(0),
                     _ => r.jumps_to.get(&system).copied().or(Some(DEFAULT_JUMPS)),
                 };
+                let unreported = if capital { Ship::Nobody } else { Ship::Hangar };
                 Asset {
                     char_id: *c,
                     online: r.online,
                     wake_in_s: r.wake_in_s,
                     jumps,
-                    ship: r.ship.unwrap_or(Ship::Hangar),
+                    ship: r.ship.unwrap_or(unreported),
                 }
             })
             .collect()
@@ -783,6 +824,7 @@ impl HallState {
                         && !is_mine(g)
                         && self.view(l, g) <= society::WARY_AT
                 };
+                let enemy_caps = enemy_caps(&picture, &world.cap_hulls, &hostile);
                 let (comps, conf, counter) = {
                     let book = &self.dbooks[&l.group];
                     let (comps, conf) = foes_of(
@@ -845,7 +887,10 @@ impl HallState {
                     .is_some_and(|v| v.iter().any(|t| t.system == system));
                 if !existing {
                     let open = self.theatres.get(&l.group).map_or(0, |v| v.len());
-                    if comps.is_empty() || open >= tk.max_theatres || conf < CONF_MIN {
+                    if (comps.is_empty() && enemy_caps == 0)
+                        || open >= tk.max_theatres
+                        || conf < CONF_MIN
+                    {
                         continue;
                     }
                     self.theatres
@@ -854,6 +899,7 @@ impl HallState {
                         .push(Theatre::new(system, now));
                 }
                 let assets = self.assets_for(l, system);
+                let own_caps = self.caps_for(l, system);
                 let foes: Vec<Foe<'_>> = comps
                     .iter()
                     .map(|(i, n)| Foe {
@@ -871,9 +917,11 @@ impl HallState {
                     foes: &foes,
                     conf,
                     assets: &assets,
-                    contested: !comps.is_empty(),
+                    contested: !comps.is_empty() || enemy_caps > 0,
                     counter: counter.as_deref(),
                     feat: world.feat,
+                    enemy_caps,
+                    own_caps: &own_caps,
                 };
                 let th = self
                     .theatres
@@ -1782,5 +1830,38 @@ mod tests {
             st.relations.get(C2, C3) > 0.0
                 && st.relations.get(C3, C2) > crate::doctrine_theatre::HELP_AT + 1.0
         );
+    }
+
+    #[test]
+    fn enemy_caps_counts_only_hostile_capital_hulls() {
+        use crate::doctrine_sense::{Enemy, Picture, Source};
+        let (cap_a, cap_b, line) = (990_100_001, 990_100_002, 990_100_003);
+        let enemy = |group, hulls: Vec<(i64, u32)>| Enemy {
+            group,
+            hulls,
+            source: Source::Grid,
+            conf: 1.0,
+        };
+        let pic = Picture {
+            system: SYS,
+            at_s: 0,
+            mine: Strength::default(),
+            theirs: vec![
+                enemy(7_001, vec![(cap_a, 2), (line, 5)]),
+                enemy(7_002, vec![(cap_b, 1)]),
+                // A group the leader is not hostile to: not counted.
+                enemy(7_003, vec![(cap_a, 4)]),
+                // A group nobody attributed (id 0): not counted.
+                enemy(0, vec![(cap_a, 3)]),
+            ],
+            reliability: 1.0,
+            blind: false,
+            observers: 1,
+        };
+        let caps = BTreeSet::from([cap_a, cap_b]);
+        let hostile = |g: Group| g == 7_001 || g == 7_002;
+        assert_eq!(enemy_caps(&pic, &caps, &hostile), 3);
+        assert_eq!(enemy_caps(&pic, &BTreeSet::new(), &hostile), 0);
+        assert_eq!(enemy_caps(&pic, &BTreeSet::from([line + 1]), &hostile), 0);
     }
 }

@@ -7,3 +7,9 @@ bluf	blue	hunter	10	role	Merlin
 # neighbouring systems, and the body engages together once a scout reports a fight it clears the bar for.
 # Needs a gate map (--content) and --society-pvp; set --roster-home to a low-sec or null-sec system.
 roam	roamers	roamgang	6	role	Rifter
+# capital pair (CAP-DOCTRINE #35): a dreadnought pilot and its cyno alt on the red side. DEV roster: dev mode grants the
+# hull and fuel, for CI and soak only. In society play a capital is never granted: it is flown only from a hull a builder made
+# or an NPC dropped (`doctrine::Role::Capital`, `doctrine_assign::seat_open`). The pair idles until Policy::partner is
+# wired (eve-bot brain.rs); no pair forms yet.
+capf	red	capital	1	all5	Revelation
+capa	red	cyno-alt	1	all5	-

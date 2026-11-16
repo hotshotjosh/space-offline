@@ -529,7 +529,7 @@ mod tests {
         };
         assert_eq!((count(&mining, "foreman"), count(&mining, "mine")), (2, 10));
         let pvp = shipped(include_str!("../../../../content/bots/dev/pvp.tsv"));
-        assert_eq!(pvp.len(), 3);
+        assert_eq!(pvp.len(), 5);
         assert!(
             pvp[..2]
                 .iter()
@@ -537,6 +537,11 @@ mod tests {
         );
         assert_eq!(pvp[2].role.name(), "roamgang", "the roaming gang");
         assert!(pvp[2].count >= 4 && pvp[2].side != pvp[0].side && pvp[2].side != pvp[1].side);
+        assert_eq!(
+            (pvp[3].role.name(), pvp[4].role.name()),
+            ("capital", "cyno-alt"),
+            "the capital pair"
+        );
         assert_ne!(pvp[0].side, pvp[1].side, "opposite sides");
         assert_ne!(pvp[0].ship, pvp[1].ship, "different doctrines");
         let pve = shipped(include_str!("../../../../content/bots/dev/pve.tsv"));

@@ -87,11 +87,13 @@ pub const SEEN_DAYS: f64 = 3.0;
 /// Whether a role gets seats (BP-CAMP, #125). Interdict opens only while its
 /// hull was seen on sale or held ("nothing from nowhere": `Makeable` reads
 /// content tables, not stock, so a dictor nobody can buy would take a seat).
+/// Capital opens the same way: only while its hull was seen on sale or held,
+/// never from nothing (#35).
 /// Scout stays closed: it has no behaviour (see `docs/lanes/bp-camp.md`), so
 /// a seat would sit idle. A closed role's surplus falls back to damage.
 fn seat_open(role: Role, hull: i64, seen: &BTreeSet<i64>) -> bool {
     match role {
-        Role::Interdict => seen.contains(&hull),
+        Role::Interdict | Role::Capital => seen.contains(&hull),
         Role::Scout => false,
         _ => true,
     }
@@ -312,6 +314,7 @@ pub fn readiness(
         ship,
         jumps_to: BTreeMap::new(),
         at: now,
+        capital: false,
     }
 }
 

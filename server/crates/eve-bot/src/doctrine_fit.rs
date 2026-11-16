@@ -1680,6 +1680,9 @@ fn wants(
             skim(&mut hi, Kind::Cloak, 1);
             skim(&mut mid, Kind::Prop, 1);
         }
+        // A capital is no line hull ([`HULL_GROUPS`] has none): its fit is the
+        // owned hull's, never built here (#35).
+        Role::Capital => {}
         Role::Ewar => {
             skim(&mut hi, Kind::Neut, h.hi.min(2));
             skim(&mut mid, Kind::Ecm, h.med.min(2));

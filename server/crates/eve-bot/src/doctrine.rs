@@ -190,6 +190,10 @@ pub enum Role {
     Interdict,
     /// BP-T2-HULLS: a cloaked eye.
     Scout,
+    /// CAP-DOCTRINE (#35): a dreadnought, carrier or force auxiliary. Filled
+    /// only from a hull a builder made or an NPC dropped, never granted
+    /// (`doctrine_assign::seat_open`).
+    Capital,
 }
 
 impl Role {
@@ -202,6 +206,7 @@ impl Role {
             Role::Command => "command",
             Role::Interdict => "interdict",
             Role::Scout => "scout",
+            Role::Capital => "capital",
         }
     }
 }

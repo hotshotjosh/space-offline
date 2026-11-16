@@ -67,7 +67,8 @@ the group as it logs in (a `foreman` forms its own fleet at the belt and
 `mine` bots follow it, as those roles already do).
 
 Shipped: `content/bots/dev/mining.tsv` (two Orca foremen + five Hulks each),
-`pvp.tsv` (ten Rifters against ten Merlins), `pve.tsv` (sites and missions),
+`pvp.tsv` (ten Rifters against ten Merlins, a roaming gang of six
+Rifters, and a Revelation with its cyno alt), `pve.tsv` (sites and missions),
 `world50.tsv` (50 bots: miners, hunters on two sides, sites, missions,
 traders, builders, hackers, ice, PI, gas).
 

@@ -84,6 +84,17 @@ pub const HOLD_BREAK: f64 = 0.25;
 pub const HELP_AGGRESSION: f64 = 0.4;
 /// Seconds an ally that could help is given **[A]**.
 pub const HELP_WAIT_S: u64 = 600;
+/// Our available capitals needed per enemy capital to commit them, as a ratio
+/// **[A 1.0]**: one of ours for each of theirs. Falsified by a soak where bot
+/// capitals commit into a larger capital force and die (raise it), or where
+/// they sit out an even fight (lower it).
+pub const CAP_MATCH: f64 = 1.0;
+/// Enemy capitals seen at which a group with none of its own to answer
+/// leaves the theatre **[A 1]**: a single dreadnought is enough to bail from.
+/// Falsified by a soak where subcapital fleets die to one lone capital they
+/// could have killed (raise it), or run from a lone carrier that never shoots
+/// (the machine's other rules would have held; raise it).
+pub const CAP_DISENGAGE: u32 = 1;
 /// `HELP_AT` is `effects::HELP_AT` (R-REL-3); re-exported for the tests.
 pub const HELP_AT: f64 = crate::effects::HELP_AT;
 
@@ -579,6 +590,13 @@ pub struct Ctx<'a> {
     /// A counter doctrine that is makeable or in stock (its key).
     pub counter: Option<&'a str>,
     pub feat: Features,
+    /// Enemy capital hulls in the picture (a hull of a capital group, see
+    /// `DoctrineWorld::cap_hulls`).
+    pub enemy_caps: u32,
+    /// The group's capital pilots as assets. A capital is never filled from
+    /// nothing: a pilot with no hull is `Ship::Nobody` and does not count
+    /// ([`available`]); only hulls builders made or NPCs dropped are here.
+    pub own_caps: &'a [Asset],
 }
 
 /// What the fleet commander does.
@@ -639,7 +657,7 @@ pub fn step(t: &mut Theatre, c: &Ctx<'_>) -> Vec<Action> {
     }
     let k = c.knobs;
     let now = c.now_s;
-    let seen = ships_of(c.foes);
+    let seen = ships_of(c.foes).max(f64::from(c.enemy_caps));
     match t.state {
         State::Watch => {
             if c.contested && seen > 0.0 && c.conf >= CONF_MIN {
@@ -662,6 +680,22 @@ pub fn step(t: &mut Theatre, c: &Ctx<'_>) -> Vec<Action> {
             t.scouts += 1;
             if t.scouts < REPORT_N || now.saturating_sub(t.changed_s) < k.tactical_delay_s {
                 return Vec::new();
+            }
+            if c.enemy_caps > 0 {
+                let caps = available(c.own_caps, &c.clock, k, c.seed, c.tick);
+                if caps.len() as f64 >= f64::from(c.enemy_caps) * CAP_MATCH {
+                    let chosen = pick(&caps, &BTreeSet::new(), caps.len());
+                    let who = send(t, &chosen, now);
+                    t.steps = 1;
+                    t.enter(State::Commit(0), now);
+                    return vec![Action::Commit { who }];
+                }
+                if c.enemy_caps >= CAP_DISENGAGE {
+                    t.enter(State::Disengage, now);
+                    return vec![Action::Disengage {
+                        abandon_if_losing: false,
+                    }];
+                }
             }
             let av = available(c.assets, &c.clock, k, c.seed, c.tick);
             let cap = commit_cap(av.len(), k.reserve);
@@ -978,6 +1012,8 @@ mod tests {
             contested: true,
             counter: None,
             feat: Features::default(),
+            enemy_caps: 0,
+            own_caps: &[],
         }
     }
 
@@ -1468,5 +1504,98 @@ mod tests {
         assert_eq!(w.ratio(LOSS_WINDOW_S + 1), 0.0);
         w.note(2_000, 100.0, 100.0);
         assert!((w.ratio(2_100) - 1.0).abs() < 1e-9);
+    }
+    /// Drive the machine with enemy capitals in the picture and no line foes.
+    fn run_caps(
+        enemy_caps: u32,
+        own: &[Asset],
+        line: &[Asset],
+        secs: u64,
+    ) -> (Theatre, Vec<Action>) {
+        let f = fx();
+        let k = knobs();
+        let mut t = Theatre::new(SYS, 0);
+        let mut out = Vec::new();
+        let mut now = 0;
+        while now < secs {
+            let c = Ctx {
+                enemy_caps,
+                own_caps: own,
+                assets: line,
+                ..ctx(now, &k, &f, &[], &[])
+            };
+            out.extend(step(&mut t, &c));
+            now += 30;
+        }
+        (t, out)
+    }
+
+    #[test]
+    fn a_seen_enemy_dread_with_none_of_ours_disengages() {
+        let (t, acts) = run_caps(1, &[], &assets(10), 3_600);
+        assert!(
+            acts.iter().any(|a| matches!(a, Action::Disengage { .. })),
+            "{acts:?}"
+        );
+        assert!(!acts.iter().any(|a| matches!(a, Action::Commit { .. })));
+        assert!(t.sent.is_empty());
+    }
+
+    #[test]
+    fn an_enemy_dread_met_by_our_dread_commits_it() {
+        let own = [asset(9_900)];
+        let (t, acts) = run_caps(1, &own, &assets(10), 3_600);
+        let who = acts
+            .iter()
+            .find_map(|a| match a {
+                Action::Commit { who } => Some(who.clone()),
+                _ => None,
+            })
+            .expect("it commits");
+        assert_eq!(who, vec![9_900]);
+        assert!(t.committed() == 1);
+        // Two of theirs against one of ours is not a match: it does not commit.
+        let (_, acts) = run_caps(2, &own, &assets(10), 3_600);
+        assert!(!acts.iter().any(|a| matches!(a, Action::Commit { .. })));
+    }
+
+    #[test]
+    fn two_enemy_dreads_against_one_of_ours_and_a_line_fleet_disengages() {
+        let own = [asset(9_900)];
+        let (t, acts) = run_caps(2, &own, &assets(10), 3_600);
+        assert!(
+            acts.iter().any(|a| matches!(a, Action::Disengage { .. })),
+            "{acts:?}"
+        );
+        assert!(!acts.iter().any(|a| matches!(a, Action::Commit { .. })));
+        assert!(t.sent.is_empty());
+    }
+
+    #[test]
+    fn a_capital_role_is_never_filled_from_nothing() {
+        // A pilot with no hull (`Ship::Nobody`) is not available, so the
+        // machine neither commits it nor counts it as an answer.
+        let mut none = asset(9_901);
+        none.ship = Ship::Nobody;
+        let k = knobs();
+        assert!(available(&[none], &clock(), &k, 1, 1).is_empty());
+        let (_, acts) = run_caps(1, &[none], &assets(10), 3_600);
+        assert!(!acts.iter().any(|a| matches!(a, Action::Commit { .. })));
+        assert!(acts.iter().any(|a| matches!(a, Action::Disengage { .. })));
+        // The seat of a capital role stays shut while its hull was not seen
+        // on sale or held, and opens when it was.
+        let hull = 990_900_001;
+        let mut d = invented_catalog()[0].clone();
+        let fit = d.roles[0].2.clone();
+        d.roles.push((crate::doctrine::Role::Capital, 0.2, {
+            let mut f = fit;
+            f.hull = hull;
+            f
+        }));
+        let cap_ix = d.roles.len() - 1;
+        let unseen = crate::doctrine_assign::quotas(&d, 10, &BTreeSet::new());
+        assert_eq!(unseen[cap_ix], 0);
+        let seen = crate::doctrine_assign::quotas(&d, 10, &BTreeSet::from([hull]));
+        assert!(seen[cap_ix] > 0);
     }
 }
