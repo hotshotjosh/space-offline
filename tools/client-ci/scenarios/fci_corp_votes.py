@@ -34,7 +34,15 @@ corporation.
    line `/vote close <id>` (the shortest vote runs a day and no client call
    shortens it), one `voteManager` call settles it, and B is the CEO.
 
-NOT here: the expiry by the clock, other won vote types and an expulsion (unit-tested
+7. (#153) B, now the CEO, proposes an expulsion vote (kick type) naming A, who
+   holds shares and does not vote.  B sees the case open with A as option 0's
+   parameter (A may already be out when its step starts).  B votes yes, `/vote close`, and `GetCorpSanctionedActions` lists
+   the case (kick type, parameter A, not acted upon).  `ActivateSanctionedAction`
+   puts it in effect: A's `session.corpid` leaves the corporation (where A lands
+   is read, not pinned), the row reads acted upon, and a second Activate is
+   refused ("already been put in effect").
+
+NOT here: the expiry by the clock and the other won vote types (unit-tested
 in `corp_votes.rs` and `service/corp_votes.rs`), the Votes panels on screen
 (a human check).
 [A]s: `GetVoteCasesByCorporation(corp, STATUS_OPEN)` is a rowset the client
@@ -1433,6 +1441,7 @@ def eoci_main(EOCI_NAME):
     STATUS_CLOSED = 1               # voting.py VOTECASE_STATUS_* [V]
     STATUS_OPEN = 2
     VOTE_CEO = 0                    # voting.py voteCEO [V]
+    VOTE_KICK = 3                   # voting.py voteKickMember [V]
     VOTE_GENERAL = 4                # voting.py voteGeneral [V]
 
     # -- the client's services ----------------------------------------------
@@ -1553,6 +1562,116 @@ def eoci_main(EOCI_NAME):
                 return o.parameter
         return None
 
+    def sanctioned_row(case_id):
+        """The row of `GetCorpSanctionedActions()` for a case, or None.  The
+        call is a voteManager call, so it also runs the server's settle."""
+        ok, rows = rcall('voteManager', 'GetCorpSanctionedActions')
+        if not ok or rows is None:
+            return None
+        try:
+            return rows[case_id] if case_id in rows else None
+        except Exception:
+            return None
+
+    def kick_case(corp):
+        """The open kick-type case as a row, or None."""
+        for c in (open_cases(corp) or []):
+            if getattr_safe(c, 'voteType') == VOTE_KICK:
+                return c
+        return None
+
+    def kick_as_a(corp, me, other):
+        """7. (#153) A, a member holding shares, is put to an expulsion vote by
+        B, the CEO.  A casts no vote: a kick needs no quorum, the option with
+        the most weight wins (server rule: corp_votes.rs take_due puts a quorum on the CEO
+        type only), so B's own weight carries it.  A watches the case, then
+        its own corporation change.  A's sight of the open kick case is not
+        proven: B finishes in seconds.  A's push path is the one step 6 proves."""
+        # B proposes, votes, closes and puts the kick in effect within seconds, so
+        # A may start this step already expelled; A's own sight of an open case is
+        # proven by step 6 (the CEO vote).  Wait for either.
+        out = lambda: (lambda c: c is not None and c != corp)(getattr_safe(builtin('session'), 'corpid'))
+        got, waited = wait_for(lambda: kick_case(corp) is not None or out(),
+                               timeout_ms=STEP_WAIT_MS, step_ms=500)
+        k = kick_case(corp)
+        say('A at step 7: %s after %s ms' % (
+            'open' if k is not None else 'expelled' if out() else 'neither', text(waited)))
+        if k is not None:
+            check('its option 0 names A as the pilot to expel',
+                  candidate_of(corp, k.voteCaseID) == me,
+                  'parameter %s, A %s' % (text(candidate_of(corp, k.voteCaseID)), text(me)))
+        got, waited = wait_for(out, timeout_ms=STEP_WAIT_MS, step_ms=2000)
+        check('A\'s session.corpid is no longer the corporation after the expulsion',
+              bool(got), 'corpid %s, corp %s after %s ms'
+              % (text(getattr_safe(builtin('session'), 'corpid')), text(corp), text(waited)))
+        say('expelled pilot A is now in corporation %s' % text(getattr_safe(builtin('session'), 'corpid')))
+
+    def kick_as_b(corp, me, other):
+        """7. (#153) B, now the CEO, proposes the expulsion of A, votes for it,
+        has a GM close it, reads it as a sanctioned action and puts it in
+        effect."""
+        precondition('A is still a member before the expulsion', corp_of(other) == corp,
+                     text(corp_of(other)))
+        if (lambda c: c is None or c != corp)(corp_of(other)):
+            return
+        ok, v = safe(lambda: votes_svc().CreateVote(
+            {'title': '', 'description': 'f-ci', 'votetype': VOTE_KICK, 'time': 1,
+             'kickmember': other, 'memberName': text(other)}))
+        check('B proposes an expulsion vote naming A (CreateVote -> InsertVoteCase, kick)', ok, text(v)[:200])
+        if not ok:
+            return
+        got, waited = wait_for(lambda: kick_case(corp) is not None, timeout_ms=30000, step_ms=500)
+        check('B sees the expulsion vote open after OnVoteCaseChanged', bool(got),
+              'after %s ms' % text(waited))
+        k = kick_case(corp)
+        if k is None:
+            return
+        check('its option 0 names A as the pilot to expel',
+              candidate_of(corp, k.voteCaseID) == other,
+              'parameter %s, A %s' % (text(candidate_of(corp, k.voteCaseID)), text(other)))
+        ok, v = safe(lambda: votes_svc().InsertVote(corp, k.voteCaseID, 0))
+        check('B votes for option 0 (InsertVote)', ok, text(v)[:200])
+        got, waited = wait_for(lambda: (tally(corp, k.voteCaseID) or {}).get(0, 0) > 0,
+                               timeout_ms=30000, step_ms=500)
+        check('B\'s weight lands on option 0', bool(got),
+              '%s after %s ms' % (text(tally(corp, k.voteCaseID)), text(waited)))
+        ok, reply = gm('/vote close %d' % k.voteCaseID)
+        closed = bool(ok) and 'closed; it acts' in text(reply)
+        check('a GM closes the expulsion vote (/vote close)', closed, text(reply)[:200])
+        if not closed:
+            return
+
+        def listed():
+            # Every poll is a voteManager call, so the settle has run.
+            return sanctioned_row(k.voteCaseID)
+        got, waited = wait_for(listed, timeout_ms=STEP_WAIT_MS, step_ms=2000)
+        row = sanctioned_row(k.voteCaseID)
+        check('GetCorpSanctionedActions lists the won expulsion', row is not None,
+              'after %s ms' % text(waited))
+        if row is None:
+            return
+        check('the row is a kick type naming A, not acted upon',
+              getattr_safe(row, 'voteType') == VOTE_KICK
+              and getattr_safe(row, 'parameter') == other
+              and not getattr_safe(row, 'actedUpon'),
+              'type %s parameter %s actedUpon %s' % (
+                  text(getattr_safe(row, 'voteType')), text(getattr_safe(row, 'parameter')),
+                  text(getattr_safe(row, 'actedUpon'))))
+        ok, v = rcall('voteManager', 'ActivateSanctionedAction', k.voteCaseID)
+        check('B puts the expulsion in effect (ActivateSanctionedAction)', ok, text(v)[:200])
+        got, waited = wait_for(lambda: (lambda c: c is not None and c != corp)(corp_of(other)),
+                               timeout_ms=30000, step_ms=1000)
+        check('A is no longer in the corporation', bool(got),
+              'A in %s, corp %s after %s ms' % (text(corp_of(other)), text(corp), text(waited)))
+        say('expelled pilot A is in corporation %s' % text(corp_of(other)))
+        row = sanctioned_row(k.voteCaseID)
+        check('the row now reads acted upon', row is not None and bool(getattr_safe(row, 'actedUpon')),
+              text(getattr_safe(row, 'actedUpon')))
+        ok, v = rcall('voteManager', 'ActivateSanctionedAction', k.voteCaseID)
+        check('a second ActivateSanctionedAction is refused', not ok, 'answered %s' % text(v)[:200])
+        check('and says the action has already been put in effect',
+              (not ok) and 'already been put in effect' in text(v), text(v)[:300])
+
     def phase_ceo(me, other):
         svc = corp_svc()
         precondition('the client corp and corpvotes services run',
@@ -1666,6 +1785,8 @@ def eoci_main(EOCI_NAME):
         got, waited = wait_for(settled, timeout_ms=PEER_WAIT_MS, step_ms=2000)
         check('a won CEO vote with a share majority hands the seat to B', bool(got),
               'ceoID %s, B %s after %s ms' % (text(ceo_of_corp(corp)), text(other), text(waited)))
+        if got:
+            kick_as_a(corp, me, other)
 
     def phase_member(me, other):
         svc = corp_svc()
@@ -1748,6 +1869,8 @@ def eoci_main(EOCI_NAME):
         got, waited = wait_for(lambda: ceo_of_corp(corp) == me, timeout_ms=STEP_WAIT_MS, step_ms=2000)
         check('B is the CEO after the vote closes', bool(got),
               'ceoID %s, B %s after %s ms' % (text(ceo_of_corp(corp)), text(me), text(waited)))
+        if got:
+            kick_as_b(corp, me, other)
 
     def linger(ms):
         waited = 0
