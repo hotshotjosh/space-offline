@@ -45,6 +45,8 @@ use eve_server::jump_fatigue as fatigue;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+pub mod pair;
+
 // ---- the client's and the server's constants ---------------------------------
 
 /// `categoryShip` **[V]**.
@@ -235,6 +237,9 @@ pub struct Mind {
     pub siege_fuel_next: Option<Instant>,
     /// When a docked pilot may next try to fit its siege or triage module.
     pub fit_next: Option<Instant>,
+    /// When the alt may next try to fit its own cyno generator
+    /// ([`crate::capital_fight::fit_effect`]).
+    pub alt_fit_next: Option<Instant>,
 }
 
 /// What the hull and the module burn.
@@ -273,7 +278,7 @@ pub struct Means<'a> {
 }
 
 impl Means<'_> {
-    fn holds(&self, groups: &[i64]) -> bool {
+    pub(crate) fn holds(&self, groups: &[i64]) -> bool {
         self.active_group.is_some_and(|g| groups.contains(&g))
             || owned_hull(self.hangar, groups).is_some()
     }
@@ -848,6 +853,36 @@ pub fn read_fuel(
     })
 }
 
+/// **Is a jumper hull listed at the docked station within the wallet?** (what a society
+/// pilot reports as `buy_ready`, [`pair::CapReport`]): the cheapest ask the bot may take on
+/// a jumper type's book is at most [`HULL_WALLET_SHARE`] of the wallet, the same read
+/// [`get_hull`] makes. Gated by [`SHOP_WALLET_FLOOR`]; not docked or a refused read is
+/// `false`. Once per career decision.
+pub(crate) fn jumper_ask_within(
+    c: &mut Conn,
+    content: &eve_server::content::Content,
+    wallet: Option<f64>,
+) -> Result<bool> {
+    let Some(w) = wallet.filter(|w| *w >= SHOP_WALLET_FLOOR) else {
+        return Ok(false);
+    };
+    let Some(station) = c.session().station_id() else {
+        return Ok(false);
+    };
+    let own = own_ids_soft(c)?;
+    for t in hull_types(content, &JUMPER_GROUPS) {
+        let book = match c.market_orders(t) {
+            Ok(b) => b,
+            Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
+            Err(_) => continue,
+        };
+        if cheapest_ask(&book, station, &own).is_some_and(|a| a.price <= w * HULL_WALLET_SHARE) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// `jumpTimers.GetTimers` **[V]** (CAP-F).
 pub fn read_timers(c: &mut Conn) -> Result<Timers> {
     let out = c.call("jumpTimers", "GetTimers", vec![])?;
@@ -1396,7 +1431,28 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         m.capital.home_station = c.session().station_id();
     }
     let home = m.capital.home.unwrap_or(system);
-    let module = cyno_module(c, content)?;
+    let mut module = cyno_module(c, content)?;
+    // B4: an alt with no generator fits its own, docked: hangar stock first, else the
+    // cheapest ask inside the fit budget. Never a GM grant.
+    if module.is_none() && docked {
+        let mut unused = None;
+        let note = crate::capital_fight::fit_effect(
+            c,
+            content,
+            CYNO_EFFECT_ID,
+            &mut unused,
+            &mut m.capital.alt_fit_next,
+        )?;
+        module = cyno_module(c, content)?;
+        if module.is_none()
+            && let Some(note) = note
+        {
+            return Ok(format!(
+                "cyno alt: {}",
+                note.trim_start_matches("capital: ")
+            ));
+        }
+    }
     let ozone = module.and_then(|r| {
         let t = eve_server::typedata::attribute_in(content, r.type_id, ATTR_OZONE_TYPE)?;
         let q = eve_server::typedata::attribute_in(content, r.type_id, ATTR_OZONE_QTY)?;

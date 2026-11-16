@@ -513,14 +513,52 @@ pub fn pick(hangar: &[(i64, i64)], types: &[i64], asks: &[(i64, f64)], budget: f
 }
 
 /// **Fit the siege or triage module** to the docked active ship, if it has
-/// none: from the hangar, else bought inside [`FIT_WALLET_SHARE`] of the
-/// wallet, then `MultiAdd` with the auto-fit flag ([`Conn::fit_auto`]).
-/// `None` when nothing needs doing (the hull has no such module, one is
-/// fitted) or the try moved nothing (waits [`STOCK_BACKOFF`]); a note when it
-/// fitted or was refused. Only a dead connection is the error.
+/// none: the pilot's own, by the effect its hull fights with
+/// ([`effect_for_hull`]), then [`fit_effect`]. `None` when nothing needs doing
+/// (the hull has no such module, one is fitted) or the try moved nothing (waits
+/// [`STOCK_BACKOFF`]); a note when it fitted or was refused. Only a dead
+/// connection is the error.
 pub fn fit(
     c: &mut Conn,
     content: &eve_server::content::Content,
+    cache: &mut Option<Module>,
+    retry: &mut Option<std::time::Instant>,
+) -> Result<Option<String>> {
+    let now = clock::instant();
+    if retry.is_some_and(|t| now < t) {
+        return Ok(None);
+    }
+    let Some(ship) = c.session().ship_id() else {
+        return Ok(None);
+    };
+    if c.session().station_id().is_none() {
+        return Ok(None);
+    }
+    let rows = c.hangar_items()?;
+    // A hull with nothing to fit is settled for a while: back off so the next
+    // turns do not read the hangar again (L2).
+    let Some(effect) = rows
+        .iter()
+        .find(|r| r.item_id == ship)
+        .and_then(|r| effect_for_hull(r.group_id))
+    else {
+        *retry = Some(now + STOCK_BACKOFF);
+        return Ok(None);
+    };
+    fit_effect(c, content, effect, cache, retry)
+}
+
+/// **Fit a module that carries `effect`** to the docked active ship, if none is
+/// fitted: from the hangar, else bought inside [`FIT_WALLET_SHARE`] of the
+/// wallet, then `MultiAdd` with the auto-fit flag ([`Conn::fit_auto`]). The pilot
+/// calls it with its siege or triage effect ([`fit`]); the cyno alt with the
+/// cynosural effect ([`crate::capital::CYNO_EFFECT_ID`]), so the alt fits its own
+/// generator (nothing from nowhere). `cache` takes the siege or triage module
+/// once fitted (stays `None` for a generator); `retry` is the backoff.
+pub fn fit_effect(
+    c: &mut Conn,
+    content: &eve_server::content::Content,
+    effect: i64,
     cache: &mut Option<Module>,
     retry: &mut Option<std::time::Instant>,
 ) -> Result<Option<String>> {
@@ -535,18 +573,13 @@ pub fn fit(
         return Ok(None);
     };
     let rows = c.hangar_items()?;
-    // A hull with nothing to fit, or a module already fitted, is settled for
-    // a while: back off so the next turns do not read the hangar again (L2).
-    let Some(effect) = rows
+    let fitted = c.fitted()?;
+    let table = eve_server::typedata::installed_in(content).table();
+    if fitted
         .iter()
-        .find(|r| r.item_id == ship)
-        .and_then(|r| effect_for_hull(r.group_id))
-    else {
-        *retry = Some(now + STOCK_BACKOFF);
-        return Ok(None);
-    };
-    if let Some(m) = find(content, &c.fitted()?) {
-        *cache = Some(m);
+        .any(|r| table.get(r.type_id).is_some_and(|t| t.has_effect(effect)))
+    {
+        *cache = find(content, &fitted);
         *retry = Some(now + STOCK_BACKOFF);
         return Ok(None);
     }
@@ -961,6 +994,58 @@ mod tests {
         );
         assert!(matches!(
             pick(&[], &types, &[(10, 500.0)], 100.0),
+            Pick::Nothing(_)
+        ));
+    }
+
+    /// B4: the alt's generator is picked by the cynosural effect over the same
+    /// stock-then-market rule as the pilot's module (invented ids).
+    #[test]
+    fn fit_effect_takes_hangar_stock_before_the_market() {
+        const GEN_A: i64 = 990_734_301;
+        const GEN_B: i64 = 990_734_302;
+        let rows = format!(
+            "{}\
+             type\t{GEN_A}\t515\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t{}\t\tFixture Generator A\n\
+             type\t{GEN_B}\t515\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t{}\t\tFixture Generator B\n",
+            eve_server::typedata::FIXTURE,
+            crate::capital::CYNO_EFFECT_ID,
+            crate::capital::CYNO_EFFECT_ID,
+        );
+        let mut c = Content::fixture();
+        let table = eve_server::typedata::Table::parse(&rows).expect("rows parse");
+        c.insert("typedata", eve_server::typedata::Installed::build(table));
+        let mut types = module_types(&c, crate::capital::CYNO_EFFECT_ID);
+        types.sort_unstable();
+        assert_eq!(types, vec![GEN_A, GEN_B]);
+        assert!(module_types(&c, EFFECT_SIEGE).is_empty());
+        assert_eq!(
+            pick(&[(5, GEN_B)], &types, &[(GEN_A, 1.0)], 100.0),
+            Pick::Hangar(5)
+        );
+        assert_eq!(
+            pick(&[], &types, &[(GEN_A, 60.0), (GEN_B, 40.0)], 100.0),
+            Pick::Buy {
+                type_id: GEN_B,
+                price: 40.0
+            }
+        );
+        assert!(matches!(pick(&[], &types, &[], 0.0), Pick::Nothing(_)));
+    }
+
+    /// A dev roster's cyno alt: the dev kit leaves the generator in the hangar and the
+    /// wallet may be empty. The alt's fit step ([`crate::capital`] `alt`, not gated on
+    /// society) takes hangar stock with no budget and no ask; with none it grants nothing.
+    #[test]
+    fn a_dev_alt_fits_the_generator_its_kit_left_in_the_hangar_with_no_budget() {
+        const GEN: i64 = 990_734_311;
+        const OTHER: i64 = 990_734_312;
+        assert_eq!(
+            pick(&[(41, OTHER), (42, GEN)], &[GEN], &[], 0.0),
+            Pick::Hangar(42)
+        );
+        assert!(matches!(
+            pick(&[(41, OTHER)], &[GEN], &[], 0.0),
             Pick::Nothing(_)
         ));
     }

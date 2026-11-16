@@ -141,6 +141,15 @@ pub const REACTOR_PRIOR_ISK_H: f64 = 3_000.0;
 /// times a Merlin. Falsified by a pair's `[econ]` ledger.
 pub const CAPITAL_PRIOR_ISK_H: f64 = 20_000.0;
 
+/// **The pair careers' base affinity** (#37 lane B) **[A]**: a paired member's corp need
+/// ([`crate::capital::pair::PAIR_NEED`]) multiplies a utility that is zero when the
+/// affinity is not positive, and at neutral traits the affinity is the base. A base of
+/// 0.0 let a pair that formed never fly. Both careers stay blocked for everyone without a
+/// partner and a hull ([`crate::capital::lift_blocks`]), so no unpaired bot is moved.
+/// Falsified by a paired member whose traits are neutral and that still does not pick its
+/// pair career, or by unpaired bots seeded into either career.
+pub const PAIR_BASE: f64 = 0.1;
+
 /// **The freighter hauler's prior, ISK/h** (CAP-L) **[A]**: one bulk trip of
 /// about a million ISK profit a game day, under 50 k an hour. Falsified by a
 /// hauler's ledger.
@@ -318,7 +327,7 @@ pub static CAREERS: &[Career] = &[
         // the traits are a careful, social, patient pilot's.
         Some(&crate::capital::ROLE),
         Served,
-        0.0,
+        PAIR_BASE,
         [-0.2, 0.2, 0.8, 0.8, 0.2, 0.0, 0.6],
         Null,
         CAPITAL_PRIOR_ISK_H,
@@ -345,7 +354,7 @@ pub static CAREERS: &[Career] = &[
         // its prior is the pair's share.
         Some(&crate::capital::ALT_ROLE),
         Served,
-        0.0,
+        PAIR_BASE,
         [0.0, -0.2, 0.8, 1.0, 0.0, 0.4, 0.6],
         Null,
         CAPITAL_PRIOR_ISK_H / 2.0,

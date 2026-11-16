@@ -1340,6 +1340,9 @@ struct Tracking {
     /// FC-2: the Entosis Link module types (effect 6063), read once from
     /// the content bundle; only a wing bot asks.
     link_types: Option<BTreeSet<i64>>,
+    /// CAP-PAIR (#37): a listed jumper ask is within the wallet, as of the last career
+    /// decision ([`crate::capital::jumper_ask_within`]); reported to the hall.
+    cap_buy_ready: bool,
 }
 
 struct Bot {
@@ -7439,6 +7442,14 @@ impl Bot {
             && matches!(self.obs.place, Place::Docked { .. })
         {
             let corps_before = soc.lock().corps.clone();
+            // CAP-PAIR (#37): what this member offers a capital pair, before the turn so
+            // the match sees it; society only, a dev bot is paired by its roster.
+            if self.memory.policy.dev.is_none()
+                && let Some(me) = conn.session().char_id()
+            {
+                let report = self.cap_report(conn, now);
+                hall.lock().report_cap(me, report, now);
+            }
             let turned = crate::corpmind::turn(conn, hall, &soc.mind, soc.table, now);
             // Log before `?`: a stint made before a later wire error is
             // still a real join. A turn that did nothing changed no stint
@@ -7450,6 +7461,22 @@ impl Bot {
                 }
             }
             let lines = turned?;
+            // CAP-PAIR (#37): the pair the hall holds for this bot; a dissolved pair sets
+            // `None`, so the role says MISSING and the next decision leaves it.
+            if self.memory.policy.dev.is_none()
+                && let Some(me) = conn.session().char_id()
+            {
+                let partner = hall.lock().partner_of(me);
+                if partner != self.memory.policy.partner {
+                    self.record(
+                        ActKind::Capital,
+                        format!("capital pair: partner {partner:?}"),
+                        vec![],
+                        Verdict::Ok,
+                    );
+                    self.memory.policy.partner = partner;
+                }
+            }
             // R-REL-3: the friendly humans a fleet commander invites.
             {
                 let (regard, loyalty) = {
@@ -7470,10 +7497,43 @@ impl Bot {
         Ok(())
     }
 
+    /// **What this member offers a capital pair** (docked; the hangar as last observed).
+    fn cap_report(&self, conn: &Conn, now: u64) -> crate::capital::pair::CapReport {
+        use crate::capital::{CATEGORY_SHIP, FREIGHTER_GROUPS, JUMPER_GROUPS};
+        let hangar = &self.obs.hangar;
+        let active_jumper = self.obs.ship.and_then(|s| {
+            hangar
+                .iter()
+                .find(|r| r.item_id == s.ship_id && JUMPER_GROUPS.contains(&r.group_id))
+                .map(|r| r.type_id)
+        });
+        let jumper = crate::capital::owned_hull(hangar, &JUMPER_GROUPS)
+            .map(|r| r.type_id)
+            .or(active_jumper);
+        let ship = hangar.iter().any(|r| {
+            r.category_id == CATEGORY_SHIP
+                && r.singleton
+                && !JUMPER_GROUPS.contains(&r.group_id)
+                && !FREIGHTER_GROUPS.contains(&r.group_id)
+        });
+        let generator = self.config.content.as_deref().is_some_and(|c| {
+            let types = crate::capital::generator_types_in(c);
+            hangar.iter().any(|r| types.contains(&r.type_id))
+        });
+        crate::capital::pair::CapReport {
+            corp: conn.session().get_i64("corpid").unwrap_or(0),
+            jumper,
+            buy_ready: self.track.cap_buy_ready,
+            ship,
+            generator,
+            at: now,
+        }
+    }
+
     /// **The per-bot gate of the capital careers** ([`crate::capital::lift_blocks`]):
     /// the price list is read only for a bot rich enough to matter.
     fn lift_capital_blocks(
-        &self,
+        &mut self,
         conn: &mut Conn,
         mut signals: Signals,
         wallet: Option<f64>,
@@ -7499,17 +7559,22 @@ impl Bot {
                 .find(|r| r.item_id == s.ship_id)
                 .map(|r| r.group_id)
         });
-        crate::capital::lift_blocks(
-            &mut signals,
-            &crate::capital::Means {
-                hangar: &self.obs.hangar,
-                active_group,
-                wallet,
-                jumper_price: price(&crate::capital::JUMPER_GROUPS),
-                freighter_price: price(&crate::capital::FREIGHTER_GROUPS),
-                partner: self.memory.policy.partner.is_some(),
-            },
-        );
+        let means = crate::capital::Means {
+            hangar: &self.obs.hangar,
+            active_group,
+            wallet,
+            jumper_price: price(&crate::capital::JUMPER_GROUPS),
+            freighter_price: price(&crate::capital::FREIGHTER_GROUPS),
+            partner: self.memory.policy.partner.is_some(),
+        };
+        crate::capital::lift_blocks(&mut signals, &means);
+        // CAP-PAIR (#37): what the hall hears at the next social turn, from the listed
+        // asks (a hull in hand needs no ask).
+        let holds = means.holds(&crate::capital::JUMPER_GROUPS);
+        self.track.cap_buy_ready = match content {
+            Some(c) if !holds => crate::capital::jumper_ask_within(conn, c, wallet)?,
+            _ => false,
+        };
         Ok(signals)
     }
 

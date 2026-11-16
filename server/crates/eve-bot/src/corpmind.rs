@@ -325,6 +325,19 @@ pub struct HallState {
     /// THREAT: the guard calls a bot outside a fleet posted, for armed corp
     /// mates in its system ([`crate::threat::claim`]). Not persisted.
     pub distress: Vec<crate::threat::Distress>,
+    /// CAP-PAIR (#37 lane B): what each corp member last reported for capital pairing,
+    /// by character. Not persisted.
+    pub cap_reports: BTreeMap<i64, crate::capital::pair::CapReport>,
+    /// The capital pairs the corps hold. Persisted as `cpair` rows.
+    pub cap_pairs: Vec<crate::capital::pair::Pair>,
+    /// Pilots whose buy-ready pair lapsed, `pilot -> the second the cooldown ends`. Not
+    /// persisted.
+    pub pair_cool: BTreeMap<i64, u64>,
+    /// When each corp's pairs were last matched. Not persisted.
+    pub pair_tried: BTreeMap<i64, u64>,
+    /// When a kept pair's member with no report was first looked at after a load. Not
+    /// persisted.
+    pub pair_seen: BTreeMap<i64, u64>,
     /// The recent acts, newest last.
     pub acts: Vec<String>,
     /// Where the hall persists.
@@ -463,6 +476,11 @@ impl HallState {
             hulls_looked: BTreeMap::new(),
             coal: crate::coalition::State::default(),
             distress: Vec::new(),
+            cap_reports: BTreeMap::new(),
+            cap_pairs: Vec::new(),
+            pair_cool: BTreeMap::new(),
+            pair_tried: BTreeMap::new(),
+            pair_seen: BTreeMap::new(),
             acts: Vec::new(),
             state: None,
             dirty: false,
@@ -1504,7 +1522,152 @@ impl HallState {
             .map(|x| x.career.as_str())
             .collect();
         let names: Vec<&str> = table.iter().map(|c| c.name).collect();
-        society::corp_need(c.profile.kind, &careers, &names)
+        let mut need = society::corp_need(c.profile.kind, &careers, &names);
+        // CAP-PAIR: a paired member's own pair career is what the corp needs of it.
+        if let Some(career) = self.pair_role(me) {
+            *need.entry(career.to_owned()).or_insert(1.0) *= crate::capital::pair::PAIR_NEED;
+        }
+        need
+    }
+
+    /// **A member's report for capital pairing** (docked, once a social turn): stored, then
+    /// at most once per [`crate::capital::pair::pair_every`] per corp the corp's pairs are
+    /// matched ([`crate::capital::pair::match_corp`]) and replaced. One act line per pair
+    /// formed or ended.
+    pub fn report_cap(&mut self, me: i64, r: crate::capital::pair::CapReport, now: u64) {
+        use crate::capital::pair;
+        let corp = r.corp;
+        self.cap_reports.insert(me, r);
+        // A member that left or joined another corp takes its pair with it.
+        let before = self.cap_pairs.len();
+        let members = &self.members;
+        self.cap_pairs.retain(|p| {
+            [p.pilot, p.alt]
+                .iter()
+                .all(|id| members.get(id).is_some_and(|m| m.corp == p.corp))
+        });
+        if self.cap_pairs.len() != before {
+            self.dirty = true;
+        }
+        // An NPC starter corp is not matched: it has no CEO, hall or corp need.
+        if !self.corps.contains_key(&corp) || !society::is_player_corp(corp) {
+            return;
+        }
+        if self
+            .pair_tried
+            .get(&corp)
+            .is_some_and(|t| now < t + pair::pair_every(self.day))
+        {
+            return;
+        }
+        self.pair_tried.insert(corp, now);
+        let careers: BTreeMap<i64, String> = self
+            .members
+            .iter()
+            .filter(|(_, m)| m.corp == corp)
+            .map(|(id, m)| (*id, m.career.clone()))
+            .collect();
+        let ceo = self.corps.get(&corp).and_then(|c| c.ceo);
+        let had: Vec<pair::Pair> = self
+            .cap_pairs
+            .iter()
+            .filter(|p| p.corp == corp)
+            .copied()
+            .collect();
+        // When each half of a pair was last heard from when it has no report (a load).
+        let mut seen: BTreeMap<i64, u64> = BTreeMap::new();
+        for id in had.iter().flat_map(|p| [p.pilot, p.alt]) {
+            if self.cap_reports.contains_key(&id) {
+                continue;
+            }
+            let at = match self.members.get(&id).and_then(|m| m.last_turn) {
+                Some(t) => t,
+                None => *self.pair_seen.entry(id).or_insert(now),
+            };
+            seen.insert(id, at);
+        }
+        let (now_pairs, cooled) = pair::match_corp(
+            corp,
+            &self.cap_reports,
+            ceo,
+            &careers,
+            &had,
+            &self.pair_cool,
+            &seen,
+            now,
+            self.day,
+        );
+        if now_pairs == had {
+            return;
+        }
+        for p in &had {
+            if !now_pairs
+                .iter()
+                .any(|q| (q.pilot, q.alt) == (p.pilot, p.alt))
+            {
+                self.act(format!(
+                    "capital pair {} + {} ended ({})",
+                    p.pilot,
+                    p.alt,
+                    pair::why_ended(p, &careers, &cooled)
+                ));
+            }
+        }
+        for p in &now_pairs {
+            if !had.iter().any(|q| (q.pilot, q.alt) == (p.pilot, p.alt)) {
+                let how = if p.held {
+                    "holds a hull"
+                } else {
+                    "can buy a hull"
+                };
+                self.act(format!(
+                    "capital pair {} + {} formed (the pilot {how})",
+                    p.pilot, p.alt
+                ));
+            }
+        }
+        for pilot in cooled {
+            self.pair_cool
+                .insert(pilot, now + pair::COOL_DAYS * self.day.max(1));
+        }
+        self.cap_pairs.retain(|p| p.corp != corp);
+        self.cap_pairs.extend(now_pairs);
+        self.dirty = true;
+    }
+
+    /// The pairs whose two members are both still in the pair's corp.
+    fn live_pairs(&self) -> impl Iterator<Item = &crate::capital::pair::Pair> {
+        self.cap_pairs.iter().filter(|p| {
+            [p.pilot, p.alt]
+                .iter()
+                .all(|id| self.members.get(id).is_some_and(|m| m.corp == p.corp))
+        })
+    }
+
+    /// The other half of `me`'s capital pair, either side.
+    pub fn partner_of(&self, me: i64) -> Option<i64> {
+        self.live_pairs().find_map(|p| {
+            if p.pilot == me {
+                Some(p.alt)
+            } else if p.alt == me {
+                Some(p.pilot)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// The career `me`'s pair role plays: `capital_pilot` or `cyno_alt`.
+    pub fn pair_role(&self, me: i64) -> Option<&'static str> {
+        self.live_pairs().find_map(|p| {
+            if p.pilot == me {
+                Some("capital_pilot")
+            } else if p.alt == me {
+                Some("cyno_alt")
+            } else {
+                None
+            }
+        })
     }
 
     /// The `[soc]` fields: bot corps, alliances with a bot corp, and the
@@ -1708,6 +1871,17 @@ impl HallState {
             );
             rows += 1;
         }
+        for p in &self.cap_pairs {
+            s += &format!(
+                "cpair\t{}\t{}\t{}\t{}\t{}\n",
+                p.pilot,
+                p.alt,
+                p.corp,
+                p.since,
+                u8::from(p.held)
+            );
+            rows += 1;
+        }
         s += &format!(
             "clock\t{}\t{}\n",
             opt(self.relations.at.map(|v| v as i64)),
@@ -1854,6 +2028,16 @@ impl HallState {
                         b.retiring = Some((f[5].to_owned(), int(f[6])? as u64));
                     }
                     st.dbooks.insert(int(f[1])?, b);
+                }
+                "cpair" => {
+                    need(6)?;
+                    st.cap_pairs.push(crate::capital::pair::Pair {
+                        pilot: int(f[1])?,
+                        alt: int(f[2])?,
+                        corp: int(f[3])?,
+                        since: int(f[4])? as u64,
+                        held: f[5] == "1",
+                    });
                 }
                 "kill" => {
                     need(2)?;
@@ -2118,6 +2302,16 @@ impl Hall {
     /// DOC-4/5: a bot reports its readiness.
     pub fn report_readiness(&self, char_id: i64, r: crate::doctrine_hall::Readiness) {
         self.lock().report_readiness(char_id, r);
+    }
+
+    /// CAP-PAIR: a member's report for capital pairing (see [`HallState::report_cap`]).
+    pub fn report_cap(&self, me: i64, r: crate::capital::pair::CapReport, now: u64) {
+        self.lock().report_cap(me, r, now);
+    }
+
+    /// CAP-PAIR: the other half of `me`'s capital pair.
+    pub fn partner_of(&self, me: i64) -> Option<i64> {
+        self.lock().partner_of(me)
     }
 
     /// The same hall with turns `every` game seconds (tests use 0).
@@ -3651,6 +3845,7 @@ fn execute(
 mod tests {
     use super::*;
     use crate::mind::TRAIT_COUNT;
+    use crate::verbs::ItemRow;
 
     const DAY: u64 = 1_000;
     const ANN: i64 = 90_000_201;
@@ -4267,8 +4462,26 @@ mod tests {
         st.kills.insert(42);
         st.stock.paid_today.insert(C1, (9, 1234.5));
         st.stock.float.insert(MAL, 777.0);
+        st.cap_pairs.push(crate::capital::pair::Pair {
+            pilot: 9_300_001,
+            alt: 9_300_002,
+            corp: C1,
+            since: 4_321,
+            held: true,
+        });
+        st.cap_pairs.push(crate::capital::pair::Pair {
+            pilot: 9_300_003,
+            alt: 9_300_004,
+            corp: C2,
+            since: 4_400,
+            held: false,
+        });
         let text = st.render();
         let back = HallState::parse(&text, DAY).expect("parses");
+        assert_eq!(
+            back.cap_pairs, st.cap_pairs,
+            "the cpair rows survive a restart"
+        );
         assert_eq!(back.corps, st.corps);
         assert_eq!(back.alliances[&AL].executor, Some(C1));
         assert_eq!(back.relations, st.relations);
@@ -4282,6 +4495,214 @@ mod tests {
         let torn: String = text.lines().take(2).map(|l| format!("{l}\n")).collect();
         assert!(HallState::parse(&torn, DAY).is_err());
         assert!(HallState::parse("soc\t0\nend\t0\n", DAY).is_err());
+    }
+
+    /// #37 lane B: a state file written before `cpair` rows existed still loads.
+    #[test]
+    fn an_old_state_without_cpair_rows_loads() {
+        let mut st = two_corps();
+        st.cap_pairs.push(crate::capital::pair::Pair {
+            pilot: 9_300_001,
+            alt: 9_300_002,
+            corp: C1,
+            since: 1,
+            held: true,
+        });
+        let text = st.render();
+        assert!(text.contains("cpair\t"));
+        // What an older build wrote: the same file with no cpair row and its row count.
+        let old: Vec<&str> = text.lines().filter(|l| !l.starts_with("cpair\t")).collect();
+        let rows = old.len() - 2; // the `soc` header and the `end` row are not counted
+        let mut old_text = String::new();
+        for l in old {
+            if l.starts_with("end\t") {
+                old_text += &format!("end\t{rows}\n");
+            } else {
+                old_text += &format!("{l}\n");
+            }
+        }
+        let back = HallState::parse(&old_text, DAY).expect("an old file loads");
+        assert!(back.cap_pairs.is_empty());
+        assert_eq!(back.corps, st.corps);
+    }
+
+    fn cap_hall() -> (HallState, Vec<i64>) {
+        let mut st = HallState::new(DAY);
+        let ids = vec![9_300_011, 9_300_012, 9_300_013];
+        st.corps.insert(C1, corp(C1, ids[2], "miner"));
+        for id in &ids {
+            st.members.insert(*id, member("M", "miner", C1, &[]));
+        }
+        (st, ids)
+    }
+
+    fn cap_report(
+        corp: i64,
+        jumper: Option<i64>,
+        ship: bool,
+        at: u64,
+    ) -> crate::capital::pair::CapReport {
+        crate::capital::pair::CapReport {
+            corp,
+            jumper,
+            buy_ready: false,
+            ship,
+            generator: false,
+            at,
+        }
+    }
+
+    #[test]
+    fn the_corp_need_lifts_only_the_paired_members_pair_career() {
+        let (mut st, ids) = cap_hall();
+        let now = 10 * DAY;
+        st.report_cap(ids[1], cap_report(C1, None, true, now), now);
+        assert!(st.cap_pairs.is_empty(), "no hull held or buyable: no pair");
+        st.report_cap(ids[0], cap_report(C1, Some(9_400_001), false, now), now);
+        // Inside the same matching interval: not matched again.
+        assert!(st.cap_pairs.is_empty());
+        let later = now + crate::capital::pair::pair_every(DAY);
+        st.report_cap(ids[0], cap_report(C1, Some(9_400_001), false, later), later);
+        assert_eq!(st.cap_pairs.len(), 1);
+        assert_eq!(st.partner_of(ids[0]), Some(ids[1]));
+        assert_eq!(st.partner_of(ids[1]), Some(ids[0]));
+        assert_eq!(st.partner_of(ids[2]), None);
+        assert!(
+            st.acts
+                .iter()
+                .any(|a| a.contains("capital pair") && a.contains("formed"))
+        );
+        assert!(st.dirty);
+        let need = |st: &HallState, me: i64| st.corp_need(me, crate::career::CAREERS);
+        let (pilot, alt, other) = (need(&st, ids[0]), need(&st, ids[1]), need(&st, ids[2]));
+        let base = other["capital_pilot"];
+        let lift = crate::capital::pair::PAIR_NEED;
+        assert!(
+            (pilot["capital_pilot"] - base * lift).abs() < 1e-9,
+            "the pilot's own career lifts"
+        );
+        assert!(
+            (pilot["cyno_alt"] - other["cyno_alt"]).abs() < 1e-9,
+            "not the other half's"
+        );
+        assert!((alt["cyno_alt"] - other["cyno_alt"] * lift).abs() < 1e-9);
+        assert!((alt["capital_pilot"] - base).abs() < 1e-9);
+        // A pair that ends takes the lift with it.
+        st.cap_pairs.clear();
+        assert_eq!(need(&st, ids[0])["capital_pilot"], base);
+    }
+
+    /// An invented group outside the jumper and freighter groups.
+    const NOT_A_HULL_GROUP: i64 = 9_100_025;
+
+    #[test]
+    fn a_pair_ends_with_a_corp_change_and_the_new_corp_can_pair_afresh() {
+        let (mut st, ids) = cap_hall();
+        let now = 10 * DAY;
+        st.report_cap(ids[1], cap_report(C1, None, true, now), now);
+        let later = now + crate::capital::pair::pair_every(DAY);
+        st.report_cap(ids[0], cap_report(C1, Some(9_400_001), false, later), later);
+        assert_eq!(st.partner_of(ids[0]), Some(ids[1]));
+        // The pilot moves to C2: no partner on either side, before any matching pass.
+        st.corps.insert(C2, corp(C2, ids[0], "miner"));
+        st.members.get_mut(&ids[0]).unwrap().corp = C2;
+        assert_eq!(st.partner_of(ids[0]), None);
+        assert_eq!(st.partner_of(ids[1]), None);
+        assert_eq!(st.pair_role(ids[1]), None);
+        // The next report clears the pair for good and marks the hall dirty.
+        st.dirty = false;
+        st.report_cap(ids[1], cap_report(C1, None, true, later), later);
+        assert!(st.cap_pairs.is_empty() && st.dirty);
+        // C2 pairs the pilot afresh with a C2 member that owns a ship.
+        st.members.get_mut(&ids[2]).unwrap().corp = C2;
+        let t = later + 2 * crate::capital::pair::pair_every(DAY);
+        st.report_cap(ids[2], cap_report(C2, None, true, t), t);
+        st.report_cap(ids[0], cap_report(C2, Some(9_400_001), false, t), t);
+        let t2 = t + crate::capital::pair::pair_every(DAY);
+        st.report_cap(ids[0], cap_report(C2, Some(9_400_001), false, t2), t2);
+        assert_eq!(st.partner_of(ids[0]), Some(ids[2]));
+    }
+
+    #[test]
+    fn an_npc_starter_corp_is_not_matched() {
+        let (mut st, ids) = cap_hall();
+        let npc = 1_000_009;
+        for id in &ids {
+            st.members.get_mut(id).unwrap().corp = npc;
+        }
+        let now = 10 * DAY;
+        st.report_cap(ids[1], cap_report(npc, None, true, now), now);
+        let later = now + crate::capital::pair::pair_every(DAY);
+        st.report_cap(
+            ids[0],
+            cap_report(npc, Some(9_400_001), false, later),
+            later,
+        );
+        assert!(st.cap_pairs.is_empty());
+        assert!(st.pair_tried.is_empty());
+    }
+
+    #[test]
+    fn a_paired_alt_at_neutral_traits_picks_cyno_alt() {
+        let (mut st, ids) = cap_hall();
+        st.cap_pairs.push(crate::capital::pair::Pair {
+            pilot: ids[0],
+            alt: ids[1],
+            corp: C1,
+            since: 0,
+            held: true,
+        });
+        for (me, want) in [(ids[1], "cyno_alt"), (ids[0], "capital_pilot")] {
+            let mut s = Signals::default();
+            s.blocked.insert("pirate".to_owned());
+            crate::career::block_capital(&mut s);
+            for (c, n) in st.corp_need(me, crate::career::CAREERS) {
+                *s.corp_need.entry(c).or_insert(1.0) *= n;
+            }
+            // lift_blocks opened for a member with a partner, a hull and a ship.
+            let ship = ItemRow {
+                item_id: 1,
+                type_id: 2,
+                owner_id: me,
+                location_id: 3,
+                flag_id: 4,
+                quantity: 1,
+                group_id: NOT_A_HULL_GROUP,
+                category_id: crate::capital::CATEGORY_SHIP,
+                singleton: true,
+            };
+            let hull = ItemRow {
+                item_id: 5,
+                group_id: crate::capital::JUMPER_GROUPS[0],
+                ..ship
+            };
+            let hangar = if want == "capital_pilot" {
+                vec![hull]
+            } else {
+                vec![ship]
+            };
+            crate::capital::lift_blocks(
+                &mut s,
+                &crate::capital::Means {
+                    hangar: &hangar,
+                    active_group: None,
+                    wallet: None,
+                    jumper_price: None,
+                    freighter_price: None,
+                    partner: true,
+                },
+            );
+            let t = Traits([0.5; TRAIT_COUNT]);
+            let best = crate::career::CAREERS
+                .iter()
+                .map(|c| {
+                    let income = crate::career::prior_income(c, &s);
+                    (c.name, crate::career::utility(c, &t, income, &s))
+                })
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .unwrap();
+            assert_eq!(best.0, want, "{me}");
+        }
     }
 
     #[test]
