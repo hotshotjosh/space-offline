@@ -25,9 +25,18 @@
 //! next              -> next_raffle_id next_running_id
 //! r <id>            -> running_id owner location system item type count price
 //!                      restriction(0|1) created expires status winner(-1)
-//!                      end_date(0) is_copy(0|1|-)
+//!                      end_date(0) is_copy(0|1|-) sold(-)
 //! t <id> <number>   -> owner running_id
+//! h <id>            -> number:owner:running_id, one string per ticket
 //! ```
+//!
+//! **Compaction** (#276): a finished or expired offer keeps its sold count in
+//! `r` column 15 (`-` while running or in a world from before the column) and
+//! folds every `t` row but the winner's into one `h` row, about 20 bytes a
+//! ticket in place of about 300. The winner's `t` row stays: [`get`] and
+//! [`award`] read it. Every reader sees the same tickets as before
+//! (`tickets_of`, `holds`, `sold_count`). [`prune_at`] drops the rows of
+//! delivered and expired offers after [`KEEP`].
 //!
 //! Times are FILETIME on the wall clock, as the client reads them.
 //! Subscriptions (who is told what) are a world slot ([`State`]), not
@@ -92,6 +101,11 @@ pub const GRAB_SIZE: usize = 48;
 /// Raffles a history page holds. **[A]**
 pub const PAGE: usize = 50;
 
+/// How long a delivered (8) or expired (9) offer stays in the history before
+/// [`prune_at`] drops its rows. **[A]**; falsifier: a TQ history page older
+/// than 30 days.
+pub const KEEP: i64 = 30 * DAY;
+
 /// Mixed into the draw stream so no other loot stream shares it.
 const HN_TAG: u64 = 0x4859_5045_524e_4554;
 
@@ -138,6 +152,9 @@ pub struct State {
 thread_local! {
     /// Full scans of the rows by the stage (test builds only).
     static SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Leave the rows of a finished offer as they were (a test snapshots
+    /// them, then calls `compact` itself).
+    static NO_COMPACT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// A fixed draw salt for a test.
     static SALT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
@@ -346,6 +363,29 @@ fn with_prefix(
         .take_while(move |(k, _)| k.starts_with(&p2))
 }
 
+fn hkey(id: i64) -> Vec<String> {
+    vec!["h".to_owned(), id.to_string()]
+}
+
+/// The tickets folded into raffle `id`'s `h` row (every one but the winner's),
+/// or `None` while it holds none.
+fn compacted(reg: &Registry, id: i64) -> Option<Vec<TicketRec>> {
+    let row = reg.deltas().of(KIND).get(&hkey(id))?;
+    Some(
+        row.iter()
+            .filter_map(|s| {
+                let mut p = s.split(':').map(|x| x.parse::<i64>());
+                Some(TicketRec {
+                    number: p.next()?.ok()?,
+                    owner_id: p.next()?.ok()?,
+                    running_id: p.next()?.ok()?,
+                    raffle_id: id,
+                })
+            })
+            .collect(),
+    )
+}
+
 fn tickets_of(reg: &Registry, id: i64) -> Vec<TicketRec> {
     let mut out: Vec<TicketRec> = with_prefix(reg, vec!["t".to_owned(), id.to_string()])
         .filter_map(|(k, v)| {
@@ -357,11 +397,21 @@ fn tickets_of(reg: &Registry, id: i64) -> Vec<TicketRec> {
             })
         })
         .collect();
+    out.extend(compacted(reg, id).unwrap_or_default());
     out.sort_by_key(|t| t.number);
     out
 }
 
 fn sold_count(reg: &Registry, id: i64) -> i64 {
+    if let Some(k) = reg
+        .deltas()
+        .of(KIND)
+        .get(&rkey(id))
+        .and_then(|v| v.get(15))
+        .and_then(|s| s.parse::<i64>().ok())
+    {
+        return k;
+    }
     with_prefix(reg, vec!["t".to_owned(), id.to_string()]).count() as i64
 }
 
@@ -388,9 +438,95 @@ pub fn get(reg: &Registry, id: i64, with_tickets: bool) -> Option<Raffle> {
     Some(r)
 }
 
+/// Write the row; the sold column (15) stays as it was.
 fn put_raffle(reg: &mut Registry, r: &Raffle) {
-    reg.deltas_mut().put(KIND, rkey(r.raffle_id), row_of(r));
+    let sold = reg
+        .deltas()
+        .of(KIND)
+        .get(&rkey(r.raffle_id))
+        .and_then(|v| v.get(15).cloned())
+        .unwrap_or_else(|| "-".to_owned());
+    let mut row = row_of(r);
+    row.push(sold);
+    reg.deltas_mut().put(KIND, rkey(r.raffle_id), row);
     reg.mark_dirty();
+}
+
+/// Fold a finished offer's tickets (#276): the sold count into column 15, every
+/// `t` row but the winner's into one `h` row. Never touches a running offer.
+/// Idempotent.
+fn compact(reg: &mut Registry, id: i64) {
+    #[cfg(test)]
+    if NO_COMPACT.with(|c| c.get()) {
+        return;
+    }
+    let Some(r) = get(reg, id, true) else {
+        return;
+    };
+    if r.status == RUNNING {
+        return;
+    }
+    let fold: Vec<&TicketRec> = r
+        .tickets
+        .iter()
+        .filter(|t| t.number != r.winner_number)
+        .collect();
+    for t in &fold {
+        reg.deltas_mut().del(KIND, &tkey(id, t.number));
+    }
+    if fold.is_empty() {
+        reg.deltas_mut().del(KIND, &hkey(id));
+    } else {
+        let row = fold
+            .iter()
+            .map(|t| format!("{}:{}:{}", t.number, t.owner_id, t.running_id))
+            .collect();
+        reg.deltas_mut().put(KIND, hkey(id), row);
+    }
+    let mut row = row_of(&r);
+    row.push(r.tickets.len().to_string());
+    reg.deltas_mut().put(KIND, rkey(id), row);
+    reg.mark_dirty();
+}
+
+/// Whether [`prune_at`] drops this offer at `now`.
+fn prunable(r: &Raffle, now: i64) -> bool {
+    matches!(r.status, FINISHED_DELIVERED | FINISHED_EXPIRED) && r.end_date + KEEP < now
+}
+
+/// Drop the `r`, `h` and `t` rows of every delivered (8) or expired (9) offer
+/// that ended more than [`KEEP`] before `now`, and its subscriptions. Status 6
+/// and 7 keep their rows (the prize is in escrow). Returns the offers dropped.
+pub fn prune_at(reg: &mut Registry, now: i64) -> usize {
+    let gone: Vec<i64> = ids(reg)
+        .into_iter()
+        .filter_map(|id| get(reg, id, false))
+        .filter(|r| prunable(r, now))
+        .map(|r| r.raffle_id)
+        .collect();
+    for id in &gone {
+        let keys: Vec<Vec<String>> = ["t", "h", "r"]
+            .iter()
+            .flat_map(|p| with_prefix(reg, vec![(*p).to_owned(), id.to_string()]))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in keys {
+            reg.deltas_mut().del(KIND, &k);
+        }
+        for s in reg.ext_mut::<State>().subs.values_mut() {
+            s.raffles.remove(id);
+        }
+    }
+    if !gone.is_empty() {
+        reg.mark_dirty();
+    }
+    gone.len()
+}
+
+/// The rollover step `hypernet_prune` (a maintainer line in
+/// `rollover_steps.rs`): its count is the offers dropped.
+pub fn on_rollover(reg: &mut Registry, _d: &crate::rollover::Day) -> usize {
+    prune_at(reg, crate::pyutil::filetime_now())
 }
 
 /// Every raffle id, ascending.
@@ -870,6 +1006,7 @@ fn finish(reg: &mut Registry, id: i64) {
     pay(reg, r.owner_id, total, REF_PAYOUT, id);
     reg.charge(r.owner_id, tax, REF_FEE, SYSTEM_OWNER, id);
     tell_finished(reg, &r, NOTE_FINISHED);
+    compact(reg, id);
 }
 
 /// Fresh entropy for one draw (a test may fix it).
@@ -975,6 +1112,7 @@ fn expire(reg: &mut Registry, id: i64, now: BlueTime) {
         },
     );
     tell_update(reg, &r);
+    compact(reg, id);
 }
 
 /// The clock stage `hypernet` (every 4 ticks): expire what is due. One
@@ -1098,6 +1236,7 @@ pub fn grab(reg: &Registry, _actor: i64, f: &Filter, size: usize) -> Vec<Raffle>
 
 fn holds(reg: &Registry, id: i64, who: i64) -> bool {
     with_prefix(reg, vec!["t".to_owned(), id.to_string()]).any(|(_, v)| n(v, 0) == who)
+        || compacted(reg, id).is_some_and(|c| c.iter().any(|t| t.owner_id == who))
 }
 
 /// The actor's raffles as owner or ticket holder, newest first, a page.
@@ -2690,5 +2829,238 @@ mod tests {
             at(&reg, extra(1)).slot(),
             Slot::new(SELLER, STATION, FLAG_HANGAR)
         );
+    }
+
+    // ---- compaction and prune (#276) ----
+
+    fn rows_t(reg: &Registry, id: i64) -> usize {
+        with_prefix(reg, vec!["t".to_owned(), id.to_string()]).count()
+    }
+
+    fn col15(reg: &Registry, id: i64) -> Option<String> {
+        reg.deltas()
+            .of(KIND)
+            .get(&rkey(id))
+            .and_then(|v| v.get(15).cloned())
+    }
+
+    /// Everything a client can ask about, for every pilot, as text.
+    fn snapshot(reg: &Registry, id: i64) -> Vec<String> {
+        let mut out = Vec::new();
+        for who in [SELLER, BUYER, BUYER2] {
+            out.push(format!("{:?}", history(reg, who, None)));
+            out.push(format!("{:?}", char_stats(reg, who)));
+        }
+        out.push(format!("{:?}", stats(reg, PRIZE_T)));
+        for with in [true, false] {
+            let r = get(reg, id, with).expect("the offer");
+            out.push(format!("{r:?}"));
+            for primed in [true, false] {
+                out.push(format!("{:?}", raffle_value(&r, primed)));
+            }
+        }
+        out
+    }
+
+    /// `sold_out` with the rows left as the draw wrote them.
+    fn sold_out_uncompacted() -> (Registry, i64) {
+        NO_COMPACT.with(|c| c.set(true));
+        let (reg, id, _) = sold_out();
+        NO_COMPACT.with(|c| c.set(false));
+        (reg, id)
+    }
+
+    #[test]
+    fn a_compacted_raffle_answers_history_stats_and_char_stats_as_before() {
+        let (mut reg, id) = sold_out_uncompacted();
+        assert_eq!(rows_t(&reg, id), 8);
+        assert_eq!(col15(&reg, id).as_deref(), Some("-"));
+        let before = snapshot(&reg, id);
+        compact(&mut reg, id);
+        assert_eq!(rows_t(&reg, id), 1, "only the winner's row stays");
+        assert_eq!(col15(&reg, id).as_deref(), Some("8"));
+        assert_eq!(compacted(&reg, id).map(|c| c.len()), Some(7));
+        assert_eq!(snapshot(&reg, id), before);
+        compact(&mut reg, id);
+        assert_eq!(
+            snapshot(&reg, id),
+            before,
+            "compacting twice changes nothing"
+        );
+        assert!(holds(&reg, id, BUYER) && holds(&reg, id, BUYER2));
+        assert!(!holds(&reg, id, SELLER));
+    }
+
+    #[test]
+    fn compaction_keeps_the_winner_row_and_award_still_works() {
+        let (mut reg, id, _) = sold_out();
+        let r = get(&reg, id, true).unwrap();
+        let w = r.winning_ticket().unwrap().clone();
+        assert_eq!(rows_t(&reg, id), 1);
+        assert!(
+            reg.deltas()
+                .of(KIND)
+                .contains_key(&tkey(id, r.winner_number))
+        );
+        assert_eq!(r.tickets.len(), 8);
+        assert_eq!(award(&mut reg, w.owner_id, id), Ok(()));
+        let r = get(&reg, id, false).unwrap();
+        assert_eq!((r.status, r.sold), (FINISHED_DELIVERED, 8));
+        assert_eq!(col15(&reg, id).as_deref(), Some("8"), "the award keeps it");
+    }
+
+    #[test]
+    fn an_expired_raffle_compacts_after_its_refunds() {
+        let mut reg = world();
+        let id = open(&mut reg, 8, 1_000_000);
+        let after_create = wallets(&reg);
+        buy(&mut reg, BUYER, id, Pick::Random(2)).unwrap();
+        buy(&mut reg, BUYER2, id, Pick::Number(7)).unwrap();
+        let tickets = get(&reg, id, true).unwrap().tickets;
+        let expires = get(&reg, id, false).unwrap().expires;
+        tick_at(&mut reg, expires);
+        assert_eq!(wallets(&reg), after_create, "every ticket refunded");
+        assert_eq!(rows_t(&reg, id), 0);
+        assert_eq!(col15(&reg, id).as_deref(), Some("3"));
+        let r = get(&reg, id, true).unwrap();
+        assert_eq!((r.status, r.sold), (FINISHED_EXPIRED, 3));
+        assert_eq!(r.tickets, tickets);
+        assert!(holds(&reg, id, BUYER2));
+        assert_eq!(history(&reg, BUYER, None).0.len(), 1);
+    }
+
+    #[test]
+    fn a_running_raffle_is_never_compacted() {
+        let mut reg = world();
+        let id = open(&mut reg, 8, 1_000_000);
+        for n in 0..3 {
+            buy(&mut reg, BUYER, id, Pick::Number(n)).unwrap();
+        }
+        compact(&mut reg, id);
+        assert_eq!(rows_t(&reg, id), 3);
+        assert!(compacted(&reg, id).is_none());
+        assert_eq!(col15(&reg, id).as_deref(), Some("-"));
+        assert_eq!(get(&reg, id, false).unwrap().sold, 3);
+    }
+
+    #[test]
+    fn an_old_world_without_column_15_still_loads() {
+        let (mut reg, id) = sold_out_uncompacted();
+        let before = snapshot(&reg, id);
+        // A row as the world wrote it before the column existed.
+        let mut row = reg.deltas().of(KIND).get(&rkey(id)).unwrap().clone();
+        row.truncate(15);
+        reg.deltas_mut().put(KIND, rkey(id), row);
+        assert_eq!(col15(&reg, id), None);
+        assert_eq!(snapshot(&reg, id), before);
+        assert_eq!(get(&reg, id, false).unwrap().sold, 8);
+        // compact still works on such a row and answers the same.
+        compact(&mut reg, id);
+        assert_eq!(col15(&reg, id).as_deref(), Some("8"));
+        assert_eq!(snapshot(&reg, id), before);
+    }
+
+    /// Set the end date of offer `id`.
+    fn end_at(reg: &mut Registry, id: i64, end: i64) {
+        let mut r = get(reg, id, false).unwrap();
+        r.end_date = end;
+        put_raffle(reg, &r);
+    }
+
+    /// One offer of prize `prize` that sells out with BUYER's tickets.
+    fn sold_prize(reg: &mut Registry, prize: i64) -> i64 {
+        let d = Creation {
+            item_id: prize,
+            ticket_price: 1_000,
+            ..good()
+        };
+        let id = create(reg, SELLER, &d).expect("offer");
+        for n in 0..8 {
+            buy(reg, BUYER, id, Pick::Number(n)).unwrap();
+        }
+        id
+    }
+
+    /// Delivered `a`, expired-old `b`, expired-young `c`, undelivered `d`,
+    /// running `e`, all but `c` and `e` ended at `w`.
+    fn mixed(w: i64) -> (Registry, [i64; 5]) {
+        let mut reg = world();
+        let a = sold_prize(&mut reg, extra(1));
+        award(&mut reg, BUYER, a).ok();
+        let winner = get(&reg, a, true)
+            .unwrap()
+            .winning_ticket()
+            .unwrap()
+            .owner_id;
+        assert_eq!(winner, BUYER);
+        assert_eq!(get(&reg, a, false).unwrap().status, FINISHED_DELIVERED);
+        let mk = |reg: &mut Registry, prize: i64| {
+            let d = Creation {
+                item_id: prize,
+                ..good()
+            };
+            create(reg, SELLER, &d).expect("offer")
+        };
+        let b = mk(&mut reg, extra(2));
+        buy(&mut reg, BUYER2, b, Pick::Number(1)).unwrap();
+        expire(&mut reg, b, w);
+        let c = mk(&mut reg, extra(3));
+        expire(&mut reg, c, w + 3 * KEEP);
+        let d = sold_prize(&mut reg, extra(4));
+        let e = mk(&mut reg, PRIZE);
+        buy(&mut reg, BUYER, e, Pick::Number(0)).unwrap();
+        end_at(&mut reg, a, w);
+        end_at(&mut reg, d, w);
+        (reg, [a, b, c, d, e])
+    }
+
+    fn rows_of(reg: &Registry, id: i64) -> usize {
+        ["r", "h", "t"]
+            .iter()
+            .map(|p| with_prefix(reg, vec![(*p).to_owned(), id.to_string()]).count())
+            .sum()
+    }
+
+    #[test]
+    fn prune_removes_only_old_8_and_9() {
+        let w = 5 * KEEP;
+        let (mut reg, [a, b, c, d, e]) = mixed(w);
+        subscribe_raffle(&mut reg, BUYER, a, true);
+        subscribe_raffle(&mut reg, BUYER, e, true);
+        assert_eq!(prune_at(&mut reg, w + KEEP), 0, "not yet, at the edge");
+        assert_eq!(prune_at(&mut reg, w + KEEP + 1), 2);
+        assert_eq!((rows_of(&reg, a), rows_of(&reg, b)), (0, 0));
+        for id in [c, d, e] {
+            assert!(rows_of(&reg, id) > 0, "{id} stays");
+        }
+        assert_eq!(ids(&reg), vec![c, d, e]);
+        let subs = &reg.ext::<State>().subs[&BUYER].raffles;
+        assert_eq!(subs.iter().copied().collect::<Vec<_>>(), vec![e]);
+        assert_eq!(prune_at(&mut reg, w + KEEP + 1), 0, "twice does nothing");
+    }
+
+    #[test]
+    fn prune_never_touches_6_or_7() {
+        let w = 5 * KEEP;
+        let (mut reg, [_, _, c, d, e]) = mixed(w);
+        let before = (rows_of(&reg, d), rows_of(&reg, e));
+        // Long after everything: every 8 and 9 goes; 6 and 7 stay.
+        assert_eq!(prune_at(&mut reg, w + 100 * KEEP), 3);
+        assert_eq!((rows_of(&reg, d), rows_of(&reg, e)), before);
+        assert_eq!(rows_of(&reg, c), 0);
+        assert_eq!(get(&reg, d, false).unwrap().status, FINISHED_UNDELIVERED);
+        assert_eq!(get(&reg, e, false).unwrap().status, RUNNING);
+    }
+
+    #[test]
+    fn the_rollover_step_prunes_by_the_wall_clock() {
+        let (mut reg, [a, ..]) = mixed(1);
+        let day = crate::rollover::Day {
+            day: 1,
+            days: 1,
+            now: 0,
+        };
+        assert_eq!(on_rollover(&mut reg, &day), 3);
+        assert_eq!(rows_of(&reg, a), 0);
     }
 }
