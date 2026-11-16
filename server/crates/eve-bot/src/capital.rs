@@ -32,7 +32,7 @@
 //! nothing. Everything here is **[A]** policy except the client's call shapes
 //! and the server's formulas, which are cited from CAP-D, CAP-E and CAP-F.
 
-use crate::brain::{self, Act, Memory, Observation};
+use crate::brain::{self, Act, Memory, Observation, Place};
 use crate::career::Signals;
 use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -229,6 +229,8 @@ pub struct Mind {
     pub scene: crate::capital_fight::Scene,
     /// The fitted siege or triage module, read once ([`crate::capital_fight::tend`]).
     pub module: Option<crate::capital_fight::Module>,
+    /// The fitted guns and their target ([`crate::capital_fight::shoot`]).
+    pub guns: crate::capital_fight::Guns,
     /// No siege-fuel market visit before this ([`crate::capital_fight::STOCK_BACKOFF`]).
     pub siege_fuel_next: Option<Instant>,
     /// When a docked pilot may next try to fit its siege or triage module.
@@ -660,6 +662,38 @@ pub fn is_alt(role: &RoleSpec) -> bool {
     std::ptr::eq(role, &ALT_ROLE)
 }
 
+/// **Who the pilot may shoot** ([`crate::capital_fight::pick_target`]): every
+/// NPC on the grid, and the humans the bot's own hostile rules engage
+/// ([`crate::hostile::Rules::prey`], called as the hunter calls it: no fleet,
+/// no homing, the class table, range and crime-flag test; none without rules). Nothing in high sec, and nothing where
+/// the system's security is not known.
+fn scene_targets(m: &Memory, o: &Observation, p: &brain::ParkView) -> Vec<(i64, f64, bool)> {
+    let Place::InSpace { system, .. } = o.place else {
+        return Vec::new();
+    };
+    let sec = m.policy.travel.as_deref().and_then(|t| t.security(system));
+    if sec.is_none_or(|s| s >= HIGH_SEC) {
+        return Vec::new();
+    }
+    let mut out: Vec<(i64, f64, bool)> = p
+        .hostiles
+        .iter()
+        .map(|h| (h.ball.id, p.ego.surface_to(&h.ball), true))
+        .collect();
+    // The bot's own rules decide, whole: no fleet, no homing, in range, no
+    // crime flags, the class table ([`crate::hostile::Rules::prey`]).
+    let prey = m
+        .policy
+        .hostile
+        .as_deref()
+        .and_then(|r| r.prey(m, o))
+        .map(|(b, _)| b.id);
+    for h in &o.humans {
+        out.push((h.id, p.ego.surface_to(h), Some(h.id) == prey));
+    }
+    out
+}
+
 /// Either side, docked or in space: one [`Act::Capital`] when its time has
 /// come, then a wait. The decisions are [`cap_turn`] and [`alt_turn`], which
 /// need the connection, so the act reads the facts itself.
@@ -678,6 +712,7 @@ fn turn_act(m: &mut Memory, o: &Observation) -> Vec<Act> {
         Some(p) => crate::capital_fight::Scene {
             hostiles: p.hostiles.len(),
             humans: o.humans.len(),
+            targets: scene_targets(m, o, p),
             warping: p.ego_warping,
         },
         None => crate::capital_fight::Scene::default(),
@@ -1262,14 +1297,20 @@ fn pilot(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
             )?
         } else if !docked {
             let trip = beacon.is_some() || m.capital.dest.is_some_and(|d| d != system);
-            crate::capital_fight::tend(
+            let sieged = crate::capital_fight::tend(
                 c,
                 content,
                 ship,
-                m.capital.scene,
+                &m.capital.scene,
                 leave_in(&step, trip),
                 &mut m.capital.module,
-            )?
+            )?;
+            match sieged {
+                Some(n) => Some(n),
+                None => {
+                    crate::capital_fight::shoot(c, content, &m.capital.scene, &mut m.capital.guns)?
+                }
+            }
         } else {
             None
         };

@@ -28,7 +28,7 @@
 //! its own jump.
 
 use crate::clock;
-use crate::verbs::ItemRow;
+use crate::verbs::{ItemRow, LockState};
 use crate::{Conn, Error, Result};
 use eve_server::module_fuel::{EFFECT_SIEGE, EFFECT_TRIAGE};
 use std::time::Duration;
@@ -62,12 +62,15 @@ pub fn moved_any(bought: i64, bayed: i64, held: i64) -> bool {
 
 /// What the pilot saw of the grid this turn (the brain's observation, kept in
 /// [`crate::capital::Mind`] by the capital turn).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Scene {
     /// NPCs on the grid.
     pub hostiles: usize,
     /// Humans outside the bot's fleet on the grid.
     pub humans: usize,
+    /// Who is on the grid: `(ball, surface distance, may be shot)`. Empty in
+    /// high sec and where the security is not known ([`pick_target`]).
+    pub targets: Vec<(i64, f64, bool)>,
     /// The ship is warping (not holding still).
     pub warping: bool,
 }
@@ -195,7 +198,7 @@ pub fn tend(
     c: &mut Conn,
     content: &eve_server::content::Content,
     ship: i64,
-    scene: Scene,
+    scene: &Scene,
     warp_out_in: Option<Duration>,
     cache: &mut Option<Module>,
 ) -> Result<Option<String>> {
@@ -232,10 +235,169 @@ pub fn tend(
         Step::Stop => c.deactivate(m.item_id, &m.effect_name).map(|_| "off"),
     };
     match outcome {
+        Ok("on") if m.effect_id == EFFECT_SIEGE => {
+            let after = match m.fuel {
+                Some(t) => {
+                    crate::capital::held_at(c, ship, crate::capital::FUEL_BAY, t)?
+                        + crate::capital::held_at(c, ship, crate::capital::CARGO, t)?
+                }
+                None => 0,
+            };
+            Ok(Some(format!("capital: siege on, fuel {fuel} -> {after}")))
+        }
         Ok(what) => Ok(Some(format!("capital: {} {what}", m.effect_name))),
         Err(e @ (Error::Io(_) | Error::Protocol(_))) => Err(e),
         Err(e) => Ok(Some(format!("capital: {} refused: {e}", m.effect_name))),
     }
+}
+
+/// **The nearest target** (pure): the nearest of `cands` that may be shot, the
+/// lower ball id on a tie. `cands` is `(ball, distance, may be shot)`.
+/// **[A]** "may be shot" is: an NPC on the grid, or a human the bot's own
+/// hostile rules engage outside high sec ([`crate::hostile::Rules::prey`]'s
+/// filter); the scene is empty in high sec. Falsified by a pilot that shoots a
+/// corp mate, a fleet mate, or anything in a high-sec system.
+pub fn pick_target(cands: &[(i64, f64, bool)]) -> Option<i64> {
+    cands
+        .iter()
+        .filter(|c| c.2)
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+        .map(|c| c.0)
+}
+
+/// What the pilot's guns remember: read once, and what they are shooting.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Guns {
+    /// `(item, type)` of each fitted gun or launcher, once read.
+    pub guns: Option<Vec<(i64, i64)>>,
+    /// The target they were last put on.
+    pub target: Option<i64>,
+}
+
+/// What this turn does about the target (pure).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aim {
+    /// Nothing may be shot: stop the guns.
+    Idle,
+    /// The same target as before.
+    Keep(i64),
+    /// A new target; `old` is the lock to drop.
+    Switch { old: Option<i64>, new: i64 },
+}
+
+/// **Keep the target** while it may still be shot (no flap between two
+/// near-equal distances); else the nearest ([`pick_target`]).
+pub fn aim(cands: &[(i64, f64, bool)], current: Option<i64>) -> Aim {
+    if let Some(cur) = current.filter(|&t| cands.iter().any(|c| c.0 == t && c.2)) {
+        return Aim::Keep(cur);
+    }
+    match pick_target(cands) {
+        Some(new) => Aim::Switch { old: current, new },
+        None => Aim::Idle,
+    }
+}
+
+/// Whether a lock lets the guns fire now: a lock still pending does not.
+pub fn lock_ready(state: &LockState) -> bool {
+    matches!(state, LockState::Locked)
+}
+
+/// Whether a module's effect is among its running ones.
+pub fn is_running(active: &[i64], effect: i64) -> bool {
+    active.contains(&effect)
+}
+
+/// Stop every gun that is running ([`Conn::deactivate`]).
+fn cease(c: &mut Conn, content: &eve_server::content::Content, guns: &[(i64, i64)]) -> Result<()> {
+    for &(item, ty) in guns {
+        let Some((name, effect)) = crate::verbs::weapon_effect(Some(content), ty) else {
+            continue;
+        };
+        if is_running(&c.active_effects(item)?, effect) {
+            match c.deactivate(item, name) {
+                Ok(_) => {}
+                Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
+                Err(_) => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// **Shoot the nearest target** with every fitted gun, only on a fight grid.
+/// Keeps its target while it may still be shot, else locks the nearest
+/// ([`Conn::lock_target`]; the old lock is dropped) and fires each turret or
+/// launcher that is not already running ([`Conn::fire`]); with nothing to shoot
+/// it stops its guns. A lock still pending fires nothing yet. A refusal is not
+/// an error; only a dead connection is. Returns the note
+/// `capital: firing {n} guns at {target}` when it fired.
+pub fn shoot(
+    c: &mut Conn,
+    content: &eve_server::content::Content,
+    scene: &Scene,
+    cache: &mut Guns,
+) -> Result<Option<String>> {
+    let cands: &[(i64, f64, bool)] = if scene.fight() { &scene.targets } else { &[] };
+    let target = match aim(cands, cache.target) {
+        Aim::Idle => {
+            cache.target = None;
+            if let Some(guns) = cache.guns.clone() {
+                cease(c, content, &guns)?;
+            }
+            return Ok(None);
+        }
+        Aim::Keep(t) => t,
+        Aim::Switch { old, new } => {
+            if let Some(guns) = cache.guns.clone() {
+                cease(c, content, &guns)?;
+            }
+            if let Some(old) = old
+                && let Err(e @ (Error::Io(_) | Error::Protocol(_))) = c.unlock_target(old)
+            {
+                return Err(e);
+            }
+            cache.target = None;
+            new
+        }
+    };
+    if cache.guns.is_none() {
+        let guns: Vec<(i64, i64)> = c
+            .fitted()?
+            .iter()
+            .filter(|r| crate::verbs::weapon_effect(Some(content), r.type_id).is_some())
+            .map(|r| (r.item_id, r.type_id))
+            .collect();
+        cache.guns = Some(guns);
+    }
+    let guns = cache.guns.clone().unwrap_or_default();
+    if guns.is_empty() {
+        return Ok(None);
+    }
+    match c.lock_target(target) {
+        Ok(state) => {
+            cache.target = Some(target);
+            if !lock_ready(&state) {
+                return Ok(None);
+            }
+        }
+        Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
+        Err(_) => return Ok(None),
+    }
+    let mut fired = 0usize;
+    for (item, ty) in guns {
+        let Some((_, effect)) = crate::verbs::weapon_effect(Some(content), ty) else {
+            continue;
+        };
+        if is_running(&c.active_effects(item)?, effect) {
+            continue;
+        }
+        match c.fire(item, ty, Some(content), target) {
+            Ok(_) => fired += 1,
+            Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
+            Err(_) => {}
+        }
+    }
+    Ok((fired > 0).then(|| format!("capital: firing {fired} guns at {target}")))
 }
 
 /// **Stock the module's fuel** at the docked station (the pilot's own money,
@@ -624,6 +786,79 @@ mod tests {
             }
             .fight()
         );
+    }
+
+    #[test]
+    fn the_nearest_hostile_is_the_target() {
+        let c = [(9_600_001, 40_000.0, true), (9_600_002, 12_000.0, true)];
+        assert_eq!(pick_target(&c), Some(9_600_002));
+        let tie = [(9_600_004, 5.0, true), (9_600_003, 5.0, true)];
+        assert_eq!(pick_target(&tie), Some(9_600_003));
+    }
+
+    #[test]
+    fn no_hostile_no_target() {
+        assert_eq!(pick_target(&[]), None);
+        assert_eq!(pick_target(&[(9_600_005, 1.0, false)]), None);
+    }
+
+    #[test]
+    fn a_corp_mate_is_never_the_target() {
+        // The corp mate is nearer, and not hostile: the far NPC is shot.
+        let c = [(9_600_006, 1_000.0, false), (9_600_007, 90_000.0, true)];
+        assert_eq!(pick_target(&c), Some(9_600_007));
+    }
+
+    #[test]
+    fn the_target_is_kept_while_it_may_be_shot() {
+        let c = [(9_600_011, 50_000.0, true), (9_600_012, 10_000.0, true)];
+        assert_eq!(aim(&c, Some(9_600_011)), Aim::Keep(9_600_011));
+        assert_eq!(
+            aim(&c, None),
+            Aim::Switch {
+                old: None,
+                new: 9_600_012
+            }
+        );
+    }
+
+    #[test]
+    fn a_target_that_may_not_be_shot_or_is_gone_is_replaced_and_its_lock_dropped() {
+        let barred = [(9_600_011, 1.0, false), (9_600_012, 10_000.0, true)];
+        assert_eq!(
+            aim(&barred, Some(9_600_011)),
+            Aim::Switch {
+                old: Some(9_600_011),
+                new: 9_600_012
+            }
+        );
+        let gone = [(9_600_012, 10_000.0, true)];
+        assert_eq!(
+            aim(&gone, Some(9_600_013)),
+            Aim::Switch {
+                old: Some(9_600_013),
+                new: 9_600_012
+            }
+        );
+    }
+
+    #[test]
+    fn nothing_to_shoot_is_idle_so_the_guns_stop() {
+        assert_eq!(aim(&[], Some(9_600_011)), Aim::Idle);
+        assert_eq!(aim(&[(9_600_011, 1.0, false)], Some(9_600_011)), Aim::Idle);
+    }
+
+    #[test]
+    fn a_pending_lock_does_not_fire() {
+        assert!(lock_ready(&LockState::Locked));
+        assert!(!lock_ready(&LockState::Pending));
+    }
+
+    #[test]
+    fn a_gun_is_running_when_its_effect_is_active() {
+        assert!(is_running(&[9_600_021, 9_600_022], 9_600_022));
+        assert!(!is_running(&[9_600_021], 9_600_022));
+        assert!(!is_running(&[], 9_600_022));
     }
 
     fn content() -> Content {

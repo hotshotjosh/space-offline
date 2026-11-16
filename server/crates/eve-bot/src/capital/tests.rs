@@ -824,3 +824,125 @@ fn a_pair_role_forms_no_dev_group_fleet() {
     let hunter = crate::roles::parse("hunter").expect("hunter is a role");
     assert!(!is_pair_role(hunter));
 }
+
+// ---- who may be shot ------------------------------------------------------------------------
+
+mod targets {
+    use super::*;
+    use crate::brain::{Ball, FleetView, Hostile, ParkView};
+    use crate::hostile::{Class, Rules, Table};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const NULL_SYS: i64 = 30_990_101;
+    const HIGH_SYS: i64 = 30_990_102;
+    const UNKNOWN_SYS: i64 = 30_990_103;
+    const HULL: i64 = 990_701_001;
+    const SELF_BALL: i64 = 9_907_001;
+    const HUMAN_BALL: i64 = 9_907_002;
+    const NPC_BALL: i64 = 9_907_003;
+
+    fn ball(id: i64, x: f64) -> Ball {
+        Ball {
+            id,
+            position: [x, 0.0, 0.0],
+            radius: 50.0,
+        }
+    }
+
+    /// An invented table that engages every class in null sec.
+    fn rules() -> Rules {
+        let table = Table::parse(
+            "# invented\n\
+             ship_class\tmin_sec\tmax_sec\tengage\twhy\n\
+             *\t-1.0\t0.0\t1\t[A] invented\n",
+        )
+        .expect("the fixture parses");
+        Rules::new(table)
+            .with_security(NULL_SYS, -0.5)
+            .with_security(HIGH_SYS, 0.9)
+            .with_class(HULL, Class::Small)
+    }
+
+    fn mem(with_rules: bool) -> Memory {
+        let mut m = memory(&ROLE, None);
+        m.policy.hostile = with_rules.then(|| Arc::new(rules()));
+        m.policy.travel = Some(Arc::new(
+            crate::travel::Map::new()
+                .with_security(NULL_SYS, -0.5)
+                .with_security(HIGH_SYS, 0.9),
+        ));
+        m
+    }
+
+    fn scene(system: i64) -> Observation {
+        let mut o = obs(Place::InSpace {
+            system,
+            bound: true,
+        });
+        o.humans = vec![ball(HUMAN_BALL, 10_000.0)];
+        o.human_types.insert(HUMAN_BALL, HULL);
+        o.park = Some(ParkView {
+            ego: ball(SELF_BALL, 0.0),
+            ego_warping: false,
+            rocks: Vec::new(),
+            belts: Vec::new(),
+            station: None,
+            boss: None,
+            taken: BTreeMap::new(),
+            hostiles: vec![Hostile {
+                ball: ball(NPC_BALL, 20_000.0),
+                type_id: 990_701_002,
+                name: "Invented Rat".to_owned(),
+                shooting: None,
+            }],
+            wrecks: Vec::new(),
+            ego_tether: None,
+        });
+        o
+    }
+
+    fn run(m: &Memory, o: &Observation) -> Vec<(i64, f64, bool)> {
+        scene_targets(m, o, o.park.as_ref().expect("a park"))
+    }
+
+    fn may(t: &[(i64, f64, bool)], id: i64) -> Option<bool> {
+        t.iter().find(|c| c.0 == id).map(|c| c.2)
+    }
+
+    #[test]
+    fn in_null_with_rules_the_npc_and_the_engaged_human_may_be_shot() {
+        let t = run(&mem(true), &scene(NULL_SYS));
+        assert_eq!(may(&t, NPC_BALL), Some(true));
+        assert_eq!(may(&t, HUMAN_BALL), Some(true));
+    }
+
+    #[test]
+    fn high_sec_has_no_targets() {
+        assert!(run(&mem(true), &scene(HIGH_SYS)).is_empty());
+    }
+
+    #[test]
+    fn an_unknown_system_has_no_targets() {
+        assert!(run(&mem(true), &scene(UNKNOWN_SYS)).is_empty());
+    }
+
+    #[test]
+    fn a_fleet_mate_is_never_shot() {
+        let mut o = scene(NULL_SYS);
+        o.fleet = Some(FleetView {
+            fleet_id: 9_907_900,
+            boss: Some(HUMAN_BALL + 100),
+        });
+        let t = run(&mem(true), &o);
+        assert_eq!(may(&t, HUMAN_BALL), Some(false));
+        assert_eq!(may(&t, NPC_BALL), Some(true));
+    }
+
+    #[test]
+    fn without_rules_no_human_is_shot_but_npcs_are() {
+        let t = run(&mem(false), &scene(NULL_SYS));
+        assert_eq!(may(&t, HUMAN_BALL), Some(false));
+        assert_eq!(may(&t, NPC_BALL), Some(true));
+    }
+}

@@ -5,7 +5,8 @@
 //! `--hostile` ([`check_opt_in`]), and only `--hostile` builds the
 //! [`Rules`] that reach the brain in [`crate::brain::Policy::hostile`]. A
 //! hostile-role bot without rules never undocks: it says `MISSING`
-//! ([`MISSING_RULES`]). No other role reads the rules.
+//! ([`MISSING_RULES`]). The only other reader is the sieged capital pilot, which asks
+//! [`Rules::prey`] which human it may shoot ([`crate::capital`]).
 //!
 //! **What it attacks.** A human outside its fleet (the driver's `is_human`:
 //! a pilot, not the bot, not a bot of this process, not the fleet boss)
