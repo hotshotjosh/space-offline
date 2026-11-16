@@ -83,6 +83,14 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+// STR-BOT (#213): a submodule, so the hot `lib.rs` needs no `mod` line. What
+// the other files use is re-exported here.
+mod structure_war;
+pub use structure_war::{
+    Mind as StructureMind, Scene as StructureScene, View as StructureView,
+    attack_turn as structure_attack, defend_turn as structure_defend,
+};
+
 // ---------------------------------------------------------------------------
 // Constants (all [A] unless a source is named)
 // ---------------------------------------------------------------------------
@@ -4087,6 +4095,7 @@ mod tests {
             security_status: None,
             wormhole_class: None,
             capture: None,
+            ..Default::default()
         }
     }
 

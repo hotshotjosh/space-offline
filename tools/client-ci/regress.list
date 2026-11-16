@@ -275,6 +275,8 @@ fci_bot_dictor_camp --with-bots --serial -- --dev
 fci_bot_hic_camp --with-bots --serial -- --dev
 # ess-20 (#20): a /bots hunter in a Rupture (a hull the ESS admits) raids the main bank of an undefended ESS while the client waits cloaked in space; the client sees OnESSMainBankLinkNotification name that bot
 fci_bot_ess --with-bots --serial -- --dev
+# str-bot (#213): three hostile hunters seated in a null-sec system with a station; the client's corp spawns an Astrahus there and opens its shield window (`/upwell state`); `/bots siege all` and within 600 s a bot ship is on the grid and `GetDamageState(id)[0]` falls below 1.0 with no client gun; `/bots unsiege all` and after a grace the bar stops falling; needs eve-bots with --society-pvp
+fci_bot_str_siege --with-bots --serial -- --dev
 # soc-answers (#158): the Randomize name button answers a valid free name for each race, and the corp finder, Recruitment tab and Shareholders panel get empty lists instead of None
 fci_social_answers
 # nw-1 (#156): a dreadnought's Siege Module burns its strontium at the click, the top speed reads 0, an early deactivation raises EffectStillActive and the module stays active, and a CmdDock is refused; the plain server (needs a bundle with the hull, the module and the fuel)

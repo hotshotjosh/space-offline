@@ -952,6 +952,9 @@ pub struct Handle {
     /// BP-CAMP: the GM's last word on the camp: `Some(system)` camp it,
     /// `None` end it (one slot, the last word wins).
     camp_cmd: Arc<Mutex<Option<Option<i64>>>>,
+    /// STR-BOT (#213): the GM's last word on the siege: `Some(system)` attack
+    /// the structure there, `None` end it (one slot, the last word wins).
+    siege_cmd: Arc<Mutex<Option<Option<i64>>>>,
     /// FC-3: commands for a wing bot (`/bots hold`, `/bots join`), taken
     /// on its next turn.
     orders: Arc<Mutex<VecDeque<eve_server::wing_words::WingCmd>>>,
@@ -1086,6 +1089,21 @@ impl Handle {
         }
     }
 
+    /// STR-BOT (#213): tell the bot to fly to `system` and attack the
+    /// structure it finds there. Only hunters act on it.
+    pub fn siege(&self, system: i64) {
+        if let Ok(mut s) = self.siege_cmd.lock() {
+            *s = Some(Some(system));
+        }
+    }
+
+    /// STR-BOT (#213): the siege is over; the bot drops its locks.
+    pub fn unsiege(&self) {
+        if let Ok(mut s) = self.siege_cmd.lock() {
+            *s = Some(None);
+        }
+    }
+
     /// FC-3: whether this bot is a wing bot.
     pub fn is_wing(&self) -> bool {
         self.wing_seat
@@ -1154,6 +1172,10 @@ impl Handle {
         self.camp_cmd.lock().ok().and_then(|mut s| s.take())
     }
 
+    fn take_siege(&self) -> Option<Option<i64>> {
+        self.siege_cmd.lock().ok().and_then(|mut s| s.take())
+    }
+
     fn take_brought(&self) -> Option<i64> {
         self.brought.lock().ok().and_then(|mut b| b.take())
     }
@@ -1209,6 +1231,7 @@ fn new_handle(config: &BotConfig) -> Handle {
         brought: Arc::new(Mutex::new(None)),
         summon_cmd: Arc::new(Mutex::new(None)),
         camp_cmd: Arc::new(Mutex::new(None)),
+        siege_cmd: Arc::new(Mutex::new(None)),
         orders: Arc::new(Mutex::new(VecDeque::new())),
         wing_seat: config.policy.wing.is_some(),
         wing_fc: config.policy.wing.as_ref().and_then(|w| w.fc),
@@ -1950,6 +1973,11 @@ impl Bot {
                     Some(system) => crate::roam_gang::camp(&seat, system),
                     None => crate::roam_gang::uncamp(&seat),
                 }
+            }
+            // STR-BOT (#213): a GM told the bot to siege a system's structure,
+            // or to let it go.
+            if let Some(word) = self.handle.take_siege() {
+                self.memory.structure_war.set_order(word);
             }
             // FC-3: the owner's words for the wing.
             for cmd in self.handle.take_orders() {
@@ -3734,6 +3762,65 @@ impl Bot {
                 })
             })
             .min_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
+        // STR-BOT (#213): the Upwell structures in the system, by their slims.
+        {
+            let hall = self.config.society.as_ref().and_then(|s| s.hall.clone());
+            let ft = eve_server::pyutil::filetime_now();
+            let who = eve_server::group_contacts::Affiliation {
+                character_id: me.unwrap_or(0),
+                corporation_id: my_corp.unwrap_or(0),
+                alliance_id: my_alliance,
+            };
+            let structures = world
+                .balls()
+                .filter_map(|b| {
+                    let s = b.slim?;
+                    let state = s.structure_state?;
+                    let owner_corp = s.corp_id.or(s.owner_id)?;
+                    let at_war = hall.as_deref().is_some_and(|h| {
+                        h.lock().at_war(
+                            &who,
+                            &eve_server::group_contacts::Affiliation {
+                                character_id: 0,
+                                corporation_id: owner_corp,
+                                alliance_id: s.alliance_id,
+                            },
+                            ft,
+                        )
+                    });
+                    // A blue (not hostile to the bot by the hall's books) is
+                    // never a target, order or not.
+                    let blue = hall.as_deref().is_some_and(|h| {
+                        !h.hostile_to(
+                            who,
+                            eve_server::group_contacts::Affiliation {
+                                character_id: 0,
+                                corporation_id: owner_corp,
+                                alliance_id: s.alliance_id,
+                            },
+                        )
+                    });
+                    Some(crate::hunt::StructureView {
+                        id: b.ball_id,
+                        type_id: s.type_id.unwrap_or(0),
+                        position: b.motion.position,
+                        radius: b.radius,
+                        owner_corp,
+                        owner_alliance: s.alliance_id,
+                        state,
+                        timer: s.structure_timer,
+                        at_war,
+                        blue,
+                    })
+                })
+                .collect();
+            self.obs.structures = crate::hunt::StructureScene {
+                me_corp: my_corp.unwrap_or(0),
+                me_alliance: my_alliance,
+                now_ft: ft,
+                structures,
+            };
+        }
         // CHATTER-2: the ore the laser is on, by name, for the phrase slot.
         self.obs.talk.ore = self
             .obs
@@ -3785,7 +3872,9 @@ impl Bot {
             .collect();
         // SOC-C5: a hunter sees every pilot, hostile or not.
         // FC-2: a wing sees them too (who shoots the FC, who runs a link).
-        if (self.memory.policy.pvp.is_some() || self.memory.policy.wing.is_some())
+        if (self.memory.policy.pvp.is_some()
+            || self.memory.policy.wing.is_some()
+            || self.obs.structures.has_own())
             && let Some(char_id) = me
         {
             let hall = self.config.society.as_ref().and_then(|s| s.hall.clone());

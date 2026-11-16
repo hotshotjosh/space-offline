@@ -543,6 +543,9 @@ pub struct Memory {
     pub kit: crate::pvp_kit::Mem,
     /// The dictor's probes and cooldowns (BP-CAMP, [`crate::camp`]).
     pub camp: crate::camp::Mem,
+    /// The siege order, the structures seen and the defence (STR-BOT, #213,
+    /// [`crate::hunt::StructureMind`]).
+    pub structure_war: crate::hunt::StructureMind,
     /// The fleet boss's standing order (BOT-FLEET-ORDERS,
     /// [`crate::fleet_orders`]).
     pub order: Option<crate::fleet_orders::Order>,
@@ -621,6 +624,7 @@ impl Memory {
             warp_bubble: None,
             kit: crate::pvp_kit::Mem::default(),
             camp: crate::camp::Mem::default(),
+            structure_war: crate::hunt::StructureMind::default(),
             order: None,
             order_seq: 0,
             heal: None,
@@ -1103,6 +1107,8 @@ pub struct Observation {
     /// The nearest faction-warfare capture point on the grid, when there is
     /// one (#76, [`crate::plexer::point_step`]).
     pub capture: Option<crate::plexer::PointView>,
+    /// The Upwell structures in the system (STR-BOT, #213).
+    pub structures: crate::hunt::StructureScene,
     /// The hull type of each of [`Self::humans`], by ship id, from its slim
     /// (CP56: the hostile bot's policy is by the target's class).
     pub human_types: BTreeMap<i64, i64>,
@@ -1168,6 +1174,7 @@ impl Observation {
             hold_full: false,
             humans: Vec::new(),
             capture: None,
+            structures: crate::hunt::StructureScene::default(),
             human_types: BTreeMap::new(),
             primary: None,
             help: None,
@@ -2010,6 +2017,8 @@ fn choose(m: &mut Memory, o: &Observation) -> Vec<Act> {
                 };
                 help.or_else(|| crate::fleet::engage(m, o))
                     .or_else(|| crate::upwell_home::in_space(m, o))
+                    // STR-BOT (#213): a hunter on a siege order or a war sortie.
+                    .or_else(|| crate::hunt::structure_attack(m, o))
                     .or_else(|| crate::fleet_orders::act(m, o))
                     .or_else(|| courtesy(m, o))
                     .unwrap_or_else(|| (role.in_space)(m, o))

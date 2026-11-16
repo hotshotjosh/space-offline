@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**70% proved** (229 of 329) · **93% built** (306 of 329) · 3 parked, not counted.
+**69% proved** (229 of 330) · **93% built** (307 of 330) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -83,6 +83,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
 - [ ] Bots send public-gateway requests: *built-unproved*, eve-bot gateway_client.rs (h2c, std-only): broken-connection guard, correlation check, flow control, frame and response caps; in-process tests against gateway::spawn (pilot context, licence body); no bot duty calls it yet (#221)
 - [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
+- [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
 
 ### 3.7 Society, economy and bots
 
@@ -159,7 +160,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 23 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 34 | 2 | 0 | 2 |
+| Bots | 11 | 35 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 10 | 1 | 0 | 0 | 0 |
@@ -355,7 +356,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 49 proved, 38 open</summary>
+<details><summary><b>Bots</b>: 11 of 50 proved, 39 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -406,6 +407,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Offline careers at the rollover: a slice of parked agents (gatherers first) settles before the day closes; the sweep settles the rest up to the rollover, one span per open rollover capped against its own day, and books their flows and goods to the closed day's econ rows (an [econ] late line counts them): *built-unproved*, eve-server econ_agents.rs on_rollover, ROLLOVER_SLICE, Target per rollover; econ_ledger book_late/window; tests: one slice per rollover, gatherers first, late bounty and ore booked, closed day's cap, two rollovers settle apart, login mid-sweep; proof: a [world] rollover timing with parked ratters under 25 ms
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests; read by chat on a Local arrival (chatter::known_of)
 - [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
+- [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
 
 </details>
 

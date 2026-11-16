@@ -30,6 +30,8 @@
 //!   (`--content` or `--celestials`) to cross systems.
 //! - BP-CAMP: `camp <group|all> <system>`: the gang holds that system's gate
 //!   ([`crate::roam_gang::Plan::Camp`]).
+//! - STR-BOT (#213): `siege <group|all> <system>` / `unsiege <group|all>`: the
+//!   hunters attack the Upwell structure in that system (a GM order), or stop.
 //! - BP-CAMP: `uncamp <group|all>`: the camp ends with no quarry; the gang
 //!   roams again and a camper takes its unit back.
 //! - GANG-SUMMON: `summon <group|all> <system> <character>`: the server
@@ -435,6 +437,15 @@ impl Controller {
             // BP-CAMP: `uncamp <group|all>`: the camp ends with no quarry; the
             // gang roams again and a camper takes its unit back.
             ["uncamp", group] => self.uncamp(group),
+            // STR-BOT (#213): `siege <group|all> <system>`: the hunters fly to
+            // that system and attack the Upwell structure there (a GM order,
+            // so the war rule does not apply; never an own or allied one).
+            ["siege", group, system] => match system.parse::<i64>() {
+                Ok(system) => self.siege(group, Some(system)),
+                Err(_) => "siege: the system is a numeric id".to_owned(),
+            },
+            // STR-BOT (#213): `unsiege <group|all>`: the locks are dropped.
+            ["unsiege", group] => self.siege(group, None),
             // FC-3: `order <fc> <words>` reaches every wing bot that follows
             // the character; `order-group <group> <words>` one group.
             ["order", fc, words @ ..] if !words.is_empty() => match fc.parse::<i64>() {
@@ -607,6 +618,35 @@ impl Controller {
             }
         }
         format!("{n} bot(s) of {group} told to stop camping the gate (only gang bots act on it)")
+    }
+
+    /// STR-BOT (#213): every bot of `group` (or of every group) attacks the
+    /// structure in `system` (`Some`) or lets it go (`None`).
+    fn siege(&mut self, group: &str, system: Option<i64>) -> String {
+        let keys: Vec<String> = if group.eq_ignore_ascii_case("all") {
+            self.groups.keys().cloned().collect()
+        } else {
+            match self.group_key(group) {
+                Some(k) => vec![k],
+                None => return format!("no group {group}"),
+            }
+        };
+        let mut n = 0;
+        for k in &keys {
+            for m in &self.groups[k].members {
+                match system {
+                    Some(system) => m.handle.siege(system),
+                    None => m.handle.unsiege(),
+                }
+                n += 1;
+            }
+        }
+        match system {
+            Some(system) => format!(
+                "{n} bot(s) of {group} are sieging the structure in system {system} (only hunters act on it)"
+            ),
+            None => format!("{n} bot(s) of {group} told to end the siege"),
+        }
     }
 
     /// FC-3: parse the words and hand the command on.
@@ -1133,6 +1173,25 @@ mod tests {
             c.handle("summon all 77 5"),
             "1 bot(s) of all are coming to 5 in system 77"
         );
+    }
+
+    /// STR-BOT (#213): `siege` and `unsiege` count the bots and refuse an
+    /// unknown group.
+    #[test]
+    fn siege_and_unsiege_count_the_bots() {
+        let mut c = Controller::new(Box::new(move |_| Ok(vec![lonely("Siege1")])));
+        let r = c.handle("spawn rg red roamgang 1 role Rifter 77");
+        assert!(r.starts_with("spawned 1"), "{r}");
+        assert_eq!(
+            c.handle("siege RG 77"),
+            "1 bot(s) of RG are sieging the structure in system 77 (only hunters act on it)"
+        );
+        assert_eq!(
+            c.handle("unsiege RG"),
+            "1 bot(s) of RG told to end the siege"
+        );
+        assert_eq!(c.handle("siege nobody 77"), "no group nobody");
+        assert_eq!(c.handle("siege RG x"), "siege: the system is a numeric id");
     }
 
     /// BP-CAMP: `camp` and `uncamp` count the bots and refuse an unknown group.

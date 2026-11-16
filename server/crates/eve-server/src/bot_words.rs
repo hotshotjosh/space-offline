@@ -45,6 +45,12 @@ pub enum Cmd {
     /// BP-CAMP: `uncamp [group]` (no group: every group): the camp ends with
     /// no quarry; the gang roams again and a camper takes its unit back.
     Uncamp(String),
+    /// STR-BOT (#213): `siege <group>`: the gang flies to the caller's system
+    /// and attacks the Upwell structure it finds there (a GM order).
+    Siege(String),
+    /// STR-BOT (#213): `unsiege [group]` (no group: every group): the siege
+    /// ends; the bots drop their locks and carry on.
+    Unsiege(String),
     /// `despawn <group|all>`.
     Despawn(String),
     /// FC-3: words for the wing (`follow`, `hold`, `order <group> primary x`):
@@ -479,6 +485,11 @@ pub fn parse(args: &[&str]) -> Cmd {
         "uncamp" if args.len() <= 2 => {
             return Cmd::Uncamp(args.get(1).map_or("all", |g| g).to_owned());
         }
+        // STR-BOT (#213): `siege <group>` and `unsiege [group]`.
+        "siege" if args.len() == 2 => return Cmd::Siege(args[1].to_owned()),
+        "unsiege" if args.len() <= 2 => {
+            return Cmd::Unsiege(args.get(1).map_or("all", |g| g).to_owned());
+        }
         _ => {}
     }
     if is_explicit_spawn(args) {
@@ -637,9 +648,9 @@ Kinds: miners, orcas (boosters), escorts (guards), roamers (gang, hunters), camp
   /bots 10 allied miners        /bots 5 hostile roamers\n\
   /bots 3 orcas                 /bots 4 allied escorts here\n\
   /bots 6 hostile gang in <system name>      /bots 2 haulers\n\
-Gangs: /bots 5 hostile roamers hunt you by default; /bots 4 allied roamers with me; /bots come [group] brings a group to you, docked or in space; /bots camp <group> makes a gang hold the gate of your system, /bots uncamp [group] ends it (a camper takes its mobile disruptor back).\n\
+Gangs: /bots 5 hostile roamers hunt you by default; /bots 4 allied roamers with me; /bots come [group] brings a group to you, docked or in space; /bots camp <group> makes a gang hold the gate of your system, /bots uncamp [group] ends it (a camper takes its mobile disruptor back); /bots siege <group> sends hunters to attack the Upwell structure in your system (not a blue's; in high sec only against war targets), /bots unsiege [group] ends it.\n\
 Wing (FC-3): /bots 6 wing | 2 logi | 2 linkers | hub hauler | 10 sovfleet; then /bots join | follow | hold | dock | go home | rearm | weapons free|hold | defend | primary <name> | status (also said in fleet chat); /bots order <group> <words> for one group. linkers and the hub hauler are not built yet.\n\
-Manage: /bots list | despawn <group|all> | bring [group] (docked) | come [group] | camp <group> | uncamp [group] | pause <group|bot|all> | resume <group|bot|all> | inspect <bot> | stop-all\n\
+Manage: /bots list | despawn <group|all> | bring [group] (docked) | come [group] | camp <group> | uncamp [group] | siege <group> | unsiege [group] | pause <group|bot|all> | resume <group|bot|all> | inspect <bot> | stop-all\n\
 Explicit: /bots spawn <group> <side> <role> <count> <skills> <ship> [system id]\n\
 A KILL file in the bots' var dir releases every bot."
         .to_owned()
@@ -825,6 +836,10 @@ mod tests {
         assert_eq!(p("camp all"), Cmd::Camp("all".into()));
         assert_eq!(p("uncamp"), Cmd::Uncamp("all".into()));
         assert_eq!(p("uncamp Dictors1x"), Cmd::Uncamp("Dictors1x".into()));
+        // STR-BOT (#213): the siege verbs.
+        assert_eq!(p("siege Gang1"), Cmd::Siege("Gang1".into()));
+        assert_eq!(p("unsiege"), Cmd::Unsiege("all".into()));
+        assert_eq!(p("unsiege Gang1"), Cmd::Unsiege("Gang1".into()));
         // Lines the spawn words read stay spawns of campers.
         for line in [
             "camp",

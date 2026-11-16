@@ -109,6 +109,15 @@ pub struct SlimInfo {
     /// exists only on a capture point, whatever its type. `None` on
     /// everything else.
     pub capture: Option<(i64, i64)>,
+    /// `state` [V key, `structure_space::extras_of`] on an Upwell
+    /// structure's slim (#213): the code `structure::State::from_code`
+    /// reads. Only read when the type is a structure type; `None` on
+    /// everything else, whatever keys it carries.
+    pub structure_state: Option<i64>,
+    /// `timer` [V key, same] on a structure's slim: `(start, end, paused)`
+    /// in FILETIME ticks, `None` when no timer runs or the type is no
+    /// structure.
+    pub structure_timer: Option<(i64, i64, Option<i64>)>,
 }
 
 /// One ball, as last told and carried forward.
@@ -741,6 +750,11 @@ fn slim_of(v: &PyValue) -> Option<(i64, SlimInfo)> {
         Some(PyValue::Int(n)) => Some(*n),
         _ => None,
     };
+    // #213: a structure's state and timer are read for a structure type only.
+    let is_structure = int("typeID").is_some_and(|t| {
+        eve_server::structure::size_of_type(t) != eve_server::structure::Size::Undefined
+    });
+    let (structure_state, structure_timer) = structure_fields(dict, is_structure);
     Some((
         int("itemID")?,
         SlimInfo {
@@ -783,8 +797,39 @@ fn slim_of(v: &PyValue) -> Option<(i64, SlimInfo)> {
                 },
                 _ => None,
             },
+            structure_state,
+            structure_timer,
         },
     ))
+}
+
+/// A structure's `(start, end, paused)` timer, FILETIME ticks.
+type StructureTimer = Option<(i64, i64, Option<i64>)>;
+
+/// #213: a slim dict's `state` and `timer`, read only when `is_structure`.
+fn structure_fields(dict: &PyValue, is_structure: bool) -> (Option<i64>, StructureTimer) {
+    if !is_structure {
+        return (None, None);
+    }
+    let state = match crate::dict_get(dict, "state") {
+        Some(PyValue::Int(n)) => Some(*n),
+        _ => None,
+    };
+    let timer = match crate::dict_get(dict, "timer") {
+        Some(PyValue::Tuple(t)) => match t.as_slice() {
+            [PyValue::Int(a), PyValue::Int(b), p] => Some((
+                *a,
+                *b,
+                match p {
+                    PyValue::Int(p) => Some(*p),
+                    _ => None,
+                },
+            )),
+            _ => None,
+        },
+        _ => None,
+    };
+    (state, timer)
 }
 
 #[cfg(test)]
@@ -854,6 +899,38 @@ mod tests {
         let mut w = World::default();
         w.apply_update(&boot.to_push().1, now);
         w
+    }
+
+    /// STR-BOT (#213): the slim's `state` and `timer` are read when the type
+    /// is a structure type; the same keys on anything else are ignored.
+    #[test]
+    fn the_slim_parse_reads_state_and_timer_only_for_a_structure_type() {
+        let slim_dict = || {
+            crate::dict(vec![
+                ("itemID", PyValue::Int(5_001)),
+                ("typeID", PyValue::Int(9_900_001)),
+                ("state", PyValue::Int(110)),
+                (
+                    "timer",
+                    PyValue::Tuple(vec![PyValue::Int(10), PyValue::Int(20), PyValue::None]),
+                ),
+            ])
+        };
+        let (state, timer) = structure_fields(&slim_dict(), true);
+        assert_eq!(state, Some(110));
+        assert_eq!(timer, Some((10, 20, None)));
+        // Not a structure type: the keys are ignored.
+        assert_eq!(structure_fields(&slim_dict(), false), (None, None));
+        // A structure with no running timer.
+        let mut d = slim_dict();
+        if let PyValue::Dict(e) = &mut d {
+            e.retain(|(_, k)| *k != crate::bstr("timer"));
+        }
+        assert_eq!(structure_fields(&d, true), (Some(110), None));
+        // A slim parse of an unknown type leaves both empty.
+        let (_, s) = slim_of(&slim_dict()).unwrap();
+        assert_eq!(s.structure_state, None);
+        assert_eq!(s.structure_timer, None);
     }
 
     #[test]

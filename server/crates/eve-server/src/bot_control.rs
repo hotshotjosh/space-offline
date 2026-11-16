@@ -753,6 +753,8 @@ fn natural(reg: &mut Registry, actor: Option<i64>, args: &[&str]) -> Result<Plan
         Cmd::Come(n) => run(vec!["come".to_owned(), n]),
         Cmd::Camp(n) => run(vec!["camp".to_owned(), n]),
         Cmd::Uncamp(n) => run(vec!["uncamp".to_owned(), n]),
+        Cmd::Siege(n) => run(vec!["siege".to_owned(), n]),
+        Cmd::Unsiege(n) => run(vec!["unsiege".to_owned(), n]),
         // FC-3: the wing's words, to the caller's wing or to one group.
         Cmd::Order { target, words } => {
             // Only plain words reach the wire; a name may have more than one.
@@ -1161,6 +1163,16 @@ fn wire_for(reg: &Registry, actor: Option<i64>, args: &[&str]) -> Result<String,
             Ok(format!("camp {group} {system}"))
         }
         ["uncamp", group] => Ok(format!("uncamp {group}")),
+        // STR-BOT (#213): the gang attacks the structure in the caller's system.
+        ["siege", group] => {
+            let who = actor.ok_or("no character")?;
+            reg.character(who).ok_or("no character")?;
+            let system = reg
+                .session_system(who)
+                .ok_or("I do not know where you are")?;
+            Ok(format!("siege {group} {system}"))
+        }
+        ["unsiege", group] => Ok(format!("unsiege {group}")),
         _ => Err(USAGE.to_owned()),
     }
 }
@@ -1528,6 +1540,11 @@ mod tests {
         assert!(r.contains("echo: uncamp all"), "{r}");
         let r = said(slash(&mut reg, Some(me), &["uncamp", "Crew"]).unwrap());
         assert!(r.contains("echo: uncamp Crew"), "{r}");
+        // STR-BOT (#213): `siege` names the caller's system, `unsiege` ends it.
+        let r = said(slash(&mut reg, Some(me), &["siege", "Crew"]).unwrap());
+        assert!(r.contains(&format!("echo: siege Crew {here}")), "{r}");
+        let r = said(slash(&mut reg, Some(me), &["unsiege"]).unwrap());
+        assert!(r.contains("echo: unsiege all"), "{r}");
         // A hostile gang here hunts him; the quarry sits before the logins.
         let r = said(slash(&mut reg, Some(me), &["5", "hostile", "roamers", "here"]).unwrap());
         assert!(

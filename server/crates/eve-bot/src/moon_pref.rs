@@ -204,6 +204,7 @@ mod tests {
                 security_status: None,
                 wormhole_class: None,
                 capture: None,
+                ..Default::default()
             }),
             own_hull: None,
         }

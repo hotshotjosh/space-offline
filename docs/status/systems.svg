@@ -201,11 +201,12 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="366.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="370.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="374.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="379.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="378.8" y="111.0" width="3" height="1.5" class="part-f"/>
+<rect x="378.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="383.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="382.8" y="111.0" width="3" height="1.5" class="part-f"/>
-<rect x="386.8" y="109.5" width="3" height="3" class="unknown"/>
+<rect x="387.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="386.8" y="111.0" width="3" height="1.5" class="part-f"/>
 <rect x="390.8" y="109.5" width="3" height="3" class="unknown"/>
-<text x="398.8" y="114.0" class="s xs">11/49</text>
+<rect x="394.8" y="109.5" width="3" height="3" class="unknown"/>
+<text x="402.8" y="114.0" class="s xs">11/50</text>
 <text x="16.0" y="130.0" class="t">Industry and mining</text>
 <rect x="198.8" y="125.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="125.5" width="3" height="3" class="proved"/>

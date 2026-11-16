@@ -183,6 +183,13 @@ fn in_space(m: &mut Memory, o: &Observation) -> Vec<Act> {
         out.extend(acts);
         return out;
     }
+    // STR-BOT (#213): a stranger shooting this corp's structure.
+    if std::ptr::eq(m.policy.role, &ROLE)
+        && let Some(acts) = crate::hunt::structure_defend(m, o, park)
+    {
+        out.extend(acts);
+        return out;
+    }
     if let Some(act) = far_hostile(m, park) {
         out.push(act);
         return out;
