@@ -304,6 +304,7 @@ pub fn readiness(
     levels: Option<BTreeMap<i64, i64>>,
     system: Option<i64>,
     ship: Option<Ship>,
+    capital: bool,
     now: u64,
 ) -> Readiness {
     Readiness {
@@ -311,11 +312,27 @@ pub fn readiness(
         system,
         online: true,
         wake_in_s: None,
-        ship,
+        ship: if capital { Some(Ship::Staged) } else { ship },
         jumps_to: BTreeMap::new(),
         at: now,
-        capital: false,
+        capital,
     }
+}
+
+/// **Whether the pilot is a capital the theatre can count** (pure): it holds
+/// or sits in a jumper hull **and** has a partner. A capital with no cyno
+/// cannot reach a theatre, so counting it would commit one that never lands
+/// (**[A]** falsifier: a theatre that waits on a capital that is not on its
+/// way). `active_ship` is the item id of the ship the pilot sits in.
+pub fn capital_of(hangar: &[ItemRow], active_ship: Option<i64>, paired: bool) -> bool {
+    use crate::capital::{JUMPER_GROUPS, owned_hull};
+    paired
+        && (owned_hull(hangar, &JUMPER_GROUPS).is_some()
+            || active_ship.is_some_and(|id| {
+                hangar
+                    .iter()
+                    .any(|r| r.item_id == id && JUMPER_GROUPS.contains(&r.group_id))
+            }))
 }
 
 /// **Report to the hall** (each social turn, docked): skills, system and,
@@ -331,15 +348,25 @@ pub fn report(conn: &mut Conn, hall: &Hall, me: i64, now: u64) -> Result<()> {
         Err(_) => None,
     };
     let system = conn.session().solar_system_id();
-    let ship = match hall.plan_for(me) {
-        Some(p) => match conn.hangar_items() {
-            Ok(h) => Some(ship_of(p.fit.hull, &h)),
+    let plan = hall.plan_for(me);
+    let paired = hall.partner_of(me).is_some();
+    let hangar = if plan.is_some() || paired {
+        match conn.hangar_items() {
+            Ok(h) => Some(h),
             Err(e @ (crate::Error::Io(_) | crate::Error::Protocol(_))) => return Err(e),
             Err(_) => None,
-        },
-        None => None,
+        }
+    } else {
+        None
     };
-    hall.report_readiness(me, readiness(levels, system, ship, now));
+    let ship = match (&plan, &hangar) {
+        (Some(p), Some(h)) => Some(ship_of(p.fit.hull, h)),
+        _ => None,
+    };
+    let capital = hangar
+        .as_deref()
+        .is_some_and(|h| capital_of(h, conn.session().ship_id(), paired));
+    hall.report_readiness(me, readiness(levels, system, ship, capital, now));
     look_for_role_hulls(conn, hall, me, now)
 }
 
@@ -518,7 +545,8 @@ mod tests {
     #[test]
     fn the_hall_opens_a_seat_on_a_fresh_sighting_and_closes_it_when_stale() {
         let mut st = crate::corpmind::HallState::new(100);
-        st.readiness.insert(1, readiness(None, None, None, 1_000));
+        st.readiness
+            .insert(1, readiness(None, None, None, false, 1_000));
         assert!(st.open_hulls(7).is_empty());
         st.see_hulls(7, &[DICTOR], &[DICTOR], 900);
         assert_eq!(st.open_hulls(7), [DICTOR].into_iter().collect());
@@ -527,7 +555,13 @@ mod tests {
         // The newest report is more than SEEN_DAYS later.
         st.readiness.insert(
             2,
-            readiness(None, None, None, 900 + (SEEN_DAYS * 100.0) as u64 + 1),
+            readiness(
+                None,
+                None,
+                None,
+                false,
+                900 + (SEEN_DAYS * 100.0) as u64 + 1,
+            ),
         );
         assert!(st.open_hulls(7).is_empty());
         st.see_hulls(7, &[DICTOR], &[DICTOR], 900 + (SEEN_DAYS * 100.0) as u64);
@@ -632,6 +666,63 @@ mod tests {
         let a = assign(&d, &crew, &BTreeSet::new());
         assert_eq!(a[&5], 1, "the only pilot with any repair skill");
         assert!(gap_days(None, &d.roles[1].2) > gap_days(crew[4].levels.as_ref(), &d.roles[1].2));
+    }
+
+    fn hull_row(item_id: i64, type_id: i64, group_id: i64, singleton: bool) -> ItemRow {
+        ItemRow {
+            item_id,
+            type_id,
+            owner_id: 1,
+            location_id: 2,
+            flag_id: 4,
+            quantity: 1,
+            group_id,
+            category_id: crate::capital::CATEGORY_SHIP,
+            singleton,
+        }
+    }
+
+    #[test]
+    fn a_paired_pilot_that_holds_a_jumper_reports_capital() {
+        let g = crate::capital::JUMPER_GROUPS[0];
+        let held = [hull_row(10, 9_500_001, g, true)];
+        assert!(capital_of(&held, None, true));
+        // Sitting in it counts, held or not as a separate row.
+        assert!(capital_of(
+            &[hull_row(11, 9_500_002, g, false)],
+            Some(11),
+            true
+        ));
+    }
+
+    #[test]
+    fn an_unpaired_holder_is_not_a_capital() {
+        let g = crate::capital::JUMPER_GROUPS[0];
+        assert!(!capital_of(
+            &[hull_row(10, 9_500_001, g, true)],
+            Some(10),
+            false
+        ));
+    }
+
+    #[test]
+    fn a_packaged_jumper_or_another_group_is_not_a_capital() {
+        let g = crate::capital::JUMPER_GROUPS[0];
+        // An unassembled hull is not owned; a non-jumper group is not a jumper.
+        let hangar = [
+            hull_row(10, 9_500_001, g, false),
+            hull_row(11, 9_500_003, 9_500_900, true),
+        ];
+        assert!(!capital_of(&hangar, None, true));
+        assert!(!capital_of(&[], None, true));
+    }
+
+    #[test]
+    fn a_capital_pilot_reports_the_staged_ship() {
+        let r = readiness(None, None, Some(Ship::Market), true, 0);
+        assert_eq!(r.ship, Some(Ship::Staged));
+        let r = readiness(None, None, Some(Ship::Market), false, 0);
+        assert_eq!(r.ship, Some(Ship::Market));
     }
 
     #[test]
