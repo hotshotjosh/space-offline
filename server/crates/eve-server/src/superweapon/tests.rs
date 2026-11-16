@@ -176,6 +176,7 @@ fn world_with(lance: i64, carol_hull: i64) -> Registry {
     let now = crate::pyutil::filetime_now();
     reg.modules_mut().set_capacitor(ship(ALICE), 1000.0, now);
     let _ = reg.take_pending();
+    let _ = reg.take_due(Instant::now() + std::time::Duration::from_secs(3_600));
     reg
 }
 
@@ -484,9 +485,11 @@ const P0: [f64; 3] = [20_000.0, 5_000.0, 0.0];
 const P1: [f64; 3] = [20_000.0, -5_000.0, 0.0];
 
 fn pushed(reg: &mut Registry) -> Vec<(String, Vec<PyValue>)> {
-    reg.take_pending()
-        .into_iter()
-        .map(|(_, p)| {
+    let mut all: Vec<Box<dyn crate::notify::Push>> =
+        reg.take_pending().into_iter().map(|(_, p)| p).collect();
+    all.extend(reg.take_due(Instant::now() + std::time::Duration::from_secs(3_600)));
+    all.into_iter()
+        .map(|p| {
             let (n, a) = p.to_push();
             (n.to_owned(), a)
         })
@@ -664,4 +667,29 @@ fn the_beam_guid_follows_the_damage_type() {
         );
     }
     assert!(GUIDS_SLASH[race_index(&d(0.0, 0.0, 0.0, 7.0))].ends_with("Minmatar"));
+}
+
+/// The beam's FX is the clock's push: it leaves in the tick the warning
+/// ends (`take_due`), never waiting on `pending` for some pilot's next call.
+#[test]
+fn the_beam_fx_leaves_on_the_clock_not_on_the_next_call() {
+    let now = crate::pyutil::filetime_now();
+    let mut reg = world();
+    fire_lance(&mut reg, Some(ALICE), ALICE_LANCE, AIM, now).expect("it fires");
+    let _ = reg.take_pending();
+    run_to(&mut reg, now + WARN_MS * MSEC);
+    let waiting: Vec<_> = reg
+        .take_pending()
+        .into_iter()
+        .filter(|(_, p)| p.to_push().0 == "OnSpecialFX")
+        .collect();
+    assert!(waiting.is_empty(), "no FX left for a turn to carry");
+    let due: Vec<_> = reg
+        .take_due(Instant::now() + std::time::Duration::from_secs(3_600))
+        .into_iter()
+        .map(|p| p.to_push())
+        .filter(|(n, _)| *n == "OnSpecialFX")
+        .collect();
+    assert_eq!(due.len(), 1, "the start, on the clock");
+    assert_eq!(due[0].1[7], PyValue::Int(1), "start");
 }

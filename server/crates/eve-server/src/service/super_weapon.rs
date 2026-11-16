@@ -139,9 +139,9 @@ mod tests {
             now + 3_600 * 1_000 * crate::modules::MSEC,
         );
         let fx: Vec<_> = reg
-            .take_pending()
+            .take_due(std::time::Instant::now() + std::time::Duration::from_secs(3_600))
             .into_iter()
-            .map(|(_, p)| (p.to_push(), p.audience()))
+            .map(|p| (p.to_push(), p.audience()))
             .filter(|((n, _), _)| *n == "OnSpecialFX")
             .collect();
         assert_eq!(fx.len(), 2, "one start and one stop");

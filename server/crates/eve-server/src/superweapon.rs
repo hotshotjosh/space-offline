@@ -912,6 +912,9 @@ impl crate::notify::Push for DoomsdayFx {
     }
 }
 
+/// A clock push: scheduled so it leaves in this tick (`Registry::schedule`),
+/// like `modules`' `Via::Clock`. A `w.push` would wait on `pending` for some
+/// client's next call, seconds after the damage.
 fn announce(w: &mut Registry, b: &Beam, start: bool) {
     let mut to = vec![b.character_id];
     to.extend(w.roster().others_in_system(b.system, b.character_id));
@@ -925,16 +928,19 @@ fn announce(w: &mut Registry, b: &Beam, start: bool) {
             vec![("startTargetOffset", p0), ("endTargetOffset", p1)],
         ),
     };
-    w.push(DoomsdayFx {
-        to,
-        ship_id: b.ship_id,
-        module_id: b.module_id,
-        type_id: b.type_id,
-        guid,
-        start,
-        duration_ms: b.duration_ms,
-        offsets,
-    });
+    w.schedule(
+        std::time::Duration::ZERO,
+        DoomsdayFx {
+            to,
+            ship_id: b.ship_id,
+            module_id: b.module_id,
+            type_id: b.type_id,
+            guid,
+            start,
+            duration_ms: b.duration_ms,
+            offsets,
+        },
+    );
 }
 
 fn beam_tick(w: &mut Registry, b: &Beam) {
