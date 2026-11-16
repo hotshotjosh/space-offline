@@ -66,6 +66,15 @@ market. No GM item is created. The group's boss then forms a fleet and invites
 the group as it logs in (a `foreman` forms its own fleet at the belt and
 `mine` bots follow it, as those roles already do).
 
+**Capital pairs.** A `capital` row followed directly by a `cyno-alt` row is one pair, bot
+by bot (`capf1` with `capa1`); the two rows must have the same side and count, else the roster
+is refused at load. A lone row of either role pairs with nobody. `/bots` spawns pair the same
+way: a `cyno-alt` spawn pairs with the newest unpaired `capital` spawn of its side and count,
+and eve-bots prints `capital pair: <a> <-> <b>` on its output. Each bot learns its partner's character once
+the partner has logged in. The alt's dev kit is a cynosural field generator, the pair never
+forms a group fleet, and the dev market supplies the hull, generator and fuel (dev only). Despawn and respawn a pair's two groups together; despawning one half leaves
+the other bound to it.
+
 Shipped: `content/bots/dev/mining.tsv` (two Orca foremen + five Hulks each),
 `pvp.tsv` (ten Rifters against ten Merlins, a roaming gang of six
 Rifters, and a Revelation with its cyno alt), `pve.tsv` (sites and missions),

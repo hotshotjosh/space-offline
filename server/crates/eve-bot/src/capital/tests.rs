@@ -14,6 +14,7 @@ const HOME: i64 = 30_990_001;
 const FAR: i64 = 30_990_002;
 const NEAR: i64 = 30_990_003;
 const ALT: i64 = 90_700_002;
+const GROUP_CYNO: i64 = 990_710;
 const PILOT: i64 = 90_700_001;
 
 fn ship(id: i64, group: i64, singleton: bool) -> ItemRow {
@@ -796,4 +797,30 @@ fn the_shop_skips_the_bots_own_ask_and_the_reserve_buys_nothing() {
     let spendable = crate::acquire::budget(1_000.0, 1_000.0);
     assert_eq!(fuel_budget(spendable), 0.0);
     assert_eq!(spendable * HULL_WALLET_SHARE, 0.0);
+}
+
+#[test]
+fn generator_types_are_the_types_with_the_cyno_effect() {
+    let row = |id: i64, effects: &str, published: u8| {
+        format!(
+            "type\t{id}\t{GROUP_CYNO}\t7\t{published}\t1\t5.0\t0.0\t0.0\t0.0\t0\t{effects}\t\tInvented {id}\n"
+        )
+    };
+    let text = format!(
+        "{}{}{}{}",
+        row(9_200_002, "1,2", 1),
+        row(9_200_001, &CYNO_EFFECT_ID.to_string(), 1),
+        row(9_200_003, "77", 1),
+        row(9_200_004, &CYNO_EFFECT_ID.to_string(), 0),
+    );
+    let table = eve_server::typedata::Table::parse(&text).expect("the invented rows parse");
+    assert_eq!(generator_types(&table), vec![9_200_001]);
+}
+
+#[test]
+fn a_pair_role_forms_no_dev_group_fleet() {
+    assert!(is_pair_role(&ROLE) && is_pair_role(&ALT_ROLE));
+    assert!(is_pilot_role(&ROLE) && !is_pilot_role(&ALT_ROLE));
+    let hunter = crate::roles::parse("hunter").expect("hunter is a role");
+    assert!(!is_pair_role(hunter));
 }

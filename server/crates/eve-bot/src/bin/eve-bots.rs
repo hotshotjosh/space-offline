@@ -1039,6 +1039,8 @@ fn run() -> Result<(), String> {
     let sov_hall = std::sync::Arc::new(eve_bot::sov_bot::SovHall::new());
     // FC-1: where each wing's FC is, shared by every wing bot of the process.
     let wing_hall = std::sync::Arc::new(eve_bot::wing_hall::WingHall::new());
+    // CAP-PAIR (#37): one dev hall for every `/bots` spawn, so a cyno-alt spawn finds its capital.
+    let spawn_hall = std::sync::Arc::new(eve_bot::dev::DevHall::default());
     // PERF-BURST: one price index for every bot of the process.
     let price_cache = std::sync::Arc::new(eve_bot::pricing::PriceIndexCache::default());
     for (idx, (name, role)) in names.iter().enumerate() {
@@ -1114,6 +1116,7 @@ fn run() -> Result<(), String> {
     let control_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let control_thread = control.as_deref().map(|dir| {
         let wing_hall = wing_hall.clone();
+        let spawn_hall = spawn_hall.clone();
         let (tokens, friends, profiles, rules, doctrine, sov_hall, wants, map, marker, tables) = (
             tokens.clone(),
             friends.clone(),
@@ -1147,7 +1150,16 @@ fn run() -> Result<(), String> {
                 None => None,
             };
             let mut members = Vec::new();
-            for e in eve_bot::dev::expand_with(&rows, c.as_ref(), gang_knobs)? {
+            let expanded = eve_bot::dev::expand_in(
+                &rows,
+                c.as_ref(),
+                gang_knobs,
+                std::sync::Arc::clone(&spawn_hall),
+            )?;
+            for (a, b) in spawn_hall.link_spawn(&spec.group, role, &spec.side, rows[0].count) {
+                println!("capital pair: {a} <-> {b}");
+            }
+            for e in expanded {
                 let name = e.name;
                 let mut config = BotConfig::new(&name, addr, pace).with_role(e.role);
                 config.policy.dev = Some(e.dev);

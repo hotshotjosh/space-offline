@@ -132,7 +132,33 @@ pub fn parse_roster(text: &str) -> Result<Vec<Row>, String> {
     if rows.is_empty() {
         return Err("roster: no rows".to_owned());
     }
+    roster_pairs(&rows)?;
     Ok(rows)
+}
+
+/// **Roster pairs** (CAP-PAIR #37, **[A]**: adjacency is the pairing rule; falsified by a
+/// roster a human wants paired another way, which then needs an explicit column): a `capital`
+/// row followed directly by a `cyno-alt` row pairs bot i with bot i (`<capgroup>i` with
+/// `<altgroup>i`). Same side and same count, else an error naming both groups. A lone row of
+/// either role pairs with nobody (it says `MISSING_PARTNER`).
+pub fn roster_pairs(rows: &[Row]) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    for w in rows.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        if !crate::capital::is_pilot_role(a.role) || !crate::capital::is_alt(b.role) {
+            continue;
+        }
+        if a.count != b.count || a.side != b.side {
+            return Err(format!(
+                "roster: capital group {} is followed by cyno-alt group {} of another count or side",
+                a.group, b.group
+            ));
+        }
+        for i in 1..=a.count {
+            out.push((format!("{}{i}", a.group), format!("{}{i}", b.group)));
+        }
+    }
+    Ok(out)
 }
 
 /// The ticker of the hostile side in the kit drills (`/devcorp FOES`).
@@ -168,6 +194,24 @@ pub fn ticker_of(side: &str) -> String {
 #[derive(Debug, Default)]
 pub struct DevHall {
     groups: Mutex<BTreeMap<String, Vec<i64>>>,
+    /// Bot name (the roster's, `<group><i>`) to its character id.
+    names: Mutex<BTreeMap<String, i64>>,
+    /// Bot name to its partner's bot name, both ways.
+    pairs: Mutex<BTreeMap<String, String>>,
+    /// The spawn path's capital and cyno-alt rows, in order.
+    spawned: Mutex<Vec<SpawnedRow>>,
+}
+
+/// One `/bots` spawn of a pair role, as the spawn path remembers it.
+#[derive(Debug, Clone)]
+pub struct SpawnedRow {
+    pub group: String,
+    pub side: String,
+    pub count: usize,
+    /// A capital pilot row (else a cyno alt).
+    pub pilot: bool,
+    /// A pilot row that an alt spawn already took.
+    pub paired: bool,
 }
 
 impl DevHall {
@@ -179,6 +223,82 @@ impl DevHall {
                 v.push(char_id);
             }
         }
+    }
+
+    /// The bot called `name` is in the game as `char_id`.
+    pub fn register_name(&self, name: &str, char_id: i64) {
+        if let Ok(mut n) = self.names.lock() {
+            n.insert(name.to_owned(), char_id);
+        }
+    }
+
+    /// `a` and `b` are partners, both ways.
+    pub fn link(&self, a: &str, b: &str) {
+        if let Ok(mut p) = self.pairs.lock() {
+            p.insert(a.to_owned(), b.to_owned());
+            p.insert(b.to_owned(), a.to_owned());
+        }
+    }
+
+    /// The partner's bot name, once linked.
+    pub fn partner_name(&self, name: &str) -> Option<String> {
+        self.pairs.lock().ok().and_then(|p| p.get(name).cloned())
+    }
+
+    /// The partner's character id once both are linked and the partner has logged in.
+    pub fn partner_of(&self, name: &str) -> Option<i64> {
+        let partner = self.partner_name(name)?;
+        self.names
+            .lock()
+            .ok()
+            .and_then(|n| n.get(&partner).copied())
+    }
+
+    /// **A spawn pairs by adjacency too** (no `/bots` grammar change): a `cyno-alt` spawn pairs
+    /// bot i with bot i of the newest `capital` spawn of the same side and count that has no
+    /// alt yet (the spawn order is the roster order). Returns the links it made; a `capital`
+    /// spawn only records its row.
+    pub fn link_spawn(
+        &self,
+        group: &str,
+        role: RoleRef,
+        side: &str,
+        count: usize,
+    ) -> Vec<(String, String)> {
+        let pilot = crate::capital::is_pilot_role(role);
+        if !pilot && !crate::capital::is_alt(role) {
+            return Vec::new();
+        }
+        let mut found: Option<String> = None;
+        if let Ok(mut rows) = self.spawned.lock() {
+            if !pilot {
+                found = rows
+                    .iter_mut()
+                    .rev()
+                    .find(|r| r.pilot && !r.paired && r.side == side && r.count == count)
+                    .map(|r| {
+                        r.paired = true;
+                        r.group.clone()
+                    });
+            }
+            rows.push(SpawnedRow {
+                group: group.to_owned(),
+                side: side.to_owned(),
+                count,
+                pilot,
+                paired: false,
+            });
+        }
+        let Some(cap) = found else {
+            return Vec::new();
+        };
+        (1..=count)
+            .map(|i| {
+                let (a, b) = (format!("{cap}{i}"), format!("{group}{i}"));
+                self.link(&a, &b);
+                (a, b)
+            })
+            .collect()
     }
 
     /// The group's characters.
@@ -306,6 +426,21 @@ pub fn expand_with(
     content: Option<&Content>,
     knobs: crate::roam_gang::GangKnobs,
 ) -> Result<Vec<Expanded>, String> {
+    expand_in(
+        rows,
+        content,
+        knobs,
+        std::sync::Arc::new(DevHall::default()),
+    )
+}
+
+/// [`expand_with`] into a hall the caller keeps, so later calls (the `/bots` spawns) share it.
+pub fn expand_in(
+    rows: &[Row],
+    content: Option<&Content>,
+    knobs: crate::roam_gang::GangKnobs,
+    hall: std::sync::Arc<DevHall>,
+) -> Result<Vec<Expanded>, String> {
     let mut tickers: BTreeMap<String, &str> = BTreeMap::new();
     for r in rows {
         let t = ticker_of(&r.side);
@@ -315,7 +450,9 @@ pub fn expand_with(
             return Err(format!("sides {other} and {} share the ticker {t}", r.side));
         }
     }
-    let hall = std::sync::Arc::new(DevHall::default());
+    for (a, b) in roster_pairs(rows)? {
+        hall.link(&a, &b);
+    }
     let gangs = std::sync::Arc::new(crate::roam_gang::GangHall::new());
     let wings = std::sync::Arc::new(crate::wing_hall::WingHall::new());
     let mut out = Vec::new();
@@ -542,6 +679,11 @@ mod tests {
             ("capital", "cyno-alt"),
             "the capital pair"
         );
+        assert_eq!(
+            roster_pairs(&pvp).expect("the shipped pairs are well formed"),
+            vec![("capf1".to_owned(), "capa1".to_owned())],
+            "the capital and its cyno alt are one pair"
+        );
         assert_ne!(pvp[0].side, pvp[1].side, "opposite sides");
         assert_ne!(pvp[0].ship, pvp[1].ship, "different doctrines");
         let pve = shipped(include_str!("../../../../content/bots/dev/pve.tsv"));
@@ -638,5 +780,71 @@ mod tests {
         assert_eq!(dev_hull(None, true, Some(777)), Some(777));
         assert_eq!(dev_hull(None, true, None), None);
         assert_eq!(dev_hull(Some("nonsense"), true, None), None);
+    }
+
+    fn pair_rows(extra: &str) -> Result<Vec<Row>, String> {
+        parse_roster(&format!(
+            "hunx\tred\thunter\t1\trole\t-\n{extra}\nloney\tblu\thunter\t1\trole\t-\n"
+        ))
+    }
+
+    #[test]
+    fn a_capital_row_and_the_cyno_alt_row_after_it_pair_bot_by_bot() {
+        let rows = pair_rows("capx\tred\tcapital\t2\tall5\t-\naltx\tred\tcyno-alt\t2\tall5\t-")
+            .expect("a well-formed pair parses");
+        let bots = expand(&rows, None).expect("expands");
+        let dev = &bots[0].dev;
+        assert_eq!(dev.hall.partner_name("capx1").as_deref(), Some("altx1"));
+        assert_eq!(dev.hall.partner_name("altx2").as_deref(), Some("capx2"));
+        assert_eq!(dev.hall.partner_name("hunx1"), None);
+    }
+
+    #[test]
+    fn a_cyno_alt_row_of_another_count_or_side_after_a_capital_row_is_refused() {
+        let count = pair_rows("capx\tred\tcapital\t2\tall5\t-\naltx\tred\tcyno-alt\t1\tall5\t-");
+        let side = pair_rows("capx\tred\tcapital\t1\tall5\t-\naltx\tblu\tcyno-alt\t1\tall5\t-");
+        for r in [count, side] {
+            let e = r.expect_err("refused");
+            assert!(e.contains("capx") && e.contains("altx"), "{e}");
+        }
+    }
+
+    #[test]
+    fn a_lone_capital_or_cyno_alt_row_pairs_with_nobody() {
+        for extra in [
+            "capx\tred\tcapital\t1\tall5\t-",
+            "altx\tred\tcyno-alt\t1\tall5\t-",
+            "altx\tred\tcyno-alt\t1\tall5\t-\ncapx\tred\tcapital\t1\tall5\t-",
+        ] {
+            let rows = pair_rows(extra).expect("parses");
+            assert!(roster_pairs(&rows).expect("no error").is_empty(), "{extra}");
+        }
+    }
+
+    #[test]
+    fn a_partner_resolves_only_once_it_has_logged_in() {
+        let hall = DevHall::default();
+        hall.link("capx1", "altx1");
+        hall.register_name("capx1", 9_100_001);
+        assert_eq!(hall.partner_of("capx1"), None);
+        hall.register_name("altx1", 9_100_002);
+        assert_eq!(hall.partner_of("capx1"), Some(9_100_002));
+        assert_eq!(hall.partner_of("altx1"), Some(9_100_001));
+    }
+
+    #[test]
+    fn a_cyno_alt_spawn_pairs_with_the_newest_unpaired_capital_spawn_of_its_side() {
+        let cap = crate::roles::parse("capital").expect("role");
+        let alt = crate::roles::parse("cyno-alt").expect("role");
+        let hall = DevHall::default();
+        assert!(hall.link_spawn("capr", cap, "red", 1).is_empty());
+        assert!(hall.link_spawn("capb", cap, "blu", 1).is_empty());
+        assert_eq!(
+            hall.link_spawn("altr", alt, "red", 1),
+            vec![("capr1".to_owned(), "altr1".to_owned())]
+        );
+        assert_eq!(hall.partner_name("altr1").as_deref(), Some("capr1"));
+        assert!(hall.link_spawn("altr2", alt, "red", 1).is_empty());
+        assert_eq!(hall.partner_name("altr21"), None);
     }
 }

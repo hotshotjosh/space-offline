@@ -2098,6 +2098,19 @@ impl Bot {
         let me = conn.session().char_id().unwrap_or(0);
         if me != 0 {
             dev.hall.register(&dev.group, me);
+            // CAP-PAIR (#37): the pair's partner, once it has logged in.
+            dev.hall.register_name(&self.config.name, me);
+            if let Some(p) = dev.hall.partner_of(&self.config.name)
+                && self.memory.policy.partner != Some(p)
+            {
+                self.memory.policy.partner = Some(p);
+                self.record(
+                    ActKind::Capital,
+                    format!("capital pair: partner {p}"),
+                    vec![],
+                    Verdict::Ok,
+                );
+            }
         }
         let docked = matches!(self.obs.place, Place::Docked { .. });
         if !self.dev_done && docked {
@@ -2170,6 +2183,15 @@ impl Bot {
             {
                 kit.modules = Some((crate::mine_ladder::laser_of(h), 1));
             }
+            // CAP-PAIR: the alt's dev kit is a cynosural generator (ozone is its own stock).
+            // [A] the lowest id is the standard generator (the covert one carries 2857 too);
+            // falsified by a dev kit acquire line naming a covert generator.
+            if crate::capital::is_alt(role)
+                && let Some(c) = &self.config.content
+                && let Some(&g) = crate::capital::generator_types_in(c).first()
+            {
+                kit.modules = Some((g, 1));
+            }
             let in_capsule = self
                 .obs
                 .ship
@@ -2218,6 +2240,7 @@ impl Bot {
                     >= Duration::from_secs(crate::dev::FLEET_DEFER_S))
             && !std::ptr::eq(self.memory.policy.role, &crate::foreman::ROLE)
             && !std::ptr::eq(self.memory.policy.role, &roles::MINE)
+            && !crate::capital::is_pair_role(self.memory.policy.role)
             && self.fleeter.next.is_none_or(|t| now >= t)
         {
             self.fleeter.next = Some(now + Duration::from_secs(crate::dev::FLEET_EVERY_S));

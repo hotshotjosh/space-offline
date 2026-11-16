@@ -645,6 +645,16 @@ pub static ALT_ROLE: RoleSpec = RoleSpec {
     setup,
 };
 
+/// Whether `role` is a pair's pilot.
+pub fn is_pilot_role(role: &RoleSpec) -> bool {
+    std::ptr::eq(role, &ROLE)
+}
+
+/// Whether `role` is either side of a pair.
+pub fn is_pair_role(role: &RoleSpec) -> bool {
+    is_pilot_role(role) || is_alt(role)
+}
+
 /// Whether `role` is a pair's alt.
 pub fn is_alt(role: &RoleSpec) -> bool {
     std::ptr::eq(role, &ALT_ROLE)
@@ -946,6 +956,24 @@ pub fn cyno_module(
             .get(r.type_id)
             .is_some_and(|t| t.has_effect(CYNO_EFFECT_ID))
     }))
+}
+
+/// **The generator types of a table**: published types with the cynosural effect (2857 **[V]**),
+/// ascending id. The covert generator carries 2857 too; **[A]** the lowest id is the standard
+/// generator, falsified by a dev kit acquire line naming a covert generator.
+pub fn generator_types(table: &eve_server::typedata::Table) -> Vec<i64> {
+    let mut ids: Vec<i64> = table
+        .types()
+        .filter(|t| t.published && t.has_effect(CYNO_EFFECT_ID))
+        .map(|t| t.type_id)
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// [`generator_types`] of the bundle's type data.
+pub fn generator_types_in(content: &eve_server::content::Content) -> Vec<i64> {
+    generator_types(eve_server::typedata::installed_in(content).table())
 }
 
 /// **Light the cyno**: `dogmaIM.Activate(module, 'cynosuralGeneration',
