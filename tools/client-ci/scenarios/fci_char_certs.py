@@ -9,8 +9,15 @@
    [0, 1].  A `None` answer used to raise in `CalculateStateAtTime`.
 2. Certificates are computed by the client from its own static data and
    `skillMgr2.GetSkills`: a level-0 certificate reaches level 1 after the GM
-   grants its level-1 skills.  A GM grant does not scatter `OnSkillsChanged`,
-   so the scenario calls the client's own handler.
+   grants its level-1 skills.  The grant schedules `OnServerSkillsChanged`, so
+   the client scatters `OnSkillsChanged` itself and the scenario calls no
+   handler.
+3. `/removeskill` of one of those skills: the skill leaves the client's skill
+   cache, the certificate falls below level 1 and leaves `GetMyCertificates`,
+   no traceback (the removal pairs `OnSkillForcedRefresh` with an empty
+   `OnServerSkillsChanged`, #214).
+4. `/givestarterskills`: the skill cache holds the number the reply names, and
+   the cached certificate level agrees with the held skills (no level is pinned).
 
 NOT here: the energy level being full (an [A]), the tooltip drawing.
 """
@@ -1442,6 +1449,70 @@ def eoci_main(EOCI_NAME):
                       bool(got), text(target.GetLevel()))
                 check('GetMyCertificates now lists it',
                       target.certificateID in certs.GetMyCertificates())
+
+                # A removal: `/removeskill` resets the client caches (forced
+                # refresh) and schedules an empty `OnServerSkillsChanged`
+                # [V slash.rs skill_command], so the client must drop the
+                # certificate by itself.  No handler call here either.
+                def met_now():
+                    return all(skills.MySkillLevel(t) >= l for t, l in need)
+
+                def held():
+                    # `skills.myskills` is None during a reset (see
+                    # grant_and_settle), so None means "not settled yet".
+                    ok4, mine = safe(lambda: skills.myskills)
+                    return mine if ok4 and isinstance(mine, dict) else None
+                drop_id, drop_lvl = need[0]
+                ok3, drop_name = safe(lambda: __import__('evetypes').GetEnglishName(drop_id))
+                precondition('the skill to remove has an English name', ok3 and bool(drop_name),
+                             text(drop_name))
+                if ok3 and drop_name:
+                    mark2 = log_mark()
+                    rok, rreply = gm('/removeskill %s' % text(drop_name))
+                    check('/removeskill answers "removed"', rok and 'removed' in rreply.lower(),
+                          rreply[:200])
+                    got, _w = wait_for(
+                        lambda: held() is not None and drop_id not in held(), timeout_ms=10000)
+                    check('the client skill cache no longer holds the removed skill',
+                          bool(got), text(drop_name))
+                    got, _w = wait_for(lambda: target.GetLevel() < 1, timeout_ms=15000)
+                    check('the certificate level falls below 1 after the removal',
+                          bool(got), text(target.GetLevel()))
+                    check('GetMyCertificates no longer lists it',
+                          target.certificateID not in certs.GetMyCertificates())
+                    check('the cached level agrees with the held skills after the removal',
+                          (target.GetLevel() >= 1) == met_now(),
+                          '%s %s' % (text(target.GetLevel()), text(met_now())))
+                    no_new_tracebacks('char certs after /removeskill', mark2)
+
+                    # A reset: `/givestarterskills` replaces the sheet and
+                    # sends the same pair.  Whatever level results must be the
+                    # one the held skills give; no level is pinned.
+                    import re
+                    mark3 = log_mark()
+                    grant_and_settle(drop_id, drop_id, drop_lvl)
+                    got, _w = wait_for(lambda: target.GetLevel() >= 1, timeout_ms=15000)
+                    precondition('the certificate is back at level >= 1 before the reset',
+                                 bool(got), text(target.GetLevel()))
+                    rok, rreply = gm('/givestarterskills')
+                    m = re.search(r'reset to the (\d+) starter skills', rreply)
+                    check('/givestarterskills answers with a count', rok and m is not None,
+                          rreply[:200])
+                    if m is not None:
+                        want = int(m.group(1))
+                        got, _w = wait_for(
+                            lambda: held() is not None and len(held()) == want, timeout_ms=10000)
+                        check('the client skill cache holds the number the reply named',
+                              bool(got), '%s vs %d' % (text(len(held() or ())), want))
+                    settled, _w = wait_for(
+                        lambda: (target.GetLevel() >= 1) == met_now(), timeout_ms=15000)
+                    check('the cached certificate level agrees with the held skills after the reset',
+                          bool(settled), '%s %s' % (text(target.GetLevel()), text(met_now())))
+                    check('GetMyCertificates agrees with the level after the reset',
+                          (target.certificateID in certs.GetMyCertificates())
+                          == (target.GetLevel() >= 1))
+                    say('reset branch: level %s, met %s' % (text(target.GetLevel()), text(met_now())))
+                    no_new_tracebacks('char certs after /givestarterskills', mark3)
                 ship = getattr_safe(builtin('session'), 'shipid')
                 item = builtin('sm').GetService('godma').GetItem(ship)
                 precondition('godma holds the active ship', item is not None)
