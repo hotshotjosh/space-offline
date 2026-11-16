@@ -2153,8 +2153,7 @@ pub fn launch(w: &mut Registry, actor: Option<i64>, items: &[(i64, i64)]) -> PyV
             // Operation for a light drone, ...): the client's launch asks
             // nothing, but a pilot without them could not have fitted it.
             if let Some((skill, level)) = drone_skills::missing_skill(w, owner, kind.type_id) {
-                let skill_name =
-                    typedata::item_in(w.content(), skill).map_or("a skill", |t| t.name);
+                let skill_name = crate::skill::name_in(w.content(), skill).unwrap_or("a skill");
                 out.push(refusal_text(&format!(
                     "You need {skill_name} {level} to launch the {}.",
                     kind.name
@@ -4838,6 +4837,37 @@ modifier\t990581102\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t
         );
         assert!(launch_n_of(&mut reg, 1).is_empty());
         assert_eq!(census_of(&reg, TRACK_DRONE), (3, 0, 20));
+    }
+
+    /// The refusal names the missing skill from the skill table (the
+    /// type index leaves skills out), never "a skill".
+    #[test]
+    fn the_launch_refusal_names_the_missing_skill() {
+        let mut c = content();
+        let text =
+            format!("skill\t{SK_LIGHT}\t255\t1\t165\t166\t0.01\t\tInvented Light Operation\n");
+        c.insert(
+            crate::skill::TABLE.name,
+            crate::skill::Table::parse(&text).expect("parses"),
+        );
+        let mut reg = world_in(
+            c,
+            BIG_BAY,
+            3,
+            &[(SKILL_DRONES, 5), (SK_DRONES, 1), (SK_LIGHT, 1)],
+            TRACK_DRONE,
+        );
+        undock(&mut reg, ALICE);
+        let answer = launch(&mut reg, Some(ALICE), &[(STACK, 1)]);
+        let shown = format!("{answer:?}");
+        let has = |text: &str| shown.contains(&format!("{:?}", crate::pyutil::bstr(text)));
+        assert!(
+            has("You need Invented Light Operation 2 to launch the Fixture Tracking Drone."),
+            "{shown}"
+        );
+        assert!(!has(
+            "You need a skill 2 to launch the Fixture Tracking Drone."
+        ));
     }
 
     /// Drone Avionics-like skills extend the control range per level.

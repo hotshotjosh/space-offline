@@ -491,7 +491,7 @@ pub fn check_activation(
         if let Some((skill, level)) =
             crate::drone_skills::missing_skill(w, character_id, charge.type_id)
         {
-            let name = crate::item::find_in(w.content(), skill).map_or("a skill", |t| t.name);
+            let name = crate::skill::name_in(w.content(), skill).unwrap_or("a skill");
             return Err(refuse(&format!(
                 "Warp disrupt probes need {name} at level {level}."
             )));

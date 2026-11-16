@@ -845,6 +845,12 @@ pub fn find_in(content: &Content, type_id: i64) -> Option<&SkillType> {
     all_in(content).find(|s| s.type_id == type_id)
 }
 
+/// A skill's name for a message: the skill table's, which `typedata`'s item
+/// index leaves out (a skill is `crate::skill`'s, never one of its items).
+pub fn name_in(content: &Content, type_id: i64) -> Option<&'static str> {
+    find_in(content, type_id).map(|s| s.name)
+}
+
 /// The skills, and the level of each, that `type_id` needs before it can be
 /// trained -- `requiredskillsfortypes`, the same table the client's
 /// `skills.GetRequiredSkills` reads **[V]**. Empty without a loaded table:
