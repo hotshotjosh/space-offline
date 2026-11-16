@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**70% proved** (229 of 327) · **93% built** (304 of 327) · 3 parked, not counted.
+**70% proved** (229 of 328) · **93% built** (305 of 328) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -15,6 +15,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.1 Prove what landed
 
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
+- [ ] Militia on drone and fighter slims: *built-unproved*, facwar_mgr::slim_extras resolves a drone's or squadron's owner; the drone launch AddBalls2 carries the extras; unit tests; fci_fw_kill_lp: A (Incursus) launches a Hobgoblin; B checks its slim's warFactionID and CheckAtWarMilitia; [I] TQ sends it, from CATEGORIES_WITH_WARFACTIONID; fci_fw_kill_lp green 11-16 (var/ci-1116g-a, A 60/60, B 32/32): B sees A's Hobgoblin slim carry A's militia and CheckAtWarMilitia is true; fighters unit-tested only
 - [ ] Bots use filaments: *built-unproved*, commit 7bbc445; unit tests; socket test tests/bots/hunt.rs a_hunter_with_a_filament_jumps_hunts_the_new_space_and_flies_home (stock, jump through randomJumpMgr, scan, roam home); escort.rs no longer unloads a stocked filament as loot (it kept the hunter docked)
 - [ ] Filament drops: abyssal and random-jump filaments from NPC kills and hacked sites: *built-unproved*, filament_drops.rs, content/pve/filament-drops.tsv; wired by #121: combat::npc_wreck rolls once per kill (class name) and hacking_loot::on_won once per can (relic/data) via combat::roll_filament, candidates in a world slot; unit tests in combat and hacking_loot; Triglavian filaments too: trig_in/trig_out, band p, roll_where (#228); no client run yet
 - [ ] Low-status bots avoid the police: *built-unproved*, unit tests (hunt.rs, travel.rs); bot-over-socket test a_low_status_hunter_flies_round_the_police_net (tests/bots/travel.rs); soak pending. Hunters only
@@ -163,7 +164,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fleet | 10 | 1 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
-| Factional warfare | 3 | 1 | 1 | 2 | 0 |
+| Factional warfare | 3 | 2 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 4 | 2 | 2 | 0 |
 
@@ -516,12 +517,13 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Factional warfare</b>: 3 of 7 proved, 4 open</summary>
+<details><summary><b>Factional warfare</b>: 3 of 8 proved, 5 open</summary>
 
 - [x] Enlist, read state, retire, cooldown: *client-proved*, fci_fw_enlist W10
 - [x] Kills pay LP: *client-proved*, fci_fw_kill_lp (regress-w27d, two clients): A kills B in a warzone, A is paid LP with his militia (LPSvc and the wallet service agree), the stats kill count rises, B earns nothing; ratio and split [A]
 - [x] Stats and the enlistment rules (player refusals): *client-proved*, fci_fw_refuse (regress-w27d): enlisting at another militia's station or below the standing bar is refused and changes nothing, then the same enlistment succeeds
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
+- [ ] Militia on drone and fighter slims: *built-unproved*, facwar_mgr::slim_extras resolves a drone's or squadron's owner; the drone launch AddBalls2 carries the extras; unit tests; fci_fw_kill_lp: A (Incursus) launches a Hobgoblin; B checks its slim's warFactionID and CheckAtWarMilitia; [I] TQ sends it, from CATEGORIES_WITH_WARFACTIONID; fci_fw_kill_lp green 11-16 (var/ci-1116g-a, A 60/60, B 32/32): B sees A's Hobgoblin slim carry A's militia and CheckAtWarMilitia is true; fighters unit-tested only
 - [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point; bots hold the point (#76), built-unproved
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port

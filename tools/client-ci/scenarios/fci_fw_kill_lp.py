@@ -26,7 +26,8 @@ the client's own table).  Then, per pilot:
    and `session.corpid` (the militia corporation) follow;
 2. `/tr me <arena>`: both dock in one warzone system, which the client's own
    `fwWarzoneSvc.IsWarzoneSolarSystem` confirms;
-3. A GM-makes a Rifter with two 200mm autocannons and EMP S, B a Rifter; each
+3. A GM-makes an Incursus (three turret hardpoints and a drone bay [I]) with
+   200mm autocannons, EMP S and a Hobgoblin I, B a Rifter; each
    boards (skills granted first: the board call opens a modal dialog and hangs
    otherwise), A fits, onlines and loads; each reads his BASELINE: every
    militia/NPC-corporation LP balance (`LPSvc.GetAllMyCharacterWalletLPBalances`,
@@ -34,6 +35,8 @@ the client's own table).  Then, per pilot:
    `facwar.GetStats_Personal()['data']['killsTotal']['you']`;
 4. both undock; each sees the other's ship on grid and its slim's
    `warFactionID` is the other militia (the client's view of "opposing");
+4b. A launches the drone (`droneFunctions.LaunchDrones`); B sees its slim carry
+   A's militia (`warFactionID`) and `stateSvc.CheckAtWarMilitia` is truthy;
 5. A closes, locks and fires until B's hull leaves the park, then stops the guns
    at once (the pod is not shot: a second kill of the same victim pays nothing
    inside the repeat window, which would blur the reading).  Then, in A's client:
@@ -1453,6 +1456,7 @@ def eoci_main(EOCI_NAME):
     GUN = '200mm autocannon i'
     AMMO = 'emp s'
     RIFTER = 'rifter'
+    INCURSUS = 'incursus'  # A: three turret hardpoints and a drone bay [I]; the victim stays a Rifter
     GROUP_WRECK = 186               # const.groupWreck
     GROUP_CAPSULE = 29              # const.groupCapsule
     PVP_IDLE = 200                  # crimewatch/const.py pvpTimerStateIdle [V]
@@ -1653,22 +1657,101 @@ def eoci_main(EOCI_NAME):
             return v[0]
         return None
 
+    HOBGOBLIN = 'hobgoblin i'
+    DRONE_WAIT_MS = 20000
+
+    def load_drone():
+        """A's Hobgoblin I (made in `kit_killer`) into the Incursus' drone bay.
+        `True` when the bay holds a drone."""
+        drone = type_ids_named(HOBGOBLIN, exact=True)
+        check('the client knows the Hobgoblin I', bool(drone), text(drone))
+        if not drone:
+            return False
+        item, why = find_hangar_item(drone[0], timeout_ms=5000)
+        check('the drone is in the hangar', item is not None, why)
+        if item is None:
+            return False
+        shipid = getattr_safe(builtin('session'), 'shipid')
+        ok, v = safe(lambda: get_svc('invCache').GetInventoryFromId(shipid).Add(
+            item.itemID, item.locationID, qty=1, flag=FLAG_DRONE_BAY))
+        check('the drone goes into the drone bay (invCache Add, flag 87)', ok, text(v)[:200])
+        bay = None
+        if ok:
+            bay, waited = wait_for(lambda: ship_items(FLAG_DRONE_BAY)[1]
+                                   if ship_items(FLAG_DRONE_BAY)[0] and ship_items(FLAG_DRONE_BAY)[1]
+                                   else None, timeout_ms=10000)
+        check('the drone bay lists it', bool(bay), shape(bay))
+        return bool(bay)
+
+    def launch_drone(park, mine):
+        """A launches the drone from its bay (role A, undocked); its own slim
+        then carries A's militia."""
+        rows = ship_items(FLAG_DRONE_BAY)[1] or []
+        ids = [getattr_safe(r, 'itemID') for r in rows]
+        check('A has a drone in its bay to launch', bool(ids) and None not in ids, text(ids))
+        if not ids or None in ids:
+            return False
+        err = ''
+        try:
+            from eve.client.script.ui.services.menuSvcExtras import droneFunctions
+            droneFunctions.LaunchDrones(ids)
+        except Exception as e:
+            err = '%s: %s' % (e.__class__.__name__, text(e))
+        check('A launches the drone (droneFunctions.LaunchDrones)', not err, err)
+        if err:
+            return False
+        charid = getattr_safe(builtin('session'), 'charid')
+        found, waited = wait_for(lambda: drone_slim_of(park, charid),
+                                 timeout_ms=DRONE_WAIT_MS, step_ms=1000)
+        if found:
+            check('A\'s own drone slim carries A\'s militia (warFactionID)',
+                  getattr_safe(found[1], 'warFactionID') == mine,
+                  'slim %s, wanted %s' % (text(getattr_safe(found[1], 'warFactionID')), text(mine)))
+        return True
+
+    def drone_slim_of(park, charid):
+        cat = const_of('categoryDrone', 18)
+        found = slims_where(park, lambda s: getattr_safe(s, 'categoryID') == cat
+                            and getattr_safe(s, 'ownerID') == charid)
+        return found[0] if found else None
+
+    def check_peer_drone(park, theirs):
+        """B: A's drone slim carries A's militia and reads as at war."""
+        found, waited = wait_for(lambda: drone_slim_of(park, EXPECT_CHARID),
+                                 timeout_ms=DRONE_WAIT_MS, step_ms=1000)
+        check('the other pilot\'s drone arrives on the grid', bool(found),
+              'none after %s ms' % text(waited))
+        if not found:
+            return
+        slim = found[1]
+        check('the other pilot\'s drone slim carries the enemy militia (warFactionID)',
+              getattr_safe(slim, 'warFactionID') == theirs,
+              'slim %s, wanted %s' % (text(getattr_safe(slim, 'warFactionID')), text(theirs)))
+        ok, v = safe(lambda: get_svc('stateSvc').CheckAtWarMilitia(slim))
+        check('the other pilot\'s drone reads as at war (stateSvc.CheckAtWarMilitia)',
+              bool(ok and v), text(v))
+
     def kit_killer():
         """GM kit, board, fit, online, load.  `(guns, ok)`."""
         gun = type_ids_named(GUN, exact=True)
         ammo = type_ids_named(AMMO, exact=True)
-        rifter = type_ids_named(RIFTER, exact=True)
-        precondition('the client knows the gun, ammo and Rifter',
-                     bool(gun and ammo and rifter),
-                     'gun=%s ammo=%s rifter=%s' % (text(gun), text(ammo), text(rifter)))
-        if not (gun and ammo and rifter):
+        hull = type_ids_named(INCURSUS, exact=True)
+        precondition('the client knows the gun, ammo and Incursus',
+                     bool(gun and ammo and hull),
+                     'gun=%s ammo=%s incursus=%s' % (text(gun), text(ammo), text(hull)))
+        if not (gun and ammo and hull):
             return [], False
-        for line in ('/giveskill Gunnery 3', '/giveskill Small Projectile Turret 3',
-                     '/createitem rifter', '/createitem "200mm AutoCannon I" 3',
-                     '/createitem "EMP S" 500'):
+        for line in ('/giveskill Gallente Frigate 1',  # board_ship refuses on missing skills
+                     '/giveskill Gunnery 3', '/giveskill Small Projectile Turret 3',
+                     '/giveskill Drones 1',
+                     # the light drone's own required skill [V-data: the Hobgoblin I's
+                     # requiredSkill1]; drones.rs refuses the launch without it
+                     '/giveskill Light Drone Operation 1',
+                     '/createitem incursus', '/createitem "200mm AutoCannon I" 3',
+                     '/createitem "EMP S" 500', '/createitem "Hobgoblin I" 1'):
             gm_check('GM: ' + line, line)
-        ok, detail = board_ship(rifter[0])
-        check('A boarded the Rifter', ok, detail)
+        ok, detail = board_ship(hull[0])
+        check('A boarded the Incursus', ok, detail)
         if not ok:
             return [], False
         guns = []
@@ -1690,6 +1773,7 @@ def eoci_main(EOCI_NAME):
             return guns, False
         ok, detail = load_ammo([m.itemID for m in guns], ammo[0], charge)
         check('the guns take the EMP S', ok, detail)
+        load_drone()  # its checks go red on a failure; the kill goes on
         return guns, ok
 
     def kit_victim():
@@ -1925,6 +2009,10 @@ def eoci_main(EOCI_NAME):
               own is not None and getattr_safe(own[1], 'warFactionID') == mine,
               'slim %s, wanted %s' % (text(getattr_safe(own[1], 'warFactionID') if own else None),
                                       text(mine)))
+        if is_a:
+            launch_drone(park, mine)
+        else:
+            check_peer_drone(park, theirs)
         if is_a:
             role_a(park, me, guns, corp, lp0, kills0)
         else:

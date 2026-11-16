@@ -250,8 +250,9 @@ pub(crate) fn owner_faction(reg: &Registry, owner: i64) -> Option<i64> {
     serving(reg, owner, crate::pyutil::filetime_now())
 }
 
-/// **The `slim_extra::SOURCES` row** (FW-1): a pilot's ship or capsule
-/// carries `warFactionID` while the pilot is enlisted, and no key when not.
+/// **The `slim_extra::SOURCES` row** (FW-1): a pilot's ship, capsule,
+/// drones and fighters carry `warFactionID` while the pilot is enlisted, and
+/// no key when not.
 /// `crimewatchSvc` reads it for the free-target test
 /// (`hasattr(item, 'warFactionID') and IsCombatEnemyFaction(...)`), and
 /// `state.CheckAtWarMilitia` and `CheckSameMilitia` read it for the overview
@@ -259,8 +260,23 @@ pub(crate) fn owner_faction(reg: &Registry, owner: i64) -> Option<i64> {
 pub fn slim_extras(reg: &Registry, ids: &[i64]) -> crate::slim_extra::SlimExtras {
     ids.iter()
         .filter_map(|id| {
-            let p = reg.roster().by_ship(*id)?;
-            let faction = war_faction(reg, p.character_id)?;
+            // The pilot: the ship's, else the drone's owner, else the
+            // fighter squadron's owner. A drone's own roster entry has no
+            // character, so `war_faction` finds nothing there and the next
+            // arm runs.
+            let faction = reg
+                .roster()
+                .by_ship(*id)
+                .and_then(|p| war_faction(reg, p.character_id))
+                .or_else(|| {
+                    let pilot = reg
+                        .modules()
+                        .drones()
+                        .get(*id)
+                        .map(|d| d.owner_id)
+                        .or_else(|| crate::fighters::owner_of(reg, *id))?;
+                    war_faction(reg, pilot)
+                })?;
             Some((*id, vec![("warFactionID", PyValue::Int(faction))]))
         })
         .collect()
@@ -1717,6 +1733,38 @@ mod tests {
         assert_eq!(
             slim_extras(&reg, &[ALICE_SHIP, BOB_SHIP]),
             vec![(ALICE_SHIP, vec![("warFactionID", PyValue::Int(F))])]
+        );
+    }
+
+    /// FW-1: an enlisted pilot's drone carries the militia too
+    /// (`state.CATEGORIES_WITH_WARFACTIONID`); someone else's drone does not.
+    #[test]
+    fn an_enlisted_pilots_drone_slim_carries_war_faction_id() {
+        use crate::combat::tests::{ALICE, ALICE_SHIP, BOB, BOB_SHIP, alice_has_bob_locked};
+        const ALICE_DRONE: i64 = 9_100_000_001; // invented
+        const BOB_DRONE: i64 = 9_100_000_002; // invented
+        let mut reg = alice_has_bob_locked();
+        let sys = reg.roster().get(ALICE).expect("alice").solar_system_id;
+        for (id, owner, ship) in [(ALICE_DRONE, ALICE, ALICE_SHIP), (BOB_DRONE, BOB, BOB_SHIP)] {
+            reg.modules_mut()
+                .drones_mut()
+                .insert(crate::drones::Drone::launched(
+                    id,
+                    crate::drones::HOBGOBLIN_I,
+                    owner,
+                    ship,
+                    sys,
+                ));
+        }
+        assert!(slim_extras(&reg, &[ALICE_DRONE]).is_empty(), "not enlisted");
+        reg.deltas_mut().put(
+            KIND,
+            vec![ALICE.to_string()],
+            vec![F.to_string(), T0.to_string(), "0".to_owned()],
+        );
+        assert_eq!(
+            slim_extras(&reg, &[ALICE_DRONE, BOB_DRONE]),
+            vec![(ALICE_DRONE, vec![("warFactionID", PyValue::Int(F))])]
         );
     }
 

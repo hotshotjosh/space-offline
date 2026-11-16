@@ -2293,6 +2293,7 @@ fn announce_launch(w: &mut Registry, owner: i64, system: i64, ids: &[i64]) {
     }
     let to = audience(w, system);
     let stamp = w.next_destiny_stamp();
+    let extras = crate::slim_extra::for_slims(w, ids);
     if let Some(added) = destiny::BallsAdded::new(
         to,
         stamp,
@@ -2302,7 +2303,7 @@ fn announce_launch(w: &mut Registry, owner: i64, system: i64, ids: &[i64]) {
         },
         extra,
     ) {
-        w.push(added);
+        w.push(added.with_extras(extras));
     }
     for row in rows {
         w.push(StateChange {
@@ -3706,6 +3707,33 @@ modifier\t990581102\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t
         assert_eq!(args[1], PyValue::Int(ALICE));
         assert_eq!(args[2], PyValue::Int(ALICE_SHIP));
         assert_eq!(args[4], PyValue::Int(DRONE));
+    }
+
+    /// FW-1: the launch's `AddBalls2` carries the owner's militia on the
+    /// drone slim.
+    #[test]
+    fn a_launch_for_an_enlisted_owner_sends_the_militia_on_the_drone_slim() {
+        let mut reg = world(BIG_BAY, 5, 5);
+        undock(&mut reg, ALICE);
+        reg.deltas_mut().put(
+            crate::service::facwar_mgr::KIND,
+            vec![ALICE.to_string()],
+            vec![
+                "599101".to_owned(), // invented militia
+                "130000000000000000".to_owned(),
+                "0".to_owned(),
+            ],
+        );
+        let _ = launch_n(&mut reg, 1);
+        let sent = pending(&mut reg);
+        let (_, _, args) = sent
+            .iter()
+            .find(|(_, n, _)| *n == "DoDestinyUpdate")
+            .expect("balls");
+        // Dict keys are strings on the wire; the debug form shows their bytes.
+        let key = format!("{:?}", PyValue::Bytes(b"warFactionID".to_vec()));
+        let dump = format!("{args:?}");
+        assert!(dump.contains(&key) && dump.contains("Int(599101)"));
     }
 
     #[test]

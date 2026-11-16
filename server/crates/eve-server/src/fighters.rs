@@ -510,6 +510,11 @@ fn state(w: &Registry) -> &State {
     w.ext::<State>()
 }
 
+/// The pilot who flies squadron `id`, if it is live.
+pub(crate) fn owner_of(w: &Registry, id: i64) -> Option<i64> {
+    state(w).squadron(id).map(|s| s.owner_id)
+}
+
 fn state_mut(w: &mut Registry) -> &mut State {
     w.ext_mut::<State>()
 }
@@ -1447,7 +1452,7 @@ fn announce_launch(w: &mut Registry, owner: i64, ids: &[i64]) {
     let to = audience(w, system);
     let stamp = w.next_destiny_stamp();
     let slim_ids: Vec<i64> = sent.iter().map(|s| s.id).collect();
-    let extras = slim_extras(w, &slim_ids);
+    let extras = crate::slim_extra::for_slims(w, &slim_ids);
     if let Some(added) = destiny::BallsAdded::new(
         to,
         stamp,
@@ -2644,6 +2649,41 @@ type\t990590013\t99593\t87\t1\t1\t20.0\t0.0\t1000.0\t12.0\t0\t\t37=1500.0;2214=1
             Some((LIGHT_A, ALICE))
         );
         assert!(crate::dogma::hull(&reg, sq).is_some());
+    }
+
+    /// FW-1: an enlisted pilot's squadron slim carries the militia and keeps
+    /// its size key, each once.
+    #[test]
+    fn an_enlisted_pilots_squadron_slim_carries_war_faction_id() {
+        const MILITIA: i64 = 599_101; // invented
+        let (mut reg, sq) = launched_world();
+        launch_tube(&mut reg, FIRST_TUBE);
+        assert_eq!(
+            crate::slim_extra::for_slims(&reg, &[sq]).len(),
+            1,
+            "size only"
+        );
+        reg.deltas_mut().put(
+            crate::service::facwar_mgr::KIND,
+            vec![ALICE.to_string()],
+            vec![
+                MILITIA.to_string(),
+                "130000000000000000".to_owned(),
+                "0".to_owned(),
+            ],
+        );
+        let got = crate::slim_extra::for_slims(&reg, &[sq]);
+        let keys: Vec<&str> = got
+            .iter()
+            .flat_map(|(_, kv)| kv.iter().map(|(k, _)| *k))
+            .collect();
+        assert!(keys.contains(&"warFactionID"), "{keys:?}");
+        assert_eq!(
+            keys.iter()
+                .filter(|k| **k == "fighter.squadronSize")
+                .count(),
+            1
+        );
     }
 
     #[test]
