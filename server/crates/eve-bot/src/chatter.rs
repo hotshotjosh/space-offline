@@ -259,8 +259,8 @@ pub fn take_fights(me: i64) -> Vec<(i64, bool, Instant)> {
         .unwrap_or_default()
 }
 
-/// What this bot remembers of one pilot (P3a: a pure input; the acquaintance
-/// book fills it later). The default `Scene` knows nobody.
+/// What this bot remembers of one pilot (a pure input; the driver fills it from
+/// the acquaintance book on a Local arrival). The default `Scene` knows nobody.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Known {
     /// Times this pilot has been met.
@@ -273,9 +273,21 @@ pub struct Known {
     pub helped: bool,
 }
 
-/// A pilot met this often is greeted as a regular **[A]**: falsified by the
-/// owner finding "again" too early or never heard.
-pub const REGULAR_MET: u32 = 3;
+/// The chat view of one acquaintance-book entry (pure).
+///
+/// `met` is 1, or 2 once the book has seen the pilot at two different times;
+/// a regular is a pilot seen at two times **[A]**: the entry has no meeting
+/// counter. Falsified by the owner finding "again" too early; then add a
+/// counter in `know.rs`.
+pub fn known_of(a: &crate::know::Acquaintance) -> Known {
+    Known {
+        met: 1 + u32::from(a.last > a.first),
+        killed_me: a.killed_me,
+        i_killed: a.i_killed,
+        helped: a.helps > 0,
+    }
+}
+
 /// A killer is named in a greeting at most once per this long **[A]**.
 pub const KILLER_NAMED_EVERY: Duration = Duration::from_secs(86_400);
 
@@ -804,7 +816,7 @@ fn greet_cat(st: &State, k: &Known, who: i64, now: Instant) -> Option<Cat> {
         Some(Cat::GreetKiller)
     } else if k.helped {
         Some(Cat::GreetHelper)
-    } else if k.met >= REGULAR_MET || k.i_killed > 0 {
+    } else if k.met >= 2 || k.i_killed > 0 {
         Some(Cat::GreetAgain)
     } else {
         None
@@ -887,6 +899,50 @@ mod tests {
     }
 
     #[test]
+    fn known_of_maps_a_killer_and_a_helper() {
+        use crate::know::{Acquaintance, Met};
+        let a = Acquaintance {
+            who: 900_001,
+            first: 100,
+            last: 100,
+            system: 30_999_001,
+            last_kind: Met::Fleet,
+            killed_me: 2,
+            i_killed: 0,
+            helps: 0,
+        };
+        let k = known_of(&a);
+        assert_eq!((k.killed_me, k.i_killed, k.helped), (2, 0, false));
+        let h = Acquaintance {
+            last: 500,
+            killed_me: 0,
+            helps: 1,
+            ..a
+        };
+        let k = known_of(&h);
+        assert_eq!((k.killed_me, k.helped), (0, true));
+    }
+
+    #[test]
+    fn a_recalled_killer_reaches_the_killer_greeting() {
+        use crate::know::{Acquaintance, Met};
+        let a = Acquaintance {
+            who: HUMAN,
+            first: 1,
+            last: 1,
+            system: 30_999_001,
+            last_kind: Met::Fleet,
+            killed_me: 1,
+            i_killed: 0,
+            helps: 0,
+        };
+        let scene = scene_knowing(Some(known_of(&a)));
+        let mut st = State::new(11);
+        let line = greeting_for(&scene, &mut st, clock::instant());
+        assert!(lines_of(Cat::GreetKiller).contains(&line.as_str()));
+    }
+
+    #[test]
     fn a_known_killer_gets_a_killer_greeting() {
         let t0 = clock::instant();
         let scene = scene_knowing(Some(Known {
@@ -928,7 +984,7 @@ mod tests {
     fn a_regular_is_greeted_as_one() {
         let t0 = clock::instant();
         let scene = scene_knowing(Some(Known {
-            met: REGULAR_MET,
+            met: 2,
             ..Known::default()
         }));
         let mut st = State::new(12);
@@ -947,7 +1003,7 @@ mod tests {
         );
         // One met fewer times than a regular is a stranger still.
         let few = scene_knowing(Some(Known {
-            met: REGULAR_MET.saturating_sub(1),
+            met: 1,
             ..Known::default()
         }));
         assert_eq!(greet_cat(&st, &few.known[&HUMAN], HUMAN, t0), None);

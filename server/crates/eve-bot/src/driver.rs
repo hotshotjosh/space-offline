@@ -2391,6 +2391,9 @@ impl Bot {
                     char_id: a.char_id,
                     at: a.at,
                 });
+                if let Some(k) = crate::know::recall(&self.memory.name, a.char_id) {
+                    talk.known.insert(a.char_id, crate::chatter::known_of(&k));
+                }
             }
         }
         // Old lines are not answered: keep a minute and a bounded queue.
@@ -2403,6 +2406,9 @@ impl Bot {
         talk.heard.drain(..over);
         let over = talk.arrived.len().saturating_sub(crate::chat::HEARD_CAP);
         talk.arrived.drain(..over);
+        // A known entry lives while the pilot is in Local.
+        let in_local: BTreeSet<i64> = chat.local().members().map(|m| m.char_id).collect();
+        talk.known.retain(|id, _| in_local.contains(id));
         talk.names.clone_from(&self.chat_names);
         let place_system = match self.obs.place {
             Place::InSpace { system, .. } => Some(system),
