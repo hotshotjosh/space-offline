@@ -706,7 +706,7 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
         to: tell_corp,
         id: s.id,
     });
-    crate::structure_space::announce_lists(w, s, true);
+    crate::structure_space::announce_lists(w, s, true, false);
     crate::errln!(
         "[structure] {} destroyed in {} by {killer:?}",
         s.id,

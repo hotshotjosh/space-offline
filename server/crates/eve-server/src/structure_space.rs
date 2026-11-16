@@ -495,14 +495,40 @@ fn announce_removed(reg: &mut Registry, system: i64, id: i64) {
 
 /// What changed for people outside the system: the corp's browser and
 /// the dock lists. `dockable_changed` says the Dock button flipped.
-pub(crate) fn announce_lists(reg: &mut Registry, s: &Structure, dockable_changed: bool) {
+///
+/// `clock` is true from the world clock's stage: the pushes are scheduled
+/// with no delay so they leave in that tick. A `push` waits on `pending` for
+/// some client's next call.
+pub(crate) fn announce_lists(
+    reg: &mut Registry,
+    s: &Structure,
+    dockable_changed: bool,
+    clock: bool,
+) {
     let corp = crate::service::structures::corp_audience(reg, s.owner_corp);
-    reg.push(crate::service::structures::CorpStructuresUpdated { to: corp });
+    emit(
+        reg,
+        clock,
+        crate::service::structures::CorpStructuresUpdated { to: corp },
+    );
     if dockable_changed {
         let near = crate::service::structures::system_audience(reg, s.system);
         if !near.is_empty() {
-            reg.push(crate::service::structures::DockingAccessChanged { to: near });
+            emit(
+                reg,
+                clock,
+                crate::service::structures::DockingAccessChanged { to: near },
+            );
         }
+    }
+}
+
+/// A call turn pushes; the clock's tick schedules (as `cloak::emit` does).
+fn emit(reg: &mut Registry, clock: bool, p: impl crate::notify::Push + 'static) {
+    if clock {
+        reg.schedule(std::time::Duration::ZERO, p);
+    } else {
+        reg.push(p);
     }
 }
 
@@ -534,7 +560,7 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
     }
     reg.mark_dirty();
     for (id, events) in ran {
-        react_at(reg, id, &events, now);
+        react_via(reg, id, &events, now, true);
     }
 }
 
@@ -546,6 +572,12 @@ pub(crate) fn react(reg: &mut Registry, id: i64, events: &[Event]) {
 /// [`react`] on the caller's clock: the tick's own, so the notifications'
 /// `timeLeft` is judged on the clock the state machine used.
 pub(crate) fn react_at(reg: &mut Registry, id: i64, events: &[Event], now: i64) {
+    react_via(reg, id, events, now, false);
+}
+
+/// [`react_at`], with `clock` true from the world clock's tick: the corp and
+/// dock-list pushes are then scheduled, so they leave in the tick.
+fn react_via(reg: &mut Registry, id: i64, events: &[Event], now: i64, clock: bool) {
     let Some(s) = structure::get(reg.deltas(), id) else {
         return;
     };
@@ -570,7 +602,7 @@ pub(crate) fn react_at(reg: &mut Registry, id: i64, events: &[Event], now: i64) 
         }
     }
     if state_to == Some(structure::State::Unanchored) {
-        finish_unanchor(reg, &s);
+        finish_unanchor(reg, &s, clock);
         return;
     }
     crate::structure_notify::on_events(reg, &s, events, now);
@@ -583,15 +615,19 @@ pub(crate) fn react_at(reg: &mut Registry, id: i64, events: &[Event], now: i64) 
     }
     if let Some(to) = state_to {
         let audience = crate::service::structures::corp_audience(reg, s.owner_corp);
-        reg.push(StateChanged {
-            to: audience,
-            system: s.system,
-            id: s.id,
-            state: to.code(),
-        });
+        emit(
+            reg,
+            clock,
+            StateChanged {
+                to: audience,
+                system: s.system,
+                id: s.id,
+                state: to.code(),
+            },
+        );
     }
     if slim_dirty {
-        announce_lists(reg, &s, dockable_changed);
+        announce_lists(reg, &s, dockable_changed, clock);
     }
 }
 
@@ -821,7 +857,7 @@ pub fn anchor(
     structure::put(reg.deltas_mut(), &s);
     reg.mark_dirty();
     announce_added(reg, &s);
-    announce_lists(reg, &s, true);
+    announce_lists(reg, &s, true, false);
     crate::structure_notify::anchoring(reg, &s, e.now);
     crate::errln!(
         "[structure] {} anchored in {system} by {actor} for corp {corp} at {:?}",
@@ -888,7 +924,7 @@ pub fn rename(reg: &mut Registry, corp: i64, id: i64, name: &str) -> Result<(), 
             location: loc.clone(),
         });
     }
-    announce_lists(reg, &s, false);
+    announce_lists(reg, &s, false, false);
     Ok(())
 }
 
@@ -912,12 +948,12 @@ fn save_and_tell(reg: &mut Registry, mut s: Structure) {
     // An unanchoring that started or stopped changes the slim and the
     // browser's circle even when no event named it.
     announce_slim(reg, &s);
-    announce_lists(reg, &s, false);
+    announce_lists(reg, &s, false, false);
 }
 
 /// An unanchoring that ran out: the row and the ball go, the item goes to
 /// the owner (module header, [A]).
-fn finish_unanchor(reg: &mut Registry, s: &Structure) {
+fn finish_unanchor(reg: &mut Registry, s: &Structure, clock: bool) {
     // The pilots inside are put out, and what is stored goes to a station
     // that can take it, while the row still says where it was (U4).
     crate::structure_dock::evacuate(reg, s);
@@ -925,11 +961,15 @@ fn finish_unanchor(reg: &mut Registry, s: &Structure) {
     structure::remove(reg.deltas_mut(), s.id);
     reg.mark_dirty();
     announce_removed(reg, s.system, s.id);
-    reg.push(RemovedFromSpace {
-        to: audience,
-        id: s.id,
-    });
-    announce_lists(reg, s, true);
+    emit(
+        reg,
+        clock,
+        RemovedFromSpace {
+            to: audience,
+            id: s.id,
+        },
+    );
+    announce_lists(reg, s, true, clock);
     deliver(reg, s);
     crate::errln!("[structure] {} unanchored in {}", s.id, s.system);
 }
@@ -1630,6 +1670,46 @@ mod tests {
             reg.scheduled_len() >= queued + 2,
             "the slim change and the bars are on the clock's queue"
         );
+    }
+
+    /// The corp's state push and the lists leave on the clock's queue in the
+    /// tick, not in `pending` until some client's next call.
+    #[test]
+    fn a_clock_driven_state_change_reaches_the_corp_on_the_clock() {
+        let mut reg = world();
+        let id = online_structure(&mut reg, SYSTEM, ASTRAHUS);
+        let mut s = structure::get(reg.deltas(), id).unwrap();
+        s.damage = Some((0.0, 0.9, 1.0));
+        structure::put(reg.deltas_mut(), &s);
+        let _ = reg.take_pending_raw();
+        tick(&mut reg, std::time::Instant::now(), T0);
+        assert_eq!(
+            structure::get(reg.deltas(), id).unwrap().state,
+            State::ArmorReinforce
+        );
+        let corp_pushes = |names: Vec<&str>| {
+            names
+                .into_iter()
+                .filter(|n| {
+                    matches!(
+                        *n,
+                        "OnStructureStateChanged" | "OnCorporationStructuresUpdated"
+                    )
+                })
+                .count()
+        };
+        let pending: Vec<&str> = reg
+            .take_pending_raw()
+            .into_iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        let sent: Vec<&str> = reg
+            .take_due(std::time::Instant::now() + std::time::Duration::from_secs(3_600))
+            .iter()
+            .map(|p| p.to_push().0)
+            .collect();
+        assert_eq!(corp_pushes(pending.clone()), 0, "left waiting: {pending:?}");
+        assert!(corp_pushes(sent.clone()) >= 2, "on the clock: {sent:?}");
     }
 
     #[test]
