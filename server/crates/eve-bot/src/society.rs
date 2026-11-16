@@ -185,11 +185,21 @@ pub fn value_factor(isk: f64) -> f64 {
 }
 
 /// **The relation matrix**: `(viewer, target) -> R`. Absent is 0.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct Relations {
     pub r: BTreeMap<(Group, Group), f64>,
     /// When [`Relations::decay`] last ran (game seconds); `None` before.
     pub at: Option<u64>,
+    /// SOAK-REL (#95): the `at` of the last [`Relations::add`] on each pair
+    /// (`0` before the first decay). Not persisted and left out of equality:
+    /// it only lets the soak judge skip an interval that something moved.
+    pub touched: BTreeMap<(Group, Group), u64>,
+}
+
+impl PartialEq for Relations {
+    fn eq(&self, other: &Self) -> bool {
+        self.r == other.r && self.at == other.at
+    }
 }
 
 impl Relations {
@@ -206,6 +216,7 @@ impl Relations {
         }
         let v = (self.get(viewer, target) + d).clamp(-R_MAX, R_MAX);
         self.r.insert((viewer, target), v);
+        self.touched.insert((viewer, target), self.at.unwrap_or(0));
     }
 
     /// Fold one event in.
@@ -1219,6 +1230,61 @@ pub fn loss_line(victim: Group, killer: Group, before: f64, after: f64) -> Strin
     )
 }
 
+/// The `[soc]` line for one pair's relation, printed once per society day by
+/// the hall for every pair with `|r| >= REL_LINE_MIN` (SOAK-REL, #95).
+/// `t` and `touched` are in game days (`touched` `None`: nothing moved the
+/// pair since the matrix was built); `half` is the days the matrix's own decay
+/// halves this viewer's row in. `tools/society-report.py` reads it for the
+/// "memory fades" row.
+pub fn rel_line(
+    viewer: Group,
+    target: Group,
+    r: f64,
+    stance: Stance5,
+    t: f64,
+    half: f64,
+    touched: Option<f64>,
+) -> String {
+    let touched = touched.map_or("none".to_string(), |d| format!("{d:.3}"));
+    format!(
+        "[soc] relation pair viewer={viewer} target={target} r={r:.2} stance={} day={} t={t:.3} half={half:.3} touched={touched}",
+        stance.name(),
+        t.floor()
+    )
+}
+
+/// Pairs weaker than this are left out of the daily `relation pair` lines
+/// **[A]**. Falsified by a 10-day soak whose bots.log grows by more than
+/// 5 MB from these lines (then sample the top pairs).
+pub const REL_LINE_MIN: f64 = 0.05;
+
+/// The `[soc]` line for a bot committing to a PvP target: the shooter's
+/// group, the target's group and the shooter's graded stance toward it.
+/// `tools/society-report.py` fails the run on a friendly or allied stance.
+pub fn engage_line(shooter: Group, target: Group, stance: Stance5) -> String {
+    format!(
+        "[soc] engage shooter={shooter} target={target} stance={}",
+        stance.name()
+    )
+}
+
+/// The `[soc]` line for a betrayal: the victim group's view of the killer
+/// before and after (detail only) and the graded stance it holds afterwards,
+/// which is what the judge reads (`betray` flips the stance and leaves the
+/// victim's own R alone).
+pub fn betrayal_line(
+    victim: Group,
+    killer: Group,
+    before: f64,
+    after: f64,
+    stance: Stance5,
+) -> String {
+    format!(
+        "[soc] betrayal victim={victim} killer={killer} before={before:.2} after={after:.2} stance={}",
+        stance.name()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1845,6 +1911,22 @@ mod help_event_tests {
         assert_eq!(
             line,
             "[soc] relation loss victim=1 killer=2 before=3.00 after=1.50"
+        );
+        assert_eq!(
+            rel_line(11, 12, 1.234, Stance5::Friendly, 5.5, 10.5, Some(5.25)),
+            "[soc] relation pair viewer=11 target=12 r=1.23 stance=friendly day=5 t=5.500 half=10.500 touched=5.250"
+        );
+        assert_eq!(
+            rel_line(11, 12, 1.0, Stance5::Neutral, 5.5, 7.0, None),
+            "[soc] relation pair viewer=11 target=12 r=1.00 stance=neutral day=5 t=5.500 half=7.000 touched=none"
+        );
+        assert_eq!(
+            engage_line(11, 12, Stance5::Hostile),
+            "[soc] engage shooter=11 target=12 stance=hostile"
+        );
+        assert_eq!(
+            betrayal_line(11, 12, 6.0, -7.5, Stance5::Hostile),
+            "[soc] betrayal victim=11 killer=12 before=6.00 after=-7.50 stance=hostile"
         );
         let sum = format!("{}{}", summary_fields(3, 2, 1, 1), day_field(4));
         assert_eq!(sum, "corps 3 alliances 2 blue 1 red 1 day 4");

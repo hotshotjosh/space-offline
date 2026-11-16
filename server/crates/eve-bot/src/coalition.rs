@@ -766,10 +766,12 @@ impl HallState {
         if vg == kg || self.viewers(vg).is_empty() {
             return Vec::new();
         }
+        let before = self.owner_view(vg, kg, now);
         let spill = self.with_layers(now, |l| {
             relations::betrayal_spill(l, victim, killer, &self.temper)
         });
         self.apply_deltas(&spill);
+        let after = self.owner_view(vg, kg, now);
         let mut owners = vec![vg];
         if self.bot_corps().contains(&victim.corporation_id) && victim.corporation_id != vg {
             owners.push(victim.corporation_id);
@@ -785,6 +787,13 @@ impl HallState {
                 },
             );
         }
+        // SOAK-REL (#95): the bare line `tools/society-report.py` reads, apart
+        // from the `act` wording below; it judges the stance, which betray()
+        // flips (R stays where it was).
+        println!(
+            "{}",
+            society::betrayal_line(vg, kg, before, after, self.stances.get5(vg, kg))
+        );
         let line = format!("betrayal: {kg} shot {vg}; the stance is hostile at once");
         self.act(line.clone());
         vec![line]

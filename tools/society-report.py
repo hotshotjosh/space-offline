@@ -20,6 +20,17 @@ GC (R-SOCIETY) passes when every criterion holds:
 FOUND (#155) is judged when the logs hold a `corp found` or `corp pledge` line: PASS with
 a `found .. : ok` and the last summary's corps >= 1, FAIL on a refusal otherwise, else n/a.
 
+REL (#95, SOAK-REL) is judged when the logs hold a `relation pair`, `engage` or `betrayal` line:
+  no friendly engage  FAIL if any `engage` line has stance friendly or allied; n/a with none
+  betrayal sours      every `betrayal` line has stance=hostile (betray() flips the stance and
+                      leaves R alone, so the stance is judged; before/after are detail only);
+                      n/a when no line carries a stance
+  memory fades        for a pair seen on two `relation pair` lines t0 < t1 (game days), with
+                      line 1's touched= stamp before t0 (nothing added to the pair between
+                      the lines; `touched=none` is skipped too), |r1| <= |r0| * 0.5^((t1-t0)/half)
+                      * 1.1 [A]; `half` is the line's own (the corp matrix's loyalty-scaled
+                      half-life); n/a when no interval qualifies
+
 GD (sov) passes when every criterion holds:
   claims             distinct hubs launched or captured
   contested          a campaign that began AND had a node taken on the same hub
@@ -31,6 +42,9 @@ Lines read:
   [soc] bots N online N mix .. corps N alliances N blue N red N [day N]
   [soc] NAME corp stance O -> T: blue -> red (R x)         (society::Stances)
   [soc] relation loss victim=V killer=K before=X after=Y   (society::loss_line)
+  [soc] relation pair viewer=V target=T r=X stance=S day=D t=T half=H touched=U|none  (society::rel_line; once a game day per pair, REL)
+  [soc] engage shooter=G target=H stance=S                (society::engage_line; a bot's lock on a pilot, REL)
+  [soc] betrayal victim=V killer=K before=X after=Y stance=S  (society::betrayal_line, REL)
   [soc] NAME corp found NAME [TICKER] ID: ok              (corpmind.rs Plan::Found; FOUND gate, #155)
   [soc] NAME corp found NAME [TICKER]: refused KEY        (a refusal fails FOUND unless a corp was founded)
   [soc] NAME corp pledge AMT to ID: ok                    (Plan::Pledge; counted in the FOUND detail)
@@ -57,6 +71,7 @@ if __name__ == "__main__":
 
 import argparse
 import json
+import os
 import re
 import sys
 
@@ -84,6 +99,10 @@ FOUND_OK = re.compile(r"^\[soc\] (?P<bot>\S+) corp found (?P<what>.+): ok$")
 FOUND_REFUSED = re.compile(r"^\[soc\] (?P<bot>\S+) corp found (?P<what>.+): refused (?P<key>\S+)$")
 PLEDGE_OK = re.compile(r"^\[soc\] (?P<bot>\S+) corp pledge (?P<amount>\d+(?:\.\d+)?) to (?P<to>\d+): ok$")
 LOSS = re.compile(r"^\[soc\] relation loss\b")
+REL_PAIR = re.compile(r"^\[soc\] relation pair\b")
+ENGAGE = re.compile(r"^\[soc\] engage\b")
+BETRAYAL = re.compile(r"^\[soc\] betrayal victim=")
+FADE_SLACK = 1.1  # [A] see gate_rel
 TOKEN = re.compile(r"(\w+)=(\S+)")
 LAUNCHED = re.compile(r"^\[sov\] hub (\d+) launched in (\S+) by ")
 CAPTURED = re.compile(r"^\[sov\] hub (\d+) in (\S+) captured by alliance (\S+) ")
@@ -106,6 +125,10 @@ class Log:
         self.summaries = []  # (corps, alliances, blue, red, day or None)
         self.stances = []  # (tick, day or None, owner, target, from, to)
         self.losses = []  # kv dicts
+        self.seq = 0  # position of the last REL-relevant line, to order lines without a day
+        self.relpairs = []  # (viewer, target, r, t, half, touched or None)
+        self.engages = []  # kv dicts
+        self.betrayals = []  # (seq, kv dict)
         self.launched = []  # (hub, system)
         self.captured = []  # (hub, system, alliance)
         self.begun = []  # hub ids
@@ -161,7 +184,25 @@ class Log:
                 self.pledges.append((m["bot"], float(m["amount"]), m["to"]))
                 continue
             if LOSS.match(line):
-                self.losses.append(dict(TOKEN.findall(line)))
+                self.seq += 1
+                kv = dict(TOKEN.findall(line))
+                kv["_seq"] = self.seq
+                self.losses.append(kv)
+                continue
+            if REL_PAIR.match(line):
+                self.seq += 1
+                kv = dict(TOKEN.findall(line))
+                r, t, half = num(kv.get("r")), num(kv.get("t")), num(kv.get("half"))
+                if None not in (r, t, half) and "viewer" in kv and "target" in kv:
+                    touched = None if kv.get("touched") == "none" else num(kv.get("touched"))
+                    self.relpairs.append((kv["viewer"], kv["target"], r, t, half, touched))
+                continue
+            if ENGAGE.match(line):
+                self.engages.append(dict(TOKEN.findall(line)))
+                continue
+            if BETRAYAL.match(line):
+                self.seq += 1
+                self.betrayals.append((self.seq, dict(TOKEN.findall(line))))
                 continue
             m = LAUNCHED.match(line)
             if m:
@@ -194,8 +235,7 @@ def read(paths):
 def _ff():
     """tools/ff_verdict.py, loaded by path: `python3 -I` leaves tools/ off sys.path."""
     import importlib.util
-    import os
-
+    
     spec = importlib.util.spec_from_file_location("ff_verdict", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ff_verdict.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -269,6 +309,68 @@ def gate_gc(log, game_day_secs=None, tick_secs=DEFAULT_TICK_SECS):
     return verdict(rows), f"{len(log.summaries)} summaries, last: corps {last[0]} alliances {last[1]}", rows
 
 
+# ---- REL --------------------------------------------------------------------
+
+
+def fade_checks(log):
+    """(compared, failures): consecutive `relation pair` lines of one pair with t1 > t0, and the later
+    line's `touched` stamp before t0 (the matrix only decayed in between)."""
+    by_pair = {}
+    for v, t, r, at, half, touched in log.relpairs:
+        by_pair.setdefault((v, t), []).append((r, at, half, touched))
+    compared, bad = 0, []
+    for (v, t), rows in by_pair.items():
+        for (r0, t0, half0, _), (r1, t1, _, touched1) in zip(rows, rows[1:]):
+            k = t1 - t0
+            if k <= 0 or half0 <= 0 or touched1 is None or touched1 >= t0:
+                continue
+            compared += 1
+            if abs(r1) > abs(r0) * 0.5 ** (k / half0) * FADE_SLACK:
+                bad.append(f"{v}->{t} {r0:g} to {r1:g} over {k:.3f}d (half {half0:g}d)")
+    return compared, bad
+
+
+def gate_rel(log):
+    """#95: the relation rows. n/a when the run printed no relation, engage or betrayal line."""
+    rows = []
+    if not (log.relpairs or log.engages or log.betrayals):
+        return NA, "no `relation pair`, `engage` or `betrayal` line: the run predates SOAK-REL or had no society", rows
+    if not log.engages:
+        rows.append(("no friendly engage", NA, "no `[soc] engage` line"))
+    else:
+        friendly = [e for e in log.engages if e.get("stance") in ("friendly", "allied")]
+        detail = f"{len(log.engages)} engages, {len(friendly)} against a friendly or allied group"
+        if friendly:
+            detail += ": " + ", ".join(f"{e.get('shooter')}->{e.get('target')}" for e in friendly[:5])
+        rows.append(("no friendly engage", FAIL if friendly else PASS, detail))
+    judged = [kv for _, kv in log.betrayals if kv.get("stance")]
+    if not judged:
+        rows.append(("betrayal sours", NA, "no `[soc] betrayal` line with stance="))
+    else:
+        bad = [kv for kv in judged if kv["stance"] != "hostile"]
+        detail = f"{len(judged)} betrayals, {len(bad)} whose stance is not hostile"
+        if bad:
+            detail += ": " + ", ".join(
+                f"{kv.get('victim')}->{kv.get('killer')} {kv['stance']} (R {kv.get('before')} to {kv.get('after')})"
+                for kv in bad[:5]
+            )
+        else:
+            detail += "; R " + ", ".join(f"{kv.get('before')} to {kv.get('after')}" for kv in judged[:3])
+        rows.append(("betrayal sours", FAIL if bad else PASS, detail))
+    if not log.relpairs:
+        rows.append(("memory fades", NA, "no `[soc] relation pair` line"))
+    else:
+        compared, bad = fade_checks(log)
+        if not compared:
+            rows.append(("memory fades", NA, "no pair with two lines and no add between them"))
+        else:
+            detail = f"{compared} intervals, {len(bad)} faded less than their half-life allows (x{FADE_SLACK:g})"
+            if bad:
+                detail += ": " + "; ".join(bad[:5])
+            rows.append(("memory fades", FAIL if bad else PASS, detail))
+    return verdict(rows), f"{len(log.relpairs)} pair lines, {len(log.engages)} engages, {len(log.betrayals)} betrayals", rows
+
+
 # ---- GD ---------------------------------------------------------------------
 
 
@@ -334,6 +436,9 @@ def verdict(rows):
 
 def judge(log, game_day_secs=None, tick_secs=DEFAULT_TICK_SECS):
     res = {"GC": gate_gc(log, game_day_secs, tick_secs)}
+    # REL (#95) is judged only when the log carries a relation, engage or betrayal line.
+    if log.relpairs or log.engages or log.betrayals:
+        res["REL"] = gate_rel(log)
     # FOUND is judged only when the log carries a founding line (an older soak reports as before).
     if log.founded or log.found_refused or log.pledges:
         res["FOUND"] = gate_found(log)

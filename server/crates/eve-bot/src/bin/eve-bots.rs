@@ -1419,7 +1419,13 @@ fn soc_summary(
         eve_bot::earnings::income_fields(&refs),
     );
     match hall {
-        Some(h) => format!("{line} {}", h.summary()),
+        Some(h) => {
+            // SOAK-REL (#95): once per game day, one line per pair with a relation.
+            for rel in h.rel_lines() {
+                println!("{rel}");
+            }
+            format!("{line} {}", h.summary())
+        }
         None => line,
     }
 }

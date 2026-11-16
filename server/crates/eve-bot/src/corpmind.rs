@@ -260,6 +260,9 @@ pub struct HallState {
     /// the matrix for it. Apart from `kills`, which also gates a mind's
     /// grudge.
     pub recorded: BTreeSet<i64>,
+    /// The game day the daily `relation pair` lines were last printed for
+    /// (SOAK-REL, #95). Not persisted: a restart prints its day once more.
+    pub rel_day: Option<u64>,
     pub last_daily: Option<u64>,
     /// CORP-O: when each corp's CEO last looked at renting an office. Not
     /// persisted: a restart looks once more, which is one cheap call.
@@ -436,6 +439,7 @@ impl HallState {
             managed: BTreeSet::new(),
             kills: BTreeSet::new(),
             recorded: BTreeSet::new(),
+            rel_day: None,
             last_daily: None,
             office_tried: BTreeMap::new(),
             ops: BTreeMap::new(),
@@ -1516,6 +1520,48 @@ impl HallState {
         ) + &society::day_field(self.game_day())
     }
 
+    /// **The daily `relation pair` lines** (SOAK-REL, #95): once per game day,
+    /// one [`society::rel_line`] for every pair of the corp matrix with
+    /// `|r| >= society::REL_LINE_MIN`; empty until the day changes again.
+    pub fn rel_lines(&mut self) -> Vec<String> {
+        let day = self.game_day();
+        if self.rel_day == Some(day) {
+            return Vec::new();
+        }
+        self.rel_day = Some(day);
+        // The same loyalty map `tick` decays with, so `half` is the half-life
+        // the matrix really used for this viewer's row.
+        let day_secs = self.day.max(1) as f64;
+        let t = self.relations.at.unwrap_or(0) as f64 / day_secs;
+        self.relations
+            .r
+            .iter()
+            .filter(|(_, r)| r.abs() >= society::REL_LINE_MIN)
+            .map(|(&(v, tg), &r)| {
+                let loyalty = if self.corps.contains_key(&v) {
+                    self.loyalty(v)
+                } else {
+                    0.5
+                };
+                let half = society::HALF_LIFE_DAYS * (0.5 + loyalty.clamp(0.0, 1.0));
+                let touched = self
+                    .relations
+                    .touched
+                    .get(&(v, tg))
+                    .map(|&s| s as f64 / day_secs);
+                let stance = self.stances.get5(self.group_of_corp(v), tg);
+                society::rel_line(v, tg, r, stance, t, half, touched)
+            })
+            .collect()
+    }
+
+    /// The [`society::engage_line`] for `me` committing to `target`: their
+    /// groups and `me`'s graded stance toward the target's group.
+    pub fn engage_line(&self, me: &Affiliation, target: &Affiliation) -> String {
+        let (g, t) = (society::group_of(me), society::group_of(target));
+        society::engage_line(g, t, self.stances.get5(g, t))
+    }
+
     /// SOC-WIRE: the game day the matrix was last advanced to (`0` before
     /// its first tick). [I] `Relations::at` is the unix second the bots'
     /// `tick` passed; falsified by a `day` field that does not advance once
@@ -2109,6 +2155,17 @@ impl Hall {
     /// The `[soc]` line's society fields.
     pub fn summary(&self) -> String {
         self.lock().summary()
+    }
+
+    /// The daily `relation pair` lines, once per game day
+    /// ([`HallState::rel_lines`]).
+    pub fn rel_lines(&self) -> Vec<String> {
+        self.lock().rel_lines()
+    }
+
+    /// The `[soc] engage` line ([`HallState::engage_line`]).
+    pub fn engage_line(&self, me: &Affiliation, target: &Affiliation) -> String {
+        self.lock().engage_line(me, target)
     }
 
     /// REL-FIX: count `char_id` an ally at `standing` (the `--allies`
@@ -4313,6 +4370,66 @@ mod tests {
         // The same report again prints nothing and moves nothing.
         assert_eq!(st.record_kill_line(7, &e), None);
         assert_eq!(st.relations.get(C1, MAL), after);
+    }
+
+    #[test]
+    fn the_relation_pairs_print_once_a_game_day_and_skip_faint_ones() {
+        let mut st = two_corps();
+        st.relations.add(C1, MAL, -3.0);
+        st.relations.add(MAL, C1, society::REL_LINE_MIN / 2.0);
+        let first = st.rel_lines();
+        assert_eq!(first.len(), 1, "{first:?}");
+        assert!(
+            first[0].starts_with(&format!(
+                "[soc] relation pair viewer={C1} target={MAL} r=-3.00"
+            )),
+            "{first:?}"
+        );
+        assert!(first[0].contains(" day=0 t=0.000 half="), "{first:?}");
+        // C1 has no members here: loyalty 0.5, so the half is the corp one.
+        assert!(
+            first[0].contains(&format!(
+                " half={:.3} touched=0.000",
+                society::HALF_LIFE_DAYS
+            )),
+            "{first:?}"
+        );
+        assert!(st.rel_lines().is_empty(), "same day: nothing");
+        st.tick(2 * st.day + 5);
+        let again = st.rel_lines();
+        assert_eq!(again.len(), 1, "a new day prints again");
+        assert!(again[0].contains(" t=2.00"), "{again:?}");
+        // The pair was added at `at` = 0 (before the first decay) and nothing
+        // moved it since, so the stamp stays at 0.
+        assert!(again[0].ends_with(" touched=0.000"), "{again:?}");
+        st.relations.add(C1, MAL, 1.0);
+        st.tick(3 * st.day + 5);
+        let moved = st.rel_lines();
+        assert!(moved[0].contains(" touched=2.00"), "{moved:?}");
+    }
+
+    #[test]
+    fn the_engage_line_names_both_groups_and_the_held_stance() {
+        let st = two_corps();
+        let me = Affiliation {
+            character_id: 1,
+            corporation_id: C1,
+            alliance_id: None,
+        };
+        let them = Affiliation {
+            character_id: 2,
+            corporation_id: MAL,
+            alliance_id: None,
+        };
+        let line = st.engage_line(&me, &them);
+        assert_eq!(
+            line,
+            format!(
+                "[soc] engage shooter={} target={} stance=neutral",
+                society::group_of(&me),
+                society::group_of(&them)
+            )
+        );
     }
 
     #[test]

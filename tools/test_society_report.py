@@ -301,5 +301,82 @@ class FastForward(unittest.TestCase):
         self.assertIn('"status": "n/a"', ff)
 
 
+def pair(v, t, r, at, touched="none", half=10.0, stance="neutral"):
+    return (
+        f"[soc] relation pair viewer={v} target={t} r={r} stance={stance} day={int(at)} "
+        f"t={at:.3f} half={half:.3f} touched={touched}"
+    )
+
+
+def engage(stance):
+    return f"[soc] engage shooter=11 target=12 stance={stance}"
+
+
+def betrayal(stance, after="6.00"):
+    return f"[soc] betrayal victim=11 killer=12 before=6.00 after={after} stance={stance}"
+
+
+class Rel(unittest.TestCase):
+    """#95 SOAK-REL: invented lines; the half-life and stamps come from the lines."""
+
+    def rel(self, lines):
+        return sr.gate_rel(log_of(lines))
+
+    def test_no_lines_is_na_and_the_gate_is_left_out_of_judge(self):
+        self.assertEqual(self.rel(["[doc] roll x"])[0], sr.NA)
+        self.assertNotIn("REL", sr.judge(log_of(GC_OK)))
+
+    def test_friendly_engage(self):
+        self.assertEqual(rows_of(self.rel([engage("hostile"), engage("wary")]))["no friendly engage"], sr.PASS)
+        for st in ("friendly", "allied"):
+            res = self.rel([engage("hostile"), engage(st)])
+            self.assertEqual(rows_of(res)["no friendly engage"], sr.FAIL)
+            self.assertEqual(res[0], sr.FAIL)
+        self.assertEqual(rows_of(self.rel([betrayal("hostile")]))["no friendly engage"], sr.NA)
+
+    def test_betrayal_sours(self):
+        # The stance is judged; R may stay where it was (after 6.00 here) and still pass.
+        self.assertEqual(rows_of(self.rel([betrayal("hostile")]))["betrayal sours"], sr.PASS)
+        res = self.rel([betrayal("hostile"), betrayal("wary", "-2.0")])
+        self.assertEqual(rows_of(res)["betrayal sours"], sr.FAIL)
+        self.assertEqual(rows_of(self.rel([engage("hostile")]))["betrayal sours"], sr.NA)
+        nostance = "[soc] betrayal victim=1 killer=2 before=1 after=-9"
+        self.assertEqual(rows_of(self.rel([nostance]))["betrayal sours"], sr.NA)
+
+    def test_memory_fades(self):
+        # Ten days at half 10 halves it: 8 -> 4 passes, 8 -> 4.4 passes on the 10% slack, 8 -> 5 fails.
+        # The later line's touched stamp is before t0 (day 1), so only the decay moved it.
+        ok = [pair(1, 2, 8, 1.0, 0.5), pair(1, 2, 4.4, 11.0, 0.5)]
+        self.assertEqual(rows_of(self.rel(ok))["memory fades"], sr.PASS)
+        self.assertEqual(rows_of(self.rel([pair(1, 2, 8, 1.0, 0.5), pair(1, 2, 5, 11.0, 0.5)]))["memory fades"], sr.FAIL)
+        neg = [pair(1, 2, -8, 1.0, 0.5), pair(1, 2, -4, 11.0, 0.5)]
+        self.assertEqual(rows_of(self.rel(neg))["memory fades"], sr.PASS)
+
+    def test_the_half_life_is_the_lines_own_and_k_is_fractional(self):
+        # Half 4 days, 2.5 days apart: 0.5^(2.5/4) = 0.648 (x1.1 slack: 5.70); 8 -> 5.6 passes, 8 -> 5.8 fails.
+        a = pair(1, 2, 8, 1.0, 0.5, half=4.0)
+        self.assertEqual(rows_of(self.rel([a, pair(1, 2, 5.6, 3.5, 0.5, half=4.0)]))["memory fades"], sr.PASS)
+        self.assertEqual(rows_of(self.rel([a, pair(1, 2, 5.8, 3.5, 0.5, half=4.0)]))["memory fades"], sr.FAIL)
+
+    def test_a_touched_pair_is_skipped(self):
+        # touched at or after t0 (something was added in between), or none: nothing to judge.
+        for touched in (1.0, 5.0, "none"):
+            lines = [pair(1, 2, 1, 1.0, 0.5), pair(1, 2, 3, 11.0, touched)]
+            self.assertEqual(rows_of(self.rel(lines))["memory fades"], sr.NA, touched)
+        # Touched strictly before t0 is judged (and 1 -> 3 grows: FAIL).
+        lines = [pair(1, 2, 1, 1.0, 0.5), pair(1, 2, 3, 11.0, 0.9)]
+        self.assertEqual(rows_of(self.rel(lines))["memory fades"], sr.FAIL)
+
+    def test_memory_needs_two_lines_a_later_time(self):
+        self.assertEqual(rows_of(self.rel([pair(1, 2, 8, 1.0, 0.5)]))["memory fades"], sr.NA)
+        same = [pair(1, 2, 8, 3.0, 0.5), pair(1, 2, 4, 3.0, 0.5)]
+        self.assertEqual(rows_of(self.rel(same))["memory fades"], sr.NA)
+
+    def test_rel_sits_between_gc_and_gd_and_fails_the_exit(self):
+        res = sr.judge(log_of(GC_OK + [engage("allied")]))
+        self.assertEqual(list(res), ["GC", "REL", "GD"])
+        self.assertIn("      FAIL  no friendly engage", sr.render(res))
+
+
 if __name__ == "__main__":
     unittest.main()

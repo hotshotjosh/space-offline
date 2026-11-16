@@ -5170,6 +5170,20 @@ impl Bot {
                     Err(e) => return Err(e),
                 };
                 self.memory.hunt.cancels.landed(target, clock::instant());
+                // SOAK-REL (#95): the one place a PvP candidate becomes a lock.
+                // Printed once per target, when it first enters the lock lists.
+                if !self.obs.locked.contains(&target)
+                    && !self.obs.pending.contains(&target)
+                    && let Some(p) = self.obs.hunt.pilots.iter().find(|p| p.ball.id == target)
+                    && let Some(hall) = self.config.society.as_ref().and_then(|s| s.hall.as_ref())
+                {
+                    let me = eve_server::group_contacts::Affiliation {
+                        character_id: conn.session().char_id().unwrap_or(0),
+                        corporation_id: conn.session().get_i64("corpid").unwrap_or(0),
+                        alliance_id: conn.session().get_i64("allianceid"),
+                    };
+                    println!("{}", hall.engage_line(&me, &p.who));
+                }
                 match state {
                     LockState::Locked => {
                         if !self.obs.locked.contains(&target) {
