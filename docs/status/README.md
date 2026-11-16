@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**69% proved** (229 of 331) · **93% built** (308 of 331) · 3 parked, not counted.
+**69% proved** (230 of 332) · **93% built** (309 of 332) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -34,7 +34,6 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 - [ ] Shooting a CONCORD ship in low sec is a criminal act (no CONCORD response there); free in null: *built-unproved*, concord.rs illegal_on_law / attack_on_law low-sec CONCORD-owned arm (crimewatchSvc.py:600-601 [V]); tests incl. a null-sec negative and yellow safety refused
 - [ ] Shooting a station or gate in low sec is a suspect act (no status charge [A], no CONCORD response); criminal in high sec, free in null: *built-unproved*, concord.rs law_verdict / attack_on_law low-sec AttackFacility arm, crimewatch.rs flag_suspect and attack_refusal suspect key (crimewatchSvc.py:603-606 [V], null gated at :382-383 [V]); tests shooting_a_station_or_gate_in_low_sec_makes_a_suspect, a_station_or_gate_is_criminal_in_high_sec_and_free_in_null_sec, a_faction_police_ship_in_low_sec_stays_free
-- [ ] Doomsdays: the Reaper, the Disruptive Lance and the Bosonic: *built-unproved*, unit tests; superweapon.rs, superWeaponMgr; the Reaper is a slice with the Lance's gates and holds; the beam FX push (OnSpecialFX with a graphicInfo KeyVal) uses the race-keyed effects.fsdbinary guids SWDamageBeam<Race> / SWSlashBeam<Race> picked by damage type (w23-srv-reds, after regress-w23a's unknown-guid traceback); the Disruptive Lance (siege gate, 5412 debuff as no warp/jump/dock/cloak holds, unit-tested 2026-11-03) and the Bosonic cone (angle [A]) are built-unproved (w22-nw9c), the Oscillator is 9d; scenario fci_doomsday is green (row 62) but covers only the Lance and the legacy targeted doomsday (two titans in null-sec, empire refusal, fuel and cap, immobility, the second click, OnSpecialFX SWDamageBeam and damage on B); the Reaper, the Disruptive Lance and the Bosonic wait on #32 (a second doomsday scenario, not written); the Oscillator is #33; the beam FX is scheduled on the clock (leaves in its tick)
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
 - [ ] A bot summoned by a cloaked pilot never lands within decloak range of him: *built-unproved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests. fci_bot_ess still re-cloaks the client; a run without that workaround proves it
@@ -158,11 +157,11 @@ Latest client wave: **11**, 135 of 136 passed (full).
 |---|--:|--:|--:|--:|--:|
 | Login and sessions | 9 | 1 | 0 | 0 | 0 |
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
-| Combat | 30 | 8 | 0 | 0 | 0 |
+| Combat | 31 | 7 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 23 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 36 | 2 | 0 | 2 |
+| Bots | 11 | 37 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 10 | 1 | 0 | 0 | 0 |
@@ -237,7 +236,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Combat</b>: 30 of 38 proved, 8 open</summary>
+<details><summary><b>Combat</b>: 31 of 38 proved, 7 open</summary>
 
 - [x] Turrets hit and miss by the client's formula: *client-proved*, fci_doc_0 W10
 - [x] A gun stops when its target is gone: *client-proved*, fci_engine_fix W10
@@ -272,7 +271,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Capital jump drives and cynos: *client-proved*, fci_jump_drive 2026-11-03 (regress-w20b); jump_drive.rs, cyno.rs, jump_fatigue.rs
 - [x] Titan and black ops jump portals: *client-proved*, fci_jump_portal 2026-11-03 (regress-w23a): the portal opens, the bridge reaches the fleet, the bridging ship is held still; no passenger step (needs a third client); jump_portal.rs
 - [x] Doomsdays: the Lance and the legacy targeted doomsday: *client-proved*, fci_doomsday (regress-w30a, two titans): the Lance beam start and stop reach the target, damage, fuel, capacitor and the hold; the legacy targeted doomsday from B at A; service::super_weapon beam test
-- [ ] Doomsdays: the Reaper, the Disruptive Lance and the Bosonic: *built-unproved*, unit tests; superweapon.rs, superWeaponMgr; the Reaper is a slice with the Lance's gates and holds; the beam FX push (OnSpecialFX with a graphicInfo KeyVal) uses the race-keyed effects.fsdbinary guids SWDamageBeam<Race> / SWSlashBeam<Race> picked by damage type (w23-srv-reds, after regress-w23a's unknown-guid traceback); the Disruptive Lance (siege gate, 5412 debuff as no warp/jump/dock/cloak holds, unit-tested 2026-11-03) and the Bosonic cone (angle [A]) are built-unproved (w22-nw9c), the Oscillator is 9d; scenario fci_doomsday is green (row 62) but covers only the Lance and the legacy targeted doomsday (two titans in null-sec, empire refusal, fuel and cap, immobility, the second click, OnSpecialFX SWDamageBeam and damage on B); the Reaper, the Disruptive Lance and the Bosonic wait on #32 (a second doomsday scenario, not written); the Oscillator is #33; the beam FX is scheduled on the clock (leaves in its tick)
+- [x] Doomsdays: the Reaper, the Disruptive Lance and the Bosonic: *client-proved*, unit tests; superweapon.rs, superWeaponMgr; the Reaper is a slice with the Lance's gates and holds; the beam FX push (OnSpecialFX with a graphicInfo KeyVal) uses the race-keyed effects.fsdbinary guids SWDamageBeam<Race> / SWSlashBeam<Race> picked by damage type (w23-srv-reds, after regress-w23a's unknown-guid traceback); the Disruptive Lance (siege gate, 5412 debuff as no warp/jump/dock/cloak holds, unit-tested 2026-11-03) and the Bosonic cone (angle [A]) are built-unproved (w22-nw9c), the Oscillator is 9d; scenario fci_doomsday is green (row 62) but covers only the Lance and the legacy targeted doomsday (two titans in null-sec, empire refusal, fuel and cap, immobility, the second click, OnSpecialFX SWDamageBeam and damage on B); the Oscillator is #33; the beam FX is scheduled on the clock (leaves in its tick); fci_doomsday_2 green 11-16 (var/ci-1116l-a, A 93/93, B 72/72): the Reaper slice hits B and a turned slice misses, the Bosonic cone hits on axis and misses 90 degrees off, the Lance is refused unsieged and fires sieged, B's warp, jump, dock and cloak are refused inside the debuff and allowed after it, fuel falls by the fitted module's live consumption
 - [x] A lost or killed target ends the module at its cycle boundary; any of the four chargeGroup attributes loads: *client-proved*, fci_gun_cycle, fci_advanced_ammo (regress-w14)
 - [x] A lock still being acquired is not a lock at a gun's cycle boundary; a jam, a cloak, CONCORD's cap, a clear or leaving space drops a lock in progress with its completion recalled: *client-proved*, targeting.rs: a lock completes when its add is delivered (Completes, Delivered flag); targets_of (completed) and held_of (with pending); modules, ewar, cloak, concord and targeting tests; fci_engine_fix, fci_ess_panel, fci_ecm_burst, fci_cloak, fci_concord, fci_hacking_can and fci_t3_salvage green on 11-08 (ci-1108f)
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
@@ -358,7 +357,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 51 proved, 40 open</summary>
+<details><summary><b>Bots</b>: 11 of 52 proved, 41 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
