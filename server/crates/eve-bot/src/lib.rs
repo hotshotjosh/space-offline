@@ -626,6 +626,16 @@ impl Conn {
     }
 
     pub fn recv(&mut self) -> Result<PyValue> {
+        loop {
+            if let Some(f) = self.recv_frame(false)? {
+                return Ok(f);
+            }
+        }
+    }
+
+    /// One frame, or `None` when the frame was a `PingReq` that was answered
+    /// and `ping_ends` asks the caller to re-arm its own timeout.
+    fn recv_frame(&mut self, ping_ends: bool) -> Result<Option<PyValue>> {
         let mut chunk = [0u8; 4096];
         loop {
             if let Some((frame, consumed)) = try_split_frame(&self.buf)? {
@@ -641,10 +651,13 @@ impl Conn {
                 // comes back. Answered here, like `eve-probe`, so no caller
                 // ever sees one and a bot blocked in a call still answers.
                 if self.answer_ping(&frame)? {
+                    if ping_ends {
+                        return Ok(None);
+                    }
                     continue;
                 }
                 stats::OBSERVE.time(|| self.observe(&frame));
-                return Ok(frame);
+                return Ok(Some(frame));
             }
             let n = self.stream.read(&mut chunk)?;
             if n == 0 {
@@ -1330,8 +1343,26 @@ impl Conn {
     /// shorter patience. A timeout comes back as `Error::Io` ([`is_timeout`]).
     pub fn recv_within(&mut self, d: Duration) -> Result<PyValue> {
         let restore = self.stream.read_timeout()?;
-        self.stream.set_read_timeout(Some(clock::real_timeout(d)))?;
-        let frame = self.recv();
+        let deadline = clock::instant() + d;
+        let frame = loop {
+            let left = deadline.saturating_duration_since(clock::instant());
+            if left.is_zero() {
+                break Err(Error::Io(std::io::ErrorKind::TimedOut.into()));
+            }
+            // A keepalive ping is answered and the read re-armed with what is
+            // left, never with the whole `d` again (a ping every 30 s held a
+            // 31 s wait for ever).
+            if let Err(e) = self.stream.set_read_timeout(Some(
+                clock::real_timeout(left).max(Duration::from_millis(1)),
+            )) {
+                break Err(e.into());
+            }
+            match self.recv_frame(true) {
+                Ok(Some(f)) => break Ok(f),
+                Ok(None) => continue,
+                Err(e) => break Err(e),
+            }
+        };
         self.stream.set_read_timeout(restore)?;
         frame
     }
@@ -1447,8 +1478,13 @@ impl Conn {
         within: Duration,
         notifications: &mut Vec<PyValue>,
     ) -> Result<Option<SessionChange>> {
+        let deadline = clock::instant() + within;
         loop {
-            match self.recv_within(within) {
+            let left = deadline.saturating_duration_since(clock::instant());
+            if left.is_zero() {
+                break Ok(None);
+            }
+            match self.recv_within(left) {
                 Ok(frame) => {
                     let PyValue::Instance { class, .. } = &frame else {
                         continue;
@@ -2100,6 +2136,57 @@ mod tests {
             "the server got an answer"
         );
         assert_eq!(seen.body, vec![PyValue::List(vec![PyValue::Int(5)])]);
+    }
+
+    #[test]
+    fn a_ping_does_not_stretch_a_pump_past_its_window() {
+        use eve_marshal::MachoNetMsg;
+        use eve_proto::{MachoAddress, MachoPacket};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut buf = Vec::new();
+            let ping = MachoPacket::new(
+                MachoNetMsg::PingReq,
+                MachoAddress::node(1),
+                MachoAddress::client(1),
+                vec![PyValue::List(vec![PyValue::Int(7)])],
+            )
+            .to_value()
+            .unwrap();
+            // The first ping is answered inside the window.
+            write_value(&mut s, &ping);
+            let first = MachoPacket::from_value(&read_value(&mut s, &mut buf)).unwrap();
+            // Then a keepalive faster than the bot's window, for longer than
+            // the window: before the fix each one restarted the read.
+            let mut framed = Vec::new();
+            write_frame(&dumps(&ping), &mut framed).unwrap();
+            for _ in 0..30 {
+                if s.write_all(&framed).is_err() {
+                    break; // the bot hung up: done
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            first.command
+        });
+        let mut conn = Conn::connect(addr, Duration::from_secs(5)).unwrap();
+        let t0 = clock::wall();
+        let got = conn.pump(Duration::from_millis(400));
+        let took = clock::wall_since(t0);
+        drop(conn);
+        let first = server.join().unwrap();
+        assert_eq!(
+            first,
+            MachoNetMsg::PingRsp,
+            "a ping in the window is still answered"
+        );
+        let events = got.expect("a quiet window is not an error");
+        assert!(events.is_empty(), "pings are no events: {events:?}");
+        assert!(
+            took < Duration::from_millis(2_000),
+            "pump(400 ms) took {took:?}: a ping re-armed the whole wait"
+        );
     }
 
     #[test]
