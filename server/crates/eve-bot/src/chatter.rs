@@ -37,7 +37,7 @@
 use crate::brain::{unit, xorshift};
 use crate::chat::RoomKind;
 use crate::clock;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -288,8 +288,13 @@ pub fn known_of(a: &crate::know::Acquaintance) -> Known {
     }
 }
 
-/// A killer is named in a greeting at most once per this long **[A]**.
-pub const KILLER_NAMED_EVERY: Duration = Duration::from_secs(86_400);
+/// A past fight is named to a pilot at most once per this long **[A]**
+/// (O4 default, awaiting the owner).
+pub const PAST_NAMED_EVERY: Duration = Duration::from_secs(86_400);
+/// A past fight is never named in this long after this bot's greeting to the
+/// pilot (itself a few seconds after the arrival) **[A]**. Falsified by the owner finding the mention too late or still
+/// instant.
+pub const FIRST_MINUTE: Duration = Duration::from_secs(60);
 
 /// A human who came into Local.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,9 +376,13 @@ pub struct State {
     said: Vec<Instant>,
     cat_last: BTreeMap<Cat, Instant>,
     greeted: BTreeMap<(i64, i64), Instant>,
-    /// When a killer was last named in a greeting. Not pruned: it holds only
-    /// pilots who have killed this bot.
-    killer_named: BTreeMap<i64, Instant>,
+    /// When a past fight was last named to a pilot; pruned after
+    /// [`PAST_NAMED_EVERY`].
+    past_named: BTreeMap<i64, Instant>,
+    /// Pilots given the later fight follow-up; kept only while the pilot's
+    /// greeting is in `greeted` (one follow-up per visit). `past_named` stays
+    /// the daily limit.
+    followed: BTreeSet<i64>,
     pending: Option<Pending>,
     seen_line: u64,
     seen_arrival: u64,
@@ -404,7 +413,8 @@ impl State {
             said: Vec::new(),
             cat_last: BTreeMap::new(),
             greeted: BTreeMap::new(),
-            killer_named: BTreeMap::new(),
+            past_named: BTreeMap::new(),
+            followed: BTreeSet::new(),
             pending: None,
             seen_line: 0,
             seen_arrival: 0,
@@ -592,6 +602,10 @@ pub fn speak(st: &mut State, cx: &Ctx) -> Option<String> {
         .retain(|t| now.saturating_duration_since(*t) < WINDOW);
     st.greeted
         .retain(|_, t| now.saturating_duration_since(*t) < GREET_AGAIN);
+    st.followed
+        .retain(|id| st.greeted.keys().any(|(g, _)| g == id));
+    st.past_named
+        .retain(|_, t| now.saturating_duration_since(*t) < PAST_NAMED_EVERY);
     let audience = cx.in_fleet || sc.local_humans > 0;
 
     // What was said since last time.
@@ -675,6 +689,33 @@ pub fn speak(st: &mut State, cx: &Ctx) -> Option<String> {
             target: a.char_id,
             deferred: false,
         });
+    }
+
+    // A pilot known for a past fight, still in Local a minute after the
+    // greeting: the fight is named now, once (O4). Not in a fleet.
+    if !cx.in_fleet && st.pending.is_none() && sc.local_humans > 0 {
+        let sys = cx.system.unwrap_or(0);
+        let pick = sc.known.iter().find(|(id, k)| {
+            let Some(g) = st.greeted.get(&(**id, sys)) else {
+                return false;
+            };
+            let since = now.saturating_duration_since(*g);
+            since >= FIRST_MINUTE
+                && !st.followed.contains(*id)
+                && greet_pick(st, k, **id, now, since)
+                    .is_some_and(|(cat, fight)| fight && cat == Cat::GreetKiller)
+        });
+        if let Some((&id, _)) = pick {
+            st.followed.insert(id);
+            let delay = reply_delay(c, st.draw());
+            st.pending = Some(Pending {
+                cat: Cat::Greet,
+                due: now + delay,
+                trigger: st.seen_line,
+                target: id,
+                deferred: false,
+            });
+        }
     }
 
     // A fight of the bot's own that just ended: one "gf" or a grumble.
@@ -805,19 +846,32 @@ pub fn mate_attacked(st: &mut State, cx: &Ctx) -> Option<String> {
     say(st, cx, Cat::MateAttacked, None)
 }
 
-/// Which greeting a known pilot gets: a killer first (named at most once per
-/// [`KILLER_NAMED_EVERY`]), then a helper, then a regular; `None` is the plain one.
-fn greet_cat(st: &State, k: &Known, who: i64, now: Instant) -> Option<Cat> {
+/// Which greeting a known pilot gets, and whether it names a past fight: a
+/// killer first, then a helper, then a regular; `None` is the plain one. A
+/// fight is named only once the pilot has been in Local [`FIRST_MINUTE`]
+/// (`since_arrival`, counted from this bot's greeting, itself a few seconds
+/// after the arrival) and at most once per [`PAST_NAMED_EVERY`]; otherwise the
+/// order falls through to the rest.
+fn greet_pick(
+    st: &State,
+    k: &Known,
+    who: i64,
+    now: Instant,
+    since_arrival: Duration,
+) -> Option<(Cat, bool)> {
     let named_lately = st
-        .killer_named
+        .past_named
         .get(&who)
-        .is_some_and(|t| now.saturating_duration_since(*t) < KILLER_NAMED_EVERY);
-    if k.killed_me > 0 && !named_lately {
-        Some(Cat::GreetKiller)
+        .is_some_and(|t| now.saturating_duration_since(*t) < PAST_NAMED_EVERY);
+    let fight_ok = since_arrival >= FIRST_MINUTE && !named_lately;
+    if k.killed_me > 0 && fight_ok {
+        Some((Cat::GreetKiller, true))
     } else if k.helped {
-        Some(Cat::GreetHelper)
-    } else if k.met >= 2 || k.i_killed > 0 {
-        Some(Cat::GreetAgain)
+        Some((Cat::GreetHelper, false))
+    } else if k.i_killed > 0 && fight_ok {
+        Some((Cat::GreetAgain, true))
+    } else if k.met >= 2 {
+        Some((Cat::GreetAgain, false))
     } else {
         None
     }
@@ -836,11 +890,18 @@ fn say(st: &mut State, cx: &Ctx, cat: Cat, target: Option<i64>) -> Option<String
     if cat == Cat::Greet
         && let Some(t) = target
         && let Some(k) = sc.known.get(&t)
-        && let Some(special) = greet_cat(st, k, t, cx.now)
+        && let Some((special, fight)) = {
+            // ZERO on the first greeting: it is never a fight mention.
+            let since = st
+                .greeted
+                .get(&(t, cx.system.unwrap_or(0)))
+                .map_or(Duration::ZERO, |g| cx.now.saturating_duration_since(*g));
+            greet_pick(st, k, t, cx.now, since)
+        }
     {
         line = pick(st, special, &slots);
-        if line.is_some() && special == Cat::GreetKiller {
-            st.killer_named.insert(t, cx.now);
+        if line.is_some() && fight {
+            st.past_named.insert(t, cx.now);
         }
     }
     let line = match line {
@@ -874,6 +935,16 @@ mod tests {
             scene.known.insert(HUMAN, k);
         }
         scene
+    }
+
+    fn greet_cat(
+        st: &State,
+        k: &Known,
+        who: i64,
+        now: Instant,
+        since_arrival: Duration,
+    ) -> Option<Cat> {
+        greet_pick(st, k, who, now, since_arrival).map(|(c, _)| c)
     }
 
     fn greeting_for(scene: &Scene, st: &mut State, now: Instant) -> String {
@@ -938,7 +1009,9 @@ mod tests {
         };
         let scene = scene_knowing(Some(known_of(&a)));
         let mut st = State::new(11);
-        let line = greeting_for(&scene, &mut st, clock::instant());
+        let t0 = clock::instant();
+        st.greeted.insert((HUMAN, SYS), t0);
+        let line = greeting_for(&scene, &mut st, t0 + FIRST_MINUTE);
         assert!(lines_of(Cat::GreetKiller).contains(&line.as_str()));
     }
 
@@ -951,7 +1024,9 @@ mod tests {
             ..Known::default()
         }));
         let mut st = State::new(11);
-        let first = greeting_for(&scene, &mut st, t0);
+        st.greeted.insert((HUMAN, SYS), t0);
+        let at = t0 + FIRST_MINUTE;
+        let first = greeting_for(&scene, &mut st, at);
         assert!(!lines_of(Cat::GreetKiller).is_empty());
         assert!(
             lines_of(Cat::GreetKiller).iter().any(|l| fill(
@@ -967,17 +1042,116 @@ mod tests {
                 == Some(first.as_str())),
             "{first}"
         );
-        // Named at most once per KILLER_NAMED_EVERY: the next is another category.
-        let again = greeting_for(&scene, &mut st, t0 + secs(100));
+        assert!(st.past_named[&HUMAN] == at);
+    }
+
+    #[test]
+    fn a_past_fight_is_not_named_in_the_first_minute() {
+        let t0 = clock::instant();
+        let scene = scene_knowing(Some(Known {
+            killed_me: 1,
+            ..Known::default()
+        }));
+        // The first greeting (no earlier one) is never a fight mention.
+        let mut st = State::new(11);
+        let first = greeting_for(&scene, &mut st, t0);
+        assert!(!lines_of(Cat::GreetKiller).contains(&first.as_str()));
+        assert!(st.past_named.is_empty());
+        // Nor is a greeting just short of the first minute.
+        let mut st = State::new(11);
+        st.greeted.insert((HUMAN, SYS), t0);
+        let early = greeting_for(&scene, &mut st, t0 + FIRST_MINUTE - secs(1));
+        assert!(!lines_of(Cat::GreetKiller).contains(&early.as_str()));
+        assert!(st.past_named.is_empty());
+        // The follow-up does not start before it either.
+        let mut st = State::new(11);
+        st.greeted.insert((HUMAN, SYS), t0);
+        for s in 0..FIRST_MINUTE.as_secs() {
+            let cx = ctx_of(t0 + secs(s), &scene, false);
+            assert_eq!(speak(&mut st, &cx), None, "at {s} s");
+        }
+        assert!(st.pending.is_none());
+    }
+
+    #[test]
+    fn a_past_fight_is_named_after_the_first_minute() {
+        let t0 = clock::instant();
+        let scene = scene_knowing(Some(Known {
+            killed_me: 1,
+            ..Known::default()
+        }));
+        let mut st = State::new(11);
+        st.greeted.insert((HUMAN, SYS), t0);
+        let mut said = Vec::new();
+        for s in 0..300u64 {
+            if let Some(l) = speak(&mut st, &ctx_of(t0 + secs(s), &scene, false)) {
+                said.push((s, l));
+            }
+        }
+        assert_eq!(said.len(), 1, "{said:?}");
+        let (s, l) = &said[0];
+        assert!(*s >= FIRST_MINUTE.as_secs(), "at {s} s");
+        assert!(lines_of(Cat::GreetKiller).contains(&l.as_str()), "{l}");
+        assert!(st.followed.contains(&HUMAN));
+    }
+
+    #[test]
+    fn a_past_fight_is_named_once_a_day() {
+        let t0 = clock::instant();
+        let scene = scene_knowing(Some(Known {
+            killed_me: 1,
+            ..Known::default()
+        }));
+        let mut st = State::new(11);
+        st.greeted.insert((HUMAN, SYS), t0);
+        let at = t0 + FIRST_MINUTE;
+        let first = greeting_for(&scene, &mut st, at);
+        assert!(lines_of(Cat::GreetKiller).contains(&first.as_str()));
+        // Within the period: another category.
+        let again = greeting_for(&scene, &mut st, at + secs(100));
         assert!(
             !lines_of(Cat::GreetKiller).contains(&again.as_str()),
             "{again}"
         );
-        // And again after the period.
-        let later = t0 + KILLER_NAMED_EVERY + secs(1);
+        // After the period it is named again.
+        let later = at + PAST_NAMED_EVERY + secs(1);
         let third = greeting_for(&scene, &mut st, later);
-        assert!(!third.is_empty());
-        assert!(st.killer_named[&HUMAN] == later);
+        assert!(
+            lines_of(Cat::GreetKiller).contains(&third.as_str()),
+            "{third}"
+        );
+        assert!(st.past_named[&HUMAN] == later);
+    }
+
+    #[test]
+    fn a_stranger_gets_no_follow_up() {
+        let t0 = clock::instant();
+        for k in [
+            None,
+            Some(Known::default()),
+            Some(Known {
+                helped: true,
+                ..Known::default()
+            }),
+            Some(Known {
+                met: 2,
+                ..Known::default()
+            }),
+            Some(Known {
+                i_killed: 1,
+                ..Known::default()
+            }),
+        ] {
+            let scene = scene_knowing(k);
+            let mut st = State::new(11);
+            st.greeted.insert((HUMAN, SYS), t0);
+            for s in 0..300u64 {
+                // A reply to a greeting may come; a follow-up must not set one.
+                let cx = ctx_of(t0 + secs(s), &scene, false);
+                assert_eq!(speak(&mut st, &cx), None, "{k:?} at {s} s");
+            }
+            assert!(st.followed.is_empty());
+        }
     }
 
     #[test]
@@ -1006,13 +1180,19 @@ mod tests {
             met: 1,
             ..Known::default()
         }));
-        assert_eq!(greet_cat(&st, &few.known[&HUMAN], HUMAN, t0), None);
+        assert_eq!(
+            greet_cat(&st, &few.known[&HUMAN], HUMAN, t0, Duration::ZERO),
+            None
+        );
         // A helper is thanked.
         let helper = Known {
             helped: true,
             ..Known::default()
         };
-        assert_eq!(greet_cat(&st, &helper, HUMAN, t0), Some(Cat::GreetHelper));
+        assert_eq!(
+            greet_cat(&st, &helper, HUMAN, t0, Duration::ZERO),
+            Some(Cat::GreetHelper)
+        );
     }
 
     #[test]
