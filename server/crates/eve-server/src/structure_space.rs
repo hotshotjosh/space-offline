@@ -569,6 +569,12 @@ pub(crate) fn react(reg: &mut Registry, id: i64, events: &[Event]) {
     react_at(reg, id, events, crate::pyutil::filetime_now());
 }
 
+/// [`react`] from the world clock's stage (a gun, drone, NPC or missile hit):
+/// the pushes are scheduled, so they leave in the tick.
+pub(crate) fn react_on_clock(reg: &mut Registry, id: i64, events: &[Event]) {
+    react_via(reg, id, events, crate::pyutil::filetime_now(), true);
+}
+
 /// [`react`] on the caller's clock: the tick's own, so the notifications'
 /// `timeLeft` is judged on the clock the state machine used.
 pub(crate) fn react_at(reg: &mut Registry, id: i64, events: &[Event], now: i64) {

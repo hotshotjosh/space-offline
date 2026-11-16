@@ -500,7 +500,7 @@ pub fn hit(w: &mut Registry, v: Volley, now: BlueTime) {
             let events = s.take_events();
             structure::put(w.deltas_mut(), &s);
             w.mark_dirty();
-            crate::structure_space::react(w, s.id, &events);
+            crate::structure_space::react_on_clock(w, s.id, &events);
         }
     }
     let total: f64 = dealt.iter().sum();
@@ -702,11 +702,14 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     structure::remove(w.deltas_mut(), s.id);
     w.ext_mut::<Fire>().forget(s.id);
     w.mark_dirty();
-    w.push(crate::structure_space::RemovedFromSpace {
-        to: tell_corp,
-        id: s.id,
-    });
-    crate::structure_space::announce_lists(w, s, true, false);
+    w.schedule(
+        std::time::Duration::ZERO,
+        crate::structure_space::RemovedFromSpace {
+            to: tell_corp,
+            id: s.id,
+        },
+    );
+    crate::structure_space::announce_lists(w, s, true, true);
     crate::errln!(
         "[structure] {} destroyed in {} by {killer:?}",
         s.id,

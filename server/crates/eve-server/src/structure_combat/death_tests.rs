@@ -520,3 +520,50 @@ fn a_gun_kill_in_known_space_wraps_the_hangar_and_tells_its_owner_190() {
         1
     );
 }
+
+/// The names left pending (waiting on some client's next call) and the
+/// names scheduled for the tick.
+fn pending_and_due(reg: &mut Registry) -> (Vec<&'static str>, Vec<&'static str>) {
+    let pending = reg
+        .take_pending_raw()
+        .iter()
+        .map(|(_, p)| p.to_push().0)
+        .collect();
+    let due = crate::combat::tests::due(reg)
+        .into_iter()
+        .map(|(_, n, _)| n)
+        .collect();
+    (pending, due)
+}
+
+#[test]
+fn a_dead_hull_tells_the_directory_and_the_corp_list_in_the_tick() {
+    let (mut reg, id) = world();
+    let s = structure::get(reg.deltas(), id).unwrap();
+    let _ = reg.take_pending_raw();
+    destroy(&mut reg, &s, Some(FOE), crate::pyutil::filetime_now());
+    let (pending, due) = pending_and_due(&mut reg);
+    for name in [
+        "OnStructureRemovedFromSpace",
+        "OnCorporationStructuresUpdated",
+    ] {
+        assert!(due.contains(&name), "{name} leaves in the tick: {due:?}");
+        assert!(!pending.contains(&name), "{name} left pending: {pending:?}");
+    }
+}
+
+#[test]
+fn a_volley_that_reinforces_tells_the_state_change_in_the_tick() {
+    let (mut reg, id) = world();
+    set_state(&mut reg, id, State::ShieldVulnerable);
+    let _ = reg.take_pending_raw();
+    hit(&mut reg, volley(id, 1.0e12), crate::pyutil::filetime_now());
+    assert_eq!(
+        structure::get(reg.deltas(), id).map(|s| s.state),
+        Some(State::ArmorReinforce)
+    );
+    let (pending, due) = pending_and_due(&mut reg);
+    let name = "OnStructureStateChanged";
+    assert!(due.contains(&name), "{name} leaves in the tick: {due:?}");
+    assert!(!pending.contains(&name), "{name} left pending: {pending:?}");
+}
