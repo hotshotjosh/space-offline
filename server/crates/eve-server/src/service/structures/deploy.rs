@@ -56,11 +56,12 @@ pub(super) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
 fn anchor(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
     const SHAPE: &str = "Anchor(itemID, x, z, yaw, profileID, name, bio, weekday, hour, extra)";
     let a = Args::new(req);
-    let (Some(item_id), Some(x), Some(z), Some(yaw)) =
-        (a.int(0), a.float(1), a.float(2), a.float(3))
-    else {
-        return Err(a.bad(SHAPE));
-    };
+    let (item_id, x, z, yaw) = (
+        a.need_int(0)?,
+        a.need_float(1)?,
+        a.need_float(2)?,
+        a.need_float(3)?,
+    );
     let (Some(weekday), Some(hour)) = (a.int(7), a.int(8)) else {
         return Err(a.bad(SHAPE));
     };

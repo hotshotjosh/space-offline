@@ -1094,9 +1094,7 @@ pub(crate) fn rename_jump_clone(
         return Err(clones_refusal("No character is selected."));
     };
     let a = Args::new(req);
-    let (Some(id), Some(name)) = (a.int(0), a.text(1)) else {
-        return Err(a.bad("(cloneID, newName)"));
-    };
+    let (id, name) = (a.need_int(0)?, a.need_text(1)?);
     let name = clean_clone_name(&name);
     let Some(clone) = reg.clones.jump.get_mut(&id).filter(|c| c.owner_id == actor) else {
         return Err(clones_refusal("That jump clone is not yours."));

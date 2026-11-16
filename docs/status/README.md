@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**70% proved** (227 of 326) · **93% built** (302 of 326) · 3 parked, not counted.
+**70% proved** (228 of 326) · **93% built** (303 of 326) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -136,7 +136,6 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 ### 3.10 Structure and debt
 
-- [ ] Args reader for service arms: *partial*, service/args.rs (Args, ArgError, unit tests); every local helper migrated; inline reads moved in service/inventory.rs, space.rs, industry.rs, base.rs, character.rs, agents.rs, world.rs, corp.rs and the crate-root fighters, nes, group_contacts, contacts, skill_trading, fleet_broadcast, skill_queue, implants (#139, pinning tests); drones, fitting_store, compression, anchor, fleet_warp, wormhole_jump, boosters too (pinning tests); Args::as_id_or_ids and as_int_whole replace the last seven local helpers (trade, owner_groups, structures, corp_office, free_sp, skill_trading, fit_ships) and need_int/need_list have callers (pinning tests, 11-15); 15 arms in 9 files forward raw args (listed on #139); inline req.args reads remain in space_component.rs and fighters.rs plus one arm in the hot file service.rs; positional reads in callees go through args::as_*; 8 strict accessors are still dead code
 - [ ] Hand-kept extracted values moved to the bundle: *partial*, CONCORD done in lane concord-ids; others remain; inventory: tools/hand-data.py (tools/test_hand_data.py); the issue is closed, a new one is needed
 
 ### 3.12 Not planned
@@ -166,7 +165,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 1 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
-| Tools and remote clients | 10 | 4 | 3 | 2 | 0 |
+| Tools and remote clients | 11 | 4 | 2 | 2 | 0 |
 
 </details>
 
@@ -575,7 +574,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Tools and remote clients</b>: 10 of 19 proved, 9 open</summary>
+<details><summary><b>Tools and remote clients</b>: 11 of 19 proved, 8 open</summary>
 
 - [x] The gate: lint, tests, clippy, push only on pass: *done*, tools/land.sh, tools/gate.sh
 - [x] The client regression runner, three clients at once: *done*, tools/client-ci-regress.sh
@@ -591,7 +590,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] GM pilot tools: /who, /where, /heal, /hurt, /suicide (reset commands refuse bots without --dev): *client-proved*, gm_tools.rs tests; fci_gm_pilot green 19/19 on 11-15 (var/ci-1115q-c). visible reply via CustomInfo [A]
 - [ ] Human check card brought up to date: *partial*, results stop at 2026-10-25
 - [x] PyValue::Long, a pinned integer tag: *client-proved*, fci_reads PYVALUE-LONG checks (GetTime, GetSubscriptionTime, GetDirtTimestamp arrive as long); fci_pi_colony green; value.rs unit tests (small values)
-- [ ] Args reader for service arms: *partial*, service/args.rs (Args, ArgError, unit tests); every local helper migrated; inline reads moved in service/inventory.rs, space.rs, industry.rs, base.rs, character.rs, agents.rs, world.rs, corp.rs and the crate-root fighters, nes, group_contacts, contacts, skill_trading, fleet_broadcast, skill_queue, implants (#139, pinning tests); drones, fitting_store, compression, anchor, fleet_warp, wormhole_jump, boosters too (pinning tests); Args::as_id_or_ids and as_int_whole replace the last seven local helpers (trade, owner_groups, structures, corp_office, free_sp, skill_trading, fit_ships) and need_int/need_list have callers (pinning tests, 11-15); 15 arms in 9 files forward raw args (listed on #139); inline req.args reads remain in space_component.rs and fighters.rs plus one arm in the hot file service.rs; positional reads in callees go through args::as_*; 8 strict accessors are still dead code
+- [x] Args reader for service arms: *done*, service/args.rs (Args, ArgError, unit tests); every service arm and every callee that took a raw argument slice reads through Args (#139, pinning tests unchanged): the fifteen forwarders (scan, space_state command, self_destruct, killmarks, alliance short names, sov_index capital, map_stats history, corp titles, corp_standings, fit_apply decode) take an Args; Args::rest(from) feeds fighters ability movement and activation and space_component's CompCall; need_int, need_float, need_text and need_list have callers and the unused strict accessors are gone; raw reads left on purpose: the Request built in fleet_warp.rs and one arm in the hot file service.rs (machoNet.GetClusterGameStatisticsForClient), documented in args.rs; unit tests only, no client scenario reads it by itself
 - [ ] Hand-kept extracted values moved to the bundle: *partial*, CONCORD done in lane concord-ids; others remain; inventory: tools/hand-data.py (tools/test_hand_data.py); the issue is closed, a new one is needed
 - [ ] Admin web page: status, pilots, systems, map; bot, broadcast, save and kick actions (token, off by default): *built-unproved*, admin_web.rs tests; deployed on the test server 11-03; no scenario or human check yet; kick (admin_actions.rs tests, evicts like a second login); tools/test_admin_web.py live check (EVE_ADMIN_WEB_LIVE=1): page, every API path and action, 401 without the token; tick p50/p95/max per minute, per-system loads, slowest calls, /api/metrics (admin_web.rs, live_status.rs prof tests)
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots

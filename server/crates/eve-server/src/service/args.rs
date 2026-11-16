@@ -7,7 +7,7 @@
 //! * **lenient** (`int`, `text`, `int_or_kw`, ...): `Option`, `None` for a
 //!   missing or mistyped argument, so an arm keeps its own refusal text with
 //!   [`Args::bad`];
-//! * **strict** (`need_*`, `opt_*`): `Result<_, ArgError>`, which converts to
+//! * **strict** (`need_*`): `Result<_, ArgError>`, which converts to
 //!   [`ServiceError::BadArguments`] -- the wire behaviour every arm already
 //!   has for "the arguments were not what the method needs".
 //!
@@ -38,8 +38,6 @@ pub enum ArgFault {
     Missing,
     /// Present, but not the type the accessor reads.
     WrongType(&'static str),
-    /// An integer that does not fit the width asked for.
-    OutOfRange,
 }
 
 /// A refused argument, carrying the call it belongs to.
@@ -57,7 +55,6 @@ impl ArgError {
         match &self.fault {
             ArgFault::Missing => format!("{} is missing", self.which),
             ArgFault::WrongType(want) => format!("{} is not {want}", self.which),
-            ArgFault::OutOfRange => format!("{} is out of range", self.which),
         }
     }
 }
@@ -296,18 +293,8 @@ impl<'a> Args<'a> {
         self.strict(i, "an integer", as_int)
     }
 
-    /// An integer that must fit `i32`.
-    pub fn need_i32(&self, i: usize) -> Result<i32, ArgError> {
-        let n = self.need_int(i)?;
-        i32::try_from(n).map_err(|_| self.err(format!("#{i}"), ArgFault::OutOfRange))
-    }
-
     pub fn need_float(&self, i: usize) -> Result<f64, ArgError> {
         self.strict(i, "a number", as_float)
-    }
-
-    pub fn need_bool(&self, i: usize) -> Result<bool, ArgError> {
-        self.strict(i, "a bool", as_bool)
     }
 
     pub fn need_text(&self, i: usize) -> Result<String, ArgError> {
@@ -316,36 +303,6 @@ impl<'a> Args<'a> {
 
     pub fn need_list(&self, i: usize) -> Result<&'a [PyValue], ArgError> {
         self.strict(i, "a list", as_list)
-    }
-
-    /// The keyword `name`, which must be an integer.
-    pub fn need_int_kw(&self, name: &str) -> Result<i64, ArgError> {
-        match self.kw(name) {
-            None => Err(self.err(name.to_owned(), ArgFault::Missing)),
-            Some(v) => as_int(Some(v))
-                .ok_or_else(|| self.err(name.to_owned(), ArgFault::WrongType("an integer"))),
-        }
-    }
-
-    /// An optional integer: absent or `None` is `Ok(None)`, a mistyped value
-    /// is an error.
-    pub fn opt_int(&self, i: usize) -> Result<Option<i64>, ArgError> {
-        match self.get(i) {
-            None | Some(PyValue::None) => Ok(None),
-            Some(v) => as_int(Some(v))
-                .map(Some)
-                .ok_or_else(|| self.err(format!("#{i}"), ArgFault::WrongType("an integer"))),
-        }
-    }
-
-    /// An optional string, as [`Args::opt_int`].
-    pub fn opt_text(&self, i: usize) -> Result<Option<String>, ArgError> {
-        match self.get(i) {
-            None | Some(PyValue::None) => Ok(None),
-            Some(v) => as_text(Some(v))
-                .map(Some)
-                .ok_or_else(|| self.err(format!("#{i}"), ArgFault::WrongType("a string"))),
-        }
     }
 
     fn strict<T>(
@@ -760,14 +717,6 @@ mod tests {
             assert_eq!(x.int_kw("other"), None);
             assert_eq!(x.int_or_kw(0, "allianceID"), Some(9));
             assert_eq!(x.int_or_kw(0, "other"), None);
-            assert_eq!(x.need_int_kw("allianceID"), Ok(9));
-            assert!(matches!(
-                x.need_int_kw("other"),
-                Err(ArgError {
-                    fault: ArgFault::Missing,
-                    ..
-                })
-            ));
         });
         let a = [PyValue::Int(1)];
         with(&a, &kw, |x| {
@@ -777,13 +726,6 @@ mod tests {
         with(&[], &kw, |x| {
             assert_eq!(x.text_or_kw(0, "n").as_deref(), Some("x"));
             assert_eq!(x.text_kw("n").as_deref(), Some("x"));
-            assert!(matches!(
-                x.need_int_kw("n"),
-                Err(ArgError {
-                    fault: ArgFault::WrongType(_),
-                    ..
-                })
-            ));
         });
     }
 
@@ -798,9 +740,7 @@ mod tests {
         ];
         with(&a, &[], |x| {
             assert_eq!(x.need_int(0), Ok(5));
-            assert_eq!(x.need_i32(0), Ok(5));
             assert_eq!(x.need_float(1), Ok(0.5));
-            assert_eq!(x.need_bool(2), Ok(false));
             assert_eq!(x.need_text(3), Ok("s".to_owned()));
             assert_eq!(x.need_list(4).map(<[_]>::len), Ok(0));
         });
@@ -829,57 +769,12 @@ mod tests {
                 )
             };
             assert!(wrong(x.need_int(0).map(drop)));
-            assert!(wrong(x.need_i32(0).map(drop)));
             assert!(wrong(x.need_float(0).map(drop)));
-            assert!(wrong(x.need_bool(0).map(drop)));
             assert!(wrong(x.need_list(0).map(drop)));
             assert!(missing(x.need_int(1).map(drop)));
-            assert!(missing(x.need_i32(1).map(drop)));
             assert!(missing(x.need_float(1).map(drop)));
-            assert!(missing(x.need_bool(1).map(drop)));
             assert!(missing(x.need_text(1).map(drop)));
             assert!(missing(x.need_list(1).map(drop)));
-        });
-    }
-
-    #[test]
-    fn i32_range_is_checked() {
-        let a = [
-            PyValue::Int(i64::from(i32::MAX)),
-            PyValue::Int(i64::from(i32::MAX) + 1),
-            PyValue::Int(i64::from(i32::MIN) - 1),
-        ];
-        with(&a, &[], |x| {
-            assert_eq!(x.need_i32(0), Ok(i32::MAX));
-            for i in [1, 2] {
-                assert!(matches!(
-                    x.need_i32(i),
-                    Err(ArgError {
-                        fault: ArgFault::OutOfRange,
-                        ..
-                    })
-                ));
-            }
-        });
-    }
-
-    #[test]
-    fn optional_accessors() {
-        let a = [
-            PyValue::None,
-            PyValue::Int(3),
-            PyValue::Unicode("t".into()),
-            PyValue::Bool(true),
-        ];
-        with(&a, &[], |x| {
-            assert_eq!(x.opt_int(0), Ok(None));
-            assert_eq!(x.opt_int(1), Ok(Some(3)));
-            assert_eq!(x.opt_int(9), Ok(None));
-            assert!(x.opt_int(2).is_err());
-            assert_eq!(x.opt_text(0), Ok(None));
-            assert_eq!(x.opt_text(2), Ok(Some("t".to_owned())));
-            assert_eq!(x.opt_text(9), Ok(None));
-            assert!(x.opt_text(3).is_err());
         });
     }
 
