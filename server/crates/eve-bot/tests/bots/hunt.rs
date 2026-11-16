@@ -96,7 +96,7 @@ fn member(name: &str, corp: i64) -> Member {
         alliance: None,
         // A turn just taken, and turns an age apart: the hall's own social
         // turn does nothing in this test.
-        last_turn: Some(driver::unix_now()),
+        last_turn: Some(eve_bot::clock::unix_secs()),
         satisfaction: Satisfaction::default(),
         applied: None,
         salt: 0,
@@ -129,7 +129,7 @@ fn hall() -> Arc<Hall> {
 }
 
 fn hunter_config(addr: std::net::SocketAddr, security: f64, hall: &Arc<Hall>) -> BotConfig {
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded("Hunter1", 1, TABLE, &Signals::default(), now);
     mind.career = "pirate".to_owned();
     mind.since = now;

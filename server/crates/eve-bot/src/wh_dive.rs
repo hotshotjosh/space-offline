@@ -50,6 +50,7 @@
 //! lane note's *Not done*.
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::huffer::{self, Via};
 use crate::probe::{self, Kind, Signature};
 use crate::roles::{RoleSpec, Summary};
@@ -359,14 +360,14 @@ fn take(c: &mut Conn, leads: Leads) -> Result<Option<HoleBall>> {
     // The hole's room is laid out when the ship is near it (the next
     // `wormhole::arrivals` look), so its ball is not there at the instant of
     // landing: read pushes until it shows or the grid has had its say.
-    let deadline = std::time::Instant::now() + HOLE_WAIT;
+    let deadline = clock::instant() + HOLE_WAIT;
     let hole = loop {
         let holes = holes_in(c);
         if let Some(h) = pick_hole(&holes, leads) {
             break h;
         }
         // A hole that leads elsewhere is an answer; an empty grid may not be.
-        if !holes.is_empty() || std::time::Instant::now() >= deadline {
+        if !holes.is_empty() || clock::instant() >= deadline {
             return Ok(None);
         }
         c.pump(Duration::from_millis(250))?;

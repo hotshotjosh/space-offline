@@ -27,6 +27,7 @@
 //! leg is the jump out). Falsified by a pilot that sieges and then cannot take
 //! its own jump.
 
+use crate::clock;
 use crate::verbs::ItemRow;
 use crate::{Conn, Error, Result};
 use eve_server::module_fuel::{EFFECT_SIEGE, EFFECT_TRIAGE};
@@ -249,7 +250,7 @@ pub fn stock(
     cache: &mut Option<Module>,
     retry: &mut Option<std::time::Instant>,
 ) -> Result<Option<String>> {
-    let now = std::time::Instant::now();
+    let now = clock::instant();
     if retry.is_some_and(|t| now < t) {
         return Ok(None);
     }
@@ -361,7 +362,7 @@ pub fn fit(
     cache: &mut Option<Module>,
     retry: &mut Option<std::time::Instant>,
 ) -> Result<Option<String>> {
-    let now = std::time::Instant::now();
+    let now = clock::instant();
     if retry.is_some_and(|t| now < t) {
         return Ok(None);
     }

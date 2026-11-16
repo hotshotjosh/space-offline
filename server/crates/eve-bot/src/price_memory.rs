@@ -21,6 +21,7 @@
 //!
 //! **Every number is [A].**
 
+use crate::clock;
 use crate::speculate::SpecKnobs;
 use crate::verbs::Book;
 use std::collections::BTreeMap;
@@ -318,10 +319,7 @@ impl Desk {
 
     /// Today by the wall clock.
     pub fn today(&self) -> i64 {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        self.day_of(secs)
+        self.day_of(clock::unix_secs())
     }
 
     /// **Attach the desk to its file once**: read `<dir>/<name>.desk.tsv` if

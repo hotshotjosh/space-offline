@@ -66,6 +66,7 @@
 //! ids and event shapes, cited [V].
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::courier::{Here, Move as Travel, next_move};
 use crate::explore_roam as roam;
 use crate::pricing::{self, Quote};
@@ -921,10 +922,10 @@ pub fn send(c: &mut Conn, view: &mut BoardView, mv: Move) -> Result<()> {
 
 /// Wait up to `within` for the start batch (`GAME_START`) and fold it in.
 pub fn await_start(c: &mut Conn, view: &mut BoardView, within: Duration) -> Result<bool> {
-    let deadline = Instant::now() + within;
+    let deadline = clock::instant() + within;
     let mut sink = Vec::new();
-    while Instant::now() < deadline && !view.started {
-        let left = deadline.saturating_duration_since(Instant::now());
+    while clock::instant() < deadline && !view.started {
+        let left = deadline.saturating_duration_since(clock::instant());
         let Some((n, a)) = c.await_push(left, &mut sink, |n, a| turn_events(n, a).is_some())?
         else {
             break;
@@ -1383,7 +1384,7 @@ pub fn run(c: &mut Conn, name: &str, seed: u64) -> Result<Trip> {
 pub fn run_with(c: &mut Conn, name: &str, seed: u64, ctx: &roam::Ctx<'_>) -> Result<Trip> {
     let attached = roam::attached(name);
     let dir = ctx.state.or(attached.as_deref());
-    if let Some(st) = roam::get(dir, name, roam::unix_now()) {
+    if let Some(st) = roam::get(dir, name, clock::unix_secs()) {
         return carry_on(c, name, seed, ctx, st);
     }
     let Some(home) = c.session().station_id() else {
@@ -1417,7 +1418,7 @@ pub fn run_with(c: &mut Conn, name: &str, seed: u64, ctx: &roam::Ctx<'_>) -> Res
 
     leave(c)?;
     let server = c.socket()?.peer_addr()?;
-    let mut st = roam::TripState::new(name, home, home_system, roam::unix_now(), trip.before);
+    let mut st = roam::TripState::new(name, home, home_system, clock::unix_secs(), trip.before);
     st.looted = note.looted.clone();
     let mut ride = Ride {
         name,
@@ -1425,7 +1426,7 @@ pub fn run_with(c: &mut Conn, name: &str, seed: u64, ctx: &roam::Ctx<'_>) -> Res
         ctx,
         dir,
         server,
-        started: Instant::now(),
+        started: clock::instant(),
         analyzers,
         trip,
         note,
@@ -1490,14 +1491,14 @@ pub fn run_dive(c: &mut Conn, name: &str, seed: u64, dive: &Dive<'_>) -> Result<
     trip.after = c.cash_balance()?;
     leave(c)?;
     let server = c.socket()?.peer_addr()?;
-    let st = roam::TripState::new(name, home, home_system, roam::unix_now(), trip.before);
+    let st = roam::TripState::new(name, home, home_system, clock::unix_secs(), trip.before);
     let mut ride = Ride {
         name,
         seed,
         ctx: &ctx,
         dir: None,
         server,
-        started: Instant::now(),
+        started: clock::instant(),
         analyzers,
         trip,
         note,
@@ -1509,7 +1510,7 @@ pub fn run_dive(c: &mut Conn, name: &str, seed: u64, dive: &Dive<'_>) -> Result<
     if arrival.is_some() {
         let system = c.session().solar_system_id().unwrap_or_default();
         while !ride.trip.full
-            && ride.started.elapsed() < TRIP_CEILING
+            && clock::since(ride.started) < TRIP_CEILING
             && ride.trip.sites.len() < MAX_SITES
         {
             let tried = ride.trip.sites.clone();
@@ -1616,7 +1617,7 @@ fn carry_on(
     let mut note = note_of(name);
     note.looted.extend(st.looted.iter().copied());
     let analyzers = fitted_analyzers(c)?;
-    let elapsed = Duration::from_secs(roam::unix_now().saturating_sub(st.started));
+    let elapsed = Duration::from_secs(clock::unix_secs().saturating_sub(st.started));
     let attached = roam::attached(name);
     let dir = ctx.state.or(attached.as_deref());
     let trip = Trip {
@@ -1632,9 +1633,9 @@ fn carry_on(
         ctx,
         dir,
         server,
-        started: Instant::now()
+        started: clock::instant()
             .checked_sub(elapsed)
-            .unwrap_or_else(Instant::now),
+            .unwrap_or_else(clock::instant),
         analyzers,
         trip,
         note,
@@ -1712,7 +1713,7 @@ impl Ride<'_, '_> {
         let (Some(trips), Some(here)) = (self.ctx.trips, Self::system(c)) else {
             return;
         };
-        let now = Instant::now();
+        let now = clock::instant();
         let server = self.server;
         self.st.stops = roam::plan_tour(
             trips.map,
@@ -1737,7 +1738,7 @@ impl Ride<'_, '_> {
         let mut hacked = 0;
         while hacked < sites
             && !self.trip.full
-            && self.started.elapsed() < roam_ceiling(self.ctx)
+            && clock::since(self.started) < roam_ceiling(self.ctx)
             && self.trip.sites.len() < site_cap(self.ctx)
         {
             let tried = self.trip.sites.clone();
@@ -1750,7 +1751,7 @@ impl Ride<'_, '_> {
                 &sig,
                 c.session().char_id().unwrap_or_default(),
                 None,
-                Instant::now(),
+                clock::instant(),
             );
             self.trip.sites.push(sig.target_id.clone());
             settle_for(c, SITE_SETTLE)?;
@@ -1825,7 +1826,7 @@ impl Ride<'_, '_> {
                 self.trip.full,
                 value,
                 self.trip.sites.len(),
-                self.started.elapsed(),
+                clock::since(self.started),
             ) {
                 self.trip.turned = Some(turn);
                 break;
@@ -2163,7 +2164,7 @@ fn find_site_if(
     // What the scan met and left -- gas, combat, ore -- is booked for the
     // careers that work it.
     for s in &left {
-        probe::LEDGER.note((server, system), s, me, Instant::now());
+        probe::LEDGER.note((server, system), s, me, clock::instant());
     }
     let Some(sig) = found else {
         return Ok(None);
@@ -2213,7 +2214,7 @@ fn hack_site(
     let mut out = Worked::default();
     let mut tried: BTreeMap<i64, u32> = BTreeMap::new();
     let order = analyzer_order(analyzers, kind);
-    while started.elapsed() < TRIP_CEILING && !out.full {
+    while clock::since(started) < TRIP_CEILING && !out.full {
         let cans: Vec<(i64, f64, Option<i64>)> = cans_in(c)
             .into_iter()
             .filter(|(id, _, _)| tried.get(id).copied().unwrap_or(0) <= RETRIES)
@@ -2389,8 +2390,8 @@ fn leave(c: &mut Conn) -> Result<()> {
 /// Read pushes until an `OnTarget('add', id)` (`true`), a loss or the
 /// ceiling (`false`).
 fn await_lock(c: &mut Conn, id: i64) -> Result<bool> {
-    let deadline = Instant::now() + CEILING;
-    while Instant::now() < deadline {
+    let deadline = clock::instant() + CEILING;
+    while clock::instant() < deadline {
         for e in c.pump(POLL)? {
             let crate::Event::Push(name, args) = e else {
                 continue;
@@ -2460,17 +2461,17 @@ fn warping(c: &mut Conn) -> bool {
 }
 
 fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
-    let until = Instant::now() + d;
-    while Instant::now() < until {
+    let until = clock::instant() + d;
+    while clock::instant() < until {
         c.pump(POLL)?;
     }
     Ok(())
 }
 
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + CEILING;
+    let deadline = clock::instant() + CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "hack: still moving after the travel ceiling".into(),
             ));
@@ -2988,7 +2989,7 @@ mod tests {
     }
 
     fn docked_obs(ship_type: Option<i64>) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked {
             station: 61_000_001,
         };
@@ -3095,7 +3096,7 @@ mod tests {
     }
 
     fn space_obs() -> Observation {
-        Observation::empty(Instant::now())
+        Observation::empty(clock::instant())
     }
 
     /// In space with a trip waiting the bot resumes it -- until the trip
@@ -3115,7 +3116,7 @@ mod tests {
             in_space(&mut m, &space_obs()),
             vec![Act::Wait(brain::SHORT_WAIT)]
         );
-        let st = roam::TripState::new(name, 1, 2, roam::unix_now(), 0.0);
+        let st = roam::TripState::new(name, 1, 2, clock::unix_secs(), 0.0);
         roam::put(None, &st);
         assert_eq!(in_space(&mut m, &space_obs()), vec![Act::Hack]);
         let mut o = space_obs();

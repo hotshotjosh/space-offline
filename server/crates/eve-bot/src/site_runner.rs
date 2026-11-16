@@ -55,6 +55,7 @@
 //! client's own Agency calls, which are cited [V].
 
 use crate::brain::{self, Act, Homing, Memory, Observation, SHORT_WAIT};
+use crate::clock;
 use crate::escort;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::{Conn, Error, Result};
@@ -592,7 +593,7 @@ pub fn scout(c: &mut Conn, board: &Board) -> Result<Scouted> {
         .map(|r| r.site_id)
         .collect();
     let site = board
-        .choose((server, system), me, me as u64, &ids, Instant::now())
+        .choose((server, system), me, me as u64, &ids, clock::instant())
         .ok_or_else(|| {
             Error::Refused(format!(
                 "sites: none of {system}'s {} anomalies is free",
@@ -860,9 +861,9 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes until `done` holds or [`TRAVEL_CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + TRAVEL_CEILING;
+    let deadline = clock::instant() + TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "sites: still warping after the travel ceiling".into(),
             ));
@@ -929,7 +930,7 @@ mod tests {
         let sites = [A, B, C];
         for seeds in [(0, 0), (1, 1), (0, 3), (7, 2)] {
             let board = Board::new();
-            let now = Instant::now();
+            let now = clock::instant();
             let mut mine: BTreeMap<i64, i64> = BTreeMap::new();
             for round in 0..20 {
                 for (runner, seed) in [(RUNNER1, seeds.0), (RUNNER2, seeds.1)] {
@@ -963,7 +964,7 @@ mod tests {
     #[test]
     fn a_stale_claim_or_another_pitch_holds_nothing() {
         let board = Board::new();
-        let then = Instant::now();
+        let then = clock::instant();
         assert_eq!(board.choose(pitch(), RUNNER1, 0, &[A], then), Some(A));
         assert_eq!(board.choose(pitch(), RUNNER2, 0, &[A], then), None);
         let other: Pitch = (pitch().0, 30_990_002);
@@ -1053,7 +1054,7 @@ mod tests {
     #[test]
     fn a_quiet_grid_settles_then_runs_the_next_site_and_a_rat_is_fought() {
         let mut m = Memory::new("Runner1", Policy::fast());
-        let now = Instant::now();
+        let now = clock::instant();
         let mut o = Observation::empty(now);
         o.place = Place::InSpace {
             system: 30_990_001,
@@ -1114,7 +1115,7 @@ mod tests {
         let beyond = escort::GUARD_RADIUS * 1.5;
         assert!(beyond < crate::MIN_WARP_DISTANCE, "the table's premise");
         let mut m = Memory::new("Runner1", Policy::fast());
-        let now = Instant::now();
+        let now = clock::instant();
         let mut o = armed(now);
         let mut park = empty_park();
         park.wrecks = vec![ball(60, beyond)];
@@ -1202,7 +1203,7 @@ mod tests {
     #[test]
     fn a_full_hold_goes_home() {
         let mut m = Memory::new("Runner1", Policy::fast());
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::InSpace {
             system: 30_990_001,
             bound: true,
@@ -1244,7 +1245,7 @@ mod tests {
                 ..Policy::fast()
             },
         );
-        let mut o = armed(Instant::now());
+        let mut o = armed(clock::instant());
         o.park = Some(empty_park());
         let acts = in_space(&mut m, &o);
         assert!(

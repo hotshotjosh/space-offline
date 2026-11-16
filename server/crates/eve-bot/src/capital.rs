@@ -34,6 +34,7 @@
 
 use crate::brain::{self, Act, Memory, Observation};
 use crate::career::Signals;
+use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::travel::Map;
 use crate::verbs::{Book, ItemRow};
@@ -719,9 +720,9 @@ pub struct Ctx<'a> {
 }
 
 fn settle(c: &mut Conn, what: &str, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + crate::travel::TRAVEL_CEILING;
+    let deadline = clock::instant() + crate::travel::TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(format!(
                 "{what}: not over after the ceiling"
             )));
@@ -1080,7 +1081,7 @@ pub fn get_hull(
             crate::acquire::missing_note(&missing)
         )));
     }
-    let now = Instant::now();
+    let now = clock::instant();
     if shop_next.is_some_and(|t| now < t) {
         return Ok(Err("owns none, not shopping yet".to_owned()));
     }
@@ -1357,7 +1358,7 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         ozone_held,
         ozone_needed: per_cycle * OZONE_CYCLES,
         target,
-        pace_wait: m.capital.pace.wait_for(Instant::now(), hop_ly),
+        pace_wait: m.capital.pace.wait_for(clock::instant(), hop_ly),
     };
     match alt_turn(&facts) {
         AltStep::Missing(why) => Ok(format!("cyno alt: missing {why}")),
@@ -1411,10 +1412,10 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
                 crate::probe::jump_route(c, map, ctx.floor, target)?
             };
             light(c, module.item_id)?;
-            let until = Instant::now() + HOLD;
+            let until = clock::instant() + HOLD;
             let met = {
                 let mut met = false;
-                while Instant::now() < until {
+                while clock::instant() < until {
                     if on_grid(c, partner) {
                         met = true;
                         break;
@@ -1424,7 +1425,7 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
                 met
             };
             let _ = douse(c, module.item_id);
-            let now = Instant::now();
+            let now = clock::instant();
             m.capital.pace = m.capital.pace.after_jump(now, hop_ly);
             m.capital.legs += 1;
             // Home again: dock, and the next leg waits on the pair's pace.

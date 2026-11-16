@@ -49,6 +49,7 @@
 //! constants, which carry their sources.
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::travel::{self, Map};
 use crate::verbs::ItemRow;
@@ -1182,9 +1183,9 @@ fn settle_within(
     ceiling: Duration,
     mut done: impl FnMut(&mut Conn) -> bool,
 ) -> Result<()> {
-    let deadline = Instant::now() + ceiling;
+    let deadline = clock::instant() + ceiling;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused("sov: still moving after the ceiling".into()));
         }
         c.pump(POLL)?;
@@ -1421,7 +1422,7 @@ fn shop_link(
     links: &[i64],
     shop_next: &mut Option<Instant>,
 ) -> Result<Option<ItemRow>> {
-    let now = Instant::now();
+    let now = clock::instant();
     if shop_next.is_some_and(|t| now < t) {
         return Ok(None);
     }
@@ -1515,17 +1516,17 @@ fn sortie_link(
     let Some(map) = ctx.map else {
         return Ok("sov: no map".to_owned());
     };
-    let deadline = Instant::now() + SORTIE_LIMIT;
-    let mut waiting = Instant::now();
+    let deadline = clock::instant() + SORTIE_LIMIT;
+    let mut waiting = clock::instant();
     let mut linking: Option<i64> = None;
-    let mut polled = Instant::now();
+    let mut polled = clock::instant();
     let mut last_refusal = String::from("never tried");
     let mut captured = 0u32;
     let mut visited: BTreeSet<i64> = BTreeSet::new();
     let order = tour(map, target.system);
     fly_to_system(c, map, target.system)?;
     let note = loop {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             break "sortie limit".to_owned();
         }
         c.pump(Duration::from_millis(300))?;
@@ -1544,10 +1545,10 @@ fn sortie_link(
             .is_some_and(|t| matches!(t.phase, Phase::NodeFight));
         let here = c.session().solar_system_id2().unwrap_or(0);
         if let Some(aim) = linking {
-            if polled.elapsed() < LINK_POLL {
+            if clock::since(polled) < LINK_POLL {
                 continue;
             }
-            polled = Instant::now();
+            polled = clock::instant();
             let running = c
                 .active_effects(rig.module)
                 .map(|e| e.contains(&EFFECT_ENTOSIS_LINK))
@@ -1557,7 +1558,7 @@ fn sortie_link(
             }
             stop_link(c, &rig);
             linking = None;
-            waiting = Instant::now();
+            waiting = clock::instant();
             if nodes {
                 captured += 1;
                 continue;
@@ -1571,7 +1572,7 @@ fn sortie_link(
             in_park(c, target.hub_id).then_some(target.hub_id)
         };
         let Some(aim) = aim else {
-            if waiting.elapsed() >= LINK_WAIT {
+            if clock::since(waiting) >= LINK_WAIT {
                 break format!("nothing to link in {here}");
             }
             if nodes {
@@ -1597,15 +1598,15 @@ fn sortie_link(
         ) {
             Ok(_) => {
                 linking = Some(aim);
-                polled = Instant::now();
+                polled = clock::instant();
             }
             Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
             Err(e) => {
                 last_refusal = e.to_string();
-                if waiting.elapsed() >= LINK_WAIT {
+                if clock::since(waiting) >= LINK_WAIT {
                     break format!("the link would not start: {last_refusal}");
                 }
-                std::thread::sleep(LINK_RETRY);
+                clock::sleep(LINK_RETRY);
             }
         }
     };
@@ -1659,7 +1660,7 @@ fn sortie_haul(
     if m.sov
         .fuelled
         .get(&hub)
-        .is_some_and(|t| t.elapsed() < REFUEL_EVERY)
+        .is_some_and(|t| clock::since(*t) < REFUEL_EVERY)
     {
         return Ok(format!("sov haul: hub {hub} fuelled lately"));
     }
@@ -1713,7 +1714,7 @@ fn sortie_haul(
         vec![PyValue::Bytes(b"/boostsov all".to_vec())],
     )?;
     // The line answers nothing the client reads; the cargo is the evidence.
-    std::thread::sleep(Duration::from_millis(300));
+    clock::sleep(Duration::from_millis(300));
     let _ = c.pump(Duration::from_millis(300));
     let mut after: i64 = 0;
     for &t in &types {
@@ -1721,7 +1722,7 @@ fn sortie_haul(
     }
     let moved = carried - after;
     if moved > 0 {
-        m.sov.fuelled.insert(hub, Instant::now());
+        m.sov.fuelled.insert(hub, clock::instant());
     }
     m.sov.sorties += 1;
     let home = go_home(c, m, map)?;
@@ -1755,7 +1756,7 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         m.sov.home_station = c.session().station_id();
     }
     let home = m.sov.home.unwrap_or(system);
-    let now = Instant::now();
+    let now = clock::instant();
     let kit = kit_of(c, ctx.content)?;
     ctx.hall.report(alliance, who, kit, now);
     // CAP-INHIBIT-BOT: read the grid's hostiles for a capital pair; stock the

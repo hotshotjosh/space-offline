@@ -369,7 +369,7 @@ fn a_roaming_hacker_travels_one_jump_hacks_a_site_there_and_returns() {
         "the far site is on the shared ledger"
     );
     assert!(
-        roam::get(None, "Roamer", roam::unix_now()).is_none(),
+        roam::get(None, "Roamer", eve_bot::clock::unix_secs()).is_none(),
         "the trip's state is cleared at the dock"
     );
     assert!(
@@ -399,7 +399,7 @@ fn a_trip_cut_off_beyond_the_gate_carries_on_and_comes_home() {
     probe::jump_route(&mut c, &map, travel::ANY_SECURITY, FAR).expect("through the gate");
     assert_eq!(c.session().solar_system_id(), Some(FAR));
 
-    let mut st = roam::TripState::new("Resumer", home, SYSTEM, roam::unix_now(), 0.0);
+    let mut st = roam::TripState::new("Resumer", home, SYSTEM, eve_bot::clock::unix_secs(), 0.0);
     st.visited.push(SYSTEM);
     roam::put(None, &st);
     assert!(roam::resumable("Resumer"));

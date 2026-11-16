@@ -489,12 +489,6 @@ pub const BUBBLE_WAIT: Duration = Duration::from_secs(3);
 /// How often `eve-bots --society` prints the population's `[soc]` summary.
 pub const SOC_SUMMARY_EVERY: Duration = Duration::from_secs(60);
 
-/// Unix seconds now: the mind's and the timetable's clock. Kept for the files
-/// that still call it; `clock::unix_secs()` is the same value (#146).
-pub fn unix_now() -> u64 {
-    clock::unix_secs()
-}
-
 /// Parse a `population.tsv` text (`hour TAB weight`, `#` comments) into 24
 /// weights; a missing or bad hour weighs 0, and a profile with no weight at
 /// all is flat.

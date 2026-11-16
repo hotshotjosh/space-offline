@@ -45,6 +45,7 @@
 //! and the kills already counted. The members are re-read from the bots.
 
 use crate::career::{Band, Career, Signals};
+use crate::clock;
 use crate::effects;
 use crate::mind::{Mind, Stint, Trait, Traits};
 use crate::relations::{self, Temper};
@@ -65,12 +66,12 @@ pub const CORP_FEE: f64 = 1_599_800.0;
 pub const ALLIANCE_FEE: f64 = eve_server::alliance::ALLIANCE_CREATION_COST;
 /// `typeCorporationManagement` (`docs/lanes/corp.md` §2) **[V]**.
 pub const CORPORATION_MANAGEMENT: i64 = 3363;
-/// How often one bot takes a social turn, wall seconds (`unix_now`) **[A]**: falsified
+/// How often one bot takes a social turn, game seconds (`clock::unix_secs`) **[A]**: falsified
 /// by `[turns]` showing these calls crowding human turns (too short), or a
 /// CEO sitting on applications for an evening (too long).
 pub const SOCIAL_EVERY: u64 = 10 * 60;
 /// How often the pool's founder, while pledges stand for it, takes a
-/// social turn, wall seconds (`unix_now`) **[A]**: falsified by a founder that holds the
+/// social turn, game seconds (`clock::unix_secs`) **[A]**: falsified by a founder that holds the
 /// line for more than a minute without founding (too long), or by
 /// `[turns]` showing these turns crowding human ones (too short).
 pub const FOUNDER_EVERY: u64 = 30;
@@ -1991,8 +1992,8 @@ impl Hall {
     /// rebuild (F5, cosmetic).
     pub fn refresh_doctrine(&self, now: u64) {
         let board: &'static crate::abyss_run::Board = &crate::abyss_run::BOARD;
-        self.refresh_doctrine_with(now, board, std::time::Instant::now(), move |live| {
-            live.build(board, std::time::Instant::now())
+        self.refresh_doctrine_with(now, board, clock::instant(), move |live| {
+            live.build(board, clock::instant())
         });
     }
 

@@ -32,6 +32,7 @@
 //! **Every number is [A]**; the falsifier is beside each.
 
 use crate::acquire;
+use crate::clock;
 use crate::geode_haul::Table;
 use crate::plex_trade::{self, Move};
 use crate::price_memory::Desk;
@@ -303,12 +304,6 @@ pub struct Ctx<'a> {
     /// A trader speculates in PLEX.
     pub trader: bool,
     pub desk: &'a mut Desk,
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 /// A transport fault ends the turn; any other error is a verdict to note.
@@ -882,10 +877,10 @@ pub fn turn(conn: &mut Conn, st: &mut State, cx: &mut Ctx<'_>) -> Result<String>
     if conn.session().station_id().is_none() {
         return Err(Error::NotSent("econ: not docked".to_owned()));
     }
-    let now = Instant::now();
+    let now = clock::instant();
     let mut notes: Vec<String> = Vec::new();
     let wallet = conn.cash_balance()?;
-    st.income(wallet, unix_now());
+    st.income(wallet, clock::unix_secs());
 
     open_geodes(conn, cx.table, st, &mut notes)?;
     wear(conn, cx.table, st, &mut notes)?;
@@ -1079,7 +1074,7 @@ mod tests {
 
     #[test]
     fn a_turn_is_due_after_the_recheck_or_with_a_geode_aboard() {
-        let now = Instant::now();
+        let now = clock::instant();
         assert!(due_at(None, now, false, true));
         assert!(!due_at(Some(now), now, false, true));
         assert!(
@@ -1107,7 +1102,7 @@ mod tests {
     #[test]
     fn a_refused_step_waits_out_its_backoff() {
         let mut s = State::default();
-        let now = Instant::now();
+        let now = clock::instant();
         assert!(!s.backed_off("extract", now));
         s.back_off("extract", now);
         assert!(s.backed_off("extract", now + Duration::from_secs(60)));

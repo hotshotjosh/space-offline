@@ -17,6 +17,7 @@
 //! **[A]** R = 2 a second is gentle for the server. Falsifier: a burst at 20 a
 //! second (the bench default) showing no late ticks, in which case raise it.
 
+use crate::clock;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -91,7 +92,7 @@ static GATE: OnceLock<Gate> = OnceLock::new();
 /// Turn the process gate on at `rate` a second. The first call wins.
 pub fn install(rate: f64) {
     let _ = GATE.set(Gate {
-        epoch: Instant::now(),
+        epoch: clock::instant(),
         bucket: Mutex::new(Bucket::new(rate)),
     });
 }
@@ -101,7 +102,7 @@ pub fn reserve_now() -> Duration {
     let Some(g) = GATE.get() else {
         return Duration::ZERO;
     };
-    let at = g.epoch.elapsed();
+    let at = clock::since(g.epoch);
     g.bucket
         .lock()
         .map(|mut b| b.reserve(at))

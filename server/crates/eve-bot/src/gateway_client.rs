@@ -14,10 +14,11 @@
 //! 6 authoritative_context{10 identity{1 character{1 sequential}}}} and
 //! `Response` {2 correlation, 3 status, 5 Any} **[V]**.
 
+use crate::clock;
 use crate::{Error, Result};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const PATH: &str = "/eve_public.gateway.Requests/Send";
@@ -344,7 +345,7 @@ impl GatewayClient {
     }
 
     fn exchange(&mut self, character: i64, ty: &str, body: &[u8]) -> Result<Answer> {
-        let deadline = Instant::now() + self.timeout;
+        let deadline = clock::wall() + self.timeout;
         let stream = self.next_stream;
         self.next_stream = stream
             .checked_add(2)
@@ -363,7 +364,7 @@ impl GatewayClient {
         self.s.write_all(&out)?;
         let mut data = Vec::new();
         loop {
-            if Instant::now() > deadline {
+            if clock::wall() > deadline {
                 return Err(Error::Protocol("gateway request timed out".into()));
             }
             let (kind, flags, sid, body) = self.read_frame()?;

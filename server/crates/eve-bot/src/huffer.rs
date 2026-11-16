@@ -49,6 +49,7 @@
 //! the client's own calls and ids, cited [V].
 
 use crate::brain::{self, Act, Memory, Observation, StopReason};
+use crate::clock;
 use crate::courier::{Here, Move, next_move};
 use crate::pricing::{self, Quote};
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -620,8 +621,8 @@ pub fn run_via(c: &mut Conn, finder: Finder, name: &str, seed: u64, via: &Via) -
         .module_row(harvester)?
         .attribute(ATTR_MAX_RANGE)
         .unwrap_or(APPROACH_RANGE / RANGE_MARGIN);
-    let started = Instant::now();
-    while trip.sites.len() < MAX_SITES && !trip.full && started.elapsed() < via.ceiling {
+    let started = clock::instant();
+    while trip.sites.len() < MAX_SITES && !trip.full && clock::since(started) < via.ceiling {
         let Some(site) = finder(c, &trip.sites)? else {
             break;
         };
@@ -809,9 +810,9 @@ fn harvest(
     };
     let (mut claim, mut locked, mut active) = (None::<i64>, false, false);
     let mut odd = 0;
-    let here = Instant::now();
-    while started.elapsed() < via.ceiling
-        && via.site_budget.is_none_or(|b| here.elapsed() < b)
+    let here = clock::instant();
+    while clock::since(started) < via.ceiling
+        && via.site_budget.is_none_or(|b| clock::since(here) < b)
         && odd < MAX_ODD_STOPS
     {
         if (via.threat)(c) {
@@ -924,8 +925,8 @@ pub fn clouds_in(c: &mut Conn) -> Vec<(i64, f64)> {
 /// Read pushes until an `OnTarget('add', id)` (`True`) or a loss or the
 /// ceiling (`false`).
 fn await_lock(c: &mut Conn, id: i64) -> Result<bool> {
-    let deadline = Instant::now() + CEILING;
-    while Instant::now() < deadline {
+    let deadline = clock::instant() + CEILING;
+    while clock::instant() < deadline {
         for e in c.pump(POLL)? {
             let Event::Push(name, args) = e else { continue };
             if name != "OnTarget" || args.get(1) != Some(&eve_marshal::PyValue::Int(id)) {
@@ -991,8 +992,8 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes for `d`.
 pub(crate) fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
-    let until = Instant::now() + d;
-    while Instant::now() < until {
+    let until = clock::instant() + d;
+    while clock::instant() < until {
         c.pump(POLL)?;
     }
     Ok(())
@@ -1000,9 +1001,9 @@ pub(crate) fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
 
 /// Read pushes until `done` holds or [`CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + CEILING;
+    let deadline = clock::instant() + CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "huff: still moving after the travel ceiling".into(),
             ));
@@ -1041,7 +1042,7 @@ mod tests {
     }
 
     fn docked_obs(ship_type: Option<i64>) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: STATION };
         o.ship = Some(ShipInfo {
             ship_id: SHIP,

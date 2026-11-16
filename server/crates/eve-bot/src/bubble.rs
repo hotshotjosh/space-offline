@@ -56,6 +56,7 @@
 //! hints; every one is **[A]** and the falsifier is on it.
 
 use crate::brain::{ActKind, Place};
+use crate::clock;
 use crate::driver::Handle;
 use crate::travel::Map;
 use std::collections::{BTreeMap, BTreeSet};
@@ -682,7 +683,7 @@ pub fn is_busy(obs: Option<&crate::brain::Observation>, live: bool, last: Option
 impl Runner {
     /// `dir` is the control directory the server writes `bubble.tsv` into.
     pub fn new(dir: &std::path::Path, map: Arc<Map>, floor: f64, handles: Vec<Handle>) -> Runner {
-        let now = Instant::now();
+        let now = clock::instant();
         for h in &handles {
             h.watch();
         }
@@ -758,7 +759,7 @@ impl Runner {
     /// Run one step if its time has come; the lines to print (decisions and
     /// the fill ledger).
     pub fn step(&mut self, unix_now: u64) -> Vec<String> {
-        let at = Instant::now();
+        let at = clock::instant();
         if at < self.next {
             return Vec::new();
         }
@@ -1390,7 +1391,7 @@ mod tests {
 
     #[test]
     fn busy_is_transit_a_fight_or_a_move_while_live() {
-        let mut o = crate::brain::Observation::empty(Instant::now());
+        let mut o = crate::brain::Observation::empty(clock::instant());
         assert!(is_busy(Some(&o), true, None), "transit");
         assert!(is_busy(Some(&o), false, None), "transit, not live");
         o.place = Place::Docked { station: 1 };

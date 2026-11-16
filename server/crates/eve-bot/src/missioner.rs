@@ -49,6 +49,7 @@
 //! the client's own calls and the agent's buttons, which the verbs cite.
 
 use crate::brain::{self, Act, ActKind, Homing, Memory, Observation};
+use crate::clock;
 use crate::courier::{self, Delivery};
 use crate::escort;
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -57,7 +58,7 @@ use crate::verbs::{AgentTurn, BUTTON_ACCEPT, BUTTON_COMPLETE, BUTTON_DECLINE, BU
 use crate::{Conn, Error, Result};
 use eve_marshal::PyValue;
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The agent service **[V]** (`eveMoniker.GetAgent`, `docs/re/agents-missions.md`).
 pub const AGENT_SERVICE: &str = "agentMgr";
@@ -1195,9 +1196,9 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes until `done` holds or [`TRAVEL_CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + TRAVEL_CEILING;
+    let deadline = clock::instant() + TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "missions: the warp did not start or land in the travel ceiling".into(),
             ));
@@ -1599,7 +1600,7 @@ mod tests {
     }
 
     fn docked_in(group: i64, guns: bool) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: STATION };
         o.ship = Some(ShipInfo {
             ship_id: SHIP,
@@ -1677,7 +1678,7 @@ mod tests {
     #[test]
     fn in_space_the_next_site_is_the_pocket_and_a_failure_goes_home() {
         let mut m = Memory::new("Missioner1", Policy::fast());
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.failures.insert(ActKind::Mission, 1);
         let _ = in_space(&mut m, &o);
         assert_eq!(m.homing, Some(Homing::Recovery));
@@ -1924,9 +1925,9 @@ mod harness {
                 && e.verdict == Verdict::Ok
                 && e.what.contains(&format!("completed mission {KILL}"))
         };
-        let deadline = Instant::now() + Duration::from_secs(240);
-        while Instant::now() < deadline && !h.log().iter().any(paid) {
-            std::thread::sleep(Duration::from_millis(200));
+        let deadline = clock::instant() + Duration::from_secs(240);
+        while clock::instant() < deadline && !h.log().iter().any(paid) {
+            clock::sleep(Duration::from_millis(200));
         }
         let log = h.log();
         h.stop();

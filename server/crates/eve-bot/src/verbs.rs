@@ -25,11 +25,12 @@
 //! - [`Error::Refused`]: sent, answered, not done;
 //! - `Error::Io` / `Error::Protocol`: the connection is in trouble.
 
+use crate::clock;
 use crate::{
     Answer, CallOutcome, Conn, Error, ObjectRef, Result, bstr, notification, station_moniker,
 };
 use eve_marshal::{DbValue, PyValue};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// `const.containerHangar` **[V]** -- the station hangar's magic container id
 /// (`service/inventory.rs`, the `GetSelfInvItem` arm).
@@ -469,9 +470,9 @@ impl Conn {
         sink: &mut Vec<PyValue>,
         want: impl Fn(&str, &[PyValue]) -> bool,
     ) -> Result<Option<(String, Vec<PyValue>)>> {
-        let deadline = Instant::now() + within;
+        let deadline = clock::instant() + within;
         loop {
-            let left = deadline.saturating_duration_since(Instant::now());
+            let left = deadline.saturating_duration_since(clock::instant());
             if left.is_zero() {
                 break Ok(None);
             }
@@ -929,8 +930,8 @@ impl Conn {
         if self.lock_target(target)? == LockState::Locked {
             return Ok(LockState::Locked);
         }
-        let deadline = Instant::now() + within;
-        while Instant::now() < deadline {
+        let deadline = clock::instant() + within;
+        while clock::instant() < deadline {
             for e in self.pump(Duration::from_millis(250))? {
                 let crate::Event::Push(name, args) = e else {
                     continue;
@@ -1103,9 +1104,9 @@ impl Conn {
         if self.world().states > states {
             return Ok(outcome);
         }
-        let deadline = Instant::now() + EVIDENCE;
+        let deadline = clock::instant() + EVIDENCE;
         while self.world().states == states {
-            let left = deadline.saturating_duration_since(Instant::now());
+            let left = deadline.saturating_duration_since(clock::instant());
             if left.is_zero() {
                 return Err(Error::Refused(
                     "UpdateStateRequest: no SetState followed".to_owned(),
@@ -1922,7 +1923,7 @@ impl Conn {
     /// 300 bots logging in at once make one wire call, not 300 (PERF-BURST).
     pub fn price_index_shared(&mut self) -> Result<crate::pricing::SharedPriceRows> {
         match self.price_cache.clone() {
-            Some(cache) => cache.get_or_fetch(Instant::now(), |_| self.price_index_fetch()),
+            Some(cache) => cache.get_or_fetch(clock::instant(), |_| self.price_index_fetch()),
             None => self.price_index_fetch().map(std::sync::Arc::new),
         }
     }

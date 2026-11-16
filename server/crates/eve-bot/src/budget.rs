@@ -39,9 +39,10 @@
 //! with no per-system cap is enough. Falsifier: `work_p95` following the
 //! hot-system count, not the bots online.
 
+use crate::clock;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 /// A waiter that has not asked again for this long has gone; it no longer
 /// holds a place in the queue **[A]**. Falsified by a bot that waits longer
@@ -266,14 +267,14 @@ static DAY_SECS: OnceLock<u64> = OnceLock::new();
 /// length of a day in seconds (`--day-secs`, else 86400): the profile's 24
 /// hours are spread over it.
 pub fn install(max: usize, profile: Option<Profile>, day_secs: u64) {
-    EPOCH.get_or_init(Instant::now);
+    EPOCH.get_or_init(clock::instant);
     let _ = DAY_SECS.set(day_secs.max(1));
     let _ = BUDGET.set(Mutex::new(Budget::new(max, profile)));
 }
 
 fn now_ms() -> u64 {
     EPOCH.get().map_or(0, |e| {
-        e.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+        clock::since(*e).as_millis().min(u128::from(u64::MAX)) as u64
     })
 }
 
@@ -287,9 +288,7 @@ pub fn hour_of(unix_s: u64, day_secs: u64) -> u32 {
 
 /// The profile hour now: UTC for a 86400 s day, else scaled by `--day-secs`.
 pub fn hour_now() -> u32 {
-    let s = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+    let s = clock::unix_secs();
     hour_of(s, DAY_SECS.get().copied().unwrap_or(86_400))
 }
 

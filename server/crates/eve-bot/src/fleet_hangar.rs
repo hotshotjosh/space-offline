@@ -26,6 +26,7 @@
 //! miner goes home. Falsified by a human fleet whose boss is a bot.
 
 use crate::brain::{self, Act, Ball, Homing, Memory, Observation, ParkView};
+use crate::clock;
 use crate::ore::OreAct;
 use crate::{Conn, Error, Result};
 use eve_marshal::PyValue;
@@ -218,7 +219,7 @@ pub fn drop_into(c: &mut Conn, m: &mut Memory, boss_ship: i64) -> Result<u32> {
     if m.hangar_drop.timed_out {
         let key = m.hangar_drop.last_refusal.clone().unwrap_or_default();
         m.hangar_drop.timed_out = false;
-        give_up(m, std::time::Instant::now());
+        give_up(m, clock::instant());
         return Err(Error::Refused(format!(
             "fleet hangar of {boss_ship}: gave up after {} s, last refusal {key}",
             DROP_TIMEOUT.as_secs()
@@ -261,8 +262,8 @@ pub fn drop_into(c: &mut Conn, m: &mut Memory, boss_ship: i64) -> Result<u32> {
                 && m.hangar_drop.range_tries < MAX_RANGE_TRIES
             {
                 m.hangar_drop.range_tries += 1;
-                let until = std::time::Instant::now() + RANGE_RETRY_WAIT;
-                while std::time::Instant::now() < until {
+                let until = clock::instant() + RANGE_RETRY_WAIT;
+                while clock::instant() < until {
                     c.pump(Duration::from_millis(200))?;
                 }
                 // A refusal in the act log, not "ok": nothing moved.
@@ -271,7 +272,7 @@ pub fn drop_into(c: &mut Conn, m: &mut Memory, boss_ship: i64) -> Result<u32> {
                     m.hangar_drop.range_tries
                 )));
             }
-            give_up(m, std::time::Instant::now());
+            give_up(m, clock::instant());
             m.hangar_drop.stacks += moved;
             // The key reaches the act log: the 11-05 client run logged the
             // refused drop as "ok" and the reason was nowhere.
@@ -320,7 +321,7 @@ mod tests {
 
     /// In a fleet, the boss's ship `gap` metres away, ore in the hold.
     fn obs(gap: f64) -> Observation {
-        let now = Instant::now();
+        let now = clock::instant();
         let mut o = Observation::empty(now);
         o.fleet = Some(FleetView {
             fleet_id: 1,

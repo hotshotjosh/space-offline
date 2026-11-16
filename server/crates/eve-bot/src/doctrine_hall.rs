@@ -19,6 +19,7 @@
 //!   online fighter at the staging system with a hull in the corp hangar and
 //!   unknown skills.
 
+use crate::clock;
 use crate::corpmind::HallState;
 use crate::doctrine::{Doctrine, Role};
 use crate::doctrine_exchange::{Features, Matrix, matrix};
@@ -106,7 +107,7 @@ impl DoctrineWorld {
             real,
             server,
             &crate::abyss_run::BOARD,
-            std::time::Instant::now(),
+            clock::instant(),
         )
     }
 
@@ -167,12 +168,7 @@ impl DoctrineWorld {
         content: &eve_server::content::Content,
         server: Option<std::net::SocketAddr>,
     ) -> crate::doctrine::Makeable {
-        Self::makeable_in(
-            content,
-            server,
-            &crate::abyss_run::BOARD,
-            std::time::Instant::now(),
-        )
+        Self::makeable_in(content, server, &crate::abyss_run::BOARD, clock::instant())
     }
 
     /// [`DoctrineWorld::makeable_of`] over a given board and time.
@@ -1128,7 +1124,7 @@ mod tests {
         let (c, _) = capital();
         let board = crate::abyss_run::Board::new();
         let server: std::net::SocketAddr = "127.0.0.1:1".parse().expect("literal");
-        let now = std::time::Instant::now();
+        let now = clock::instant();
         let built = DoctrineWorld::from_content_on(
             &c,
             Features::default(),
@@ -1315,7 +1311,7 @@ mod tests {
             "127.0.0.1:1".parse().expect("literal"),
             "127.0.0.1:2".parse().expect("literal"),
         );
-        let now = std::time::Instant::now();
+        let now = clock::instant();
         let has = |server| {
             DoctrineWorld::makeable_on(&c, &recipes, &sold, Some(server), &board, now)
                 .has(COMPONENT_OK)

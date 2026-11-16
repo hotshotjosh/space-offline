@@ -42,6 +42,7 @@
 //! test asserts one.
 
 use crate::brain::{self, Act, ActKind, GIVE_UP_AFTER, Memory, Observation, Place};
+use crate::clock;
 use crate::hull_choice::{Class, HULLS};
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::site_runner;
@@ -650,7 +651,7 @@ impl Board {
     pub fn entered(&self, server: SocketAddr, leader: i64, who: i64) {
         self.with(|i| {
             if let Some(g) = i.gangs.get_mut(&(server, leader)) {
-                g.since = Some(Instant::now());
+                g.since = Some(clock::instant());
                 g.entered.insert(who);
             }
         });
@@ -661,7 +662,7 @@ impl Board {
     pub fn seal(&self, server: SocketAddr, leader: i64) {
         self.with(|i| {
             if let Some(g) = i.gangs.get_mut(&(server, leader)) {
-                g.since = Some(Instant::now());
+                g.since = Some(clock::instant());
                 g.opened = None;
             }
         });
@@ -671,7 +672,7 @@ impl Board {
     pub fn at_room(&self, server: SocketAddr, leader: i64, who: i64, room: u8) {
         self.with(|i| {
             if let Some(g) = i.gangs.get_mut(&(server, leader)) {
-                g.since = Some(Instant::now());
+                g.since = Some(clock::instant());
                 g.rooms.insert(who, room);
                 if who == leader {
                     g.leader_room = room;
@@ -1524,7 +1525,7 @@ pub fn act(c: &mut Conn, m: &mut Memory, op: Op) -> Result<()> {
                     station,
                     hull,
                     holds,
-                    at: Instant::now(),
+                    at: clock::instant(),
                 },
             );
             Ok(())
@@ -1549,9 +1550,9 @@ fn gather(c: &mut Conn, m: &mut Memory, ship_type: i64, mates: &[i64]) -> Result
         // A refused invite is the mate's business (it may be in a fleet).
         let _ = c.fleet_invite(fleet, *mate, squad);
     }
-    let deadline = Instant::now() + GATHER_WAIT;
+    let deadline = clock::instant() + GATHER_WAIT;
     let mut joined = false;
-    while Instant::now() < deadline {
+    while clock::instant() < deadline {
         if let Ok(rows) = c.fleet_composition()
             && mates.iter().all(|x| rows.iter().any(|r| r.char_id == *x))
         {
@@ -1565,7 +1566,7 @@ fn gather(c: &mut Conn, m: &mut Memory, ship_type: i64, mates: &[i64]) -> Result
         // dropped, the keys stay in the hold, the rest is a short one.
         m.abyss.forget_run();
         m.abyss.phase = Phase::Docked;
-        m.abyss.retry_after = Some(Instant::now() + GANG_RETRY);
+        m.abyss.retry_after = Some(clock::instant() + GANG_RETRY);
         m.abyss.note = Some(format!("[abyss] fleet {fleet}: {mates:?} did not join"));
         return Ok(());
     }
@@ -1692,7 +1693,7 @@ fn deploy(c: &mut Conn, m: &mut Memory, key_type: i64, mode_wire: i64) -> Result
             if proximity && spot.is_some() && next_spot(&tried, &all).is_some() {
                 continue;
             }
-            m.abyss.retry_after = Some(Instant::now() + DEPLOY_RETRY);
+            m.abyss.retry_after = Some(clock::instant() + DEPLOY_RETRY);
             m.abyss.forget_run();
             m.abyss.phase = Phase::Docked;
             return Err(Error::Refused(format!(
@@ -1707,7 +1708,7 @@ fn deploy(c: &mut Conn, m: &mut Memory, key_type: i64, mode_wire: i64) -> Result
             m.abyss.phase = Phase::Room;
             m.abyss.note = Some("[abyss] solo run begun".to_owned());
         } else {
-            BOARD.open(server, me(c), m.abyss.mates.clone(), Instant::now());
+            BOARD.open(server, me(c), m.abyss.mates.clone(), clock::instant());
             m.abyss.boss = Some(me(c));
             m.abyss.phase = Phase::Deploy;
             m.abyss.note = Some("[abyss] entrance open".to_owned());
@@ -1721,7 +1722,7 @@ fn deploy(c: &mut Conn, m: &mut Memory, key_type: i64, mode_wire: i64) -> Result
 
 /// The nearest ball of one of `types` on the grid, waiting for it to show.
 fn gate_ball(c: &mut Conn, types: &[i64]) -> Option<(i64, i64)> {
-    let deadline = Instant::now() + GATE_WAIT;
+    let deadline = clock::instant() + GATE_WAIT;
     loop {
         let world = c.world_now();
         if let Some(ego) = world.ego
@@ -1741,7 +1742,7 @@ fn gate_ball(c: &mut Conn, types: &[i64]) -> Option<(i64, i64)> {
         {
             return Some((found.1, found.2));
         }
-        if Instant::now() >= deadline || c.pump(Duration::from_millis(250)).is_err() {
+        if clock::instant() >= deadline || c.pump(Duration::from_millis(250)).is_err() {
             return None;
         }
     }
@@ -1762,7 +1763,7 @@ fn through(c: &mut Conn, m: &mut Memory, method: &str, gate: i64) -> Result<()> 
 
 fn enter(c: &mut Conn, m: &mut Memory, leader: i64) -> Result<()> {
     let server = server_of(c)?;
-    let rest = |m: &mut Memory| m.abyss.retry_after = Some(Instant::now() + GATE_RETRY);
+    let rest = |m: &mut Memory| m.abyss.retry_after = Some(clock::instant() + GATE_RETRY);
     let Some((gate, _)) = gate_ball(c, &[abyss::ENTRANCE_GATE]) else {
         // Not on this grid yet: a failed try, after a short rest.
         rest(m);
@@ -1821,13 +1822,13 @@ fn gate(c: &mut Conn, m: &mut Memory) -> Result<()> {
     let server = server_of(c)?;
     let boss = m.abyss.boss;
     if last {
-        BOARD.enroll(server, me(c), Instant::now());
+        BOARD.enroll(server, me(c), clock::instant());
         match boss {
             Some(b) if b == me(c) => BOARD.close(server, b),
             Some(b) => BOARD.leave(server, b, me(c)),
             None => {}
         }
-        m.abyss.win(Instant::now());
+        m.abyss.win(clock::instant());
         if m.homing.is_none() {
             m.homing = Some(brain::Homing::HoldFull);
         }
@@ -1860,7 +1861,7 @@ fn sell(c: &mut Conn) -> Result<()> {
         .station_id()
         .ok_or_else(|| Error::NotSent("abyss: sell: not docked".to_owned()))?;
     let server = server_of(c)?;
-    BOARD.enroll(server, me(c), Instant::now());
+    BOARD.enroll(server, me(c), clock::instant());
     let prices: BTreeMap<i64, f64> = c.adjusted_prices()?.into_iter().collect();
     let mut lines = Vec::new();
     for row in c.hangar_items()?.iter().filter(|r| is_abyssal_good(r)) {
@@ -1959,7 +1960,7 @@ mod tests {
     #[test]
     fn a_leader_plans_the_biggest_gang_its_keys_pay_for() {
         let l = lists();
-        let now = Instant::now();
+        let now = clock::instant();
         let f = hull(FRIGATE_GROUP);
         let ctx = Ctx {
             max_tier: 200,
@@ -2090,7 +2091,7 @@ mod tests {
         assert!(lowered(3, 1) < 3);
         assert!(lowered(3, 2) <= lowered(3, 1));
         assert_eq!(lowered(0, 5), 0, "never below tier 0");
-        let now = Instant::now();
+        let now = clock::instant();
         let mut s = State {
             phase: Phase::Room,
             ..State::default()
@@ -2109,7 +2110,7 @@ mod tests {
     fn the_board_hands_out_fresh_offers_of_others_oldest_first() {
         let board = Board::new();
         let server: SocketAddr = "127.0.0.1:1".parse().expect("literal");
-        let now = Instant::now();
+        let now = clock::instant();
         let f = hull(FRIGATE_GROUP);
         board.offer(server, 12, offer(f, 0, now));
         board.offer(server, 11, offer(f, 3, now));
@@ -2140,7 +2141,7 @@ mod tests {
     #[test]
     fn a_gang_takes_each_gate_together() {
         let server: SocketAddr = "127.0.0.1:2".parse().expect("literal");
-        let now = Instant::now();
+        let now = clock::instant();
         let board = Board::new();
         let none = Duration::ZERO;
         // No record (solo, or closed): everyone goes.
@@ -2212,7 +2213,7 @@ mod tests {
     fn the_roster_counts_runners_seen_lately() {
         let board = Board::new();
         let server: SocketAddr = "127.0.0.1:3".parse().expect("literal");
-        let now = Instant::now();
+        let now = clock::instant();
         assert!(!board.has_runners(Some(server), now));
         board.enroll(server, 5, now);
         assert!(board.has_runners(Some(server), now));
@@ -2268,7 +2269,7 @@ mod tests {
 
     #[test]
     fn a_leader_who_goes_in_short_books_one_loss_a_win_forgives() {
-        let now = Instant::now();
+        let now = clock::instant();
         let mut s = State::default();
         assert!(s.book_short_gang());
         assert_eq!(s.losses, 1);
@@ -2286,7 +2287,7 @@ mod tests {
 
     #[test]
     fn a_short_run_that_then_dies_is_one_loss_not_two() {
-        let now = Instant::now();
+        let now = clock::instant();
         let mut s = State::default();
         assert!(s.book_short_gang());
         s.lose(now);
@@ -2338,7 +2339,7 @@ mod tests {
     #[test]
     fn the_board_purges_stale_offers_and_gangs() {
         let server: SocketAddr = "127.0.0.1:5".parse().expect("literal");
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let board = Board::new();
         let f = Hull::of(990_001);
         board.offer(server, 11, offer(f, 1, t0));
@@ -2370,7 +2371,7 @@ mod tests {
         hostile: bool,
     ) -> (Memory, Observation, brain::ParkView, SocketAddr) {
         let server: SocketAddr = format!("127.0.0.1:{port}").parse().expect("literal");
-        let now = Instant::now();
+        let now = clock::instant();
         let me = 70_001;
         BOARD.open(server, me, mates.to_vec(), now);
         for who in entered {

@@ -35,6 +35,7 @@
 use crate::acquire::Kit;
 use crate::brain::{Act, Memory, Observation};
 use crate::burst::{self, Lack};
+use crate::clock;
 use crate::mine_ladder::{ORCA, PORPOISE, RORQUAL};
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::{Conn, Error, Result};
@@ -587,7 +588,7 @@ fn tend_board(conn: &mut Conn, m: &mut Memory) {
         .filter_map(|b| b.slim?.type_id)
         .filter(|&t| crate::mine_ladder::hull_of(t).is_some())
         .count();
-    let (belt, now) = (m.foreman.belt, std::time::Instant::now());
+    let (belt, now) = (m.foreman.belt, clock::instant());
     m.foreman.escort = crate::escort_board::with(|b| {
         match system {
             Some(s) if crate::escort_board::wants_escort(at_belt, miners, security) => {
@@ -658,8 +659,8 @@ fn to_belt(conn: &mut Conn, m: &mut Memory) -> Result<String> {
     };
     m.foreman.belt = Some(belt);
     conn.warp_to_item(belt, crate::brain::MINING_STANDOFF)?;
-    let until = std::time::Instant::now() + crate::courier::TRAVEL_CEILING;
-    while std::time::Instant::now() < until {
+    let until = clock::instant() + crate::courier::TRAVEL_CEILING;
+    while clock::instant() < until {
         conn.pump(Duration::from_millis(250))?;
         if conn
             .world_now()
@@ -669,7 +670,7 @@ fn to_belt(conn: &mut Conn, m: &mut Memory) -> Result<String> {
             break;
         }
     }
-    while std::time::Instant::now() < until
+    while clock::instant() < until
         && conn
             .world_now()
             .ego_ball()

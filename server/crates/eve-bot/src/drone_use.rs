@@ -35,6 +35,7 @@
 //! ([`crate::brain::ActKind::is_incidental`]): the guns go on.
 
 use crate::brain::{Act, Memory, Observation};
+use crate::clock;
 use crate::{Conn, Error, ItemRow, Result};
 use eve_marshal::PyValue;
 use std::time::{Duration, Instant};
@@ -783,7 +784,7 @@ fn engage(c: &mut Conn, m: &mut Memory, target: i64) -> Result<()> {
     m.combat.out.retain(|id| c.world().get(*id).is_some());
     let want = m.combat.want_out();
     if (m.combat.out.len() as i64) < want && !m.combat.dry {
-        m.combat.launched_at = Some(Instant::now());
+        m.combat.launched_at = Some(clock::instant());
         let fresh = launch(c, want - m.combat.out.len() as i64)?;
         if fresh.is_empty() {
             m.combat.dry = true;
@@ -918,7 +919,7 @@ mod tests {
     #[test]
     fn a_target_sends_the_drones_once() {
         let mut m = memory(true);
-        let now = Instant::now();
+        let now = clock::instant();
         fighting(&mut m, TARGET);
         let acts = steer(&mut m, now, vec![Act::Wait(Duration::from_secs(1))]);
         assert_eq!(engage_acts(&acts), vec![TARGET]);
@@ -938,7 +939,7 @@ mod tests {
     #[test]
     fn lost_drones_are_replaced_from_the_bay_at_a_pace() {
         let mut m = memory(true);
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         fighting(&mut m, TARGET);
         m.combat.out = vec![1];
         m.combat.engaged = Some(TARGET);
@@ -958,7 +959,7 @@ mod tests {
     #[test]
     fn an_empty_bay_is_asked_once_a_target() {
         let mut m = memory(true);
-        let now = Instant::now();
+        let now = clock::instant();
         fighting(&mut m, TARGET);
         m.combat.dry = true;
         m.combat.engaged = Some(TARGET);
@@ -975,7 +976,7 @@ mod tests {
     #[test]
     fn drones_come_home_before_the_ship_leaves_and_when_it_is_quiet() {
         let mut m = memory(true);
-        let now = Instant::now();
+        let now = clock::instant();
         m.combat.out = vec![1, 2];
         fighting(&mut m, TARGET);
         for leaving in [
@@ -1008,7 +1009,7 @@ mod tests {
             vec![Act::Undock]
         }
         let mut m = memory(false);
-        let o = Observation::empty(Instant::now());
+        let o = Observation::empty(clock::instant());
         assert_eq!(docked(&mut m, &o, core), vec![Act::Undock]);
         assert_eq!(in_space(&mut m, &o, core), vec![Act::Undock]);
     }
@@ -1023,7 +1024,7 @@ mod tests {
             vec![Act::Wait(Duration::from_secs(1))]
         }
         let mut m = memory(true);
-        let o = Observation::empty(Instant::now());
+        let o = Observation::empty(clock::instant());
         assert_eq!(
             docked(&mut m, &o, dwelling),
             vec![Act::Wait(Duration::from_secs(1))]
@@ -1162,7 +1163,7 @@ mod tests {
     fn a_new_tech_iii_kit_clears_the_buy_timer() {
         use crate::hull_choice::Weapon;
         let mut m = memory(false);
-        m.acquire_next = Some(std::time::Instant::now() + std::time::Duration::from_secs(600));
+        m.acquire_next = Some(clock::instant() + std::time::Duration::from_secs(600));
         m.missing_streak = 5;
         adopt_t3_weapon(&mut m, Some(Weapon::Missile));
         assert_eq!(m.combat.t3_weapon, Some(Weapon::Missile));

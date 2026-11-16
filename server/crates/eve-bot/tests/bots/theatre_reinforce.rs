@@ -84,7 +84,7 @@ fn theatre_reinforce_socket() {
         },
     ];
     let addr: SocketAddr = serve(c);
-    let t0 = driver::unix_now();
+    let t0 = eve_bot::clock::unix_secs();
 
     // The hall: three bot corps, the doctrine layer awake with an empty
     // catalog (this test is about the call, not the choice).

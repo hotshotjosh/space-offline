@@ -17,13 +17,14 @@
 //! client's own gates, which the verbs enforce and cite.
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 pub use crate::verbs::{
     AgentTurn, BUTTON_ACCEPT, BUTTON_COMPLETE, BUTTON_DECLINE, BUTTON_QUIT, BUTTON_REQUEST_MISSION,
     BUTTON_VIEW_MISSION, CourierLeg,
 };
 use crate::{Conn, DOCK_RANGE, Error, MIN_WARP_DISTANCE, Result};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// `const.categoryShip` **[V-data]**: a hangar row that can be boarded.
 pub const CATEGORY_SHIP: i64 = 6;
@@ -355,9 +356,9 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes until `done` holds or [`TRAVEL_CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + TRAVEL_CEILING;
+    let deadline = clock::instant() + TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "courier: still moving after the travel ceiling".into(),
             ));
@@ -431,7 +432,7 @@ mod tests {
     fn docked_it_boards_a_hull_then_says_missing() {
         use crate::brain::{Place, Policy, ShipInfo};
         let mut m = Memory::new("Courier1", Policy::fast());
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: HOME };
         o.ship = Some(ShipInfo {
             ship_id: 1,

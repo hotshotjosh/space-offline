@@ -24,6 +24,7 @@
 //! matchup; `tools/doctrine-report.py` reads them.
 
 use crate::brain::{unit, xorshift};
+use crate::clock;
 use crate::doctrine::{Doctrine, Role, RoleFit};
 use crate::doctrine_exchange::{Features, Matrix, counts};
 use crate::driver::DEV_TOKEN;
@@ -874,7 +875,7 @@ fn fight(
         }
     }
 
-    let began = Instant::now();
+    let began = clock::instant();
     let mut out = Outcome {
         winner: None,
         fielded: [order[0].len(), order[1].len()],
@@ -912,7 +913,7 @@ fn fight(
                 p.dead = true;
                 trace(&format!(
                     "t={:.1} {} lost ship {}",
-                    began.elapsed().as_secs_f64(),
+                    clock::since(began).as_secs_f64(),
                     p.tag,
                     p.ship
                 ));
@@ -930,7 +931,7 @@ fn fight(
             };
             break;
         }
-        if began.elapsed() >= rig.limit {
+        if clock::since(began) >= rig.limit {
             out.timed_out = true;
             break;
         }
@@ -953,9 +954,9 @@ fn fight(
             drive(&mut pilots[i], &foes, &mates, i);
         }
         if TRACE.load(std::sync::atomic::Ordering::Relaxed)
-            && began.elapsed().as_secs() / 10 > last_look
+            && clock::since(began).as_secs() / 10 > last_look
         {
-            last_look = began.elapsed().as_secs() / 10;
+            last_look = clock::since(began).as_secs() / 10;
             for p in pilots.iter_mut().filter(|p| !p.dead) {
                 let target = p.primary;
                 let w = p.conn.world_now();
@@ -975,14 +976,14 @@ fn fight(
                     .map(|(a, b)| eve_server::space_state::distance(a, b));
                 trace(&format!(
                     "t={:.0} {} primary={target:?} distance={d:?} speed={speed:?} tether={tether:?}",
-                    began.elapsed().as_secs_f64(),
+                    clock::since(began).as_secs_f64(),
                     p.tag
                 ));
             }
         }
-        std::thread::sleep(Duration::from_millis(TICK_MS));
+        clock::sleep(Duration::from_millis(TICK_MS));
     }
-    out.secs = began.elapsed().as_secs_f64();
+    out.secs = clock::since(began).as_secs_f64();
     Ok(out)
 }
 
@@ -1002,11 +1003,11 @@ fn pass_order(len: usize, pass: usize) -> Vec<usize> {
 /// reloaded from the hold, as a pilot does -- every [`RELOAD_LOOK_S`].
 fn reload(p: &mut Pilot) {
     if p.looked
-        .is_some_and(|t| t.elapsed().as_secs() < RELOAD_LOOK_S)
+        .is_some_and(|t| clock::since(t).as_secs() < RELOAD_LOOK_S)
     {
         return;
     }
-    p.looked = Some(Instant::now());
+    p.looked = Some(clock::instant());
     let Ok(ship) = p.conn.session().ship_id().ok_or(()) else {
         return;
     };
@@ -1347,10 +1348,10 @@ mod tests {
             asked: Vec::new(),
             dead: false,
         };
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while p.mods[0].on.is_none() && Instant::now() < deadline {
+        let deadline = clock::instant() + Duration::from_secs(30);
+        while p.mods[0].on.is_none() && clock::instant() < deadline {
             drive(&mut p, &[foe_ship], &[friend_ship], 0);
-            std::thread::sleep(Duration::from_millis(100));
+            clock::sleep(Duration::from_millis(100));
         }
         let still_pending = lock_turn(&p.conn.lock_target(foe_ship));
         server.stop().request("test over");

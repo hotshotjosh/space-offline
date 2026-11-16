@@ -426,7 +426,7 @@ fn a_blues_needbackup_brings_a_bot() {
     let addr: SocketAddr = serve(c);
 
     let hall = Arc::new(Hall::new(DAY).with_every(3_600_000));
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded("Botty", 1, TABLE, &Signals::default(), now);
     mind.career = "escort".to_owned();
     mind.since = now;

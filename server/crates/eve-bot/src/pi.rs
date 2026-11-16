@@ -54,6 +54,7 @@
 //! the client's calls and ids, cited [V].
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::courier::{Here, Move, next_move};
 use crate::pricing::{self, Quote};
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -68,7 +69,7 @@ use eve_server::planet::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The Badger **[V-data]**: an NPC-sold industrial whose hold takes a
 /// command centre (1,000 m3 packaged [V-data]); a frigate's does not.
@@ -1569,13 +1570,7 @@ fn sell(c: &mut Conn, station: i64, keep: &BTreeSet<i64>) -> Result<Vec<Sale>> {
 /// The game day: unix seconds over the game day's length in wall seconds
 /// (`--day-secs` of a compressed soak, [`crate::driver::Society::day_secs`]).
 fn game_day(day_secs: u64) -> u64 {
-    day_of(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
-        day_secs,
-    )
+    day_of(clock::unix_secs(), day_secs)
 }
 
 /// The game day of unix second `secs` (pure).
@@ -2020,9 +2015,9 @@ fn warping(c: &mut Conn) -> bool {
 }
 
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + CEILING;
+    let deadline = clock::instant() + CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "pi: still moving after the travel ceiling".into(),
             ));
@@ -2106,7 +2101,7 @@ mod tests {
     }
 
     fn docked_obs(ship_type: Option<i64>) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: STATION };
         o.ship = Some(ShipInfo {
             ship_id: SHIP,

@@ -35,6 +35,7 @@
 //! client's own calls and ids, cited [V].
 
 use crate::brain::{self, Act, Memory, ParkView};
+use crate::clock;
 use crate::site_runner::read_rows;
 use crate::{Conn, Error, ItemRow, Result};
 use eve_marshal::PyValue;
@@ -274,7 +275,7 @@ pub fn act(c: &mut Conn, m: &mut Memory, op: OreAct) -> Result<()> {
         }
         OreAct::Compress => {
             let done = compress(c)?;
-            m.compress.tried_at = (done == 0).then(Instant::now);
+            m.compress.tried_at = (done == 0).then(clock::instant);
             m.compress.stacks += done;
             Ok(())
         }
@@ -579,8 +580,8 @@ pub fn recall(c: &mut Conn, out: &[i64]) -> Result<()> {
     let Some(ship) = c.session().ship_id() else {
         return Ok(());
     };
-    let until = Instant::now() + RECALL_WAIT;
-    while Instant::now() < until {
+    let until = clock::instant() + RECALL_WAIT;
+    while clock::instant() < until {
         let aboard: Vec<i64> = c
             .ship_items(ship, Some(FLAG_DRONE_BAY))?
             .iter()
@@ -615,8 +616,8 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes for `d`.
 fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
-    let until = Instant::now() + d;
-    while Instant::now() < until {
+    let until = clock::instant() + d;
+    while clock::instant() < until {
         c.pump(POLL)?;
     }
     Ok(())
@@ -624,9 +625,9 @@ fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
 
 /// Read pushes until `done` holds or [`CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + CEILING;
+    let deadline = clock::instant() + CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "ore: still warping after the ceiling".into(),
             ));
@@ -784,7 +785,7 @@ mod tests {
     // ---- compression (PROG-MINE) -------------------------------------------------
 
     fn full_hold_scene() -> brain::Observation {
-        let mut o = brain::Observation::empty(Instant::now());
+        let mut o = brain::Observation::empty(clock::instant());
         o.park = Some(park());
         let mut ore = row(STACK, 1230);
         ore.category_id = brain::CATEGORY_ASTEROID;

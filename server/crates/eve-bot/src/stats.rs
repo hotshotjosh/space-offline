@@ -1,9 +1,10 @@
 //! **Bot-process cost counters** (`eve-bots --stats SECS`): where the CPU of
 //! many bots goes. Process-wide atomics, summed over every bot thread; a
-//! timed section costs two `Instant::now()` and four relaxed atomic adds, so
+//! timed section costs two `clock::wall()` and four relaxed atomic adds, so
 //! they are always on. Allocation counts would need a `GlobalAlloc`, which is
 //! `unsafe`; RSS, threads and CPU come from `/proc/self` instead.
 
+use crate::clock;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
@@ -23,10 +24,11 @@ impl Section {
 
     /// Time `f` into this section.
     pub fn time<T>(&self, f: impl FnOnce() -> T) -> T {
-        let t = Instant::now();
+        let t = clock::wall();
         let out = f();
         self.calls.fetch_add(1, Relaxed);
-        self.ns.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+        self.ns
+            .fetch_add(clock::wall_since(t).as_nanos() as u64, Relaxed);
         out
     }
 
@@ -90,7 +92,7 @@ pub struct Reporter {
 impl Default for Reporter {
     fn default() -> Reporter {
         Reporter {
-            last: Instant::now(),
+            last: clock::wall(),
             ticks: cpu_ticks(),
         }
     }
@@ -99,8 +101,8 @@ impl Default for Reporter {
 impl Reporter {
     /// The `[stats]` line for the window since the last call.
     pub fn line(&mut self, bots: usize) -> String {
-        let secs = self.last.elapsed().as_secs_f64().max(0.001);
-        self.last = Instant::now();
+        let secs = clock::wall_since(self.last).as_secs_f64().max(0.001);
+        self.last = clock::wall();
         let ticks = cpu_ticks();
         let cpu = (ticks.saturating_sub(self.ticks)) as f64 / 100.0 / secs * 100.0;
         self.ticks = ticks;

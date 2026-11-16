@@ -519,7 +519,7 @@ fn member(name: &str, corp: i64) -> Member {
         band: Band::Low,
         corp,
         alliance: None,
-        last_turn: Some(driver::unix_now()),
+        last_turn: Some(eve_bot::clock::unix_secs()),
         satisfaction: Satisfaction::default(),
         applied: None,
         salt: 0,
@@ -596,7 +596,7 @@ fn a_hunter_in_high_sec_fires_on_a_war_target_and_leaves_a_bystander() {
     let mut carol = in_space("Carol");
     let hall = war_hall();
 
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut m = Mind::seeded("Hunter1", 1, TABLE, &Signals::default(), now);
     m.career = "pirate".to_owned();
     m.since = now;

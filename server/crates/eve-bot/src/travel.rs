@@ -34,13 +34,14 @@
 //! **Every rule here is [A] policy** -- what a player would do -- except the
 //! client's own call shapes and gates, which the verbs cite.
 
+use crate::clock;
 use crate::driver::Graph;
 use crate::verbs::Book;
 use crate::{Conn, DOCK_RANGE, Error, MIN_WARP_DISTANCE, Result};
 use eve_server::celestial::{Catalogue, Kind, Universe, pseudo_security};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// **The security floor** **[A]**: a bot routes only through systems whose
 /// security, as the client rounds it ([`pseudo_security`]), is at least
@@ -817,9 +818,9 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes until `done` holds or [`TRAVEL_CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + TRAVEL_CEILING;
+    let deadline = clock::instant() + TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "travel: still moving after the travel ceiling".into(),
             ));

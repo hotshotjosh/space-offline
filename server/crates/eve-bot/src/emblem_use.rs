@@ -21,6 +21,7 @@
 //! server's address; the slot is 0; "the main hull" is the ship the bot is
 //! flying.
 
+use crate::clock;
 use crate::gateway_client::GatewayClient;
 use crate::lp_spend::CORP_HERALDRY;
 use crate::plexer::{LP_STORE, LpOffer, read_offers};
@@ -225,7 +226,7 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
     if settled(pilot, ship, em) {
         return Ok("[em] nothing to do".to_owned());
     }
-    if lock(&GATEWAY_DOWN).is_some_and(|t| t.elapsed() < NO_GATEWAY_BACKOFF) {
+    if lock(&GATEWAY_DOWN).is_some_and(|t| clock::since(t) < NO_GATEWAY_BACKOFF) {
         return Ok("[em] no gateway".to_owned());
     }
     let Some(hull) = c
@@ -242,7 +243,7 @@ pub fn run(c: &mut Conn, em: i64) -> Result<String> {
     };
     let addr = SocketAddr::new(peer.ip(), eve_server::gateway::PORT);
     let Ok(mut gw) = GatewayClient::connect(addr, TIMEOUT) else {
-        *lock(&GATEWAY_DOWN) = Some(Instant::now());
+        *lock(&GATEWAY_DOWN) = Some(clock::instant());
         return Ok("[em] no gateway".to_owned());
     };
     let have = match gw.send(pilot, GET_ALL, &[]) {

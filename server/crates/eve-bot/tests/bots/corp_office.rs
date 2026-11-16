@@ -377,7 +377,7 @@ fn a_ceo_bot_rents_an_office_at_its_home_station_when_the_corp_can_pay() {
         let cents = cw::to_cents(co::OFFICE_RENT_ISK * eve_bot::corpmind::OFFICE_RESERVE_PERIODS);
         cw::adjust(w.deltas_mut(), corp, cw::MASTER_KEY, cents).expect("funded");
     }
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded("Ann", 1, TABLE, &Signals::default(), now);
     mind.career = "miner".to_owned();
     mind.since = now;

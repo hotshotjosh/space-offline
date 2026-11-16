@@ -46,6 +46,7 @@
 //! cite.
 
 use crate::brain::{self, Act, ActKind, Homing, Memory, Observation, SHORT_WAIT};
+use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::travel::{Map, Trips};
 use crate::{Conn, Error, ItemRow, MIN_WARP_DISTANCE, ObjectRef, Result};
@@ -532,11 +533,11 @@ fn launch(c: &mut Conn) -> Result<Vec<ProbeState>> {
         stack.type_id,
         ship,
     )?;
-    let deadline = Instant::now() + RELOAD_CEILING;
+    let deadline = clock::instant() + RELOAD_CEILING;
     loop {
         match c.launch_probes(launcher.item_id, wanted) {
             Ok(p) => return Ok(p),
-            Err(Error::Refused(why)) if Instant::now() >= deadline => {
+            Err(Error::Refused(why)) if clock::instant() >= deadline => {
                 return Err(Error::Refused(format!("probes: after a reload, {why}")));
             }
             Err(Error::Refused(_)) => {
@@ -647,9 +648,9 @@ fn gap(c: &mut Conn, ball: i64) -> Option<f64> {
 
 /// Read pushes until `done` holds or [`TRAVEL_CEILING`] passes.
 fn settle(c: &mut Conn, what: &str, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + TRAVEL_CEILING;
+    let deadline = clock::instant() + TRAVEL_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(format!(
                 "{what}: still moving after the ceiling"
             )));
@@ -1223,12 +1224,12 @@ pub fn explore_with(
         done.avoided = Some(threat);
     } else {
         let mut sc = Scanner::open(c)?;
-        if !ledger.done_recently(pitch, Instant::now()) {
+        if !ledger.done_recently(pitch, clock::instant()) {
             let mut left: Vec<Seen> = Vec::new();
             let found = find_seen(c, &mut sc, |t, _| !ledger.knows(pitch, t), |s| left.push(s))?;
             done.scans = sc.scans;
             for s in &left {
-                ledger.note(pitch, s, me, Instant::now());
+                ledger.note(pitch, s, me, clock::instant());
             }
             done.booked_others = left.len();
             if let Some(sig) = found {
@@ -1238,11 +1239,11 @@ pub fn explore_with(
                     Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
                     Err(e) => done.not_saved = Some(e.to_string()),
                 }
-                ledger.record(pitch, &sig, me, done.bookmark, Instant::now());
+                ledger.record(pitch, &sig, me, done.bookmark, clock::instant());
                 done.found = Some(sig);
                 return Ok(done);
             }
-            ledger.mark_done(pitch, Instant::now());
+            ledger.mark_done(pitch, clock::instant());
         }
         scanner = Some(sc);
     }
@@ -1252,7 +1253,7 @@ pub fn explore_with(
     let home = ledger.home((server, me));
     match (trips, home) {
         (Some(trips), Some(home)) => {
-            let now = Instant::now();
+            let now = clock::instant();
             let home_system = trips.map.system_of(home);
             let roam = match (nerve, home_system) {
                 (Some(n), Some(hs)) => {
@@ -1521,7 +1522,7 @@ mod tests {
             kind: Kind::Relic,
             position: [0.0; 3],
         };
-        let now = Instant::now();
+        let now = clock::instant();
         assert!(!ledger.knows((server, 11), "AAA-111"));
         ledger.record((server, 11), &sig, 1, Some(5), now);
         assert!(ledger.knows((server, 11), "AAA-111"));
@@ -1587,7 +1588,7 @@ mod tests {
     }
 
     fn docked_obs() -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: 60 };
         o.ship = Some(ShipInfo {
             ship_id: 5,

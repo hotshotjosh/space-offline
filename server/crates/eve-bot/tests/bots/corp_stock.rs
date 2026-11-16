@@ -32,7 +32,6 @@ use eve_bot::doctrine_hall::{DoctrineWorld, Readiness};
 use eve_bot::doctrine_lead::{DoctrineBook, Fancy};
 use eve_bot::doctrine_stock as stock;
 use eve_bot::doctrine_theatre::{Ship, State, Theatre};
-use eve_bot::driver;
 use eve_bot::hull_choice::Class;
 use eve_marshal::PyValue;
 use eve_server::corp_office as co;
@@ -450,7 +449,7 @@ fn corp_stock_socket() {
         .expect("answered");
     assert_eq!(rented.refusal(), None, "RentOffice refused");
 
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let hall = hall(corp, now);
     // Roles first: the trader tends the division, the ratter draws from it.
     let lines = ops::run_ceo(&mut ann, &hall, ANN, corp, now).expect("the pass");

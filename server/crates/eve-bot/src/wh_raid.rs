@@ -44,6 +44,7 @@
 //! Every rule and number here is **[A] policy**, each with its falsifier.
 
 use crate::brain::{self, Act, ActKind, GIVE_UP_AFTER, Homing, Memory, Observation};
+use crate::clock;
 use crate::explore_roam as roam;
 use crate::probe;
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -587,8 +588,8 @@ fn await_signatures(c: &mut Conn) {
     let Ok(manager) = c.system_scan_manager() else {
         return;
     };
-    let deadline = Instant::now() + SIGNATURE_PATIENCE;
-    while Instant::now() < deadline {
+    let deadline = clock::instant() + SIGNATURE_PATIENCE;
+    while clock::instant() < deadline {
         match c.sensor_overlay(&manager) {
             Ok(o) if !o.is_empty() => return,
             Ok(_) => {}
@@ -637,7 +638,7 @@ fn come_out(c: &mut Conn, m: &mut Memory) -> Result<()> {
         ));
     }
     let server = server_of(c)?;
-    let now = Instant::now();
+    let now = clock::instant();
     if let (Some(system), Some(from)) = (system, from) {
         for t in &cleared {
             BOARD.post(server, system, from, t, now);
@@ -671,7 +672,7 @@ pub fn hack_dive_due(c: &mut Conn) -> bool {
     let (Some(system), Ok(server)) = (c.session().solar_system_id2(), server_of(c)) else {
         return false;
     };
-    BOARD.due_from(server, system, Instant::now())
+    BOARD.due_from(server, system, clock::instant())
 }
 
 /// **One hacking dive** ([`crate::hacker::run_dive`]): in through a hole
@@ -683,7 +684,7 @@ pub fn hack_dive(c: &mut Conn, name: &str, seed: u64) -> Result<crate::hacker::T
         .session()
         .solar_system_id2()
         .ok_or_else(|| Error::NotSent("hack dive: docked with no system".to_owned()))?;
-    let now = Instant::now();
+    let now = clock::instant();
     let want = BOARD.systems_from(server, home, now);
     let enter = move |c: &mut Conn| -> Result<Option<[f64; 3]>> {
         let e = wh_dive::dive_in_where(c, Leads::JSpace, &|landed, _| want.contains(&landed))?;
@@ -691,7 +692,7 @@ pub fn hack_dive(c: &mut Conn, name: &str, seed: u64) -> Result<crate::hacker::T
     };
     let exit = |c: &mut Conn, arrival: Option<[f64; 3]>| wh_dive::come_out(c, arrival);
     let allowed =
-        move |system: i64, target: &str| BOARD.is_cleared(server, system, target, Instant::now());
+        move |system: i64, target: &str| BOARD.is_cleared(server, system, target, clock::instant());
     let dive = crate::hacker::Dive {
         enter: &enter,
         exit: &exit,
@@ -701,7 +702,7 @@ pub fn hack_dive(c: &mut Conn, name: &str, seed: u64) -> Result<crate::hacker::T
     // A worked site is not cleared for a second hacker.
     if let Ok(t) = &trip {
         for target in &t.sites {
-            for sys in BOARD.systems_from(server, home, Instant::now()) {
+            for sys in BOARD.systems_from(server, home, clock::instant()) {
                 BOARD.retire(server, sys, target);
             }
         }

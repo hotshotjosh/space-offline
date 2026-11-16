@@ -51,10 +51,11 @@
 use crate::brain::{
     self, Act, ActKind, FleetView, GIVE_UP_AFTER, Hostile, Memory, Observation, Place, RANGE_MARGIN,
 };
+use crate::clock;
 use crate::{Conn, Error, Event, Result};
 use eve_marshal::PyValue;
 use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// `evefleet.BROADCAST_TARGET` **[V]**: the primary call's name.
 pub const BROADCAST_TARGET: &str = "Target";
@@ -972,8 +973,8 @@ impl Director {
     pub fn form_fleet(&mut self, members: &[i64], within: Duration) -> Result<bool> {
         let orders = self.command.form_fleet(members);
         self.send(orders)?;
-        let deadline = Instant::now() + within;
-        while !self.command.is_formed() && Instant::now() < deadline {
+        let deadline = clock::instant() + within;
+        while !self.command.is_formed() && clock::instant() < deadline {
             self.pump(Duration::from_millis(250))?;
         }
         Ok(self.command.is_formed())
@@ -1325,7 +1326,7 @@ mod tests {
     /// In space, in a fleet, a rat called primary 10 km off.
     fn seen(armed: bool) -> (Memory, Observation) {
         let m = Memory::new("Member1", Policy::fast());
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::InSpace {
             system: 30_990_001,
             bound: true,

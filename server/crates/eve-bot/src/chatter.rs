@@ -36,6 +36,7 @@
 
 use crate::brain::{unit, xorshift};
 use crate::chat::RoomKind;
+use crate::clock;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -243,7 +244,7 @@ pub fn note_fights(me: i64, fights: &[(i64, bool)]) {
         e.0 = true;
         return;
     }
-    let now = Instant::now();
+    let now = clock::instant();
     e.1.extend(fights.iter().map(|&(o, w)| (o, w, now)));
     let over = e.1.len().saturating_sub(FIGHTS_KEPT);
     e.1.drain(..over);
@@ -887,7 +888,7 @@ mod tests {
 
     #[test]
     fn a_known_killer_gets_a_killer_greeting() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let scene = scene_knowing(Some(Known {
             killed_me: 1,
             met: 1,
@@ -925,7 +926,7 @@ mod tests {
 
     #[test]
     fn a_regular_is_greeted_as_one() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let scene = scene_knowing(Some(Known {
             met: REGULAR_MET,
             ..Known::default()
@@ -960,7 +961,7 @@ mod tests {
 
     #[test]
     fn an_empty_book_greets_as_today() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let empty = scene_knowing(None);
         assert!(Scene::default().known.is_empty());
         let stranger = scene_knowing(Some(Known::default()));
@@ -1096,7 +1097,7 @@ mod tests {
     fn the_gap_and_the_cap_hold_at_every_chattiness() {
         for c in [0.0, 0.25, 0.5, 0.75, 1.0] {
             for seed in 0..12 {
-                let t0 = Instant::now();
+                let t0 = clock::instant();
                 let mut bot = Bot::new(seed, c);
                 let mut scene = Scene::default();
                 let mut says: Vec<Instant> = Vec::new();
@@ -1124,7 +1125,7 @@ mod tests {
     #[test]
     fn the_reply_waits_a_human_delay() {
         for seed in 0..40 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let mut bot = Bot::new(seed, 1.0);
             let mut scene = Scene::default();
             scene.heard.push(line(1, HUMAN, "hi", t0, true));
@@ -1146,7 +1147,7 @@ mod tests {
     fn some_bot_replies_to_a_hello_and_not_all_of_them() {
         let (mut spoke, mut silent) = (0, 0);
         for seed in 0..60 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let mut bot = Bot::new(seed, 0.5);
             let mut scene = Scene::default();
             scene.heard.push(line(1, HUMAN, "hello", t0, true));
@@ -1163,7 +1164,7 @@ mod tests {
     #[test]
     fn silence_with_no_human_in_local() {
         for seed in 0..20 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let mut bot = Bot::new(seed, 1.0);
             bot.mining = true;
             let mut scene = Scene::default();
@@ -1187,7 +1188,7 @@ mod tests {
     fn a_human_who_arrives_is_greeted_at_most_once_per_fifteen_minutes_per_system() {
         let mut greeted_somewhere = false;
         for seed in 0..40 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let mut bot = Bot::new(seed, 1.0);
             let mut scene = Scene::default();
             let mut says = 0;
@@ -1215,7 +1216,7 @@ mod tests {
     fn another_bots_greeting_cancels_ours() {
         let mut dropped = 0;
         for seed in 0..60 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let mut bot = Bot::new(seed, 1.0);
             let mut scene = Scene::default();
             scene.arrived.push(Arrival {
@@ -1242,7 +1243,7 @@ mod tests {
     #[test]
     fn one_boost_answer_per_request() {
         for seed in 0..30u64 {
-            let t0 = Instant::now();
+            let t0 = clock::instant();
             let asker = 970_000_200 + seed as i64;
             let mut bots: Vec<Bot> = (0..4)
                 .map(|i| {
@@ -1284,7 +1285,7 @@ mod tests {
 
     #[test]
     fn small_talk_only_while_mining_into_a_quiet_room() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let mut bot = Bot::new(3, 1.0);
         bot.mining = true;
         let mut scene = Scene::default();
@@ -1307,7 +1308,7 @@ mod tests {
 
     #[test]
     fn farewell_and_under_attack_are_governed() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let scene = Scene {
             sociability: 1.0,
             local_humans: 1,
@@ -1377,7 +1378,7 @@ mod tests {
     /// picked, filled, and never leak a brace; without, they stay out.
     #[test]
     fn slot_lines_are_used_once_their_slots_are_known() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let mut scene = Scene {
             sociability: 1.0,
             local_humans: 1,
@@ -1445,7 +1446,7 @@ mod tests {
     /// delay, as the right category, and a stale result is not.
     #[test]
     fn a_won_or_lost_fight_gets_one_line_after_the_delay() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         for won in [true, false] {
             let scene = Scene {
                 sociability: 1.0,
@@ -1489,7 +1490,7 @@ mod tests {
     /// and only a hostile bot ever taunts.
     #[test]
     fn taunts_are_hostile_only_and_the_new_lines_are_governed() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let scene = Scene {
             sociability: 1.0,
             local_humans: 1,

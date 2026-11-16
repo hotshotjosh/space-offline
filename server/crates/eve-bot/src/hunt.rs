@@ -66,6 +66,7 @@
 use crate::brain::{
     self, Act, Ball, GunInfo, Health, Homing, Hostile, Memory, Observation, ParkView, Place,
 };
+use crate::clock;
 use crate::corpmind::Hall;
 use crate::hostile::Class;
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -2135,7 +2136,7 @@ pub fn sweep(
         }
     }
     Ok(Sweep {
-        at: Instant::now(),
+        at: clock::instant(),
         system,
         origin: ego,
         ships,
@@ -2720,7 +2721,7 @@ mod tests {
     }
 
     fn observation(pilots: Vec<Pilot>, aggression: f64) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::InSpace {
             system: SYSTEM,
             bound: true,
@@ -3421,7 +3422,7 @@ mod tests {
         policy.travel = Some(Arc::new(map()));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         let acts = docked(&mut m, &o);
         assert!(
@@ -3576,7 +3577,7 @@ mod tests {
     /// clears it; only the cancel key counts.
     #[test]
     fn a_cancelled_lock_backs_off_per_target() {
-        let t = Instant::now();
+        let t = clock::instant();
         let mut b = LockBackoff::default();
         assert!(!b.holds(5, t));
         assert!(
@@ -3640,7 +3641,7 @@ mod tests {
     /// own delay; no other refusal is held.
     #[test]
     fn a_lock_refused_after_a_cloak_is_held_for_the_modules_delay() {
-        let now = Instant::now();
+        let now = clock::instant();
         let k = kit(CLOAK_607, false, false);
         assert_eq!(
             lock_hold("AddTarget: DeniedTargetAfterCloak", Some(&k), now),
@@ -3654,7 +3655,7 @@ mod tests {
     #[test]
     fn a_hunter_fits_a_cloak_only_from_its_hangar_and_only_once() {
         let mut m = hunter();
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         o.hangar = vec![row(4_200, CLOAK_TYPES[1], 1)];
         let acts = docked(&mut m, &o);
@@ -3662,7 +3663,7 @@ mod tests {
         let again = docked(&mut m, &o);
         assert_ne!(again, vec![Act::FitAuto(4_200)]);
         let mut m = hunter();
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let acts = docked(&mut m, &ready_docked(10));
         assert!(
             !acts.iter().any(|a| matches!(a, Act::FitAuto(_))),
@@ -3672,7 +3673,7 @@ mod tests {
 
     /// A docked observation of a fitted, loaded Rifter, ready to undock.
     fn ready_docked(station: i64) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station };
         o.ship = Some(ShipInfo {
             ship_id: 1,
@@ -3718,7 +3719,7 @@ mod tests {
         policy.pvp = Some(Arc::new(doctrine()));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         o.hangar = vec![
             row(777, SCRAMBLER, 1),
@@ -3739,7 +3740,7 @@ mod tests {
         policy.pvp = Some(Arc::new(doctrine()));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         o.hangar = vec![row(777, SCRAMBLER, 1)];
         assert_eq!(docked(&mut m, &o), vec![Act::FitAuto(777)]);
@@ -3756,7 +3757,7 @@ mod tests {
         policy.pvp = Some(Arc::new(doctrine()));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         let tag = eve_server::security_office::BANDS[1].type_id;
         assert_eq!(docked(&mut m, &o), vec![Act::Undock], "no tags, no ask");
@@ -3781,7 +3782,7 @@ mod tests {
         policy.pvp = Some(Arc::new(doctrine()));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         let mut o = ready_docked(10);
         o.guns.push(gun(5, SCRAMBLER));
         o.hangar = vec![row(778, SCRAMBLER_II, 1), row(777, STASIS_WEBIFIER, 1)];
@@ -4338,7 +4339,7 @@ mod filament_tests {
         ));
         let mut m = Memory::new("Invented Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
         m.hunt.quiet_sorties = filament::BORED_MAX;
         m
     }
@@ -4369,7 +4370,7 @@ mod filament_tests {
     }
 
     fn docked_obs(station: i64) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station };
         o.ship = Some(ShipInfo {
             ship_id: 1,
@@ -4769,7 +4770,7 @@ mod filament_tests {
             ess: 3_100_000_000_001,
             value: crate::ess_raid::FLOOR_CONTENT * 2.0,
             linked_by,
-            read_at: Instant::now(),
+            read_at: clock::instant(),
             gap: None,
         }
     }

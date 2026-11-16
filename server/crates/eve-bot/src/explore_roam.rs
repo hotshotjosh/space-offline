@@ -37,6 +37,7 @@
 //! **Every rule and number here is [A] policy**, with its falsifier on the
 //! constant, except the client's calls, which the verbs cite.
 
+use crate::clock;
 use crate::probe::{Kind, Pitch};
 use crate::travel::{ANY_SECURITY, Map, SECURITY_FLOOR};
 use crate::verbs::Book;
@@ -47,7 +48,7 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 // ---- nerve and security bands ------------------------------------------------------
 
@@ -394,7 +395,7 @@ pub fn look(c: &mut Conn, map: Option<&Map>) -> Result<Threat> {
         Err(_) => 0,
     };
     let threat = assess(me, space, &pilots, scan);
-    DANGER.record((server, system), threat, Instant::now());
+    DANGER.record((server, system), threat, clock::instant());
     Ok(threat)
 }
 
@@ -1025,13 +1026,6 @@ fn path_of(dir: &Path, name: &str) -> PathBuf {
     dir.join(file_name(name))
 }
 
-/// Unix seconds now.
-pub fn unix_now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// **Keep the trip** in memory and, with a directory, in its file
 /// (temp-and-rename, so a crash leaves the old file or the new one). A
 /// failed write is not a failed trip: the memory copy holds.
@@ -1103,7 +1097,7 @@ pub fn attach(name: &str, dir: Option<&Path>) -> bool {
 /// attached directory)?
 pub fn resumable(name: &str) -> bool {
     let dir = DIRS.lock().ok().and_then(|m| m.get(name).cloned());
-    get(dir.as_deref(), name, unix_now()).is_some()
+    get(dir.as_deref(), name, clock::unix_secs()).is_some()
 }
 
 /// **Give the trip up** (the bot is sent home the plain way).
@@ -1359,7 +1353,7 @@ mod tests {
     fn what_was_seen_is_believed_for_a_while() {
         let d = Dangers::new();
         let server: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         d.record((server, A), Threat::Hostile(2), t0);
         assert_eq!(d.recent((server, A), t0), Threat::Hostile(2));
         assert_eq!(d.recent((server, B), t0), Threat::Clear);
@@ -1613,7 +1607,7 @@ mod tests {
         let dir = scratch("attach");
         let mut t = sample();
         t.name = "Attached Pilot".into();
-        t.started = unix_now();
+        t.started = clock::unix_secs();
         assert!(!attach(&t.name, Some(&dir)));
         put(Some(&dir), &t);
         assert!(resumable(&t.name));

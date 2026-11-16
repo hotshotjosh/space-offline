@@ -66,6 +66,7 @@
 //! Difficulty ([`GangKnobs`]): aggression, scouts, radius and required odds.
 
 use crate::brain::{self, Act, Ball, Homing, Memory, Observation, ParkView, Place};
+use crate::clock;
 use crate::escort;
 use crate::hostile::Class;
 use crate::hunt::{self, Ground, HuntAct, Pilot};
@@ -1838,7 +1839,7 @@ pub fn fly(c: &mut crate::Conn, map: &Map, system: i64) -> crate::Result<i64> {
     };
     let budget = travel::MOVES_PER_SYSTEM * (jumps as usize + 1);
     for _ in 0..budget {
-        let deadline = Instant::now() + travel::TRAVEL_CEILING;
+        let deadline = clock::instant() + travel::TRAVEL_CEILING;
         let now_in = c
             .session()
             .solar_system_id2()
@@ -1934,7 +1935,7 @@ fn pump_until(
     mut done: impl FnMut(&mut crate::Conn) -> bool,
 ) -> crate::Result<()> {
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(crate::Error::Refused(
                 "gang: still moving after the travel ceiling".into(),
             ));
@@ -2572,7 +2573,7 @@ fn scout(
 /// calls it; the first one counts.
 pub fn summon(seat: &Seat, system: i64, char_id: i64) {
     seat.hall.with(&seat.gang, seat.size, |g| {
-        g.set_quarry(char_id, system, Instant::now());
+        g.set_quarry(char_id, system, clock::instant());
     });
 }
 
@@ -2581,7 +2582,7 @@ pub fn summon(seat: &Seat, system: i64, char_id: i64) {
 /// Every bot of a group calls it; the first one counts.
 pub fn camp(seat: &Seat, system: i64) {
     seat.hall.with(&seat.gang, seat.size, |g| {
-        g.set_camp(system, Instant::now());
+        g.set_camp(system, clock::instant());
     });
 }
 
@@ -2783,7 +2784,7 @@ mod tests {
     fn a_gang_with_a_quarry_forms_at_half_strength_and_never_waits_for_the_slowest() {
         let (d, m) = (doc(), map());
         let c = ctx(&d, &m, GangKnobs::NORMAL);
-        let t = Instant::now();
+        let t = clock::instant();
         // Without a quarry two of four are not enough, soon after.
         let mut g = four(t, 2);
         g.think("fc", t, &c);
@@ -2816,7 +2817,7 @@ mod tests {
 
     #[test]
     fn a_hunt_flies_to_his_system_then_warps_to_his_character() {
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = four(t, 2);
         g.post("b2", 2, post(t, Some(A), Class::Small));
         g.set_quarry(WHO, A, t);
@@ -2841,7 +2842,7 @@ mod tests {
     #[test]
     fn a_gang_with_a_camp_holds_the_gate_until_a_quarry_or_the_end() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = four(t, 4);
         g.set_camp(B2, t);
         g.set_camp(B2, t + Duration::from_secs(1)); // the same call again: nothing
@@ -2902,7 +2903,7 @@ mod tests {
     fn foes_on_his_grid_start_the_fight_even_when_the_odds_say_leave() {
         let (d, m) = (doc(), map());
         let c = ctx(&d, &m, GangKnobs::NORMAL);
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = Gang::new(2);
         let mut p = post(t, Some(A), Class::Small);
         p.foes = vec![foe(700, LARGE)];
@@ -2954,7 +2955,7 @@ mod tests {
 
     #[test]
     fn a_rally_to_an_unseen_pilot_takes_the_range_of_the_gangs_own_side() {
-        let t = Instant::now();
+        let t = clock::instant();
         let park = ParkView {
             ego: Ball {
                 id: 1,
@@ -2990,7 +2991,7 @@ mod tests {
     fn an_allied_gang_never_fights_the_quarry_and_a_lost_one_is_dropped() {
         let (d, m) = (doc(), map());
         let c = ctx(&d, &m, GangKnobs::NORMAL);
-        let t = Instant::now();
+        let t = clock::instant();
         // He is allied, so he is on nobody's foe list: nothing to fight.
         let mut g = Gang::new(2);
         g.post("fc", 0, post(t, Some(A), Class::Small));
@@ -3164,7 +3165,7 @@ mod tests {
     #[test]
     fn the_body_leaps_together_and_lands_only_when_every_ship_is_in() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 2);
         // Not formed: nothing is ordered but a hold.
         assert_eq!(g.order("b1", t), Order::Hold);
@@ -3283,7 +3284,7 @@ mod tests {
     #[test]
     fn a_lone_scout_never_makes_a_fight_and_a_hopeless_report_is_left() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         // The body is docked (repairing): only the scout is at hand.
         let mut g = five(t, 2);
         let c = ctx(&d, &m, GangKnobs::NORMAL);
@@ -3324,7 +3325,7 @@ mod tests {
     #[test]
     fn only_the_fc_thinks_and_a_docked_boss_hands_over() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 0);
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         assert!(g.think("b1", t, &c).is_empty(), "b1 is not the FC");
@@ -3439,7 +3440,7 @@ mod tests {
     #[test]
     fn everyone_in_the_fight_is_ordered_onto_the_same_primary_and_it_is_re_called_on_death() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 2);
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         g.staging = Some(A);
@@ -3530,7 +3531,7 @@ mod tests {
     #[test]
     fn a_losing_fight_withdraws_everyone_then_the_gang_regroups_and_roams_on() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 2);
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         g.staging = Some(STAGING);
@@ -3578,7 +3579,7 @@ mod tests {
     #[test]
     fn a_won_fight_ends_in_a_regroup_and_a_thin_one_calls_the_reserve_in_one_surge() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 0);
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         g.staging = Some(STAGING);
@@ -3645,7 +3646,7 @@ mod tests {
     #[test]
     fn a_bait_is_shown_once_then_given_up_if_it_does_not_change_the_odds() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let mut g = five(t, 0);
         let k = GangKnobs {
             required_odds: GangKnobs::NORMAL.required_odds * 1.07,
@@ -3692,7 +3693,7 @@ mod tests {
     #[test]
     fn the_gang_forms_when_all_are_up_or_two_are_up_after_the_timeout() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         let mut g = Gang::new(4);
         g.post("fc", 0, post(t, Some(STAGING), Class::Medium));
@@ -3780,8 +3781,8 @@ mod tests {
         });
         let mut m = Memory::new("Invented Gang Hunter", policy);
         m.hunt.safety_set = true;
-        m.hunt.settled_at = Some(Instant::now());
-        let mut o = Observation::empty(Instant::now());
+        m.hunt.settled_at = Some(clock::instant());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: STAGING };
         o.ship = Some(crate::brain::ShipInfo {
             ship_id: 1,
@@ -3854,7 +3855,7 @@ mod tests {
         });
         let mut m = Memory::new("Invented Solo Hunter", policy);
         m.hunt.safety_set = true;
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::InSpace {
             system: A,
             bound: true,
@@ -3927,7 +3928,7 @@ mod tests {
     #[test]
     fn a_retreat_keeps_the_owners_quarry_listed() {
         let (d, m) = (doc(), map());
-        let t = Instant::now();
+        let t = clock::instant();
         let c = ctx(&d, &m, GangKnobs::NORMAL);
         let mut g = Gang::new(1);
         g.set_quarry(WHO, A, t);

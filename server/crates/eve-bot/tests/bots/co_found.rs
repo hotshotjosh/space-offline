@@ -41,7 +41,7 @@ fn bot(
     addr: std::net::SocketAddr,
     state: &std::path::Path,
 ) -> (Handle, std::thread::JoinHandle<()>) {
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded(name, 1, TABLE, &Signals::default(), now);
     mind.career = "miner".to_owned();
     mind.since = now;

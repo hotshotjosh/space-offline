@@ -218,7 +218,7 @@ fn a_ceo_bot_sets_the_tax_a_member_earns_a_bounty_and_the_ceo_pays_the_member() 
         join(&mut c, &mut bob, BOB, corp);
         corp
     };
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded("Ann", 1, TABLE, &Signals::default(), now);
     mind.career = "miner".to_owned();
     mind.since = now;
@@ -242,7 +242,7 @@ fn a_ceo_bot_sets_the_tax_a_member_earns_a_bounty_and_the_ceo_pays_the_member() 
     // The CEO asks the rate its traits give.
     let want = ops::tax_rate(&traits());
     let set = until(Duration::from_secs(60), || {
-        let t = driver::unix_now();
+        let t = eve_bot::clock::unix_secs();
         if let Some(m) = hall.lock().members.get_mut(&BOB) {
             m.last_turn = Some(t);
         }
@@ -277,7 +277,7 @@ fn a_ceo_bot_sets_the_tax_a_member_earns_a_bounty_and_the_ceo_pays_the_member() 
     assert!(pay >= ops::PAY_MIN, "the fixture is big enough to pay");
     // The CEO pays the member the pool (only Bob is a member to pay).
     let paid = until(Duration::from_secs(60), || {
-        let t = driver::unix_now();
+        let t = eve_bot::clock::unix_secs();
         if let Some(m) = hall.lock().members.get_mut(&BOB) {
             m.last_turn = Some(t);
         }
@@ -395,7 +395,7 @@ fn builders_are_granted_the_division_a_builder_delivers_and_a_trader_sells_and_r
         .expect("answered");
     assert_eq!(rented.refusal(), None, "RentOffice refused");
 
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let hall = Hall::new(2).with_every(0);
     {
         let mut st = hall.lock();

@@ -59,7 +59,7 @@ fn bot(
     hall: &Arc<Hall>,
     addr: std::net::SocketAddr,
 ) -> (Handle, std::thread::JoinHandle<()>) {
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded(name, 1, TABLE, &Signals::default(), now);
     mind.career = career.to_owned();
     mind.since = now;

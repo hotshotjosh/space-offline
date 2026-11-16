@@ -31,6 +31,7 @@
 //! die at the ESS every time).
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::{Conn, Error, Result};
 use eve_marshal::PyValue;
 use std::time::{Duration, Instant};
@@ -506,7 +507,7 @@ impl Conn {
         let Some(v) = out.value() else {
             return Ok(None);
         };
-        let mut view = parse(system, &v, Instant::now());
+        let mut view = parse(system, &v, clock::instant());
         if let Some(view) = &mut view {
             let ess = view.ess;
             let w = self.world_now();
@@ -540,7 +541,7 @@ mod tests {
             ess: 3_100_000_000_201,
             value,
             linked_by,
-            read_at: Instant::now(),
+            read_at: clock::instant(),
             gap: None,
         }
     }
@@ -651,7 +652,7 @@ mod tests {
     #[test]
     fn a_refusal_in_one_hull_does_not_bar_a_later_hull() {
         use crate::brain::{Observation, Place, ShipInfo};
-        let now = Instant::now();
+        let now = clock::instant();
         let mut m = crate::brain::Memory::new("Invented", crate::brain::Policy::fast());
         m.hunt.ess.link_hull = Some(crate::escort::RIFTER);
         for _ in 0..MAX_REFUSED {
@@ -829,7 +830,7 @@ mod tests {
             ),
             ("mainValue", PyValue::Real(123.0)),
         ]);
-        let v = parse(SYS, &d, Instant::now()).expect("a view");
+        let v = parse(SYS, &d, clock::instant()).expect("a view");
         assert_eq!((v.beacon, v.value, v.linked_by), (777, 123.0, Some(ME)));
         let free = eve_server::pyutil::pydict(vec![
             ("beaconID", PyValue::Int(778)),
@@ -837,14 +838,14 @@ mod tests {
             ("mainValue", PyValue::Real(5.0)),
         ]);
         assert_eq!(
-            parse(SYS, &free, Instant::now()).map(|v| v.linked_by),
+            parse(SYS, &free, clock::instant()).map(|v| v.linked_by),
             Some(None)
         );
     }
 
     #[test]
     fn a_refused_link_cools_the_bank_and_counts() {
-        let now = Instant::now();
+        let now = clock::instant();
         let mut m = Mind::default();
         m.on_link(false, now);
         assert_eq!(m.refused, 1);

@@ -64,6 +64,7 @@
 //! over, the militia, the complexes already run and the systems to avoid.
 
 use crate::brain::{Act, Homing, Memory, Observation, Place};
+use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::travel::{Map, Trips};
 use crate::{Conn, Error, Result};
@@ -804,7 +805,7 @@ pub fn sortie(
     if let Some(r) = risk {
         PLANS.with(name, |p| p.risk = Some(r));
     }
-    let now = Instant::now();
+    let now = clock::instant();
     PLANS.with(name, |p| p.forget(now));
     let warzones = read_warzones(&value(c, WARZONES, "GetAllWarzones", vec![])?);
     let militia = ensure_enlisted(
@@ -993,7 +994,7 @@ pub fn ensure_enlisted(
         }
     }
     PLANS.with(name, |p| {
-        p.not_before = Some(Instant::now() + NO_OFFICE_FOR)
+        p.not_before = Some(clock::instant() + NO_OFFICE_FOR)
     });
     Err(Error::Refused(last.unwrap_or_else(|| {
         format!("plex: no station of any warzone militia to enlist at from {here}")
@@ -1046,8 +1047,8 @@ pub fn scan(c: &mut Conn) -> Result<(Vec<Complex>, usize)> {
             return Ok(read(&args));
         }
     }
-    let deadline = Instant::now() + FULL_STATE_WAIT;
-    while Instant::now() < deadline {
+    let deadline = clock::instant() + FULL_STATE_WAIT;
+    while clock::instant() < deadline {
         for e in c.pump(POLL)? {
             if let crate::Event::Push(event, args) = e
                 && event == FULL_STATE
@@ -1085,9 +1086,9 @@ fn warping(c: &mut Conn) -> bool {
 }
 
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + WARP_CEILING;
+    let deadline = clock::instant() + WARP_CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "plex: still warping after the ceiling".into(),
             ));
@@ -1467,7 +1468,7 @@ mod tests {
     /// tolerance sends it to dock and marks the system avoided.
     #[test]
     fn a_quiet_grid_plexes_on_and_a_hostile_over_the_tolerance_sends_it_home() {
-        let now = Instant::now();
+        let now = clock::instant();
         let mut m = Memory::new("Plexer-quiet", Policy::fast());
         let mut o = quiet_grid(now);
         assert_eq!(
@@ -1652,7 +1653,7 @@ mod tests {
     #[test]
     fn a_bot_with_no_office_waits_instead_of_asking_again() {
         let name = "Plexer-nooffice";
-        let now = Instant::now();
+        let now = clock::instant();
         let mut m = Memory::new(name, Policy::fast());
         let mut o = quiet_grid(now);
         o.now = now + crate::site_runner::SITE_SETTLE * 2;
@@ -1812,13 +1813,13 @@ mod tests {
         )
         .expect("enlists at its office");
         c.undock().expect("undocks");
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while c.session().solar_system_id().is_none() && Instant::now() < deadline {
+        let deadline = clock::instant() + Duration::from_secs(20);
+        while c.session().solar_system_id().is_none() && clock::instant() < deadline {
             c.pump(POLL).expect("pumps");
         }
         let system = c.session().solar_system_id().expect("in space");
         c.bind_ballpark(system).expect("binds");
-        while !c.world().has_state() && Instant::now() < deadline {
+        while !c.world().has_state() && clock::instant() < deadline {
             c.pump(POLL).expect("pumps");
         }
         assert!(c.world().has_state(), "a park state");
@@ -1864,8 +1865,8 @@ mod tests {
         c.select_character_named("PlexerB").expect("selects");
         let st = c.session().station_id().expect("docked");
         c.undock().expect("undocks");
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while c.session().solar_system_id().is_none() && Instant::now() < deadline {
+        let deadline = clock::instant() + Duration::from_secs(20);
+        while c.session().solar_system_id().is_none() && clock::instant() < deadline {
             c.pump(POLL).expect("pumps");
         }
         assert!(c.session().station_id().is_none(), "in space");
@@ -1923,9 +1924,9 @@ mod tests {
         let addr = server(&["PlexerB", "PlexerA"]);
         let mut c = in_space_at(addr, "PlexerB");
         // The system's sites reach the tracker once a pilot is there.
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = clock::instant() + Duration::from_secs(30);
         let mut seen = Vec::new();
-        while seen.is_empty() && Instant::now() < deadline {
+        while seen.is_empty() && clock::instant() < deadline {
             seen = scan(&mut c).map(|(x, _)| x).unwrap_or_default();
         }
         assert!(
@@ -1965,9 +1966,9 @@ mod tests {
         // Side A: its own complex is not worth running, and with no map
         // there is nowhere to fly.
         let mut c = in_space_at(addr, "PlexerA");
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = clock::instant() + Duration::from_secs(30);
         let mut listed = 0;
-        while listed == 0 && Instant::now() < deadline {
+        while listed == 0 && clock::instant() < deadline {
             listed = scan(&mut c).map(|(_, n)| n).unwrap_or(0);
         }
         assert!(listed > 0, "the overlay lists the complex");
@@ -1976,7 +1977,10 @@ mod tests {
             other => panic!("no flight without a map, not {other:?}"),
         }
         assert!(
-            PLANS.get("PlexerA").avoided(Instant::now()).contains(&HOME),
+            PLANS
+                .get("PlexerA")
+                .avoided(clock::instant())
+                .contains(&HOME),
             "nothing worth running: the system is avoided"
         );
     }

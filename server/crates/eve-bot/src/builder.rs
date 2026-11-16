@@ -73,6 +73,7 @@
 //! client's own call shapes, which the verbs cite.
 
 use crate::brain::{self, Act, Memory, Observation};
+use crate::clock;
 use crate::pricing::{self, Prices, Quote};
 use crate::roles::{Lacks, RoleSpec, Summary};
 pub use crate::verbs::{BlueprintRow, Book, BookOrder, JobRow, OwnOrder, RANGE_STATION, SellLine};
@@ -816,9 +817,7 @@ impl<'a> Sourcing<'a> {
         Sourcing::with(
             content,
             recipes,
-            Made::with_runners(
-                crate::abyss_run::BOARD.has_runners(None, std::time::Instant::now()),
-            ),
+            Made::with_runners(crate::abyss_run::BOARD.has_runners(None, clock::instant())),
         )
     }
 
@@ -832,9 +831,7 @@ impl<'a> Sourcing<'a> {
         Sourcing::with(
             content,
             recipes,
-            Made::with_runners(
-                crate::abyss_run::BOARD.has_runners(server, std::time::Instant::now()),
-            ),
+            Made::with_runners(crate::abyss_run::BOARD.has_runners(server, clock::instant())),
         )
     }
 
@@ -2532,9 +2529,7 @@ pub fn wants_in(dir: &std::path::Path) -> std::result::Result<Vec<(i64, i64)>, S
 
 /// Unix seconds now.
 pub fn now_secs() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64)
+    clock::unix_secs() as i64
 }
 
 #[cfg(test)]
@@ -2557,7 +2552,7 @@ mod tests {
     use eve_server::model::Character;
     use std::net::SocketAddr;
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     /// An ask or bid; `npc` puts it in the exchange's id band.
     fn order(id: i64, price: f64, vol: i64, bid: bool, npc: bool) -> BookOrder {
@@ -2591,7 +2586,7 @@ mod tests {
     #[test]
     fn the_builder_docked_runs_the_market_on_its_cadence() {
         let mut m = Memory::new("Builder1", brain::Policy::fast());
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = brain::Place::Docked {
             station: 69_000_001,
         };
@@ -2952,17 +2947,17 @@ mod tests {
         config.policy.gm_setup = false;
         config.policy.wants = Arc::new(wants);
         let (handle, thread) = crate::driver::spawn(config);
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = clock::instant() + Duration::from_secs(30);
         let entry = loop {
             if let Some(e) = handle.log().into_iter().find(|e| e.kind == kind) {
                 break e;
             }
             assert!(
-                Instant::now() < deadline,
+                clock::instant() < deadline,
                 "no {kind:?} entry: {:#?}",
                 handle.log()
             );
-            std::thread::sleep(Duration::from_millis(100));
+            clock::sleep(Duration::from_millis(100));
         };
         handle.stop();
         let _ = thread.join();
@@ -3182,7 +3177,7 @@ mod tests {
         );
 
         // The server's delay is 300 / 60 = 5 s.
-        std::thread::sleep(Duration::from_secs(6));
+        clock::sleep(Duration::from_secs(6));
         gm(&mut b, &format!("/createitem {} 4", module.type_id));
         gm(&mut b, &format!("/createitem {} 4", other.type_id));
         let station = b.session().station_id().expect("docked");
@@ -3822,7 +3817,7 @@ mod tests {
         // (an invented board; the process-wide one is not touched).
         let board = crate::abyss_run::Board::new();
         let server: std::net::SocketAddr = "127.0.0.1:1".parse().expect("literal");
-        let now = std::time::Instant::now();
+        let now = clock::instant();
         let from_world = |board: &crate::abyss_run::Board| {
             Made::with_runners(board.has_runners(Some(server), now))
         };

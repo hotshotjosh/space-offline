@@ -49,7 +49,7 @@ use eve_proto::{try_split_frame, write_frame};
 use eve_server::{crypto_hash, dumps, loads};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The one clock seam (#146). Becomes `pub use eve_server::clock;` once the
 /// server's `lib.rs` declares the module itself.
@@ -726,8 +726,8 @@ impl Conn {
             session_changed: false,
             session_change: None,
         };
-        let deadline = Instant::now() + REPLY_WAIT;
-        while Instant::now() < deadline {
+        let deadline = clock::instant() + REPLY_WAIT;
+        while clock::instant() < deadline {
             let frame = self.recv()?;
             let PyValue::Instance { class, .. } = &frame else {
                 return Err(Error::Protocol(format!(
@@ -1350,7 +1350,7 @@ impl Conn {
     ///
     /// An empty `Vec` is a quiet `within`, not an error.
     pub fn pump(&mut self, within: Duration) -> Result<Vec<Event>> {
-        let started = Instant::now();
+        let started = clock::instant();
         let mut events = Vec::new();
         let mut wait = within.max(Duration::from_millis(1));
         let verdict = loop {
@@ -1360,7 +1360,7 @@ impl Conn {
                     // The burst: whatever follows within `BURST_GAP`, bounded
                     // by `within` overall so a chatty system cannot hold the
                     // bot here for ever.
-                    if started.elapsed() >= within {
+                    if clock::since(started) >= within {
                         break Ok(());
                     }
                     wait = BURST_GAP;
@@ -1396,9 +1396,9 @@ impl Conn {
         let mut seen = Vec::new();
         // A hard cap besides the quiet window: on a busy grid frames never
         // stop, so a wait for quiet alone could last the whole fight (HANG-1).
-        let cap = Instant::now() + within * PUSH_WAIT_CAP;
+        let cap = clock::instant() + within * PUSH_WAIT_CAP;
         loop {
-            if Instant::now() >= cap {
+            if clock::instant() >= cap {
                 break Ok(seen);
             }
             match self.recv_within(within) {

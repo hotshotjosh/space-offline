@@ -297,7 +297,7 @@ fn founder(
     hall: &Arc<Hall>,
     addr: SocketAddr,
 ) -> (Handle, std::thread::JoinHandle<()>) {
-    let now = driver::unix_now();
+    let now = eve_bot::clock::unix_secs();
     let mut mind = Mind::seeded(name, 1, TABLE, &Signals::default(), now);
     mind.career = "miner".to_owned();
     mind.since = now;

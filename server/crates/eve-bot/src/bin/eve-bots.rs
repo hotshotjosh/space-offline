@@ -108,6 +108,7 @@
 //! without it they know no hunting ground and hunt nobody.
 
 use eve_bot::brain::{AcceptFleet, RoleRef};
+use eve_bot::clock;
 use eve_bot::driver::{self, BotConfig, Pace};
 use eve_bot::roles;
 use std::collections::BTreeMap;
@@ -808,7 +809,7 @@ fn run() -> Result<(), String> {
         let seed = society_seed.unwrap_or(driver::SOCIETY_SEED);
         eve_bot::mind::set_seed(seed);
         let signals = signals(pvp);
-        let now = driver::unix_now();
+        let now = clock::unix_secs();
         let dir = state.as_deref().map(Path::new);
         let day = day_secs.unwrap_or(driver::DAY_SECS);
         let h = match dir {
@@ -1229,7 +1230,7 @@ fn run() -> Result<(), String> {
             controller,
         )
     });
-    // DOC-4: the battle tick, every `BATTLE_TICK_S` of wall time: the hall
+    // DOC-4: the battle tick, every `BATTLE_TICK_S` of game time: the hall
     // reads the board, steps its theatres and queues the commanders'
     // actions (a commander's bot runs them on its own turn).
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1239,14 +1240,14 @@ fn run() -> Result<(), String> {
             let parts_tables = tables.clone();
             Some(std::thread::spawn(move || {
                 let every = Duration::from_secs(eve_bot::doctrine_sense::BATTLE_TICK_S);
-                let mut next = std::time::Instant::now() + every;
+                let mut next = clock::instant() + every;
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    std::thread::sleep(Duration::from_millis(250));
-                    if std::time::Instant::now() < next {
+                    clock::sleep(Duration::from_millis(250));
+                    if clock::instant() < next {
                         continue;
                     }
                     next += every;
-                    for line in h.theatre_tick(driver::unix_now(), &b) {
+                    for line in h.theatre_tick(clock::unix_secs(), &b) {
                         println!("{line}");
                     }
                     // FE-BUILD / DOC-7: what the leaders' doctrines want,
@@ -1285,28 +1286,28 @@ fn run() -> Result<(), String> {
         _ => None,
     };
     // The population's `[soc]` line now and then while the bots run.
-    let mut last = std::time::Instant::now();
-    let started = std::time::Instant::now();
+    let mut last = clock::instant();
+    let started = clock::wall();
     let mut reporter = eve_bot::stats::Reporter::default();
-    let mut stats_last = std::time::Instant::now();
+    let mut stats_last = clock::wall();
     // ADMIN-WEB: the groups' roster for the server's admin page, every 5 s.
     let mut groups_last: Option<std::time::Instant> = None;
     while threads.iter().any(|t| !t.is_finished())
-        || (control_thread.is_some() && run_for.is_none_or(|d| started.elapsed() < d))
+        || (control_thread.is_some() && run_for.is_none_or(|d| clock::wall_since(started) < d))
     {
         std::thread::sleep(Duration::from_millis(500));
         if let Some(every) = stats_every
-            && stats_last.elapsed() >= every
+            && clock::wall_since(stats_last) >= every
         {
-            stats_last = std::time::Instant::now();
+            stats_last = clock::wall();
             let live = launched.iter().filter(|(_, h)| h.is_live()).count();
             println!("{}", reporter.line(live));
         }
         if let Some((_, c)) = &control_thread
             && let Some(dir) = control.as_deref()
-            && groups_last.is_none_or(|t| t.elapsed() >= Duration::from_secs(5))
+            && groups_last.is_none_or(|t| clock::wall_since(t) >= Duration::from_secs(5))
         {
-            groups_last = Some(std::time::Instant::now());
+            groups_last = Some(clock::wall());
             if let Ok(c) = c.lock() {
                 let _ = std::fs::write(
                     Path::new(dir).join(eve_bot::control::GROUPS_FILE),
@@ -1333,12 +1334,12 @@ fn run() -> Result<(), String> {
             }
         }
         if let Some(b) = bubble_run.as_mut() {
-            for line in b.step(driver::unix_now()) {
+            for line in b.step(clock::unix_secs()) {
                 println!("{line}");
             }
         }
-        if !minds.is_empty() && last.elapsed() >= driver::SOC_SUMMARY_EVERY {
-            last = std::time::Instant::now();
+        if !minds.is_empty() && clock::since(last) >= driver::SOC_SUMMARY_EVERY {
+            last = clock::instant();
             println!("{}", soc_summary(&minds, &online, hall.as_deref()));
             for line in doc_rollup(hall.as_deref(), &real_keys) {
                 println!("{line}");
@@ -1380,7 +1381,7 @@ fn doc_rollup(
     hall: Option<&eve_bot::corpmind::Hall>,
     real: &std::collections::BTreeSet<String>,
 ) -> Vec<String> {
-    hall.map(|h| eve_bot::doctrine_report::rollup(&h.lock(), driver::unix_now(), real))
+    hall.map(|h| eve_bot::doctrine_report::rollup(&h.lock(), clock::unix_secs(), real))
         .unwrap_or_default()
 }
 
@@ -1411,7 +1412,7 @@ fn soc_summary(
         eve_bot::mind::summary_line(
             &refs,
             online.load(std::sync::atomic::Ordering::SeqCst),
-            driver::unix_now(),
+            clock::unix_secs(),
             day,
         ),
         // PROG-PVE2: the realised income by career, over time.

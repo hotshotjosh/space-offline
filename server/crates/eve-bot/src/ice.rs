@@ -52,6 +52,7 @@
 //! the client's own calls and ids, cited [V].
 
 use crate::brain::{self, Act, Memory, Observation, StopReason};
+use crate::clock;
 use crate::courier::{Here, Move, next_move};
 use crate::huffer::{Harvest, Step, next_step, pick_cloud};
 use crate::roles::{Lacks, RoleSpec, Summary};
@@ -61,7 +62,7 @@ use crate::{Conn, DOCK_RANGE, Error, Event, GodmaEffect, ItemRow, LockState, Res
 use eve_marshal::PyValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Ice Harvester I **[V-data]** (group 464, default effect 67, 1,000 m3 a
 /// 240 s cycle, `maxRange` 10 km).
@@ -683,7 +684,7 @@ struct Harvested {
 /// rocks are gone, the stops pile up, or the trip's ceiling passes. Every
 /// harvester runs on the one claim.
 fn harvest(c: &mut Conn, harvesters: &[i64], range: f64, seed: u64) -> Result<Harvested> {
-    let started = Instant::now();
+    let started = clock::instant();
     let mut out = Harvested {
         claims: 0,
         full: false,
@@ -691,7 +692,7 @@ fn harvest(c: &mut Conn, harvesters: &[i64], range: f64, seed: u64) -> Result<Ha
     let (mut claim, mut locked) = (None::<i64>, false);
     let mut running: BTreeSet<i64> = BTreeSet::new();
     let mut odd = 0;
-    while started.elapsed() < HARVEST_CEILING && odd < MAX_ODD_STOPS {
+    while clock::since(started) < HARVEST_CEILING && odd < MAX_ODD_STOPS {
         let rocks = rocks_in(c);
         if claim.is_some_and(|id| !rocks.iter().any(|(r, _)| *r == id)) {
             (claim, locked) = (None, false);
@@ -806,8 +807,8 @@ pub fn rocks_in(c: &mut Conn) -> Vec<(i64, f64)> {
 /// Read pushes until an `OnTarget('add', id)` (`true`) or a loss or the
 /// ceiling (`false`).
 fn await_lock(c: &mut Conn, id: i64) -> Result<bool> {
-    let deadline = Instant::now() + CEILING;
-    while Instant::now() < deadline {
+    let deadline = clock::instant() + CEILING;
+    while clock::instant() < deadline {
         for e in c.pump(POLL)? {
             let Event::Push(name, args) = e else { continue };
             if name != "OnTarget" || args.get(1) != Some(&PyValue::Int(id)) {
@@ -873,8 +874,8 @@ fn warping(c: &mut Conn) -> bool {
 
 /// Read pushes for `d`.
 fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
-    let until = Instant::now() + d;
-    while Instant::now() < until {
+    let until = clock::instant() + d;
+    while clock::instant() < until {
         c.pump(POLL)?;
     }
     Ok(())
@@ -882,9 +883,9 @@ fn settle_for(c: &mut Conn, d: Duration) -> Result<()> {
 
 /// Read pushes until `done` holds or [`CEILING`] passes.
 fn settle(c: &mut Conn, mut done: impl FnMut(&mut Conn) -> bool) -> Result<()> {
-    let deadline = Instant::now() + CEILING;
+    let deadline = clock::instant() + CEILING;
     while !done(c) {
-        if Instant::now() >= deadline {
+        if clock::instant() >= deadline {
             return Err(Error::Refused(
                 "ice: still moving after the travel ceiling".into(),
             ));
@@ -930,7 +931,7 @@ mod tests {
     }
 
     fn docked_obs(ship_type: Option<i64>) -> Observation {
-        let mut o = Observation::empty(Instant::now());
+        let mut o = Observation::empty(clock::instant());
         o.place = Place::Docked { station: STATION };
         o.ship = Some(ShipInfo {
             ship_id: SHIP,
