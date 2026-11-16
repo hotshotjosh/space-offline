@@ -818,6 +818,30 @@ fn generator_types_are_the_types_with_the_cyno_effect() {
 }
 
 #[test]
+fn generator_hull_groups_are_the_groups_every_generator_names() {
+    use eve_server::fitting::CAN_FIT_GROUP_ATTRS as ATTRS;
+    let (a0, a1) = (ATTRS[0], ATTRS[ATTRS.len() - 1]);
+    let row = |id: i64, effects: &str, attrs: &str| {
+        format!(
+            "type\t{id}\t{GROUP_CYNO}\t7\t1\t1\t5.0\t0.0\t0.0\t0.0\t0\t{effects}\t{attrs}\tInvented {id}\n"
+        )
+    };
+    let cyno = CYNO_EFFECT_ID.to_string();
+    let text = format!(
+        "{}{}{}",
+        row(9_200_001, &cyno, &format!("{a0}=990811;{a1}=990812")),
+        row(9_200_002, &cyno, &format!("{a0}=990812")),
+        row(9_200_003, "77", &format!("{a0}=990899")),
+    );
+    let table = eve_server::typedata::Table::parse(&text).expect("the invented rows parse");
+    let gens = generator_types(&table);
+    assert_eq!(generator_hull_groups(&table, &gens), vec![990_812]);
+    assert!(generator_hull_groups(&table, &[9_200_999]).is_empty());
+    let bare = eve_server::typedata::Table::parse(&row(9_200_004, &cyno, "")).expect("parses");
+    assert!(generator_hull_groups(&bare, &generator_types(&bare)).is_empty());
+}
+
+#[test]
 fn a_pair_role_forms_no_dev_group_fleet() {
     assert!(is_pair_role(&ROLE) && is_pair_role(&ALT_ROLE));
     assert!(is_pilot_role(&ROLE) && !is_pilot_role(&ALT_ROLE));

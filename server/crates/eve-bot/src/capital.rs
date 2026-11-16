@@ -1041,6 +1041,34 @@ pub fn generator_types(table: &eve_server::typedata::Table) -> Vec<i64> {
     ids
 }
 
+/// **The hull groups every generator fits on**: the groups the `generators` types name in their
+/// `canFitShipGroup*` attributes ([`eve_server::fitting::CAN_FIT_GROUP_ATTRS`]), read from the
+/// type table at run time, as the **intersection** over the generators (the fit may pick any of
+/// them, so only a group all of them name is safe). A generator unknown to the table, or naming
+/// no group, puts no restriction on the set and is skipped. Ascending and unique; empty when no
+/// generator names a group or the generators share none.
+pub fn generator_hull_groups(table: &eve_server::typedata::Table, generators: &[i64]) -> Vec<i64> {
+    let mut common: Option<Vec<i64>> = None;
+    for t in generators.iter().filter_map(|&g| table.get(g)) {
+        let mut own: Vec<i64> = eve_server::fitting::CAN_FIT_GROUP_ATTRS
+            .iter()
+            .filter_map(|&a| t.attribute(a))
+            .map(|v| v.round() as i64)
+            .filter(|&g| g > 0)
+            .collect();
+        if own.is_empty() {
+            continue;
+        }
+        own.sort_unstable();
+        own.dedup();
+        common = Some(match common {
+            None => own,
+            Some(c) => c.into_iter().filter(|g| own.contains(g)).collect(),
+        });
+    }
+    common.unwrap_or_default()
+}
+
 /// [`generator_types`] of the bundle's type data.
 pub fn generator_types_in(content: &eve_server::content::Content) -> Vec<i64> {
     generator_types(eve_server::typedata::installed_in(content).table())
@@ -1435,6 +1463,17 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
     // B4: an alt with no generator fits its own, docked: hangar stock first, else the
     // cheapest ask inside the fit budget. Never a GM grant.
     if module.is_none() && docked {
+        // A capsule fits no module: sit in a hull a generator fits on first.
+        let table = eve_server::typedata::installed_in(content).table();
+        let groups = generator_hull_groups(table, &generator_types(table));
+        if !groups.is_empty() {
+            match get_hull(c, content, &groups, &mut m.capital.shop_next)? {
+                // A boarded hull leaves `ship` naming the capsule: start the next tick fresh.
+                Ok(note) if note != "flying one" => return Ok(format!("cyno alt: {note}")),
+                Ok(_) => {}
+                Err(why) => return Ok(format!("cyno alt: {why}")),
+            }
+        }
         let mut unused = None;
         let note = crate::capital_fight::fit_effect(
             c,
