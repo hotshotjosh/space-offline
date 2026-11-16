@@ -469,15 +469,13 @@ impl Conn {
         sink: &mut Vec<PyValue>,
         want: impl Fn(&str, &[PyValue]) -> bool,
     ) -> Result<Option<(String, Vec<PyValue>)>> {
-        let restore = self.stream.read_timeout()?;
         let deadline = Instant::now() + within;
-        let verdict = loop {
+        loop {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 break Ok(None);
             }
-            self.stream.set_read_timeout(Some(left))?;
-            match self.recv() {
+            match self.recv_within(left) {
                 Ok(frame) => {
                     if let Some((name, args)) = notification(&frame) {
                         sink.push(frame);
@@ -489,9 +487,7 @@ impl Conn {
                 Err(Error::Io(e)) if crate::is_timeout(&e) => break Ok(None),
                 Err(e) => break Err(e),
             }
-        };
-        self.stream.set_read_timeout(restore)?;
-        verdict
+        }
     }
 
     // -- inventory --------------------------------------------------------

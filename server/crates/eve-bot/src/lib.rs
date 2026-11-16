@@ -51,6 +51,10 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
+/// The one clock seam (#146). Becomes `pub use eve_server::clock;` once the
+/// server's `lib.rs` declares the module itself.
+pub use eve_server::game_clock::clock;
+
 pub mod abyss_run;
 pub mod acquire;
 pub mod ammo;
@@ -68,6 +72,8 @@ pub mod capital_fight;
 pub mod career;
 pub mod chat;
 pub mod chatter;
+#[cfg(test)]
+mod clock_lint;
 pub mod coalition;
 pub mod cofound;
 pub mod contact_plan;
@@ -436,7 +442,7 @@ impl Conn {
     /// a bot that hangs for ever. A bot is unattended by definition.
     pub fn connect(addr: SocketAddr, read_timeout: Duration) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
-        stream.set_read_timeout(Some(read_timeout))?;
+        stream.set_read_timeout(Some(clock::real_timeout(read_timeout)))?;
         Ok(Conn {
             stream,
             buf: Vec::new(),
@@ -1318,6 +1324,18 @@ impl Conn {
         Ok(outcome)
     }
 
+    /// [`Self::recv`] with a read timeout of `d` (game time: the socket wait
+    /// is `clock::real_timeout(d)`), then the caller's timeout put back
+    /// whatever happened, or every later call would inherit this one's much
+    /// shorter patience. A timeout comes back as `Error::Io` ([`is_timeout`]).
+    pub fn recv_within(&mut self, d: Duration) -> Result<PyValue> {
+        let restore = self.stream.read_timeout()?;
+        self.stream.set_read_timeout(Some(clock::real_timeout(d)))?;
+        let frame = self.recv();
+        self.stream.set_read_timeout(restore)?;
+        frame
+    }
+
     /// **Read whatever arrives, losing nothing**: block up to `within` for
     /// the first frame, then drain the rest of its burst, and return every
     /// frame as an [`Event`].
@@ -1332,13 +1350,11 @@ impl Conn {
     ///
     /// An empty `Vec` is a quiet `within`, not an error.
     pub fn pump(&mut self, within: Duration) -> Result<Vec<Event>> {
-        let restore = self.stream.read_timeout()?;
         let started = Instant::now();
         let mut events = Vec::new();
         let mut wait = within.max(Duration::from_millis(1));
         let verdict = loop {
-            self.stream.set_read_timeout(Some(wait))?;
-            match self.recv() {
+            match self.recv_within(wait) {
                 Ok(frame) => {
                     events.push(event_of(&frame));
                     // The burst: whatever follows within `BURST_GAP`, bounded
@@ -1353,7 +1369,6 @@ impl Conn {
                 Err(e) => break Err(e),
             }
         };
-        self.stream.set_read_timeout(restore)?;
         verdict.map(|()| events)
     }
 
@@ -1378,17 +1393,15 @@ impl Conn {
         within: Duration,
         done: impl Fn(&PyValue) -> bool,
     ) -> Result<Vec<PyValue>> {
-        let restore = self.stream.read_timeout()?;
-        self.stream.set_read_timeout(Some(within))?;
         let mut seen = Vec::new();
         // A hard cap besides the quiet window: on a busy grid frames never
         // stop, so a wait for quiet alone could last the whole fight (HANG-1).
         let cap = Instant::now() + within * PUSH_WAIT_CAP;
-        let outcome = loop {
+        loop {
             if Instant::now() >= cap {
                 break Ok(seen);
             }
-            match self.recv() {
+            match self.recv_within(within) {
                 Ok(frame) => {
                     if notification(&frame).is_some() {
                         let stop = done(&frame);
@@ -1403,9 +1416,7 @@ impl Conn {
                 }
                 Err(e) => break Err(e),
             }
-        };
-        self.stream.set_read_timeout(restore)?;
-        outcome
+        }
     }
 
     /// If `outcome` carries no session change yet, wait up to `within` for
@@ -1436,10 +1447,8 @@ impl Conn {
         within: Duration,
         notifications: &mut Vec<PyValue>,
     ) -> Result<Option<SessionChange>> {
-        let restore = self.stream.read_timeout()?;
-        self.stream.set_read_timeout(Some(within))?;
-        let verdict = loop {
-            match self.recv() {
+        loop {
+            match self.recv_within(within) {
                 Ok(frame) => {
                     let PyValue::Instance { class, .. } = &frame else {
                         continue;
@@ -1458,11 +1467,7 @@ impl Conn {
                 }
                 Err(e) => break Err(e),
             }
-        };
-        // Put the caller's timeout back whatever happened, or every later call
-        // inherits this one's much shorter patience.
-        self.stream.set_read_timeout(restore)?;
-        verdict
+        }
     }
 
     /// Complete the login handshake and return what the server said last.
