@@ -92,6 +92,7 @@ use crate::brain::{
 };
 use crate::career::{self, Career, Signals};
 use crate::chat::Chat;
+use crate::clock;
 use crate::escort;
 use crate::mind::{self, Decision, Mind};
 use crate::roles;
@@ -488,11 +489,10 @@ pub const BUBBLE_WAIT: Duration = Duration::from_secs(3);
 /// How often `eve-bots --society` prints the population's `[soc]` summary.
 pub const SOC_SUMMARY_EVERY: Duration = Duration::from_secs(60);
 
-/// Unix seconds now: the mind's and the timetable's clock.
+/// Unix seconds now: the mind's and the timetable's clock. Kept for the files
+/// that still call it; `clock::unix_secs()` is the same value (#146).
 pub fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+    clock::unix_secs()
 }
 
 /// Parse a `population.tsv` text (`hour TAB weight`, `#` comments) into 24
@@ -1408,13 +1408,13 @@ impl Bot {
             config.policy.role = soc.role();
         }
         let memory = Memory::new(&config.name, config.policy.clone());
-        let now = Instant::now();
+        let now = clock::instant();
         Bot {
             rng: memory.seed.rotate_left(17) | 1,
             memory,
             obs: Observation::empty(now),
             track: Tracking::default(),
-            started: now,
+            started: clock::wall(),
             stops: 0,
             reconnects: 0,
             ore_unloaded: 0,
@@ -1464,7 +1464,7 @@ impl Bot {
             || self
                 .config
                 .run_for
-                .is_some_and(|d| self.started.elapsed() >= d)
+                .is_some_and(|d| clock::wall_since(self.started) >= d)
     }
 
     fn jitter(&mut self, (lo, hi): (Duration, Duration)) -> Duration {
@@ -1477,13 +1477,13 @@ impl Bot {
 
     /// Sleep `d` unless stopped first. Only for when there is no socket.
     fn idle(&self, d: Duration) {
-        let until = Instant::now() + d;
+        let until = clock::instant() + d;
         while !self.expired() {
-            let left = until.saturating_duration_since(Instant::now());
+            let left = until.saturating_duration_since(clock::instant());
             if left.is_zero() {
                 return;
             }
-            std::thread::sleep(left.min(Duration::from_millis(100)));
+            clock::sleep(left.min(Duration::from_millis(100)));
         }
     }
 
@@ -1501,8 +1501,8 @@ impl Bot {
         verdict: Verdict,
         echo: bool,
     ) {
-        let t0 = Instant::now();
-        let at = self.started.elapsed();
+        let t0 = clock::wall();
+        let at = clock::wall_since(self.started);
         if echo {
             let secs = at.as_secs_f64();
             let tail = match &verdict {
@@ -1538,7 +1538,7 @@ impl Bot {
                 verdict,
             });
         }
-        crate::stats::LOG.add(t0.elapsed());
+        crate::stats::LOG.add(clock::wall_since(t0));
     }
 
     /// The supervisor.
@@ -1554,7 +1554,7 @@ impl Bot {
             if !self.await_window() {
                 break;
             }
-            let began = Instant::now();
+            let began = clock::instant();
             // #257: the slot is freed when the session ends, by return or by
             // a panic (the guard drops while unwinding).
             let ended = {
@@ -1564,7 +1564,7 @@ impl Bot {
             if let Some(me) = self.my_char {
                 set_departed(self.config.addr, me, true);
             }
-            if began.elapsed() >= HEALTHY {
+            if clock::since(began) >= HEALTHY {
                 backoff = BACKOFF_FIRST;
             }
             *self.handle.socket.lock().expect("socket slot") = None;
@@ -1632,7 +1632,7 @@ impl Bot {
         };
         let mut said = false;
         while !self.expired() {
-            let wait = table.until_online(unix_now());
+            let wait = table.until_online(clock::unix_secs());
             if wait == 0 {
                 return true;
             }
@@ -1687,7 +1687,7 @@ impl Bot {
             .config
             .society
             .as_ref()
-            .is_some_and(|s| s.timetable.until_online(unix_now()) > 0);
+            .is_some_and(|s| s.timetable.until_online(clock::unix_secs()) > 0);
         if self.handle.released() || window_closed {
             return Some(Exit::LogOff);
         }
@@ -1716,7 +1716,7 @@ impl Bot {
                         .as_ref()
                         .and_then(|s| s.state.as_deref()),
                     &self.config.name,
-                    unix_now(),
+                    clock::unix_secs(),
                     "budget",
                     &format!("wait {online}/{limit}"),
                 );
@@ -1732,7 +1732,7 @@ impl Bot {
                 .config
                 .society
                 .as_ref()
-                .is_some_and(|s| s.timetable.until_online(unix_now()) > 0);
+                .is_some_and(|s| s.timetable.until_online(clock::unix_secs()) > 0);
             if self.expired() {
                 crate::budget::release(&self.config.name);
                 return Some(Exit::Done);
@@ -1765,10 +1765,10 @@ impl Bot {
             conn.gate_sends(move || {
                 let wait = pacer
                     .lock()
-                    .map(|mut p| p.admit(Instant::now()))
+                    .map(|mut p| p.admit(clock::instant()))
                     .unwrap_or_default();
                 if !wait.is_zero() {
-                    std::thread::sleep(wait);
+                    clock::sleep(wait);
                 }
             });
         }
@@ -1823,7 +1823,7 @@ impl Bot {
                 &friends,
                 hall.as_deref(),
                 mind.as_deref(),
-                unix_now(),
+                clock::unix_secs(),
             ) {
                 Ok(n) => self.record(
                     ActKind::Session,
@@ -1851,7 +1851,7 @@ impl Bot {
         self.logoff_since = None;
 
         // **From scratch**: nothing of the last connection's world survives.
-        self.obs = Observation::empty(Instant::now());
+        self.obs = Observation::empty(clock::instant());
         self.track = Tracking {
             names: slots
                 .into_iter()
@@ -1983,13 +1983,13 @@ impl Bot {
             if let Some(exit) = self.society_turn(&mut conn)? {
                 return Ok(exit);
             }
-            self.obs.cap = self.track.cap.scene(Instant::now());
+            self.obs.cap = self.track.cap.scene(clock::instant());
             self.track.scram.on_ship(conn.session().ship_id());
-            self.obs.scram = self.track.scram.view(Instant::now());
+            self.obs.scram = self.track.scram.view(clock::instant());
             // BP-COUNTER: the enemy's utility, and what the hunter does of it.
             {
                 let k = self.memory.policy.counter;
-                self.obs.counter = self.track.counter.view(Instant::now(), &k);
+                self.obs.counter = self.track.counter.view(clock::instant(), &k);
                 let arm = self
                     .memory
                     .policy
@@ -2002,7 +2002,7 @@ impl Bot {
                 crate::counter::steer(&mut self.obs, arm, &k, doc.as_deref());
             }
             (self.obs.warp_bubble.held, self.obs.warp_bubble.field) =
-                self.track.warp_bubble.state(Instant::now());
+                self.track.warp_bubble.state(clock::instant());
             let (memory, acts) =
                 crate::stats::DECIDE.time(|| brain::decide(&self.memory, &self.obs));
             self.memory = memory;
@@ -2032,7 +2032,7 @@ impl Bot {
                         // space with an emergency warp, so a reconnect under
                         // a scramble or fire is an escape. Hold, go home
                         // when it can.
-                        let now = Instant::now();
+                        let now = clock::instant();
                         if self
                             .track
                             .reconnect_held_at
@@ -2212,7 +2212,7 @@ impl Bot {
         }
         // The boss forms the group's fleet; a foreman does it itself, and miners
         // follow the foreman's.
-        let now = Instant::now();
+        let now = clock::instant();
         if dev.boss
             && self.dev_done
             // FAST-KIT: the boss forms the fleet once it is out, so its own
@@ -2276,10 +2276,10 @@ impl Bot {
     }
 
     fn summary(&mut self) {
-        if self.last_summary.elapsed() < SUMMARY_EVERY || !self.config.echo {
+        if clock::since(self.last_summary) < SUMMARY_EVERY || !self.config.echo {
             return;
         }
-        self.last_summary = Instant::now();
+        self.last_summary = clock::instant();
         let fighting = self.obs.guns.iter().any(|g| g.active);
         let phase = match (self.obs.place, self.memory.homing, self.obs.miner) {
             (Place::Docked { .. }, _, _) => "docked",
@@ -2331,10 +2331,10 @@ impl Bot {
 
     /// Read what the chat server sent, now and then; drop a dead chat.
     fn drain_chat(&mut self) {
-        if self.last_drain.elapsed() < CHAT_DRAIN_EVERY {
+        if clock::since(self.last_drain) < CHAT_DRAIN_EVERY {
             return;
         }
-        self.last_drain = Instant::now();
+        self.last_drain = clock::instant();
         if let Some(chat) = &mut self.chat
             && let Err(why) = chat.drain()
         {
@@ -2400,7 +2400,7 @@ impl Bot {
             }
         }
         // Old lines are not answered: keep a minute and a bounded queue.
-        let now = Instant::now();
+        let now = clock::instant();
         let keep = |at: Instant| now.saturating_duration_since(at) < CHAT_KEEP;
         talk.heard.retain(|l| keep(l.at));
         talk.arrived.retain(|a| keep(a.at));
@@ -2673,7 +2673,7 @@ impl Bot {
         self.absorb_all(conn);
         self.drain_chat();
         self.resolve_chat_names(conn);
-        self.obs.now = Instant::now();
+        self.obs.now = clock::instant();
         self.obs.me = conn.session().char_id().unwrap_or(0);
         // The hall lock is taken once per RECHECK, not at every refresh.
         if self.track.ceo_read.is_none_or(|t| {
@@ -2835,7 +2835,7 @@ impl Bot {
         if carrier && !crate::camp::carrier_may_take_unit(&self.memory, &self.obs) {
             return Ok(());
         }
-        let now = Instant::now();
+        let now = clock::instant();
         if self.memory.camp.dock_next.is_some_and(|t| now < t) {
             return Ok(());
         }
@@ -2959,7 +2959,7 @@ impl Bot {
         let Some(content) = self.config.content.clone() else {
             return Ok(());
         };
-        let now = Instant::now();
+        let now = clock::instant();
         if !self.memory.policy.closed || self.track.skills_next.is_some_and(|t| now < t) {
             return Ok(());
         }
@@ -3010,7 +3010,7 @@ impl Bot {
         if spent > 0 {
             let left = crate::acquire::free_points(conn).unwrap_or(0);
             self.track.skills_next =
-                Some(Instant::now() + crate::skill_plan::next_fill(spent, left));
+                Some(clock::instant() + crate::skill_plan::next_fill(spent, left));
             self.record(
                 ActKind::Acquire,
                 format!("free skill points: {spent} applied, {left} left"),
@@ -3137,7 +3137,7 @@ impl Bot {
             self.track
                 .cap
                 .cap
-                .set_model(ship_id, c, r, charge, Instant::now());
+                .set_model(ship_id, c, r, charge, clock::instant());
         }
     }
 
@@ -3735,7 +3735,7 @@ impl Bot {
                 &soc.mind,
                 &aff(char_id, my_corp, my_alliance),
                 &mates,
-                unix_now(),
+                clock::unix_secs(),
             );
         }
         self.obs.human_types = humans
@@ -3822,7 +3822,7 @@ impl Bot {
         let (Some(me), Place::InSpace { system, .. }) = (me, self.obs.place) else {
             return;
         };
-        let now = Instant::now();
+        let now = clock::instant();
         if self.last_posted.is_some_and(|t| {
             now.saturating_duration_since(t) < Duration::from_secs(ds::BATTLE_TICK_S)
         }) {
@@ -3842,7 +3842,7 @@ impl Bot {
         board.post(ds::Sighting {
             observer: me,
             system,
-            at_s: unix_now(),
+            at_s: clock::unix_secs(),
             scan,
             grid: ds::grid_of(&self.obs.hunt.pilots),
             local: self.chat.as_ref().map(|c| ds::local_counts(c.local())),
@@ -3901,7 +3901,7 @@ impl Bot {
         let (Some(me), Some(ship)) = (conn.session().char_id(), conn.session().ship_id()) else {
             return Ok(());
         };
-        let now = Instant::now();
+        let now = clock::instant();
         self.track
             .player_fire
             .retain(|_, (_, at)| now.saturating_duration_since(*at) < crate::threat::FIRE_STALE);
@@ -3962,7 +3962,7 @@ impl Bot {
                         &regard,
                         loyalty,
                         &who,
-                        unix_now(),
+                        clock::unix_secs(),
                     );
                     crate::threat::is_foe(Some(r), bots.contains(&c))
                 }
@@ -4083,7 +4083,7 @@ impl Bot {
             caller,
             corp,
             system,
-            at: Instant::now(),
+            at: clock::instant(),
             taken: Vec::new(),
         });
         self.record(
@@ -4115,7 +4115,9 @@ impl Bot {
         ) else {
             return;
         };
-        let caller = hall.lock().distress_claim(me, corp, system, Instant::now());
+        let caller = hall
+            .lock()
+            .distress_claim(me, corp, system, clock::instant());
         if let Some(caller) = caller {
             self.obs.help = Some(caller);
             self.record(
@@ -4169,7 +4171,7 @@ impl Bot {
         };
         let r = hall
             .lock()
-            .r_eff_of(corp, &regard, loyalty, &who, unix_now());
+            .r_eff_of(corp, &regard, loyalty, &who, clock::unix_secs());
         let go = crate::effects::help_decision(&crate::effects::HelpIn {
             r,
             odds: None,
@@ -4251,7 +4253,7 @@ impl Bot {
     fn offer_surplus(&self, conn: &mut Conn, career: crate::contracts::Career) -> Result<String> {
         match self.relations() {
             Some((hall, mind)) => {
-                crate::effects::offer_surplus_as(conn, &hall, &mind, career, unix_now())
+                crate::effects::offer_surplus_as(conn, &hall, &mind, career, clock::unix_secs())
             }
             None => crate::contracts::offer_surplus(conn, career),
         }
@@ -4262,7 +4264,7 @@ impl Bot {
     fn take_underpriced(&self, conn: &mut Conn) -> Result<crate::contracts::Taken> {
         match self.relations() {
             Some((hall, mind)) => {
-                crate::effects::take_underpriced_as(conn, &hall, &mind, unix_now())
+                crate::effects::take_underpriced_as(conn, &hall, &mind, clock::unix_secs())
             }
             None => crate::contracts::take_underpriced(conn),
         }
@@ -4275,7 +4277,7 @@ impl Bot {
             .config
             .society
             .as_ref()
-            .and_then(|s| s.timetable.until_offline(unix_now()))
+            .and_then(|s| s.timetable.until_offline(clock::unix_secs()))
         {
             Some(left) => d.min(Duration::from_secs(left).max(SESSION_TICK)),
             None => d,
@@ -4298,9 +4300,9 @@ impl Bot {
 
     /// Sleep on the socket for the whole of `d`, absorbing as it goes.
     fn wait_all(&mut self, conn: &mut Conn, d: Duration) -> Result<()> {
-        let until = Instant::now() + d;
+        let until = clock::instant() + d;
         loop {
-            let left = until.saturating_duration_since(Instant::now());
+            let left = until.saturating_duration_since(clock::instant());
             if left.is_zero() || self.expired() {
                 return Ok(());
             }
@@ -4320,11 +4322,11 @@ impl Bot {
         // BOT-CAP: the charge and the neuts on this ship.
         self.track
             .cap
-            .on_push(event, args, conn.session().ship_id(), Instant::now());
+            .on_push(event, args, conn.session().ship_id(), clock::instant());
         // BOT-SCRAM: a warp scrambler on this ship.
         self.track
             .scram
-            .on_push(event, args, conn.session().ship_id(), Instant::now());
+            .on_push(event, args, conn.session().ship_id(), clock::instant());
         // The lock range and lock count move under a system's effect beacon
         // (a Black Hole, a Magnetar), a booster or a fitted module: take the
         // server's new number rather than hold the one read at the listing.
@@ -4346,7 +4348,7 @@ impl Bot {
                 if !e.start
                     && let Some(r) = e.error.as_deref().and_then(crate::cap::Refusal::of)
                 {
-                    self.track.cap.refused(r, Instant::now());
+                    self.track.cap.refused(r, clock::instant());
                 }
                 // SOAK-S4: the kit follows the server's start and stop.
                 self.obs.kit.on_effect(e.item_id, e.start);
@@ -4396,7 +4398,7 @@ impl Bot {
                 if let Some(text) = args.first().and_then(crate::text)
                     && let Some(system) = conn.session().solar_system_id()
                 {
-                    self.memory.told.note(&text, system, Instant::now());
+                    self.memory.told.note(&text, system, clock::instant());
                 }
             }
             "OnTarget" => {
@@ -4476,7 +4478,7 @@ impl Bot {
                             self.track.backup = Some(crate::fleet::BackupCall { caller, system });
                         }
                         other => {
-                            crate::fleet_orders::hear(&mut self.memory, other, Instant::now());
+                            crate::fleet_orders::hear(&mut self.memory, other, clock::instant());
                         }
                     }
                 }
@@ -4505,14 +4507,14 @@ impl Bot {
                     && let Some(ship) = int(0)
                     && Some(ship) != conn.session().ship_id()
                 {
-                    self.track.counter.on_fx(guid, ship, Instant::now());
+                    self.track.counter.on_fx(guid, ship, clock::instant());
                 }
                 // CLOAK-2: a ship uncloaked (`cloak::uncloak`'s effect).
                 if let Some(PyValue::Bytes(guid)) = args.get(5)
                     && guid.as_slice() == b"effects.Uncloak"
                 {
                     if let Some(ship) = int(0) {
-                        self.track.decloaked.insert(ship, Instant::now());
+                        self.track.decloaked.insert(ship, clock::instant());
                     }
                     return;
                 }
@@ -4564,7 +4566,7 @@ impl Bot {
                         (Some(target), Some(1)) => {
                             self.track
                                 .player_fire
-                                .insert(ship, (target, Instant::now()));
+                                .insert(ship, (target, clock::instant()));
                         }
                         _ => {
                             self.track.player_fire.remove(&ship);
@@ -4710,7 +4712,7 @@ impl Bot {
             let Some(ch) = chat.as_mut() else {
                 return;
             };
-            let Some(line) = kit.line(Instant::now()) else {
+            let Some(line) = kit.line(clock::instant()) else {
                 return;
             };
             match ch.say(c, &line) {
@@ -4793,14 +4795,14 @@ impl Bot {
         if kind == ActKind::WarpToMember {
             // A refused warp to the boss is a fact about him, not a failure
             // of ours (BOT-REDOCK): back off, and work on.
-            self.obs.boss_unreachable_until =
-                matches!(verdict, Verdict::Refused(_)).then(|| Instant::now() + brain::BOSS_RETRY);
+            self.obs.boss_unreachable_until = matches!(verdict, Verdict::Refused(_))
+                .then(|| clock::instant() + brain::BOSS_RETRY);
         }
         // BOT-SCRAM: a scrambled warp or jump is a fact about the ship; it
         // marks the scramble and is not a failure.
         let scrambled = matches!(&verdict, Verdict::Refused(w) if crate::scram::is_refusal(w));
         if scrambled {
-            self.track.scram.refused(Instant::now());
+            self.track.scram.refused(clock::instant());
         }
         // BP-HOLD: a warp refused inside a bubble is a fact about the ship
         // too (and its key must not read as a scramble).
@@ -4808,7 +4810,7 @@ impl Bot {
         if let Verdict::Refused(w) = &verdict
             && bubbled
         {
-            self.track.warp_bubble.refused(w, Instant::now());
+            self.track.warp_bubble.refused(w, clock::instant());
         }
         // MINER-PATIENCE: a lock the ECM jam refused is a fact about the ship,
         // not a failure; the brain waits and retries (`brain::LockJam`).
@@ -4816,7 +4818,7 @@ impl Bot {
             && matches!(&verdict, Verdict::Refused(w)
                 if brain::jam_refusal(w, self.obs.locked.len() + self.obs.pending.len()));
         if kind == ActKind::Lock {
-            let now = Instant::now();
+            let now = clock::instant();
             self.obs.lock_jam = match (jammed, self.obs.lock_jam) {
                 (true, Some(j)) => Some(brain::LockJam { last: now, ..j }),
                 (true, None) => Some(brain::LockJam {
@@ -5158,7 +5160,7 @@ impl Bot {
                     // CLOAK-2: still recalibrating after a decloak: hold the
                     // lock back by the module's own delay, keep the prey.
                     Err(Error::Refused(why)) => {
-                        let now = Instant::now();
+                        let now = clock::instant();
                         // #136: a cancelled lock backs off per target.
                         self.memory.hunt.cancels.cancelled(target, &why, now);
                         return match crate::hunt::lock_hold(&why, self.obs.hunt.cloak.as_ref(), now)
@@ -5173,7 +5175,7 @@ impl Bot {
                     }
                     Err(e) => return Err(e),
                 };
-                self.memory.hunt.cancels.landed(target, Instant::now());
+                self.memory.hunt.cancels.landed(target, clock::instant());
                 match state {
                     LockState::Locked => {
                         if !self.obs.locked.contains(&target) {
@@ -5206,7 +5208,7 @@ impl Bot {
                     // BOT-CAP: no capacitor, a delay or a crowd is a hold,
                     // not a failure; the brain's gate keeps the laser off.
                     if let Some(r) = crate::cap::Refusal::of(&why) {
-                        self.track.cap.refused(r, Instant::now());
+                        self.track.cap.refused(r, clock::instant());
                         self.note = Some(format!("held: {r:?}"));
                         return Ok(());
                     }
@@ -5307,7 +5309,7 @@ impl Bot {
                     Err(Error::Refused(why)) if crate::cap::Refusal::of(&why).is_some() => {
                         // BOT-CAP: a hold, not a failure.
                         if let Some(r) = crate::cap::Refusal::of(&why) {
-                            self.track.cap.refused(r, Instant::now());
+                            self.track.cap.refused(r, clock::instant());
                             self.note = Some(format!("held: {r:?}"));
                         }
                         Ok(())
@@ -5655,9 +5657,7 @@ impl Bot {
                 let Some(map) = self.memory.policy.travel.clone() else {
                     return Err(Error::NotSent(crate::trader::MISSING_MAP.to_owned()));
                 };
-                let minutes = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs() / 60);
+                let minutes = clock::unix_secs() / 60;
                 let trips = crate::travel::Trips {
                     map: &map,
                     floor: self.memory.policy.security_floor,
@@ -5683,9 +5683,7 @@ impl Bot {
                 let Some(map) = self.memory.policy.travel.clone() else {
                     return Err(Error::NotSent(crate::trader::MISSING_MAP.to_owned()));
                 };
-                let minutes = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs() / 60);
+                let minutes = clock::unix_secs() / 60;
                 let setup = crate::trader::Setup {
                     trips: crate::travel::Trips {
                         map: &map,
@@ -5778,7 +5776,7 @@ impl Bot {
                     Err(Error::Refused(why)) => {
                         // BOT-CAP: a hold, not a failure.
                         if let Some(r) = crate::cap::Refusal::of(&why) {
-                            self.track.cap.refused(r, Instant::now());
+                            self.track.cap.refused(r, clock::instant());
                             self.note = Some(format!("held: {r:?}"));
                             return Ok(());
                         }
@@ -5919,7 +5917,7 @@ impl Bot {
                 op,
                 &mut self.obs.logi,
                 &mut self.obs.locked,
-                std::time::Instant::now(),
+                clock::instant(),
             ),
             Act::Say(ref line) => {
                 let Some(chat) = &mut self.chat else {
@@ -5941,7 +5939,7 @@ impl Bot {
 
     /// The park shows the ship warping, or the warp was not taken.
     fn await_warp(&mut self, conn: &mut Conn) -> Result<()> {
-        let until = Instant::now() + MOVE_EVIDENCE;
+        let until = clock::instant() + MOVE_EVIDENCE;
         loop {
             let ship = conn.session().ship_id();
             if ship
@@ -5950,7 +5948,7 @@ impl Bot {
             {
                 return Ok(());
             }
-            let left = until.saturating_duration_since(Instant::now());
+            let left = until.saturating_duration_since(clock::instant());
             if left.is_zero() {
                 return Err(Error::Refused(
                     "CmdWarpToStuff: no WarpTo for this ship".to_owned(),
@@ -5974,7 +5972,7 @@ impl Bot {
     }
 
     fn await_tether(&mut self, conn: &mut Conn, target: i64) -> Result<()> {
-        let until = Instant::now() + MOVE_EVIDENCE;
+        let until = clock::instant() + MOVE_EVIDENCE;
         loop {
             let ship = conn.session().ship_id();
             if ship
@@ -5984,7 +5982,7 @@ impl Bot {
             {
                 return Ok(());
             }
-            let left = until.saturating_duration_since(Instant::now());
+            let left = until.saturating_duration_since(clock::instant());
             if left.is_zero() {
                 return Err(Error::Refused(format!(
                     "CmdFollowBall({target}): no FollowBall for this ship"
@@ -6203,7 +6201,7 @@ impl Bot {
                         self.memory.hunt.fil_failed = 0;
                         self.memory.hunt.away = home.map(|home| crate::filament::Away {
                             home,
-                            since: Instant::now(),
+                            since: clock::instant(),
                             kills,
                         });
                         let h = &mut self.memory.hunt;
@@ -6249,7 +6247,7 @@ impl Bot {
             }
             HuntAct::Uncloak(kit) => {
                 let said = conn.deactivate(kit.item_id, kit.effect.0);
-                self.memory.hunt.cloak_off_at = Some(Instant::now());
+                self.memory.hunt.cloak_off_at = Some(clock::instant());
                 if let Some(k) = &mut self.obs.hunt.cloak {
                     k.active = false;
                 }
@@ -6299,7 +6297,7 @@ impl Bot {
     /// **The hunter's ESS steps** ([`crate::ess_raid`]).
     fn ess_act(&mut self, conn: &mut Conn, op: &crate::ess_raid::EssAct) -> Result<()> {
         use crate::ess_raid::EssAct;
-        let now = Instant::now();
+        let now = clock::instant();
         match op {
             EssAct::Read { system } => {
                 let view = conn.ess_read(*system)?;
@@ -6358,16 +6356,16 @@ impl Bot {
         let (Some(me), Some(_)) = (conn.session().char_id(), conn.session().fleet_id()) else {
             return;
         };
-        if seat.hall.take_lease(fc, me, Instant::now()) {
+        if seat.hall.take_lease(fc, me, clock::instant()) {
             match conn.fleet_composition() {
-                Ok(rows) => seat.hall.publish(fc, rows, Instant::now()),
+                Ok(rows) => seat.hall.publish(fc, rows, clock::instant()),
                 Err(e) => {
-                    seat.hall.release(fc, Instant::now());
+                    seat.hall.release(fc, clock::instant());
                     self.note = Some(format!("fleet composition: {e}"));
                 }
             }
         }
-        self.obs.wing.fc = seat.hall.row(fc, fc, Instant::now()).and_then(|row| {
+        self.obs.wing.fc = seat.hall.row(fc, fc, clock::instant()).and_then(|row| {
             Some(crate::wing::Fc {
                 char_id: fc,
                 system: row.system?,
@@ -6375,7 +6373,7 @@ impl Bot {
             })
         });
         // FC-3: say where this bot is, and read who leads and who stands where.
-        let now = Instant::now();
+        let now = clock::instant();
         let pos = match self.obs.place {
             Place::Docked { .. } => crate::wing_hall::Pos::Docked,
             Place::InSpace { .. } if self.obs.park.as_ref().is_some_and(|p| p.boss.is_some()) => {
@@ -6430,7 +6428,7 @@ impl Bot {
     /// (`anchor::drop_call`). The answer's new id is remembered with the spot
     /// the camper stood at. A refusal rests the unit's work.
     fn unit_launch(&mut self, conn: &mut Conn, item: i64) -> Result<()> {
-        let now = Instant::now();
+        let now = clock::instant();
         let Some(params) = conn.session().location_moniker() else {
             return Ok(());
         };
@@ -6461,7 +6459,7 @@ impl Bot {
                     stage: crate::camp::Stage::Launched,
                     // Stamped after the server's answer, so the waits start
                     // when the server's clock does.
-                    at: Instant::now(),
+                    at: clock::instant(),
                     spot: park.ego.position,
                 });
                 self.obs.cargo.retain(|r| r.item_id != item);
@@ -6478,7 +6476,7 @@ impl Bot {
     /// **Anchor or lift the camp's unit** (NW-11b): `dogmaIM.Activate(id,
     /// effectID)` with the int effect, two args (`menusvc:2447`) **[V]**.
     fn unit_work(&mut self, conn: &mut Conn, id: i64, stage: crate::camp::Stage) -> Result<()> {
-        let now = Instant::now();
+        let now = clock::instant();
         let effect = match stage {
             crate::camp::Stage::Lifting => eve_server::anchor::EFFECT_ANCHOR_LIFT,
             _ => eve_server::anchor::EFFECT_ANCHOR_DROP,
@@ -6497,7 +6495,7 @@ impl Bot {
             None => {
                 if let Some(u) = &mut self.memory.camp.unit {
                     u.stage = stage;
-                    u.at = Instant::now();
+                    u.at = clock::instant();
                     self.note = Some(format!("{stage:?} sent"));
                 }
             }
@@ -6512,7 +6510,7 @@ impl Bot {
     /// **Scoop the camp's unit** (NW-11b): `ship.Scoop(id)` (`menusvc.
     /// RealScoop`) **[V]**. Done, or gone, forgets it.
     fn unit_scoop(&mut self, conn: &mut Conn, id: i64) -> Result<()> {
-        let now = Instant::now();
+        let now = clock::instant();
         let Some(params) = conn.session().location_moniker() else {
             return Ok(());
         };
@@ -6549,7 +6547,7 @@ impl Bot {
             }
             KitAct::Launch(l) => match conn.activate(l.item_id, l.effect, None, 1) {
                 Ok(_) => {
-                    let now = Instant::now();
+                    let now = clock::instant();
                     self.memory.camp.launched_at = Some(now);
                     self.memory.camp.launches += 1;
                     if let Some(k) = &mut self.obs.kit.launcher {
@@ -6561,7 +6559,7 @@ impl Bot {
                 // The server's word that bubbles are not allowed here, or
                 // the pilot lacks the skill: a fact, not a failure.
                 Err(Error::Refused(w)) => {
-                    self.memory.camp.blocked(Instant::now());
+                    self.memory.camp.blocked(clock::instant());
                     self.note = Some(format!("probe launch refused: {w}"));
                     // #18: a refusal is a `[camp]` decision line too.
                     let name = self.memory.name.clone();
@@ -6607,7 +6605,7 @@ impl Bot {
                         match crate::pvp_kit::field_refusal(&w) {
                             Some(crate::pvp_kit::FieldRefusal::Running) => Ok(()),
                             Some(crate::pvp_kit::FieldRefusal::Offline) => {
-                                self.memory.camp.field_blocked(Instant::now());
+                                self.memory.camp.field_blocked(clock::instant());
                                 Err(Error::Refused(w))
                             }
                             None => Err(Error::Refused(w)),
@@ -6639,7 +6637,7 @@ impl Bot {
                             Ok(())
                         }
                         Some(crate::pvp_kit::FieldRefusal::Offline) => {
-                            self.memory.camp.field_blocked(Instant::now());
+                            self.memory.camp.field_blocked(clock::instant());
                             Err(Error::Refused(w))
                         }
                         None => {
@@ -6692,7 +6690,7 @@ impl Bot {
             // field runs to the end of its cycle (SOAK-S4).
             KitAct::FieldOff(m) => {
                 self.memory.camp.field_off_until =
-                    Some(Instant::now() + crate::camp::FIELD_OFF_EVERY);
+                    Some(clock::instant() + crate::camp::FIELD_OFF_EVERY);
                 conn.deactivate(m.item_id, m.effect.0).map(|_| ())
             }
             KitAct::Jump(m) => match conn.activate(m.item_id, m.effect, None, 1) {
@@ -6703,7 +6701,7 @@ impl Bot {
                     Ok(())
                 }
                 Err(Error::Refused(w)) if crate::pvp_kit::is_drive_refusal(&w) => {
-                    self.memory.kit.blocked(Instant::now());
+                    self.memory.kit.blocked(clock::instant());
                     self.memory.kit.spool_until = None;
                     Err(Error::Refused(w))
                 }
@@ -6951,7 +6949,7 @@ impl Bot {
                 self.summoned = Some(Summoned {
                     system,
                     char_id,
-                    since: Instant::now(),
+                    since: clock::instant(),
                     warped: None,
                     failed: 0,
                     settled: None,
@@ -6969,7 +6967,7 @@ impl Bot {
         let Some(mut s) = self.summoned.clone() else {
             return Ok(false);
         };
-        let over = s.since.elapsed() >= Duration::from_secs(SUMMON_HOLD_S);
+        let over = clock::since(s.since) >= Duration::from_secs(SUMMON_HOLD_S);
         if over || s.failed >= SUMMON_TRIES {
             self.summoned = None;
             let why = if over {
@@ -7019,12 +7017,12 @@ impl Bot {
             .ego_ball()
             .is_some_and(|b| b.warp_commanded());
         let own_radius = conn.world_now().ego_ball().map_or(0.0, |b| b.radius);
-        let due = s.warped.is_none_or(|t| t.elapsed() >= SUMMON_REPEAT);
+        let due = s.warped.is_none_or(|t| clock::since(t) >= SUMMON_REPEAT);
         // A settled summon waits while the bot's grid stays and the caller
         // stays unseen, for at most `summon::SETTLE_HOLD`.
         let states = conn.world().states;
         if let Some((at, since)) = s.settled
-            && !crate::summon::settle_holds(at == states, since.elapsed(), ship.is_some())
+            && !crate::summon::settle_holds(at == states, clock::since(since), ship.is_some())
         {
             s.settled = None;
         }
@@ -7050,7 +7048,7 @@ impl Bot {
                 "ship not on this grid"
             }
         );
-        s.warped = Some(Instant::now());
+        s.warped = Some(clock::instant());
         self.act(
             conn,
             Act::WarpToMember {
@@ -7066,7 +7064,7 @@ impl Bot {
                 "[summon] {}: {} is within the minimum warp distance but not visible; staying",
                 self.config.name, s.char_id
             );
-            s.settled = Some((states, Instant::now()));
+            s.settled = Some((states, clock::instant()));
             s.failed = 0;
             self.summoned = Some(s);
             return Ok(true);
@@ -7146,7 +7144,7 @@ impl Bot {
                 .as_ref()
                 .and_then(|s| s.state.as_deref()),
             &self.config.name,
-            unix_now(),
+            clock::unix_secs(),
             kind,
             text,
         );
@@ -7159,8 +7157,8 @@ impl Bot {
     /// nothing to settle and earns nothing while away.
     fn release_turn(&mut self, conn: &mut Conn, by: &str) -> Result<Option<Exit>> {
         let docked = matches!(self.obs.place, Place::Docked { .. });
-        let since = *self.logoff_since.get_or_insert_with(Instant::now);
-        if docked || since.elapsed() >= LOGOFF_GRACE {
+        let since = *self.logoff_since.get_or_insert_with(clock::instant);
+        if docked || clock::since(since) >= LOGOFF_GRACE {
             let at = if docked { "docked" } else { "in space" };
             crate::persona_log::note(
                 self.config
@@ -7168,7 +7166,7 @@ impl Bot {
                     .as_ref()
                     .and_then(|s| s.state.as_deref()),
                 &self.config.name,
-                unix_now(),
+                clock::unix_secs(),
                 "release",
                 &format!("{at}: released by {by}"),
             );
@@ -7184,7 +7182,7 @@ impl Bot {
                     crate::persona_log::note(
                         soc.state.as_deref(),
                         &self.config.name,
-                        unix_now(),
+                        clock::unix_secs(),
                         "park",
                         &parked.line(&career),
                     );
@@ -7230,11 +7228,11 @@ impl Bot {
         let Some(soc) = self.config.society.clone() else {
             return Ok(None);
         };
-        let now = unix_now();
+        let now = clock::unix_secs();
         if !soc.timetable.online(now) {
             let docked = matches!(self.obs.place, Place::Docked { .. });
-            let since = *self.logoff_since.get_or_insert_with(Instant::now);
-            if docked || since.elapsed() >= LOGOFF_GRACE {
+            let since = *self.logoff_since.get_or_insert_with(clock::instant);
+            if docked || clock::since(since) >= LOGOFF_GRACE {
                 let next = soc.timetable.until_online(now);
                 let at = if docked { "docked" } else { "in space" };
                 self.record(
@@ -7261,7 +7259,7 @@ impl Bot {
             return Ok(None);
         }
         self.logoff_since = None;
-        let at = Instant::now();
+        let at = clock::instant();
         // CO-FOUND: a founder holding pledges takes its social turn first
         // (the pool may be complete), before the career decision that tick
         // (`corpmind::founder_first`).
@@ -7398,7 +7396,7 @@ impl Bot {
         if !market.products.is_empty()
             && let Some((hall, mind)) = self.relations()
         {
-            match crate::effects::friend_wants(conn, &hall, &mind, unix_now()) {
+            match crate::effects::friend_wants(conn, &hall, &mind, clock::unix_secs()) {
                 Ok(w) => crate::signal::apply_buyers(&mut market, &w),
                 Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
                 Err(_) => {}
@@ -7525,7 +7523,7 @@ impl Bot {
             crate::persona_log::note(
                 soc.state.as_deref(),
                 &self.config.name,
-                unix_now(),
+                clock::unix_secs(),
                 "career",
                 &what,
             );
@@ -7946,13 +7944,13 @@ mod tests {
         assert!(matches!(bot.queue_with(slot), Some(Exit::LogOff)));
         let mut bot = queued_bot(false);
         bot.handle.stop();
-        let t = Instant::now();
+        let t = clock::instant();
         assert!(matches!(
             bot.queue_with(|| Duration::from_secs(30)),
             Some(Exit::Done)
         ));
         assert!(
-            t.elapsed() < Duration::from_secs(5),
+            clock::since(t) < Duration::from_secs(5),
             "the wait is stoppable"
         );
     }
@@ -8108,17 +8106,17 @@ mod tests {
             config.chat = false;
             config.policy.gm_setup = false;
             let (h, t) = spawn(config);
-            let deadline = Instant::now() + Duration::from_secs(30);
+            let deadline = clock::instant() + Duration::from_secs(30);
             let found = loop {
                 let log = h.log();
                 let hit = log
                     .iter()
                     .find(|e| matches!(e.kind, ActKind::Connect | ActKind::Lost))
                     .cloned();
-                if hit.is_some() || Instant::now() > deadline {
+                if hit.is_some() || clock::instant() > deadline {
                     break hit;
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                clock::sleep(Duration::from_millis(50));
             };
             h.stop();
             let _ = t.join();
@@ -8143,7 +8141,7 @@ mod tests {
     /// second of them. Every payload is written eventually, in order.
     #[test]
     fn the_payload_rate_never_exceeds_bot_payloads_per_s_over_any_pacing_window() {
-        let t0 = Instant::now();
+        let t0 = clock::instant();
         let mut wants: Vec<Duration> = Vec::new();
         wants.extend(std::iter::repeat_n(Duration::ZERO, 200));
         wants.extend((0..100).map(|i| PACING_WINDOW * 30 + PACING_WINDOW / 40 * i));
@@ -8280,12 +8278,12 @@ mod tests {
 
     /// Poll `h`'s log until `done` finds what it wants or `within` passes.
     fn wait_for(h: &Handle, within: Duration, done: impl Fn(&[Entry]) -> bool) -> bool {
-        let deadline = Instant::now() + within;
-        while Instant::now() < deadline {
+        let deadline = clock::instant() + within;
+        while clock::instant() < deadline {
             if done(&h.log()) {
                 return true;
             }
-            std::thread::sleep(Duration::from_millis(100));
+            clock::sleep(Duration::from_millis(100));
         }
         done(&h.log())
     }
@@ -8308,7 +8306,7 @@ mod tests {
         let addr = society_server(&[NAME]);
         let dir = scratch("switch");
         let signals = Signals::default();
-        let now = unix_now();
+        let now = clock::unix_secs();
         let mut mind = Mind::seeded(NAME, SEED, FIXTURE, &signals, now);
         let scores = mind.scores(FIXTURE, &signals);
         assert!(
@@ -8355,7 +8353,8 @@ mod tests {
             "the goal stack is logged: {notes}"
         );
 
-        let (again, source) = Society::open(NAME, SEED, FIXTURE, signals, Some(&dir), unix_now());
+        let (again, source) =
+            Society::open(NAME, SEED, FIXTURE, signals, Some(&dir), clock::unix_secs());
         assert_eq!(source, crate::state::Source::Restored);
         assert_eq!(again.career(), "t_rival");
         assert_eq!(again.role().name(), roles::ESCORT.name());
@@ -8381,7 +8380,7 @@ mod tests {
     /// due and none before.
     #[test]
     fn a_decision_is_docked_only_never_mid_trip() {
-        let now = Instant::now();
+        let now = clock::instant();
         let every = Duration::from_secs(60);
         let docked = Place::Docked { station: 1 };
         let space = Place::InSpace {
@@ -8404,7 +8403,7 @@ mod tests {
         const NAME: &str = "Invented Shiftbot";
         let addr = society_server(&[NAME]);
         let signals = Signals::default();
-        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, clock::unix_secs());
         let mut soc = Society::new(mind, FIXTURE, signals);
         soc.timetable = Timetable {
             period: 8,
@@ -8441,7 +8440,7 @@ mod tests {
         const NAME: &str = "Invented Shedbot";
         let addr = society_server(&[NAME]);
         let signals = Signals::default();
-        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, clock::unix_secs());
         let dir = scratch("shed");
         let mut soc = Society::new(mind, FIXTURE, signals);
         soc.state = Some(dir.clone());
@@ -8474,7 +8473,7 @@ mod tests {
             .iter()
             .any(|e| e.kind == ActKind::Session && e.what.contains("parked"));
         assert!(park, "{:#?}", h.log());
-        std::thread::sleep(Duration::from_secs(2));
+        clock::sleep(Duration::from_secs(2));
         assert!(!h.is_live());
         assert_eq!(online.load(Ordering::SeqCst), 0);
         assert_eq!(connects(&h), 1, "it stays off while released");
@@ -8508,7 +8507,7 @@ mod tests {
         const NAME: &str = "Invented Stopbot";
         let addr = society_server(&[NAME]);
         let signals = Signals::default();
-        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, clock::unix_secs());
         let dir = scratch("stopped");
         let mut soc = Society::new(mind, FIXTURE, signals);
         soc.state = Some(dir.clone());
@@ -8541,7 +8540,7 @@ mod tests {
         const NAME: &str = "Invented Leasebot";
         let addr = society_server(&[NAME]);
         let signals = Signals::default();
-        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, unix_now());
+        let mind = Mind::seeded(NAME, 1, FIXTURE, &signals, clock::unix_secs());
         let dir = scratch("lease");
         let mut soc = Society::new(mind, FIXTURE, signals);
         soc.state = Some(dir.clone());

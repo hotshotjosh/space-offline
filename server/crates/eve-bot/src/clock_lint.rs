@@ -204,39 +204,9 @@ const SANCTIONED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "driver.rs",
-        ".elapsed(",
-        11,
-        "pending #146: not yet converted to clock::",
-    ),
-    (
-        "driver.rs",
-        "Instant::now",
-        75,
-        "pending #146: not yet converted to clock::",
-    ),
-    (
-        "driver.rs",
-        "SystemTime::now",
-        3,
-        "pending #146: not yet converted to clock::",
-    ),
-    (
-        "driver.rs",
-        "UNIX_EPOCH",
-        3,
-        "pending #146: not yet converted to clock::",
-    ),
-    (
-        "driver.rs",
-        "thread::sleep(",
-        2,
-        "pending #146: not yet converted to clock::",
-    ),
-    (
-        "driver.rs",
         "unix_now(",
-        19,
-        "pending #146: not yet converted to clock::",
+        1,
+        "pending #146: the wrapper `driver::unix_now` goes with the last callers",
     ),
     (
         "drone_use.rs",
