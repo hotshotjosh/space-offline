@@ -246,10 +246,14 @@ pub fn tick(reg: &mut Registry, _now: Instant, ft: BlueTime) {
         let failed = failed_conditions(reg, who, ft);
         if !failed.is_empty() {
             crate::outln!("[safe-logoff] character {who}: countdown failed");
-            reg.push(Failed {
-                who,
-                labels: failed,
-            });
+            // From the clock: scheduled, so it leaves in this tick.
+            reg.schedule(
+                std::time::Duration::ZERO,
+                Failed {
+                    who,
+                    labels: failed,
+                },
+            );
             continue;
         }
         if ft < deadline {
@@ -317,7 +321,15 @@ mod tests {
     }
 
     fn pushed(reg: &mut Registry) -> Vec<&'static str> {
-        reg.take_pending().iter().map(|p| p.1.to_push().0).collect()
+        let mut out: Vec<&'static str> =
+            reg.take_pending().iter().map(|p| p.1.to_push().0).collect();
+        out.extend(due(reg).iter().map(|p| p.to_push().0));
+        out
+    }
+
+    /// What the clock would post now.
+    fn due(reg: &mut Registry) -> Vec<Box<dyn crate::notify::Push>> {
+        reg.take_due(Instant::now() + std::time::Duration::from_secs(3_600))
     }
 
     #[test]
@@ -448,6 +460,31 @@ mod tests {
         assert_eq!(pushed(&mut reg), vec!["OnSafeLogoffFailed"]);
         assert!(reg.roster().get(ALICE).is_some(), "the ship stays");
         assert!(reg.ext::<State>().due.is_empty());
+    }
+
+    /// The failure dialog is the clock's push: it leaves in the tick that
+    /// finds the countdown broken, not on some client's next call.
+    #[test]
+    fn the_failed_dialog_leaves_on_the_clock_not_on_the_next_call() {
+        let mut reg = world(true);
+        start(&mut reg, Some(ALICE), T0).unwrap();
+        let _ = reg.take_pending();
+        reg.combat_mut().crimewatch_mut().start(
+            ALICE,
+            crate::crimewatch::Timer::Weapons,
+            T0 + 1,
+            false,
+        );
+        tick(&mut reg, Instant::now(), T0 + 2);
+        let pending: Vec<_> = reg.take_pending().iter().map(|p| p.1.to_push().0).collect();
+        assert!(!pending.contains(&"OnSafeLogoffFailed"), "{pending:?}");
+        let sent = due(&mut reg);
+        let failed: Vec<_> = sent
+            .iter()
+            .filter(|p| p.to_push().0 == "OnSafeLogoffFailed")
+            .collect();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].audience(), Some(vec![ALICE]));
     }
 
     /// Safe logoff refuses an active warp, not an align.
