@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**70% proved** (229 of 326) · **93% built** (303 of 326) · 3 parked, not counted.
+**70% proved** (229 of 327) · **93% built** (304 of 327) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -76,10 +76,11 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Skyhook theft windows and raids: *built-unproved*, skyhook_theft.rs: scheduled windows and notices, the silo ball (typedata.rs admits the celestial silo group as a singleton item), InitiateLink, the unsecured stock to the thief [A]; fci_skyhook_raid (green 31/31 and 19/19 on 11-15, var/ci-1115q-b; the scheduled windows and notices are not in the scenario)
 - [ ] Space-component call seam (beyonce.CallComponentFromClient): the dispatch table the skyhook and merc-den handlers plug into: *built-unproved*, space_component.rs CALLS routes four components: the skyhook (authorisation, extract), the reagent silo link (#82), the mercenary den extract (#83) and the Ansiblex info (#86); space_component.rs tests
 - [ ] Ansiblex jump gates: link two gates and jump through: *partial*, fci_ansiblex (regress-w30a): two linked gates, the jump through and back with the session change, the slim jumps row; jump_bridge.rs; the gate's capacitor (recharge curve, zone cost from the capital, GM /jbridge charge), holder-alliance and profile access, hull list seam (jump-bridges.tsv, absent until ANSI-2b); fci_ansiblex green 47/47 including steps 6-9 (var/ci-1115e-b, 11-15); the Stargate Engine service rule is ANSI-2c
-- [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point
+- [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point; bots hold the point (#76), built-unproved
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
 - [ ] Bots send public-gateway requests: *built-unproved*, eve-bot gateway_client.rs (h2c, std-only): broken-connection guard, correlation check, flow control, frame and response caps; in-process tests against gateway::spawn (pilot context, licence body); no bot duty calls it yet (#221)
+- [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
 
 ### 3.7 Society, economy and bots
 
@@ -156,7 +157,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 23 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 32 | 2 | 0 | 2 |
+| Bots | 11 | 33 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 10 | 1 | 0 | 0 | 0 |
@@ -352,7 +353,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 47 proved, 36 open</summary>
+<details><summary><b>Bots</b>: 11 of 48 proved, 37 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -401,6 +402,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Bot temperament: escort repair and retreat thresholds follow the risk trait; bots greet known pilots as a regular, a killer or a helper: *built-unproved*, eve-bot mind.rs Temperament::of (median traits when no seed), escort.rs thresholds (shown in dock_reason, not chat), greeting categories (Scene.known filled from the acquaintance book on a Local arrival); past fights named once a pilot a day, never in an arrival's first minute (O4 default [A]); tests escort::tests::a_timid_escort_leaves_where_a_reckless_one_stays; needs an owner-watched escort fight and a Local chat check
 - [ ] Offline careers at the rollover: a slice of parked agents (gatherers first) settles before the day closes; the sweep settles the rest up to the rollover, one span per open rollover capped against its own day, and books their flows and goods to the closed day's econ rows (an [econ] late line counts them): *built-unproved*, eve-server econ_agents.rs on_rollover, ROLLOVER_SLICE, Target per rollover; econ_ledger book_late/window; tests: one slice per rollover, gatherers first, late bounty and ore booked, closed day's cap, two rollovers settle apart, login mid-sweep; proof: a [world] rollover timing with parked ratters under 25 ms
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests; read by chat on a Local arrival (chatter::known_of)
+- [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
 
 </details>
 
@@ -520,7 +522,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Kills pay LP: *client-proved*, fci_fw_kill_lp (regress-w27d, two clients): A kills B in a warzone, A is paid LP with his militia (LPSvc and the wallet service agree), the stats kill count rises, B earns nothing; ratio and split [A]
 - [x] Stats and the enlistment rules (player refusals): *client-proved*, fci_fw_refuse (regress-w27d): enlisting at another militia's station or below the standing bar is refused and changes nothing, then the same enlistment succeeds
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
-- [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point
+- [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point; bots hold the point (#76), built-unproved
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
 

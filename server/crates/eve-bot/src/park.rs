@@ -103,6 +103,12 @@ pub struct SlimInfo {
     /// high, 8 low, 9 null), which a player reads off the info window
     /// before jumping. `None` on everything else.
     pub wormhole_class: Option<i64>,
+    /// `component_fwCapturePoint_factionInfo` [V key,
+    /// `eve_server::fw_capture::KEY_FACTION_INFO`] on a faction-warfare
+    /// capture point's slim (#76): `(attacker, occupier)` militias. The key
+    /// exists only on a capture point, whatever its type. `None` on
+    /// everything else.
+    pub capture: Option<(i64, i64)>,
 }
 
 /// One ball, as last told and carried forward.
@@ -770,6 +776,13 @@ fn slim_of(v: &PyValue) -> Option<(i64, SlimInfo)> {
                 _ => None,
             },
             wormhole_class: int("otherSolarSystemClass"),
+            capture: match crate::dict_get(dict, eve_server::fw_capture::KEY_FACTION_INFO) {
+                Some(PyValue::Tuple(t)) => match t.as_slice() {
+                    [PyValue::Int(a), PyValue::Int(o)] => Some((*a, *o)),
+                    _ => None,
+                },
+                _ => None,
+            },
         },
     ))
 }

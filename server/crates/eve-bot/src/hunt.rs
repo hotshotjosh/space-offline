@@ -4086,6 +4086,7 @@ mod tests {
             gate_range: None,
             security_status: None,
             wormhole_class: None,
+            capture: None,
         }
     }
 

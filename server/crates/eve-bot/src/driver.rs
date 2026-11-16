@@ -3693,6 +3693,24 @@ impl Bot {
             .bars
             .retain(|id, _| world.balls().any(|b| b.ball_id == *id));
         self.obs.humans = humans.iter().map(|b| ball(b)).collect();
+        // #76: the nearest capture point on the grid, by its slim key.
+        self.obs.capture = world
+            .balls()
+            .filter_map(|b| {
+                let (attacker, occupier) = b.slim?.capture?;
+                Some(crate::plexer::PointView {
+                    id: b.ball_id,
+                    position: b.motion.position,
+                    attacker,
+                    occupier,
+                    distance_m: eve_server::space_state::distance(
+                        b.motion.position,
+                        ego.motion.position,
+                    ),
+                    radius: b.radius,
+                })
+            })
+            .min_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
         // CHATTER-2: the ore the laser is on, by name, for the phrase slot.
         self.obs.talk.ore = self
             .obs

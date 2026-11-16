@@ -36,7 +36,16 @@
 //!    and the settled grid asks for the next [`Act::Plex`]. The server's
 //!    capture is the C3 §6 completion: the squads are gone after a kill.
 //!    After `site_spawn::SITE_VACANT` with nobody on the grid, `facwar::tick`
-//!    credits the VP. There is no capture timer or button on this server.
+//!    credits the VP. The capture point (`fw_capture`, #75) is a second way
+//!    to take the complex: a pilot of the militia inside its range, with no
+//!    enemy there, runs its timer. So the bot **holds the point**
+//!    ([`point_step`]): when its grid has a capture point the militia is
+//!    the attacker or the occupier of, it flies to [`HOLD_SHARE`] of the
+//!    point's range (surface to surface) and orbits there while the site
+//!    runner's rules fight whatever shoots. It leaves when the point is gone
+//!    (the complex completed and despawned), or, for a looping point, after
+//!    [`HOLD_FOR`]. A point of two other militias, and a complex with no
+//!    point on the grid, are cleared as before.
 //! 5. **Move on** ([`next_front`]). When nothing here is worth running (or
 //!    this system is [`Plan::avoid`]ed), it flies to the nearest front
 //!    system with a station, by [`crate::travel::go`]. The route goes
@@ -63,7 +72,7 @@
 //! process and is never persisted. It holds the trait the driver hands
 //! over, the militia, the complexes already run and the systems to avoid.
 
-use crate::brain::{Act, Homing, Memory, Observation, Place};
+use crate::brain::{Act, Ball, Homing, Memory, Observation, Place};
 use crate::clock;
 use crate::roles::{Lacks, RoleSpec, Summary};
 use crate::travel::{Map, Trips};
@@ -174,8 +183,9 @@ fn docked(m: &mut Memory, o: &Observation) -> Vec<Act> {
     acts
 }
 
-/// **In space**: step 6 of the module header first, then the site
-/// runner's rules, whose "next site" is this career's [`Act::Plex`].
+/// **In space**: step 6 of the module header first, then the capture
+/// point ([`point_step`]), then the site runner's rules, whose "next site"
+/// is this career's [`Act::Plex`].
 fn in_space(m: &mut Memory, o: &Observation) -> Vec<Act> {
     let risk = PLANS.risk(&m.name);
     if m.homing.is_none() && flees(o.humans.len(), risk) {
@@ -185,17 +195,90 @@ fn in_space(m: &mut Memory, o: &Observation) -> Vec<Act> {
             PLANS.avoid(&m.name, system, o.now + HOT_FOR);
         }
     }
+    // #76: a capture point on the grid that the militia attacks or holds is
+    // flown to and held. Fleeing (homing) beats it, and the grid-wide rule
+    // above already homes the bot when enough humans (so enough enemies at
+    // the point) are on the grid, so the point has no leave-by-enemy of its
+    // own.
+    let plan = PLANS.get(&m.name);
+    let mut point = None;
+    let view = o
+        .capture
+        .as_ref()
+        .filter(|v| !plan.spent.contains_key(&v.id));
+    if m.homing.is_none()
+        && let (Some(militia), Some(view)) = (plan.militia, view)
+    {
+        let enemies = enemies_at(view, &o.humans);
+        let ego_radius = o.park.as_ref().map_or(0.0, |p| p.ego.radius);
+        let held = match plan.holding {
+            Some((id, since)) if id == view.id => o.now.saturating_duration_since(since),
+            _ => Duration::ZERO,
+        };
+        point = Some(point_step(
+            Some(view),
+            militia,
+            enemies,
+            risk,
+            held,
+            ego_radius,
+        ));
+        let started = matches!(point, Some(PointAct::Hold { .. }));
+        let spent = point == Some(PointAct::Leave);
+        PLANS.with(&m.name, |p| {
+            if started && p.holding.is_none_or(|(id, _)| id != view.id) {
+                p.holding = Some((view.id, o.now));
+            }
+            if spent {
+                // Done with this point: the next complex.
+                p.spent.insert(view.id, o.now);
+                p.holding = None;
+            }
+        });
+    } else if o.capture.is_none() {
+        PLANS.with(&m.name, |p| p.holding = None);
+    }
+    let holding = matches!(
+        point,
+        Some(PointAct::Approach { .. } | PointAct::Hold { .. })
+    );
+    // Already orbiting it (`ego_tether`): nothing more to order.
+    let orbiting = |id: i64| o.park.as_ref().and_then(|p| p.ego_tether) == Some(id);
+    let at_point = match point {
+        Some(PointAct::Approach { point, orbit_m }) | Some(PointAct::Hold { point, orbit_m })
+            if !orbiting(point) =>
+        {
+            Some(Act::Orbit {
+                id: point,
+                range: orbit_m,
+            })
+        }
+        _ => None,
+    };
     // No office to enlist at (`NO_OFFICE_FOR`): the "next site" is a wait,
     // not another refused sortie.
     let backoff = PLANS.get(&m.name).not_before.is_some_and(|t| o.now < t);
-    (crate::site_runner::ROLE.in_space)(m, o)
+    let mut acts: Vec<Act> = (crate::site_runner::ROLE.in_space)(m, o)
         .into_iter()
         .map(|a| match a {
             Act::Sites if backoff => Act::Wait(crate::brain::SHORT_WAIT),
+            // Holding a point: the next complex waits until it is taken.
+            Act::Sites if holding => Act::Wait(crate::brain::SHORT_WAIT),
             Act::Sites => Act::Plex,
             a => a,
         })
-        .collect()
+        .collect();
+    // The site runner's own fight (lock, fire, orbit its target) has the
+    // helm while there is one.
+    let fighting = acts
+        .iter()
+        .any(|a| matches!(a, Act::Orbit { .. } | Act::Lock(_) | Act::Fire { .. }));
+    if let Some(orbit) = at_point
+        && !fighting
+    {
+        acts.insert(0, orbit);
+    }
+    acts
 }
 
 fn banner(s: &Summary) -> String {
@@ -218,6 +301,107 @@ fn setup(lacks: Lacks) -> Vec<String> {
 /// there are more than `risk * BOLD_STANDS` of them.
 pub fn flees(hostiles: usize, risk: f64) -> bool {
     hostiles > 0 && hostiles as f64 > risk.clamp(0.0, 1.0) * BOLD_STANDS
+}
+
+/// **How far inside the point's range the bot orbits**, as a share of the
+/// range **[A]** 0.5. Falsified by a bot that drifts out of range (the
+/// bracket shows EMPTY with the bot on grid): raise nothing, lower this.
+pub const HOLD_SHARE: f64 = 0.5;
+
+/// **How long a plexer holds a looping point** before it moves on **[A]**
+/// 20 minutes (a looping point never ends by itself: the server pays it
+/// every cycle). Falsified by bots camping one complex all evening (lower
+/// it), or leaving before a cycle pays (raise it).
+pub const HOLD_FOR: Duration = Duration::from_secs(20 * 60);
+
+/// The capture range the bot plays by, metres: the server's own parameter
+/// ([`eve_server::fw_capture::assumed`] **[A]**, 10 km) until the
+/// component's attributes are extracted. The client does not send it.
+pub fn point_range() -> f64 {
+    eve_server::fw_capture::assumed().range
+}
+
+/// A capture point on the grid, from its slim ([`crate::park::SlimInfo::capture`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointView {
+    pub id: i64,
+    pub position: [f64; 3],
+    /// The militia attacking and the one holding the complex.
+    pub attacker: i64,
+    pub occupier: i64,
+    /// Centre distance from the bot, metres.
+    pub distance_m: f64,
+    /// The point's own radius, metres (the range is tested centre to
+    /// centre, the orbit is surface to surface).
+    pub radius: f64,
+}
+
+/// What the bot does about a capture point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PointAct {
+    /// Fly to the point (its ball id): out of range. Orbit at `orbit_m`.
+    Approach { point: i64, orbit_m: f64 },
+    /// In range: orbit at `orbit_m` and fight what comes.
+    Hold { point: i64, orbit_m: f64 },
+    /// Held long enough, or too hot: stop holding.
+    Leave,
+    /// No point on the grid: clear the complex as before.
+    Clear,
+}
+
+/// The orbit distance to order, metres, **surface to surface** (the order's
+/// range is the client's `surfaceDist`): [`HOLD_SHARE`] of the point's
+/// range, less both radii, so the bot's centre stays inside the range
+/// (`fw_capture` tests centre separation against it).
+pub fn orbit_m(view: &PointView, ego_radius: f64) -> f64 {
+    (point_range() * HOLD_SHARE - view.radius - ego_radius).max(0.0)
+}
+
+/// **What a plexer does about the capture point on its grid** (module
+/// header). `militia` is the bot's: a point it neither attacks nor holds
+/// is not its business ([`PointAct::Clear`]). Otherwise approach until in
+/// range, then hold. A looping point is left after [`HOLD_FOR`] (`held`);
+/// an enemy pilot at the point, more than `risk` stands ([`flees`]): leave.
+pub fn point_step(
+    view: Option<&PointView>,
+    militia: i64,
+    enemies_in_range: usize,
+    risk: f64,
+    held: Duration,
+    ego_radius: f64,
+) -> PointAct {
+    let Some(v) = view else {
+        return PointAct::Clear;
+    };
+    if v.attacker != militia && v.occupier != militia {
+        return PointAct::Clear;
+    }
+    if flees(enemies_in_range, risk) {
+        return PointAct::Leave;
+    }
+    if eve_server::fw_capture::assumed().looping && held >= HOLD_FOR {
+        return PointAct::Leave;
+    }
+    let orbit_m = orbit_m(v, ego_radius);
+    if v.distance_m > point_range() {
+        return PointAct::Approach {
+            point: v.id,
+            orbit_m,
+        };
+    }
+    PointAct::Hold {
+        point: v.id,
+        orbit_m,
+    }
+}
+
+/// The humans within the point's range of it.
+fn enemies_at(view: &PointView, humans: &[Ball]) -> usize {
+    let range = point_range();
+    humans
+        .iter()
+        .filter(|h| eve_server::space_state::distance(h.position, view.position) <= range)
+        .count()
 }
 
 /// The floor a plexer routes at: the bot's own floor, lowered to
@@ -540,6 +724,13 @@ pub struct Plan {
     /// No enlistment was possible anywhere: no sortie until then
     /// ([`NO_OFFICE_FOR`]).
     pub not_before: Option<Instant>,
+    /// The militia the bot is enlisted in, as of its last sortie; `None`
+    /// before the first one (the point rules need it, [`point_step`]).
+    pub militia: Option<i64>,
+    /// The capture point being held (ball id) and since when.
+    pub holding: Option<(i64, Instant)>,
+    /// Points already held for [`HOLD_FOR`]: not flown to again.
+    pub spent: BTreeMap<i64, Instant>,
 }
 
 impl Plan {
@@ -556,6 +747,8 @@ impl Plan {
         self.avoid.retain(|_, until| now < *until);
         self.not_before = self.not_before.filter(|t| now < *t);
         self.ran
+            .retain(|_, at| now.saturating_duration_since(*at) < RAN_FOR);
+        self.spent
             .retain(|_, at| now.saturating_duration_since(*at) < RAN_FOR);
     }
 }
@@ -819,6 +1012,7 @@ pub fn sortie(
             floor: career_floor(t.floor),
         }),
     )?;
+    PLANS.with(name, |p| p.militia = Some(militia));
     let enemy = enemy_of(&warzones, militia)
         .ok_or_else(|| Error::Refused(format!("plex: militia {militia} is in no warzone")))?;
     let rank = value(c, FAC_WAR, "GetMyCharacterRankInfo", vec![])
@@ -1497,6 +1691,148 @@ mod tests {
         let acts = in_space(&mut m, &o);
         assert_eq!(m.homing, None, "{acts:?}");
         assert!(PLANS.get(bold).avoided(now).is_empty());
+    }
+
+    const MINE: i64 = 599_501;
+    const THEIRS: i64 = 599_502;
+
+    const OTHER: i64 = 599_503;
+
+    fn point(id: i64, occupier: i64, distance_m: f64) -> PointView {
+        PointView {
+            id,
+            position: [0.0, 0.0, 0.0],
+            attacker: if occupier == MINE { THEIRS } else { MINE },
+            occupier,
+            distance_m,
+            radius: 300.0,
+        }
+    }
+
+    const EGO_R: f64 = 50.0;
+
+    fn step(v: &PointView, enemies: usize, risk: f64, held: Duration) -> PointAct {
+        point_step(Some(v), MINE, enemies, risk, held, EGO_R)
+    }
+
+    /// #76: out of range it flies in; in range it orbits well inside the
+    /// range, the orbit counted surface to surface.
+    #[test]
+    fn a_plexer_orbits_inside_the_point_range() {
+        let range = point_range();
+        let far = point(9, THEIRS, range * 3.0);
+        let PointAct::Approach { point: id, orbit_m } = step(&far, 0, 0.5, Duration::ZERO) else {
+            panic!("a bot out of range approaches");
+        };
+        assert_eq!(id, 9);
+        assert!(orbit_m + far.radius + EGO_R < range, "{orbit_m}");
+        let near = point(9, THEIRS, range * 0.1);
+        let PointAct::Hold { point: id, orbit_m } = step(&near, 0, 0.5, Duration::ZERO) else {
+            panic!("a bot in range holds");
+        };
+        assert_eq!(id, 9);
+        assert!(orbit_m > 0.0, "{orbit_m}");
+        assert!(orbit_m + near.radius + EGO_R < range, "{orbit_m}");
+    }
+
+    /// One enemy at the point: a bold bot holds, a timid one leaves.
+    #[test]
+    fn a_bold_plexer_holds_against_one_enemy_and_a_timid_one_leaves() {
+        let near = point(9, THEIRS, 0.0);
+        assert!(matches!(
+            step(&near, 1, 1.0, Duration::ZERO),
+            PointAct::Hold { .. }
+        ));
+        assert_eq!(step(&near, 1, 0.0, Duration::ZERO), PointAct::Leave);
+    }
+
+    /// No capture point on the grid: the complex is cleared as before; so is
+    /// a point of two other militias.
+    #[test]
+    fn a_complex_without_a_point_is_cleared_as_before() {
+        assert_eq!(
+            point_step(None, MINE, 0, 0.5, Duration::ZERO, EGO_R),
+            PointAct::Clear
+        );
+        let mut foreign = point(9, THEIRS, 0.0);
+        foreign.attacker = OTHER;
+        assert_eq!(step(&foreign, 0, 0.5, Duration::ZERO), PointAct::Clear);
+        let now = clock::instant();
+        let mut m = Memory::new("Plexer-nopoint", Policy::fast());
+        PLANS.with("Plexer-nopoint", |p| p.militia = Some(MINE));
+        let mut o = quiet_grid(now);
+        in_space(&mut m, &o);
+        o.now = now + crate::site_runner::SITE_SETTLE * 2;
+        assert_eq!(in_space(&mut m, &o).last(), Some(&Act::Plex));
+    }
+
+    /// The occupier's plexer holds too: it defends the point it owns.
+    #[test]
+    fn a_plexer_of_the_occupier_holds_too() {
+        let held = point(9, MINE, 0.0);
+        assert!(matches!(
+            step(&held, 0, 0.5, Duration::ZERO),
+            PointAct::Hold { point: 9, .. }
+        ));
+    }
+
+    /// The hold lasts while the point stands; a looping point is left after
+    /// [`HOLD_FOR`], and the next complex is run. When the point is gone
+    /// (the site completed) the bot plexes on at once.
+    #[test]
+    fn the_hold_ends_when_the_point_is_gone_or_the_time_is_spent() {
+        let near = point(9, THEIRS, 0.0);
+        assert!(matches!(
+            step(&near, 0, 0.5, HOLD_FOR / 2),
+            PointAct::Hold { .. }
+        ));
+        assert_eq!(step(&near, 0, 0.5, HOLD_FOR), PointAct::Leave);
+
+        let name = "Plexer-hold";
+        PLANS.with(name, |p| p.militia = Some(MINE));
+        let now = clock::instant();
+        let mut o = quiet_grid(now);
+        let mut m = Memory::new(name, Policy::fast());
+        in_space(&mut m, &o);
+        o.now = now + crate::site_runner::SITE_SETTLE * 2;
+        o.capture = Some(point(9, THEIRS, point_range() * 3.0));
+        let acts = in_space(&mut m, &o);
+        assert!(
+            matches!(acts.first(), Some(Act::Orbit { id: 9, .. })),
+            "{acts:?}"
+        );
+        assert!(!acts.contains(&Act::Plex), "{acts:?}");
+        // Already orbiting: no second order every turn.
+        if let Some(p) = o.park.as_mut() {
+            p.ego_tether = Some(9);
+        }
+        let acts = in_space(&mut m, &o);
+        assert!(
+            !acts.iter().any(|a| matches!(a, Act::Orbit { id: 9, .. })),
+            "{acts:?}"
+        );
+        // The point is gone: the bot plexes on.
+        o.capture = None;
+        in_space(&mut m, &o);
+        o.now += crate::site_runner::SITE_SETTLE * 2;
+        assert_eq!(in_space(&mut m, &o).last(), Some(&Act::Plex));
+
+        // In range for HOLD_FOR: leaves, remembers the point as run.
+        let name = "Plexer-spent";
+        PLANS.with(name, |p| p.militia = Some(MINE));
+        let mut o = quiet_grid(now);
+        let mut m = Memory::new(name, Policy::fast());
+        in_space(&mut m, &o);
+        o.now = now + crate::site_runner::SITE_SETTLE * 2;
+        o.capture = Some(point(9, THEIRS, 0.0));
+        in_space(&mut m, &o);
+        assert_eq!(PLANS.get(name).holding.map(|h| h.0), Some(9));
+        o.now += HOLD_FOR;
+        in_space(&mut m, &o);
+        o.now += crate::site_runner::SITE_SETTLE * 2;
+        let acts = in_space(&mut m, &o);
+        assert_eq!(acts.last(), Some(&Act::Plex), "{acts:?}");
+        assert!(PLANS.get(name).spent.contains_key(&9));
     }
 
     /// FW-4: the office a bot flies to is the nearest station of its militia.

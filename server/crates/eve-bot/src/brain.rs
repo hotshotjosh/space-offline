@@ -1100,6 +1100,9 @@ pub struct Observation {
     /// bot's fleet**: not NPCs, not the bot marker's, not the fleet boss
     /// (the driver's `is_human`).
     pub humans: Vec<Ball>,
+    /// The nearest faction-warfare capture point on the grid, when there is
+    /// one (#76, [`crate::plexer::point_step`]).
+    pub capture: Option<crate::plexer::PointView>,
     /// The hull type of each of [`Self::humans`], by ship id, from its slim
     /// (CP56: the hostile bot's policy is by the target's class).
     pub human_types: BTreeMap<i64, i64>,
@@ -1164,6 +1167,7 @@ impl Observation {
             ceo: false,
             hold_full: false,
             humans: Vec::new(),
+            capture: None,
             human_types: BTreeMap::new(),
             primary: None,
             help: None,
