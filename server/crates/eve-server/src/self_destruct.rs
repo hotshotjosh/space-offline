@@ -128,6 +128,19 @@ fn tell(reg: &mut Registry, to: Vec<i64>, key: &'static str, dict: Vec<(&'static
     }
 }
 
+/// [`tell`] from the world clock's stage: scheduled with no delay so it
+/// leaves in the tick, not on some client's next call.
+fn tell_later(
+    reg: &mut Registry,
+    to: Vec<i64>,
+    key: &'static str,
+    dict: Vec<(&'static str, PyValue)>,
+) {
+    if !to.is_empty() {
+        reg.schedule(std::time::Duration::ZERO, Remote { to, key, dict });
+    }
+}
+
 fn refusal() -> ServiceError {
     ServiceError::Raise(eve_proto::user_error("CannotSelfDestruct", Vec::new()))
 }
@@ -309,7 +322,7 @@ fn cancel(reg: &mut Registry, run: &Run, key: &'static str) {
         "[self-destruct] character {}: cancelled ({key})",
         run.character
     );
-    tell(reg, vec![run.character], key, vec![("what", what(type_id))]);
+    tell_later(reg, vec![run.character], key, vec![("what", what(type_id))]);
     // The slim field is gone with the run; a ship still in space says so.
     refresh_slim(reg, run.character);
 }
@@ -321,14 +334,14 @@ fn detonate(reg: &mut Registry, run: &Run, ft: BlueTime) {
         run.character,
         run.ship_id
     );
-    tell(
+    tell_later(
         reg,
         vec![run.character],
         "SelfDestructImmediate",
         vec![("shipTypeID", PyValue::Int(type_id))],
     );
     let others = others_on_grid(reg, run);
-    tell(
+    tell_later(
         reg,
         others,
         "SelfDestructImmediateOther",
@@ -476,6 +489,26 @@ mod tests {
         out
     }
 
+    /// The `OnRemoteMessage`s the clock would post now, as `remote` lists
+    /// them. A tick's messages are scheduled, never left in `pending`.
+    fn remote_clock(reg: &mut Registry) -> Vec<(Vec<i64>, String, PyValue)> {
+        let mut out = Vec::new();
+        for p in reg.take_due(Instant::now() + std::time::Duration::from_secs(3_600)) {
+            let (name, args) = p.to_push();
+            if name == "OnRemoteMessage" {
+                let PyValue::Bytes(k) = &args[0] else {
+                    panic!("a key")
+                };
+                out.push((
+                    p.audience().unwrap_or_default(),
+                    String::from_utf8_lossy(k).into_owned(),
+                    args[1].clone(),
+                ));
+            }
+        }
+        out
+    }
+
     fn field(d: &PyValue, k: &str) -> Option<PyValue> {
         crate::pyutil::dict_get(d, k.as_bytes()).cloned()
     }
@@ -603,7 +636,11 @@ mod tests {
         let ft = crate::pyutil::filetime_now().max(T0 + DURATION);
         reg.ext_mut::<State>().runs[0].fires_at = ft;
         tick(&mut reg, Instant::now(), ft);
-        let msgs = remote(&mut reg);
+        assert!(
+            remote(&mut reg).is_empty(),
+            "the tick's messages are on the clock, not in pending"
+        );
+        let msgs = remote_clock(&mut reg);
         let imm = msgs
             .iter()
             .find(|m| m.1 == "SelfDestructImmediate")
@@ -685,7 +722,11 @@ mod tests {
         tick(&mut reg, Instant::now(), T0 + ONE_SECOND);
         assert!(!is_running(&reg, ALICE_SHIP));
         assert_eq!(slim_field(&reg, ALICE_SHIP), None);
-        let msgs = remote(&mut reg);
+        assert!(
+            remote(&mut reg).is_empty(),
+            "the tick's messages are on the clock, not in pending"
+        );
+        let msgs = remote_clock(&mut reg);
         assert!(
             msgs.iter()
                 .any(|m| m.1 == "SelfDestructCancelledWarp" && m.0 == vec![ALICE])
@@ -720,7 +761,7 @@ mod tests {
         reg.leave_space(ALICE);
         tick(&mut reg, Instant::now(), T0 + ONE_SECOND);
         assert!(reg.ext::<State>().runs.is_empty());
-        let msgs = remote(&mut reg);
+        let msgs = remote_clock(&mut reg);
         assert!(
             msgs.iter()
                 .any(|m| m.1 == "SelfDestructCancelledExternal" && m.0 == vec![ALICE])
@@ -737,7 +778,7 @@ mod tests {
         tick(&mut reg, Instant::now(), T0 + 2 * ONE_SECOND);
         assert!(reg.ext::<State>().runs.is_empty());
         assert!(
-            remote(&mut reg).is_empty(),
+            remote(&mut reg).is_empty() && remote_clock(&mut reg).is_empty(),
             "no cancel notice for a dead ship"
         );
     }

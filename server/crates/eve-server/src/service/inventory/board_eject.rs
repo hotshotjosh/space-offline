@@ -1263,12 +1263,16 @@ mod tests {
         eject_it(&mut reg, ALICE).expect("ejected");
         crate::self_destruct::tick(&mut reg, Instant::now(), now + 10_000_000);
         assert!(!crate::self_destruct::is_running(&reg, ALICE_SHIP));
-        let told = reg.take_pending().into_iter().any(|(_, p)| {
-            let (name, args) = p.to_push();
-            name == "OnRemoteMessage"
-                && args.first().and_then(crate::pyutil::as_bytes)
-                    == Some(b"SelfDestructCancelledExternal".as_slice())
-        });
+        // The tick's message is on the clock's queue.
+        let told = reg
+            .take_due(Instant::now() + std::time::Duration::from_secs(3_600))
+            .into_iter()
+            .any(|p| {
+                let (name, args) = p.to_push();
+                name == "OnRemoteMessage"
+                    && args.first().and_then(crate::pyutil::as_bytes)
+                        == Some(b"SelfDestructCancelledExternal".as_slice())
+            });
         assert!(told, "the pilot is told it was cancelled");
         assert!(reg.item(ALICE_SHIP).is_some(), "the hull is not destroyed");
     }
