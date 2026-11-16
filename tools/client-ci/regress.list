@@ -326,6 +326,8 @@ fci_war --with-second -- --character Alice --character Bob
 fci_reactions --serial -- --time-scale 60
 # w21-dd-inv: a GM titan fires the Lance at a second titan in null-sec: the empire refusal takes nothing, fuel and capacitor are paid, the immobility refuses A's warp and a second click, B sees OnSpecialFX effects.SWDamageBeam and takes damage; two clients
 fci_doomsday --with-second -- --character Alice --character Bob --no-concord
+# dd2 (#32): the Reaper slice, the Bosonic cone and the Disruptive Lance (siege-gated, with its warp, jump, dock and cloak refusals on B): each weapon is read from the client by name and shape, a hull per leg, a shot that hits and a turned-away one that does not; two clients
+fci_doomsday_2 --with-second -- --character Alice --character Bob --no-concord
 # w21-dd-inv: a T1 blueprint copy is invented into a T2 blueprint with datacores: a copying job, an invention job, the delivery in the hangar and the industry window's blueprint list; time-scale 60 makes the jobs about two minutes
 fci_invention --serial -- --time-scale 60
 # w23-fit: the server refuses a module the hull cannot fit (wrong rack, no such slot, hull and size restriction, group limit, powergrid online refusal); the module stays in the hangar
