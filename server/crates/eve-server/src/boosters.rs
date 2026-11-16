@@ -262,6 +262,13 @@ pub(crate) fn announce(reg: &mut Registry, character_id: i64) {
     crate::brain::announce(reg, character_id);
 }
 
+/// [`announce`] from the world clock's stage: scheduled with no delay so it
+/// leaves in the tick, not on some client's next call.
+fn announce_later(reg: &mut Registry, character_id: i64) {
+    reg.schedule(std::time::Duration::ZERO, BoostersChanged { character_id });
+    crate::brain::announce_later(reg, character_id);
+}
+
 // ---------------------------------------------------------------------------
 // The ship, in flight
 // ---------------------------------------------------------------------------
@@ -491,10 +498,10 @@ pub(crate) fn use_booster(reg: &mut Registry, req: &Request<'_>) -> Result<PyVal
 // ---------------------------------------------------------------------------
 
 /// Delete the given slots' rows: re-base the queue around it, tell the client
-/// and (`in_flight`) the ship. `inputs_before` is the ship's inputs **with**
+/// and (`in_flight`) the ship. `clock` is true from the tick. `inputs_before` is the ship's inputs **with**
 /// the rows still counted, because [`inputs_of`] already ignores an expired
 /// one.
-fn end_rows(reg: &mut Registry, character_id: i64, ended: &[Active], in_flight: bool) {
+fn end_rows(reg: &mut Registry, character_id: i64, ended: &[Active], in_flight: bool, clock: bool) {
     if ended.is_empty() {
         return;
     }
@@ -511,7 +518,11 @@ fn end_rows(reg: &mut Registry, character_id: i64, ended: &[Active], in_flight: 
         del(reg, character_id, a.slot);
     }
     crate::skill_queue::thaw_training(reg, character_id, freeze);
-    announce(reg, character_id);
+    if clock {
+        announce_later(reg, character_id);
+    } else {
+        announce(reg, character_id);
+    }
     after_change(reg, character_id, old);
 }
 
@@ -536,7 +547,7 @@ pub(crate) fn on_podding(reg: &mut Registry, character_id: i64) {
         .into_iter()
         .filter(|a| crate::implants::dies_with_the_pod(reg.content(), a.type_id))
         .collect();
-    end_rows(reg, character_id, &ended, false);
+    end_rows(reg, character_id, &ended, false, false);
 }
 
 /// A clone jump: the rows that do not follow jump clones go.
@@ -545,7 +556,7 @@ pub(crate) fn on_jump(reg: &mut Registry, character_id: i64) {
         .into_iter()
         .filter(|a| attribute(reg, a.type_id, ATTR_FOLLOWS_JUMP_CLONES).unwrap_or(0.0) == 0.0)
         .collect();
-    end_rows(reg, character_id, &ended, false);
+    end_rows(reg, character_id, &ended, false, false);
 }
 
 /// The soonest expiry among all stored rows, `None` for none.
@@ -586,7 +597,7 @@ pub fn tick(w: &mut Registry, _: std::time::Instant, _: crate::damage::BlueTime)
             .filter(|(who, _)| *who == c)
             .map(|(_, a)| a.clone())
             .collect();
-        end_rows(w, c, &ended, true);
+        end_rows(w, c, &ended, true, true);
     }
     let next = next_due(w);
     w.ext_mut::<Due>().at = next;
@@ -981,8 +992,21 @@ mod tests {
         let blue = crate::pyutil::filetime_now();
         tick(&mut reg, std::time::Instant::now(), blue);
         assert!(rows(&reg, ALICE).is_empty());
-        let seen = events(&mut reg);
+        // The tick's pushes are on the clock's queue, not left in `pending`
+        // for some client's next call.
+        let waiting = events(&mut reg);
+        assert!(
+            !waiting.contains(&"OnServerBoostersChanged")
+                && !waiting.contains(&"OnServerBrainUpdated"),
+            "{waiting:?}"
+        );
+        let seen: Vec<&str> = reg
+            .take_due(std::time::Instant::now() + Duration::from_secs(3_600))
+            .iter()
+            .map(|p| p.to_push().0)
+            .collect();
         assert!(seen.contains(&"OnServerBoostersChanged"), "{seen:?}");
+        assert!(seen.contains(&"OnServerBrainUpdated"), "{seen:?}");
         crate::test_clock::thaw();
     }
 
