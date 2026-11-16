@@ -47,7 +47,7 @@
 //!   pattern of `dispatch.rs` `refuse_call` is used. **[A]** the wording and
 //!   that a real notify-type label is not wanted instead; no test pins it.
 
-use crate::service::args::{as_int, as_text};
+use crate::service::args::Args;
 use crate::service::{Registry, Request, ServiceError};
 use eve_marshal::PyValue;
 
@@ -60,7 +60,7 @@ pub struct CompCall<'a> {
     /// The ball's item id (the first argument).
     pub item_id: i64,
     /// The arguments after the method name.
-    pub args: &'a [PyValue],
+    pub args: Args<'a>,
     /// The keyword arguments of the call.
     pub kwargs: &'a [(PyValue, PyValue)],
 }
@@ -145,9 +145,10 @@ pub fn call_in(
     reg: &mut Registry,
     req: &Request<'_>,
 ) -> Result<PyValue, ServiceError> {
-    let item = as_int(req.args.first());
-    let component = as_text(req.args.get(1));
-    let method = as_text(req.args.get(2));
+    let a = Args::new(req);
+    let item = a.int(0);
+    let component = a.text(1);
+    let method = a.text(2);
     let (Some(item), Some(component), Some(method)) = (item, component, method) else {
         return Err(ServiceError::BadArguments {
             service: req.service.to_owned(),
@@ -188,7 +189,7 @@ pub fn call_in(
             actor,
             system,
             item_id: item,
-            args: &req.args[3..],
+            args: a.rest(3),
             kwargs: req.kwargs,
         },
     )
@@ -210,7 +211,11 @@ mod tests {
         Ok(PyValue::Tuple(vec![
             PyValue::Int(c.actor),
             PyValue::Int(c.item_id),
-            PyValue::List(c.args.to_vec()),
+            PyValue::List(
+                (0..c.args.len())
+                    .filter_map(|i| c.args.get(i).cloned())
+                    .collect(),
+            ),
             PyValue::Int(c.system),
             PyValue::Int(c.kwargs.len() as i64),
         ]))

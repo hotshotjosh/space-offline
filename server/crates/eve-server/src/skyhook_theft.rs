@@ -1182,7 +1182,7 @@ mod tests {
             actor,
             system: SYSTEM,
             item_id: item,
-            args: &[],
+            args: crate::service::args::Args::of(&[]),
             kwargs: &[],
         }
     }

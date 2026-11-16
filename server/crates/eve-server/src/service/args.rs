@@ -18,6 +18,15 @@
 //! [`crate::pyutil::pairs_get`], which knows the wire pairs are
 //! `(value, key)`.
 
+//! Raw reads that stay, on purpose:
+//!
+//! * `fleet_warp.rs` builds a [`Request`] for each follower and hands it the
+//!   call's own `args` slice, which is a field of `Request`, not a read;
+//! * `service.rs` (`machoNet.GetClusterGameStatisticsForClient`) matches
+//!   `req.args.first()` against both `str` and `unicode` and echoes
+//!   `req.args.get(1)` back unread. It is a hot file; it moves to [`Args`]
+//!   in a hot-ok batch.
+
 use super::{Request, ServiceError};
 use crate::pyutil::pairs_get;
 use eve_marshal::PyValue;
@@ -123,6 +132,12 @@ impl<'a> Args<'a> {
     /// the call carried), so a refusal still names the call.
     pub fn over(&self, args: &'a [PyValue]) -> Args<'a> {
         Args { args, ..*self }
+    }
+
+    /// The arguments from position `from` on (a method's `*args` tail), with
+    /// the same call's names; empty when there are fewer than `from`.
+    pub fn rest(&self, from: usize) -> Args<'a> {
+        self.over(self.args.get(from..).unwrap_or(&[]))
     }
 
     // ---- raw ---------------------------------------------------------------
@@ -695,6 +710,26 @@ mod tests {
             assert_eq!(x.int_kw_or("nope", 3), Some(-4));
             assert_eq!(x.int_kw_or("nope", 2), None);
             assert_eq!(x.expected("(a,)"), x.bad("expected (a,)"));
+        });
+    }
+
+    #[test]
+    fn rest_is_the_tail_from_a_position_and_empty_past_the_end() {
+        let a = [PyValue::Int(1), PyValue::Int(2), PyValue::Int(3)];
+        let kw = [kv("k", PyValue::Int(9))];
+        with(&a, &kw, |x| {
+            let t = x.rest(1);
+            assert_eq!(t.len(), 2);
+            assert_eq!(t.int(0), Some(2));
+            assert_eq!(t.int(1), Some(3));
+            assert_eq!(t.int(2), None);
+            assert_eq!(t.int_kw("k"), Some(9), "the keywords stay the call's");
+            assert_eq!(t.bad("why"), x.bad("why"), "a refusal names the same call");
+            assert_eq!(x.rest(0).len(), 3);
+            assert_eq!(x.rest(3).len(), 0);
+            assert!(x.rest(4).is_empty());
+            assert!(x.rest(usize::MAX).is_empty());
+            assert_eq!(x.rest(1).rest(1).int(0), Some(3));
         });
     }
 

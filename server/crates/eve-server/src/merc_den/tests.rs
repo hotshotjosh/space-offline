@@ -1477,7 +1477,7 @@ fn call(actor: i64, item: i64, args: &[PyValue]) -> CompCall<'_> {
         actor,
         system: SYSTEM,
         item_id: item,
-        args,
+        args: crate::service::args::Args::of(args),
         kwargs: &[],
     }
 }

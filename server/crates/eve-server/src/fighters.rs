@@ -1854,7 +1854,7 @@ pub fn dispatch(w: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceE
             let Some(command) = Args::new(req).text(1) else {
                 return Err(Args::new(req).expected("(fighterIDs, command, *args)"));
             };
-            let args = req.args.get(2..).unwrap_or(&[]);
+            let args = Args::new(req).rest(2);
             ability::movement(w, req.actor, &ids, &command, args).map_err(|e| match e {
                 ability::MoveError::Refused(r) => r.to_error(),
                 ability::MoveError::Args(why) => Args::new(req).expected(why),
@@ -1865,7 +1865,7 @@ pub fn dispatch(w: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceE
             let (Some(ids), Some(slot)) = (Args::new(req).ids(0), Args::new(req).int(1)) else {
                 return Err(Args::new(req).expected("(fighterIDs, abilitySlotID, *args)"));
             };
-            let args = req.args.get(2..).unwrap_or(&[]);
+            let args = Args::new(req).rest(2);
             Ok(ability::activate(w, req.actor, &ids, slot, args))
         }
         "CmdDeactivateAbilitySlots" => {

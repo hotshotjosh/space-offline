@@ -49,6 +49,7 @@ use crate::crimewatch;
 use crate::damage::{Damage, Shot};
 use crate::fighters_data::{Fighters, TargetMode, effect};
 use crate::missile;
+use crate::service::args::Args;
 
 // ---------------------------------------------------------------------------
 // The assumptions, by name
@@ -637,15 +638,12 @@ pub fn movement(
     actor: Option<i64>,
     ids: &[i64],
     command: &str,
-    args: &[PyValue],
+    args: Args<'_>,
 ) -> Result<(), MoveError> {
-    let wire_target = |args: &[PyValue]| -> Result<(i64, f64), MoveError> {
-        let (Some(target), Some(range)) = (crate::service::args::as_int(args.first()), args.get(1))
-        else {
+    let wire_target = |args: Args<'_>| -> Result<(i64, f64), MoveError> {
+        let (Some(target), Some(range)) = (args.int(0), args.float_finite(1)) else {
             return Err(MoveError::Args("(targetID, range)"));
         };
-        let range = crate::service::args::as_float_finite(Some(range))
-            .ok_or(MoveError::Args("(targetID, range)"))?;
         Ok((target, range.clamp(0.0, MAX_RANGE)))
     };
     enum Cmd {
@@ -664,7 +662,7 @@ pub fn movement(
             Cmd::Follow(t, r)
         }
         "STOP" => Cmd::Stop,
-        "GOTO_POINT" => Cmd::Goto(point_arg(args.first()).ok_or(MoveError::Args("(point,)"))?),
+        "GOTO_POINT" => Cmd::Goto(point_arg(args.get(0)).ok_or(MoveError::Args("(point,)"))?),
         _ => return Err(MoveError::Args("a known movement command")),
     };
     let (owner, _ship, list) = controlled(w, actor, ids).map_err(MoveError::Refused)?;
@@ -830,7 +828,7 @@ pub fn activate(
     actor: Option<i64>,
     ids: &[i64],
     slot: i64,
-    args: &[PyValue],
+    args: Args<'_>,
 ) -> PyValue {
     let (owner, ship, list) = match controlled(w, actor, ids) {
         Ok(v) => v,
@@ -852,7 +850,7 @@ fn activate_one(
     ship: i64,
     s: Squadron,
     slot: i64,
-    args: &[PyValue],
+    args: Args<'_>,
     now: BlueTime,
 ) -> Result<(), Refusal> {
     let id = s.id;
@@ -892,12 +890,12 @@ fn activate_one(
         TargetMode::PointTargeted => (
             None,
             Some(
-                point_arg(args.first())
+                point_arg(args.get(0))
                     .ok_or_else(|| Refusal::text("That ability needs a point."))?,
             ),
         ),
         TargetMode::ItemTargeted => {
-            let Some(target) = crate::service::args::as_int(args.first()) else {
+            let Some(target) = args.int(0) else {
                 return Err(Refusal::text("That ability needs a target."));
             };
             if target == ship || state(w).squadron(target).is_some() {

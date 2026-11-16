@@ -1086,7 +1086,7 @@ fn the_component_call_answers_through_the_router_shape() {
         actor: ALICE,
         system: HERE,
         item_id: 11,
-        args: &[],
+        args: crate::service::args::Args::of(&[]),
         kwargs: &[],
     };
     let got = info(&mut reg, &call).unwrap();

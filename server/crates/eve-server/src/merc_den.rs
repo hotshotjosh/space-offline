@@ -1531,8 +1531,8 @@ pub fn extract(reg: &mut Registry, c: &CompCall<'_>) -> Result<PyValue, ServiceE
 
 /// [`extract`] at `now`.
 pub fn extract_at(reg: &mut Registry, c: &CompCall<'_>, now: u64) -> Result<PyValue, ServiceError> {
-    let flag = crate::service::args::as_int(c.args.first()).ok_or_else(|| failed("No hold."))?;
-    let qty = crate::service::args::as_int(c.args.get(1)).unwrap_or(0);
+    let flag = c.args.int(0).ok_or_else(|| failed("No hold."))?;
+    let qty = c.args.int(1).unwrap_or(0);
     if !matches!(
         flag,
         crate::sov_hub::FLAG_CARGO | crate::sov_hub::FLAG_INFRASTRUCTURE_HANGAR
