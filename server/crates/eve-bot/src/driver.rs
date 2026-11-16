@@ -5644,6 +5644,19 @@ impl Bot {
             Act::SellLoot => {
                 // #18: the camp's kit is kept by the bot that needs it.
                 crate::camp::set_keep_kit(crate::camp::needs_kit(&self.memory, &self.obs));
+                // #223: a mutaplasmid held with a source is rolled before the
+                // sale can take either; a refusal or error is a note.
+                let rolled = match self.config.content.as_deref() {
+                    Some(content) => crate::contracts::mutate::roll_held(
+                        conn,
+                        content,
+                        crate::drone_use::weapon(&self.memory),
+                        self.memory.seed,
+                    )
+                    .unwrap_or_else(|e| format!("mutate failed: {e}")),
+                    None => String::new(),
+                };
+                self.track.docked_dirty = true;
                 let (current, seed) = (crate::drone_use::weapon(&self.memory), self.memory.seed);
                 let sale = crate::escort::sell_loot_keeping(conn, &|hangar| {
                     crate::escort::plan_weapons_of(
@@ -5659,8 +5672,13 @@ impl Bot {
                 // took is offered by contract; a refusal is a note.
                 let offered = self.offer_surplus(conn, crate::contracts::Career::Explorer);
                 self.track.docked_dirty = true;
+                let rolled = if rolled.is_empty() {
+                    String::new()
+                } else {
+                    format!("{rolled}; ")
+                };
                 self.note = Some(format!(
-                    "{}; {}",
+                    "{rolled}{}; {}",
                     sale.summary(),
                     offered.unwrap_or_else(|e| format!("contracts failed: {e}"))
                 ));

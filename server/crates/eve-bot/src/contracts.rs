@@ -38,6 +38,10 @@ use crate::{Conn, Error, ItemRow, Result};
 use eve_marshal::PyValue;
 use std::collections::BTreeMap;
 
+/// #223 MUTA-BOT: bots roll the mutaplasmids they hold (a submodule here
+/// because `lib.rs` is a hot file).
+pub mod mutate;
+
 /// `CONTYPE_ITEMEXCHANGE` **[V]** (`contractscommon`).
 pub const TYPE_ITEM_EXCHANGE: i64 = 1;
 /// `conAvailPublic` **[V]**.
