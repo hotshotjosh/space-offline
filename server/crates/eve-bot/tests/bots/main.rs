@@ -101,6 +101,7 @@ mod site_runner;
 mod society;
 mod sov;
 mod sov_bot;
+mod sov_den;
 mod sov_hub;
 mod sov_index;
 mod sov_steward;

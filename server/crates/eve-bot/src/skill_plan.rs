@@ -249,6 +249,11 @@ pub const PI_PLAN: &[Want] = &[
     ("Interplanetary Consolidation", 4),
 ];
 
+/// **The sov pilot** (the den runner, SOVX-DEN) **[A]**: the Mercenary Den
+/// Management skill, which lets a den be launched and activities be run.
+/// Falsified by den runners whose `GetMaximumForCharacter` stays 0 for days.
+pub const SOV_PLAN: &[Want] = &[("Mercenary Den Management", 3)];
+
 /// The plans a role follows, in order: [`CORE_PLAN`] first, then its
 /// career's. The trader's career plan is its own
 /// ([`crate::trader::SKILL_PLAN`]).
@@ -282,6 +287,8 @@ pub fn plans_of(role: RoleRef) -> Vec<&'static [Want]> {
         HUNTER_PLAN
     } else if is(&crate::pi::ROLE) {
         PI_PLAN
+    } else if is(&crate::sov_bot::ROLE) {
+        SOV_PLAN
     } else {
         &[]
     };
@@ -765,6 +772,27 @@ mod tests {
         };
         assert_eq!(cheapest_ask(&book, 1), Some(20.0));
         assert_eq!(cheapest_ask(&book, 3), None);
+    }
+
+    /// SOVX-DEN: the sov role trains the den-management skill, named as the
+    /// client's table names it (resolved here through an invented table row).
+    #[test]
+    fn the_sov_plan_names_the_den_skill() {
+        let table: BTreeMap<&str, i64> = [(
+            "Mercenary Den Management",
+            eve_server::merc_den::SKILL_DEN_MANAGEMENT,
+        )]
+        .into();
+        let plans = plans_of(&crate::sov_bot::ROLE);
+        assert_eq!(plans[0], CORE_PLAN);
+        assert_eq!(plans[1], SOV_PLAN);
+        let steps = resolve(&plans, |name| table.get(name).copied());
+        assert!(
+            steps
+                .iter()
+                .any(|&(s, _)| s == eve_server::merc_den::SKILL_DEN_MANAGEMENT),
+            "{steps:?}"
+        );
     }
 
     #[test]

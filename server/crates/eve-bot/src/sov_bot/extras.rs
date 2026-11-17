@@ -21,6 +21,9 @@
 //! by a soak where a steward's notes show it idle while a hub runs dry, or by
 //! gateway request counts that dominate the server's turn time.
 
+pub mod den;
+#[cfg(test)]
+mod den_tests;
 pub mod gw;
 pub mod kit;
 pub mod steward;
@@ -51,13 +54,15 @@ pub struct Mind {
     pub gw_down: Option<Instant>,
     /// The steward's memory (B1-a).
     pub steward: steward::Mind,
+    /// The den runner's memory (B3).
+    pub den: den::Mind,
 }
 
 /// One duty: `Ok(None)` is nothing to do this pass.
 type Arm = fn(&mut Conn, &mut Memory, &Ctx<'_>, &Plan, Duty) -> Result<Option<String>>;
 
 /// The duties, in order; the first that answers a line wins the turn.
-const ARMS: &[Arm] = &[steward::arm, upgrades::arm];
+const ARMS: &[Arm] = &[steward::arm, upgrades::arm, den::arm];
 
 /// **The hook** `sov_bot::turn` calls before the duty match: `Ok(None)` means
 /// the old duty runs unchanged. A dead connection (`Io`, `Protocol`) is the
