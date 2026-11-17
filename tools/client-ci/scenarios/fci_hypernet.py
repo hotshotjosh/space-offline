@@ -33,6 +33,15 @@ names:
    `ticket_price`, and `get_raffle(id).raffle_status == 9`;
 10. a notification of type 243 and one of 244 exist.
 
+With `--with-second`, #203 HN-PILOT2, the lower character id is A, the seller, the
+higher is B; steps 1-10 are A's, then A offers the returned stack again at
+`PRICE2` and buys one ticket; B finds it by owner and price in `grab`, takes the
+other seven, both hear the draw, A's wallet rises by `total_price - sales_tax`
+(the client's own, cross-checked against `RAFFLE_TAX_PERCENTAGE`), the winner
+claims, the loser's `AwardItem` raises `RafflesError`, and after delivery
+`get_raffle`, `get_history`, the statistics and notification 245 still answer
+from the compacted rows.
+
 PRECONDITIONS, failed by name: docked in an NPC station; the content bundle
 knows HyperCores (type 52568) and the cheap mineral.  NOT here, for a person:
 how the window looks (`docs/guides/human-checks.md`), the claim button after a
@@ -44,8 +53,9 @@ made outside the window (falsifier: check 5 names the exception).
 EOCI_SCENARIO = 'fci_hypernet'
 
 # Seconds to pass to `tools/client-ci.sh run fci_hypernet --timeout`.
-EOCI_FCI_TIMEOUT_S = 300
+EOCI_FCI_TIMEOUT_S = 600
 
+# SERVER-ARGS: --character Alice --character Bob
 # SERVER-EXPECT: absent  UNANSWERED (raffleProxy)
 # SERVER-EXPECT: absent  panicked at
 
@@ -1425,6 +1435,11 @@ def eoci_main(EOCI_NAME):
 
     TOKEN = 52568                   # typeRaffleToken [V]
     PRICE = 1000000                 # ISK per ticket; 8 tickets
+    PRICE2 = PRICE + 1000           # the two-pilot raffle's price: B finds A's second offer by it
+    # The harness rewrites the next line with the other pilot's id (--with-second).
+    EXPECT_CHARID = 0
+    PEER_WAIT_MS = 240000           # a bound on the other client's boot and moves, never a claim
+    FIN_WAIT_MS = 30000             # the draw's push, after the last ticket
 
     def wallet():
         ok, v = rcall('account', 'GetCashBalance', 0)
@@ -1442,6 +1457,299 @@ def eoci_main(EOCI_NAME):
         if not ok:
             return None
         return [r for r in (rows or []) if getattr_safe(r, 'typeID') == type_id]
+
+    # -- the two-pilot half (--with-second): A sells, B buys the rest ---------
+
+    def ticket_pairs(raffle):
+        """`[(number, owner_id)]` of a client Raffle's sold tickets (Ticket
+        objects or the server's 4-tuples, as the single-pilot step 7 reads)."""
+        out = []
+        for t in (getattr_safe(raffle, 'sold_tickets') or []):
+            if isinstance(t, (tuple, list)) and len(t) >= 4:
+                out.append((t[3], t[2]))
+            else:
+                out.append((getattr_safe(t, 'number'), getattr_safe(t, 'owner_id')))
+        return out
+
+    def winner_of(raffle):
+        wt = getattr_safe(raffle, 'winning_ticket')
+        if wt is None:
+            return None
+        if isinstance(wt, (tuple, list)) and len(wt) >= 4:
+            return wt[2]
+        return getattr_safe(wt, 'owner_id')
+
+    def raw_raffle(rid):
+        """The server's own answer to `GetRaffle` (primed).  `svc.get_raffle` may serve
+        the client's cache: `AwardItem` sends no OnRaffleUpdatedServer, so a cached
+        raffle can still read status 7 and hold its pre-compaction tickets."""
+        ok, one = rcall('raffleProxy', 'GetRaffle', rid)
+        return one if ok else None
+
+    def status_of(rid, svc=None):
+        one = raw_raffle(rid)
+        if one is None:
+            return None
+        try:
+            return int(getattr_safe(one, 'raffle_status', -1))
+        except Exception:
+            return None
+
+    def my_stats():
+        """`GetCreatedParticipated` as a dict of ints, or None."""
+        ok, st = rcall('raffleProxy', 'GetCreatedParticipated')
+        if not ok:
+            return None
+        out = {}
+        for k in ('raffles_participated', 'raffles_won', 'finished_delivered'):
+            try:
+                out[k] = int(st[k])
+            except Exception:
+                return None
+        return out
+
+    def historic_count(prize_type, svc):
+        ok, st = safe(lambda: svc.get_type_statistics(prize_type))
+        try:
+            return int(st['historic_count']) if ok else None
+        except Exception:
+            return None
+
+    def attr_val(obj, name):
+        """A Raffle value that may be a property or a method."""
+        v = getattr_safe(obj, name)
+        if callable(v):
+            ok, r = safe(v)
+            return r if ok else None
+        return v
+
+    def after_draw(svc, store, rid, me, other, prize_type, label, pre):
+        """Both pilots, once the draw is out: the push, the claim, the compacted reads.
+        `pre` holds `my_stats()` and `historic_count` from before the offer was sold out."""
+        got, waited = wait_for(lambda: getattr_safe(store.get_raffle(rid), 'is_finished')
+                               or winner_of(store.get_raffle(rid)) is not None,
+                               timeout_ms=FIN_WAIT_MS, step_ms=500)
+        check('%s: OnRaffleFinishedServer reached the storage within %s s (the draw is out)'
+              % (label, text(FIN_WAIT_MS // 1000)), bool(got), 'after %s ms' % text(waited))
+        raffle = raw_raffle(rid)
+        winner = winner_of(raffle) if raffle is not None else None
+        check('%s: the draw named one of the two pilots (a ticket exists)' % label,
+              winner in (me, other), 'winner %s, me %s, other %s' % (text(winner), text(me), text(other)))
+        if winner not in (me, other):
+            return
+        i_won = (winner == me)
+        say('hypernet draw: %s won' % ('I' if i_won else 'the other pilot'))
+        have0 = stack_units(prize_type) or 0
+        item_id = getattr_safe(raffle, 'item_id')
+        if i_won:
+            ok, v = safe(lambda: svc.claim_reward(raffle))
+            check('%s: the winner\'s claim_reward (AwardItem) is accepted' % label, ok, text(v)[:300])
+            def in_hangar():
+                ok2, rows2 = hangar_items()
+                ids = [getattr_safe(r, 'itemID') for r in (rows2 or [])] if ok2 else []
+                return item_id in ids or (stack_units(prize_type) or 0) > have0
+            got, waited = wait_for(in_hangar, timeout_ms=15000, step_ms=500)
+            check('%s: the prize is in the winner\'s hangar' % label, bool(got),
+                  'units %s -> %s, item %s' % (text(have0), text(stack_units(prize_type)), text(item_id)))
+        else:
+            wait_for(lambda: status_of(rid) in (7, 8), timeout_ms=30000, step_ms=500)
+            ok, err = rcall('raffleProxy', 'AwardItem', rid)
+            check('%s: the loser\'s AwardItem raises RafflesError' % label,
+                  (not ok) and text(err).startswith('RafflesError'), text(err)[:300])
+        got, waited = wait_for(lambda: status_of(rid) == 8, timeout_ms=120000, step_ms=1000)
+        check('%s: the raffle reads delivered (8) after the claim (the server\'s GetRaffle)' % label,
+              bool(got), 'status %s after %s ms' % (text(status_of(rid)), text(waited)))
+
+        # the compacted rows still answer (#276): the server's own read, then the client's
+        one = raw_raffle(rid)
+        pairs = ticket_pairs(one) if one is not None else []
+        count = getattr_safe(one, 'ticket_count')
+        check('%s: GetRaffle still lists every ticket after compaction' % label,
+              one is not None and count and len(pairs) == count
+              and len(set([n for n, _o in pairs])) == count, '%s of %s' % (text(len(pairs)), text(count)))
+        owners = set([o for _n, o in pairs])
+        check('%s: both pilots still hold tickets and the winner is unchanged' % label,
+              me in owners and other in owners and winner_of(one) == winner,
+              'owners %s, winner %s -> %s' % (text(sorted(owners)), text(winner), text(winner_of(one))))
+        ok, cl = safe(lambda: svc.get_raffle(rid))
+        check('%s: the client\'s get_raffle answers (its cache may lag the claim)' % label,
+              ok and winner_of(cl) == winner, text(getattr_safe(cl, 'raffle_status')))
+        ok, hist = safe(lambda: svc.get_history())
+        mine = [r for r in (hist or []) if getattr_safe(r, 'raffle_id') == rid] if ok else []
+        check('%s: get_history lists the raffle' % label, len(mine) == 1,
+              text([getattr_safe(r, 'raffle_status') for r in mine]))
+        now = my_stats()
+        before = pre.get('stats')
+        okst = now is not None and before is not None
+        check('%s: participated rose by one' % label,
+              okst and now['raffles_participated'] == before['raffles_participated'] + 1,
+              '%s -> %s' % (text(before), text(now)))
+        check('%s: raffles_won rose by one for the winner only' % label,
+              okst and now['raffles_won'] == before['raffles_won'] + (1 if i_won else 0),
+              '%s -> %s' % (text(before), text(now)))
+        if label == 'A':
+            check('A: finished_delivered rose by one for the owner',
+                  okst and now['finished_delivered'] == before['finished_delivered'] + 1,
+                  '%s -> %s' % (text(before), text(now)))
+        h1 = historic_count(prize_type, svc)
+        h0 = pre.get('hist')
+        check('%s: the type statistics count the delivered offer as historic' % label,
+              h0 is not None and h1 is not None and h1 >= h0 + 1, '%s -> %s' % (text(h0), text(h1)))
+        got, _w = wait_for(lambda: notes_of(245), timeout_ms=10000)
+        check('%s: a notification of type 245 (finished) exists' % label, bool(got),
+              text(len(notes_of(245) or [])))
+
+    def role_a_second(svc, store, sess, prize_type, rutil):
+        """A's half of the draw: a second offer (the first one was expired above),
+        one ticket of its own, the payout after the sell-out, then `after_draw`."""
+        me = sess.charid
+        gm_check('GM: 200 more HyperCores', '/createitem %d 200' % TOKEN)
+        prize, why = find_hangar_item(prize_type)
+        precondition('the returned prize stack is in the hangar for the second offer',
+                     prize is not None, why)
+        got, _w = wait_for(lambda: (stack_units(TOKEN) or 0) >= 200, timeout_ms=10000)
+        tok = svc.get_largest_token_stack()
+        ok, need = safe(lambda: rutil.tokens_required(PRICE2 * 8))
+        if prize is None or tok is None or not ok:
+            check('the second offer can be made (stack, tokens, formula)', False,
+                  '%s / %s / %s' % (text(why), text(tok), text(need)))
+            return
+        pre = {'stats': my_stats(), 'hist': historic_count(prize_type, svc)}
+        from raffles.common.raffle_data import RaffleCreationData
+        data = RaffleCreationData(owner_id=me, location_id=prize.locationID, solar_system_id=None,
+                                  token_id=tok.itemID, token_location_id=tok.locationID,
+                                  item_id=prize.itemID, type_id=prize.typeID, ticket_count=8,
+                                  ticket_price=PRICE2, restriction_id=None)
+        ok, rid = safe(lambda: svc.create_raffle(data))
+        check('A: the second create_raffle returns an int', ok and isinstance(rid, (int, long)),
+              text(rid)[:300])
+        if not ok:
+            return
+        got, _w = wait_for(lambda: store.has_raffle(rid), timeout_ms=5000)
+        check('A: the second offer reached the storage', bool(got), '')
+        gm('/giveisk %d' % (10 * PRICE2))
+        wait_for(lambda: (wallet() or 0) >= 2 * PRICE2, timeout_ms=8000)
+        w0 = wallet()
+        ok, upd = safe(lambda: svc.buy_ticket(rid, 0))
+        check('A: its own buy_ticket(id, 0) answers', ok, text(upd)[:300])
+        # B may sell the offer out before A's wallet read: then the draw has paid A
+        # already, and the end state below is the one to read.
+        def drawn():
+            return (getattr_safe(store.get_raffle(rid), 'is_finished')
+                    or winner_of(store.get_raffle(rid)) is not None)
+        got, _w = wait_for(lambda: drawn() or (wallet() is not None and w0 is not None
+                           and abs((w0 - wallet()) - PRICE2) < 0.01), timeout_ms=8000)
+        check('A: the wallet fell by the second offer\'s ticket_price (or B already sold out)',
+              bool(got), '%s -> %s' % (text(w0), text(wallet())))
+        # B buys the other seven; A waits for the draw
+        got, waited = wait_for(drawn, timeout_ms=PEER_WAIT_MS, step_ms=500)
+        check('A: the second pilot sold the offer out (the draw reached the seller)', bool(got),
+              'after %s ms' % text(waited))
+        raffle = raw_raffle(rid)
+        total = attr_val(raffle, 'total_price')
+        tax = attr_val(raffle, 'sales_tax')
+        from raffles.common import const as rconst
+        pct = getattr_safe(rconst, 'RAFFLE_TAX_PERCENTAGE')
+        frac = (pct if pct < 1 else pct / 100.0) if isinstance(pct, (int, long, float)) else None
+        # [I] fallbacks when the client Raffle has no total_price / sales_tax:
+        # ticket_price * ticket_count and RAFFLE_TAX_PERCENTAGE (falsifier: the names differ)
+        if not isinstance(total, (int, long, float)):
+            tp, tc = getattr_safe(raffle, 'ticket_price'), getattr_safe(raffle, 'ticket_count')
+            total = tp * tc if isinstance(tp, (int, long)) and isinstance(tc, (int, long)) else None
+        if not isinstance(tax, (int, long, float)) and total is not None and frac is not None:
+            tax = total * frac
+        have = isinstance(total, (int, long, float)) and isinstance(tax, (int, long, float))
+        check('A: total and sales tax are known and agree with RAFFLE_TAX_PERCENTAGE',
+              have and frac is not None and abs(total * frac - tax) <= 1.0,
+              'total %s, tax %s, RAFFLE_TAX_PERCENTAGE %s' % (text(total), text(tax), text(pct)))
+        if have and w0 is not None:
+            want = total - tax - PRICE2     # the whole run: own ticket out, payout in
+            got, _w = wait_for(lambda: wallet() is not None and abs((wallet() - w0) - want) <= 0.05,
+                               timeout_ms=10000)
+            check('A: the wallet rose by total minus the sales tax (net of its own ticket)',
+                  bool(got), '%s -> %s, want %s' % (text(w0), text(wallet()), text(want)))
+        else:
+            check('A: the wallet rose by total minus the sales tax (net of its own ticket)', False,
+                  'total/tax unknown')
+        after_draw(svc, store, rid, me, EXPECT_CHARID, prize_type, 'A', pre)
+
+    def role_b(svc, sess):
+        me = sess.charid
+        from raffles.client.storage import RaffleStorage
+        ok, store = safe(lambda: RaffleStorage())
+        check('B: a RaffleStorage can be made', ok, text(store)[:300])
+        if not ok:
+            return
+        try:
+            gm('/giveisk %d' % (10 * PRICE2))
+            got, _w = wait_for(lambda: (wallet() or 0) >= 8 * PRICE2, timeout_ms=10000)
+            precondition('B: the GM ISK arrived (open mode)', bool(got), text(wallet()))
+            types = type_ids_named('tritanium', limit=1, exact=True)
+            filters = {'type_id': types[0]} if types else None
+            constraints = {'min_ticket_price': PRICE2, 'max_ticket_price': PRICE2}
+            def find_offer():
+                ok2, bag = safe(lambda: svc.grab(filters, constraints))
+                best = None
+                for r in ((bag or []) if ok2 else []):
+                    if (getattr_safe(r, 'owner_id') == EXPECT_CHARID
+                            and getattr_safe(r, 'ticket_price') == PRICE2
+                            and int(getattr_safe(r, 'raffle_status', -1)) == 6):
+                        if best is None or getattr_safe(r, 'raffle_id') > getattr_safe(best, 'raffle_id'):
+                            best = r
+                return best
+            offer, waited = wait_for(find_offer, timeout_ms=PEER_WAIT_MS, step_ms=1000)
+            check('B: A\'s second offer (price %s) is in the filtered browse list' % text(PRICE2),
+                  offer is not None, 'after %s ms' % text(waited))
+            if offer is None:
+                return
+            rid = getattr_safe(offer, 'raffle_id')
+            prize_type = getattr_safe(offer, 'type_id')
+            count = getattr_safe(offer, 'ticket_count')
+            def sold_pairs():
+                ok3, one3 = safe(lambda: svc.get_raffle(rid))
+                return ticket_pairs(one3) if ok3 else []
+            got, waited = wait_for(lambda: EXPECT_CHARID in [o for _n, o in sold_pairs()],
+                                   timeout_ms=PEER_WAIT_MS, step_ms=500)
+            check('B: A\'s own ticket is sold before B buys', bool(got), 'after %s ms' % text(waited))
+            # B found the offer through `grab`, so its storage never saw an
+            # OnRaffleCreatedServer for it, and the client's storage only updates
+            # raffles it holds [I: `update_raffle` is guarded by `has_raffle`;
+            # falsifier: the check below is red after this call].  Hand the storage the
+            # server's raffle the way the create push does, before the last ticket sells.
+            held = safe(lambda: store.OnRaffleCreatedServer(rid, raw_raffle(rid)))
+            safe(lambda: store.get_raffle(rid))
+            ok_h, has = safe(lambda: store.has_raffle(rid))
+            check('B: the storage holds the offer before the last ticket sells', ok_h and bool(has),
+                  'OnRaffleCreatedServer %s, has_raffle %s' % (text(held), text(has)))
+            pre = {'stats': my_stats(), 'hist': historic_count(prize_type, svc)}
+            w0 = wallet()
+            bought = 0
+            for number in range(count):
+                if number in [n for n, _o in sold_pairs()]:
+                    continue
+                ok, err = safe(lambda: svc.buy_ticket(rid, number))
+                if ok:
+                    bought += 1
+                elif text(err).startswith('TicketUnavailableError'):
+                    continue            # taken between the read and the buy: the next number
+                else:
+                    check('B: buy_ticket(id, %s) answers' % text(number), False, text(err)[:300])
+                    break
+            one = raw_raffle(rid)
+            check('B: the offer is sold out (tickets_remaining == 0)',
+                  one is not None and len(ticket_pairs(one)) == count and bought >= 1,
+                  'bought %s, sold %s of %s' % (text(bought), text(len(ticket_pairs(one))), text(count)))
+            sleep_ms(1500)
+            check('B: the wallet fell by the tickets bought',
+                  w0 is not None and wallet() is not None
+                  and abs((w0 - wallet()) - bought * PRICE2) <= 0.05,
+                  '%s -> %s, %s tickets at %s' % (text(w0), text(wallet()), text(bought), text(PRICE2)))
+            after_draw(svc, store, rid, me, EXPECT_CHARID, prize_type, 'B', pre)
+        finally:
+            try:
+                store.close()
+            except Exception:
+                pass
 
     def eoci_body():
         mark = log_mark()
@@ -1470,6 +1778,14 @@ def eoci_main(EOCI_NAME):
         if ok and win is not None:
             ok2, v = safe(lambda: win.CloseByUser())
             check('the window closes', ok2, text(v)[:200])
+
+        # the second pilot (the higher character id) only buys and claims
+        if EXPECT_CHARID and sess.charid > EXPECT_CHARID:
+            say('hypernet role: B, the buyer')
+            role_b(svc, sess)
+            no_new_tracebacks('hypernet B', mark)
+            return
+        say('hypernet role: %s' % ('A, the seller' if EXPECT_CHARID else 'single pilot'))
 
         # 3. fixtures
         cheap = type_ids_named('tritanium', limit=1, exact=True)
@@ -1615,6 +1931,10 @@ def eoci_main(EOCI_NAME):
             got, _w = wait_for(lambda: notes_of(243) and notes_of(244), timeout_ms=10000)
             check('a notification of type 243 and one of 244 exist', bool(got),
                   '243: %s, 244: %s' % (text(len(notes_of(243) or [])), text(len(notes_of(244) or []))))
+
+            # 11. with a second pilot: a second offer, sold out by B, drawn and claimed
+            if EXPECT_CHARID:
+                role_a_second(svc, store, sess, prize_type, rutil)
         finally:
             try:
                 store.close()
