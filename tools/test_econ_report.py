@@ -497,6 +497,14 @@ class Nes(unittest.TestCase):
         self.assertIn("1500000", out)
         self.assertIn("out:invented", out)
 
+    def test_the_first_fold_day_is_flagged_cumulative(self):
+        printed, out = self.run_nes(self.ROWS + [row(3, "plex", "since_start", n=1)])
+        self.assertTrue(printed)
+        self.assertIn("day 3 is cumulative", out)
+        self.assertNotIn("since_start ", out.split("PLEX per day")[-1])
+        _, plain = self.run_nes(self.ROWS)
+        self.assertNotIn("cumulative", plain)
+
     def test_no_rows_prints_nothing(self):
         self.assertEqual(self.run_nes([row(1, "career", "pve")]), (False, ""))
 

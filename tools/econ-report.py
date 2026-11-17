@@ -604,6 +604,11 @@ def nes(rows):
         table("%s by career, per day (count/units)" % title, days, keys,
               lambda d, k, sel=sel: "%s/%s" % (sel[(d, k)]["n"], sel[(d, k)]["isk"]) if (d, k) in sel else "-")
     plex = [r for r in rows if r["kind"] == "plex"]
+    first = sorted({int(r["day"]) for r in plex if r["key"] == "since_start"})
+    plex = [r for r in plex if r["key"] != "since_start"]
+    for d in first:
+        printed = True
+        print("day %d is cumulative: the first fold counts everything the counters saw since start\n" % d)
     if plex:
         printed = True
         sel = {(int(r["day"]), r["key"]): r for r in plex}

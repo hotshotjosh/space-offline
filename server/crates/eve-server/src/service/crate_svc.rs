@@ -122,11 +122,7 @@ fn open_one(
             item_id: item.item_id,
         }
     };
-    let opened = reg.apply_items(&[take]);
-    if opened.is_ok() {
-        crate::econ_report::nes::note(reg, item.owner_id, &format!("open:{}", row.name), 1, 1);
-    }
-    if opened.is_err() {
+    if reg.apply_items(&[take]).is_err() {
         // The row already made its prizes; the crate could not be taken, so
         // the pilot still holds it and can open it again.
         crate::outln!(
@@ -138,6 +134,7 @@ fn open_one(
         );
         return None;
     }
+    crate::econ_report::nes::note(reg, item.owner_id, &format!("open:{}", row.name), 1, 1);
     Some(loot)
 }
 

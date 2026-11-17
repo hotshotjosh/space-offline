@@ -68,7 +68,7 @@ pub fn note(reg: &mut Registry, character: i64, what: &str, count: i64, units: i
 pub struct Day {
     /// `(what, career) -> (count, units)`.
     pub by: BTreeMap<(String, String), (i64, i64)>,
-    /// Users holding PLEX who have a bot: how many.
+    /// Accounts (users) that hold PLEX and have at least one bot: how many.
     pub held_bots: usize,
     /// Whole PLEX held, by the career of the user's first bot.
     pub held_by: BTreeMap<String, i64>,
@@ -250,6 +250,9 @@ pub fn tsv_rows(day: u32, d: &Day) -> Vec<String> {
     for (key, (n, u)) in crates_of(d) {
         v.push(format!("{day}\tall\tnes_crate\t{key}\t{n}\t0\t{u}\t0\t0"));
     }
+    if d.since_start {
+        v.push(format!("{day}\tall\tplex\tsince_start\t1\t0\t0\t0\t0"));
+    }
     for (career, plex) in &d.held_by {
         v.push(format!(
             "{day}\tall\tplex\theld:{career}\t{plex}\t0\t0\t0\t0"
@@ -410,6 +413,7 @@ mod tests {
             "{rows:?}"
         );
         assert!(rows.contains(&"9\tall\tnes_extract\tminer\t1\t0\t500000\t0\t0".to_owned()));
+        assert!(rows.contains(&"9\tall\tplex\tsince_start\t1\t0\t0\t0\t0".to_owned()));
         assert!(rows.contains(&"9\tall\tplex\tin:invented:src\t3\t0\t0\t0\t0".to_owned()));
         for l in &rows {
             assert_eq!(l.split('\t').count(), 9, "{l}");

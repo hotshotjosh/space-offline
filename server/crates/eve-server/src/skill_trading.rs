@@ -741,6 +741,22 @@ mod tests {
     }
 
     #[test]
+    fn an_injection_counts_the_injectors_and_the_points_in_one_nes_row() {
+        let mut reg = world(1_000);
+        let stack = give(&mut reg, TYPE_LARGE, 3);
+        call(&mut reg, "InjectSkillpoints", &ints(&[stack, 2])).expect("injected");
+        let rows: Vec<_> = reg
+            .deltas()
+            .of(crate::econ_ledger::KIND)
+            .iter()
+            .filter(|(k, _)| k.first().is_some_and(|f| f == "nes"))
+            .collect();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].0[1], "inject");
+        assert_eq!(rows[0].1, &vec!["2".to_owned(), "1000000".to_owned()]);
+    }
+
+    #[test]
     fn injection_refuses_what_the_stack_cannot_give() {
         let mut reg = world(0);
         let stack = give(&mut reg, TYPE_LARGE, 3);

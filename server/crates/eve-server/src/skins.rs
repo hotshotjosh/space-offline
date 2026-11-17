@@ -1007,6 +1007,29 @@ mod tests {
     }
 
     #[test]
+    fn applying_a_skin_counts_one_nes_row_and_a_clear_counts_nothing() {
+        let nes = |reg: &Registry| -> Vec<(Vec<String>, Vec<String>)> {
+            reg.deltas()
+                .of(crate::econ_ledger::KIND)
+                .iter()
+                .filter(|(k, _)| k.first().is_some_and(|f| f == "nes"))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        };
+        let mut reg = world();
+        let ship = ship_of(&reg, ALICE);
+        give(&mut reg, ALICE, LIC_PERM);
+        assert!(nes(&reg).is_empty());
+        apply(&mut reg, ALICE, ship, Some(SKIN_A)).unwrap();
+        let rows = nes(&reg);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].0[1], "skin");
+        assert_eq!(rows[0].1, vec!["1".to_owned(), "1".to_owned()]);
+        apply(&mut reg, ALICE, ship, None).unwrap();
+        assert_eq!(nes(&reg), rows, "a clear changes nothing");
+    }
+
+    #[test]
     fn apply_is_the_owners_only() {
         let mut reg = world();
         give(&mut reg, BOB, LIC_PERM);
