@@ -636,6 +636,7 @@ pub fn apply(
             }
             reg.deltas_mut()
                 .put(KIND, app_key(ship), vec![h.lic_type.to_string()]);
+            crate::econ_report::nes::note(reg, actor, "skin", 1, 1);
         }
     }
     reg.mark_dirty();

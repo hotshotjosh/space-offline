@@ -1166,6 +1166,7 @@ mod tests {
             career: "pve".to_owned(),
             declared: false,
             tier: "S",
+            band: "high",
             hours: 1,
             net,
             gross: net,

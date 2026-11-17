@@ -367,6 +367,7 @@ pub(crate) fn inject(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         .map_err(|e| Args::new(req).bad(&format!("consuming the injectors: {e:?}")))?;
     let d = reg.deltas_mut();
     ledger_moved(d, "injection", points);
+    crate::econ_report::nes::note(reg, actor, "inject", quantity, points);
     crate::free_sp::grant(reg, actor, points);
     Ok(PyValue::None)
 }
@@ -551,6 +552,7 @@ pub(crate) fn extract(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, 
     frozen.note(&moved);
     crate::skill_queue::thaw_training(reg, actor, frozen);
     ledger_moved(reg.deltas_mut(), "extraction", BUCKET);
+    crate::econ_report::nes::note(reg, actor, "extract", 1, BUCKET);
     crate::brain::announce(reg, actor);
     Ok(PyValue::None)
 }

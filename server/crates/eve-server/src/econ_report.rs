@@ -33,8 +33,18 @@
 //!   a TSV appended at each rollover to the file named by the environment
 //!   variable [`TSV_ENV`] (`tools/econ-report.py` reads it).
 //!
-//! No state of its own: a pure read of the world.
+//! - **Bands and more careers** (#23, #2): each bot row has the security band
+//!   of the system it is in ([`BotRow::band`]), pooled as `band` and
+//!   `career_band` groups; a courier reward infers a `hauler`, a planetary tax
+//!   row a `pi`.
+//! - **NES lines** ([`nes`]): the day's PLEX held and moved, crate opens,
+//!   SKINs, injectors and extractions by career, as `[econ] plex` and
+//!   `[econ] nes` lines and TSV rows.
+//!
+//! The report itself is a pure read of the world; the only state is
+//! [`nes`]'s counters.
 
+pub mod nes;
 pub mod tape;
 
 use crate::damage::BlueTime;
@@ -55,6 +65,9 @@ pub const TSV_HEADER: &str = "day\tscope\tkind\tkey\tn\thours\tisk\tisk2\tper_h"
 /// `refNewCharacterStartingFunds`-style grants are not earnings (the ledger's
 /// own ref).
 const REF_START_FUNDS: i64 = 10_004;
+
+/// The journal ref of a contract reward (`econ_ledger`'s table).
+const REF_CONTRACT_REWARD: i64 = 68;
 
 /// The region key of a wallet with no character (a corporation).
 const NO_REGION: i64 = 0;
@@ -142,6 +155,12 @@ pub struct BotRow {
     /// The career is the parked agent's, not inferred.
     pub declared: bool,
     pub tier: &'static str,
+    /// The security band of the system the bot is in at the report
+    /// ([`Registry::session_system`]): `high|low|null|wh|void`, `?` when the
+    /// system is unknown. **[A]** it is where the bot is when the report
+    /// runs, not where it earned; falsified by a miner that earns in a low
+    /// system and is read in a high one at the rollover.
+    pub band: &'static str,
     /// Game hours with at least one journal row.
     pub hours: u32,
     /// Wallet delta, earnings and spending alike.
@@ -205,13 +224,34 @@ pub fn tier(reg: &Registry, ship_type_id: i64) -> &'static str {
     }
 }
 
-/// A bot's career from its income, when it declared none **[A]**.
-pub fn infer_career(income: &BTreeMap<&'static str, f64>, industry_rows: usize) -> &'static str {
+/// The band name of `system` in the loaded universe, `?` when it has none.
+pub fn band(reg: &Registry, system: Option<i64>) -> &'static str {
+    use crate::celestial::{Band, Universe};
+    match system.and_then(|s| reg.content().try_get::<Universe>()?.band(s)) {
+        Some(Band::High) => "high",
+        Some(Band::Low) => "low",
+        Some(Band::Null) => "null",
+        Some(Band::Wormhole) => "wh",
+        Some(Band::Void) => "void",
+        None => "?",
+    }
+}
+
+/// A bot's career from its income, when it declared none **[A]**. A courier
+/// reward is hauling **[A]** (falsified by a hauler read as market, or a
+/// non-hauler with contract rewards); a market income with a planetary tax
+/// row (`pi_rows`) is a PI bot **[A]** (falsified by a PI bot read as market).
+pub fn infer_career(
+    income: &BTreeMap<&'static str, f64>,
+    industry_rows: usize,
+    pi_rows: usize,
+) -> &'static str {
     let get = |k: &str| income.get(k).copied().unwrap_or(0.0);
     let market = get("NPC buy orders") + get("player sales");
     let best = [
         ("pve", get("bounties")),
         ("missions", get("mission rewards")),
+        ("hauler", get("courier rewards")),
         ("market", market),
     ]
     .into_iter()
@@ -219,6 +259,7 @@ pub fn infer_career(income: &BTreeMap<&'static str, f64>, industry_rows: usize) 
     .filter(|b| b.1 > 0.0);
     match best {
         Some(("market", _)) if industry_rows > 0 => "builder",
+        Some(("market", _)) if pi_rows > 0 => "pi",
         Some((name, _)) => name,
         None => "idle",
     }
@@ -247,6 +288,7 @@ impl Report {
             gross: f64,
             income: BTreeMap<&'static str, f64>,
             industry: usize,
+            pi: usize,
         }
         let mut accs: BTreeMap<i64, Acc> = BTreeMap::new();
         for e in reg
@@ -273,11 +315,15 @@ impl Report {
                 let class = match isk_class(e) {
                     Some((_, c)) => c,
                     None if e.entry_type_id == 2 => "player sales",
+                    None if e.entry_type_id == REF_CONTRACT_REWARD => "courier rewards",
                     None => "other sources",
                 };
                 *a.income.entry(class).or_default() += e.amount;
             } else if matches!(isk_class(e), Some((_, "industry fees"))) {
                 a.industry += 1;
+            }
+            if matches!(e.entry_type_id, 96 | 97) {
+                a.pi += 1;
             }
         }
         for c in reg.config().characters.iter().filter(|c| c.is_bot) {
@@ -290,10 +336,11 @@ impl Report {
                 id: c.character_id,
                 region: c.region_id,
                 career: declared
-                    .unwrap_or_else(|| infer_career(&a.income, a.industry))
+                    .unwrap_or_else(|| infer_career(&a.income, a.industry, a.pi))
                     .to_owned(),
                 declared: declared.is_some(),
                 tier: tier(reg, c.ship_type_id),
+                band: band(reg, reg.session_system(c.character_id)),
                 hours: a.hours.len() as u32,
                 net: a.net,
                 gross: a.gross,
@@ -416,6 +463,14 @@ pub fn text(reg: &Registry, now: BlueTime, region: Option<i64>, hours: f64) -> S
         "ISK/h by ship tier",
         &r.groups(region, |b| b.tier.to_owned()),
     ));
+    out.push(group_line(
+        "ISK/h by security band",
+        &r.groups(region, |b| b.band.to_owned()),
+    ));
+    out.push(group_line(
+        "ISK/h by career and band",
+        &r.groups(region, |b| format!("{}:{}", b.career, b.band)),
+    ));
     out.join("\n")
 }
 
@@ -438,6 +493,11 @@ pub fn tsv_rows(r: &Report, goods: &ledger::Goods, day: u32) -> Vec<String> {
         for (kind, g) in [
             ("career", r.groups(region, |b| b.career.clone())),
             ("tier", r.groups(region, |b| b.tier.to_owned())),
+            ("band", r.groups(region, |b| b.band.to_owned())),
+            (
+                "career_band",
+                r.groups(region, |b| format!("{}:{}", b.career, b.band)),
+            ),
         ] {
             for (k, g) in g {
                 v.push(format!(
@@ -567,11 +627,16 @@ pub fn on_rollover(reg: &mut Registry, d: &crate::rollover::Day) -> usize {
     let from = d.now - crate::game_clock::span(reg, i64::from(d.days.max(1)) * crate::seed::DAY);
     let r = Report::of(reg, from, d.now);
     crate::outln!("{}", health_line(d.day, &r));
+    let careers: BTreeMap<i64, String> = r.bots.iter().map(|b| (b.id, b.career.clone())).collect();
+    let nes = nes::fold(reg, &careers);
+    crate::outln!("{}", nes::plex_line(d.day, &nes));
+    crate::outln!("{}", nes::nes_line(d.day, &nes));
     if let Some(path) = std::env::var_os(TSV_ENV) {
         let goods = ledger::goods_of_day(reg, d.day);
         let mut rows = tsv_rows(&r, &goods, d.day);
         let hours = f64::from(d.days.max(1)) * 24.0;
         rows.extend(tape(reg, d.now, hours, &goods).tsv_rows(d.day));
+        rows.extend(nes::tsv_rows(d.day, &nes));
         // TT-B C4: the writer thread does the file work, not this lock.
         append_tsv_queued(path.into(), &rows);
     }
@@ -593,7 +658,12 @@ mod tests {
     const REGION_B: i64 = 10_000_902;
 
     fn world() -> Registry {
-        let mut w = Registry::new(SandboxConfig::default());
+        world_on(crate::content::Content::fixture())
+    }
+
+    fn world_on(content: crate::content::Content) -> Registry {
+        let mut w =
+            Registry::new(SandboxConfig::default()).with_content(std::sync::Arc::new(content));
         w.deltas_mut().set_world(World::FIXTURE);
         w.character_mut(HUMAN).unwrap().region_id = REGION_A;
         for (id, ship, region) in [
@@ -698,16 +768,63 @@ mod tests {
     fn a_career_is_inferred_from_the_income_mix() {
         let mix = |v: &[(&'static str, f64)]| v.iter().copied().collect();
         assert_eq!(
-            infer_career(&mix(&[("bounties", 9.0), ("NPC buy orders", 3.0)]), 0),
+            infer_career(&mix(&[("bounties", 9.0), ("NPC buy orders", 3.0)]), 0, 0),
             "pve"
         );
         assert_eq!(
-            infer_career(&mix(&[("mission rewards", 9.0)]), 0),
+            infer_career(&mix(&[("mission rewards", 9.0)]), 0, 0),
             "missions"
         );
-        assert_eq!(infer_career(&mix(&[("NPC buy orders", 9.0)]), 0), "market");
-        assert_eq!(infer_career(&mix(&[("NPC buy orders", 9.0)]), 2), "builder");
-        assert_eq!(infer_career(&mix(&[]), 0), "idle");
+        assert_eq!(
+            infer_career(&mix(&[("NPC buy orders", 9.0)]), 0, 0),
+            "market"
+        );
+        assert_eq!(
+            infer_career(&mix(&[("NPC buy orders", 9.0)]), 2, 0),
+            "builder"
+        );
+        assert_eq!(infer_career(&mix(&[]), 0, 0), "idle");
+    }
+
+    #[test]
+    fn a_courier_reward_infers_a_hauler() {
+        let mut w = world();
+        // Ref 68 is a contract reward; an invented pi tax row marks a PI bot.
+        pay(&mut w, t0() + 1, 68, MINER, 500.0, 0);
+        pay(&mut w, t0() + 2, 2, RATTER, 300.0, NPC_ORDER);
+        pay(&mut w, t0() + 3, 96, RATTER, -5.0, 0);
+        let r = Report::of(&w, t0(), t0() + crate::seed::HOUR);
+        let career = |id| r.bots.iter().find(|b| b.id == id).unwrap().career.clone();
+        assert_eq!(career(MINER), "hauler");
+        assert_eq!(career(RATTER), "pi");
+    }
+
+    #[test]
+    fn a_bot_in_an_invented_low_system_is_in_the_low_band() {
+        let sys = |id: i64, sec: &str| {
+            format!(
+                "{id}\t10620001\t20620001\t\t\t{sec}\t\t0\t0\t0\t0\t0\t0\t\t0\t\t\tInvented {id}"
+            )
+        };
+        let u = crate::celestial::Universe::parse(
+            &[sys(9_620_301, "0.3"), sys(9_620_302, "0.9")],
+            &["10620001\t\t\t\t\tInvented Region".to_owned()],
+            &["20620001\t10620001\t\t\t\tInvented Constellation".to_owned()],
+        )
+        .expect("the test universe parses");
+        let mut c = crate::content::Content::fixture();
+        c.insert("universe", u);
+        let mut w = world_on(c);
+        w.character_mut(MINER).unwrap().solar_system_id = Some(9_620_301);
+        w.character_mut(RATTER).unwrap().solar_system_id = Some(9_620_302);
+        pay(&mut w, t0() + 1, 85, MINER, 1.0, 0);
+        pay(&mut w, t0() + 1, 85, RATTER, 1.0, 0);
+        let r = Report::of(&w, t0(), t0() + crate::seed::HOUR);
+        let band_of = |id| r.bots.iter().find(|b| b.id == id).unwrap().band;
+        assert_eq!(band_of(MINER), "low");
+        assert_eq!(band_of(RATTER), "high");
+        let g = r.groups(None, |b| format!("{}:{}", b.career, b.band));
+        assert!(g.contains_key("pve:low"), "{g:?}");
     }
 
     #[test]

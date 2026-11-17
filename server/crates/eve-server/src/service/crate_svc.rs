@@ -122,7 +122,11 @@ fn open_one(
             item_id: item.item_id,
         }
     };
-    if reg.apply_items(&[take]).is_err() {
+    let opened = reg.apply_items(&[take]);
+    if opened.is_ok() {
+        crate::econ_report::nes::note(reg, item.owner_id, &format!("open:{}", row.name), 1, 1);
+    }
+    if opened.is_err() {
         // The row already made its prizes; the crate could not be taken, so
         // the pilot still holds it and can open it again.
         crate::outln!(
@@ -331,6 +335,21 @@ mod tests {
             call(&mut reg, "ClaimLoot", &[PyValue::Int(0)]).unwrap(),
             PyValue::None
         );
+    }
+
+    #[test]
+    fn an_open_writes_one_nes_row_under_the_openers_row_name() {
+        let (mut reg, _, id) = world(3);
+        call(&mut reg, "OpenCrate", &[PyValue::Int(id)]).expect("opens");
+        let rows: Vec<_> = reg
+            .deltas()
+            .of(crate::econ_ledger::KIND)
+            .iter()
+            .filter(|(k, _)| k.first().is_some_and(|f| f == "nes"))
+            .collect();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].0[1], "open:test_crates");
+        assert_eq!(rows[0].1, &vec!["1".to_owned(), "1".to_owned()]);
     }
 
     #[test]
