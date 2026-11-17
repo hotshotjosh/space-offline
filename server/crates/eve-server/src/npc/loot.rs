@@ -62,7 +62,8 @@ pub const CLONE_TAG_KIND: &str = "clone-tag";
 /// `[A]` R7: tag tiers, `clamp(bounty decile / 2, 0, TAG_TIERS - 1)`.
 pub const TAG_TIERS: usize = 5;
 
-/// The equipment pools (R7's T1/meta kinds). `"utility"` is empty until #129.
+/// The equipment pools (R7's T1/meta kinds). `"utility"` holds damage controls, cap batteries
+/// and the tank's resist modules (#129, `tools/content_npc_regions.py` `UTILITY_GROUPS`).
 ///
 /// `[A]` kinds equally likely: each piece draws a kind uniformly among the
 /// kinds that have rows, then a type within it, so a kind with few rows is

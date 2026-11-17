@@ -86,6 +86,16 @@ GROUP_PROP, GROUP_PLATE = 46, 329
 TANK_GROUPS = {"shield": (40, 38), "armor": (62, GROUP_PLATE)}
 EWAR_GROUPS = {"SCRAM": (52,), "WEB": (65,), "NEUT": (71,),
                "EWAR": (379, 201, 208, 291)}
+#: #129: the `utility` pool's groups, fixed ids like TANK_GROUPS [I: read by
+#: hand off the pinned build's `groups` table by these names; falsifier: a
+#: re-pin whose group of that name has another id, which silently drops that
+#: group's utility rows]. `all` is every
+#: faction's: Damage Control (60), Capacitor Battery (61). A faction's tank key
+#: adds its resist modules: shield, Shield Hardener (77) and Shield Resistance
+#: Amplifier (295); armor, Armor Hardener (328) and Energized Armor Membrane
+#: (326). Tech I only, as the tank groups; a size word puts a module at its
+#: size, none at all three, a capital one at none (`module_size`).
+UTILITY_GROUPS = {"all": (60, 61), "shield": (77, 295), "armor": (328, 326)}
 #: `module_size`'s answer for a module in no pool (capital, heavy-interdictor).
 EXCLUDED = 0
 _WORD_SIZE = {"Micro": 1, "Small": 1, "Medium": 2, "Large": 3, "X-Large": 3}
@@ -320,10 +330,12 @@ def module_size(group, nm):
 
 def _equipment_pools(f, group, nm, needs):
     """`(kind, size)` pools of one Tech I module of `group` in faction `f`:
-    its tank (a tank module of its size, size known), propulsion (size known)
-    and ewar groups. A module with no size word is size-free, in all three
-    sizes, only in a group that is so by nature (scrambler, web, painter, ECM,
-    damper, disruptor); a neutralizer or tank module with none gets no row."""
+    its tank (a tank module of its size, size known), propulsion (size known),
+    ewar and utility groups (damage control, capacitor battery and the
+    faction's resist modules, #129). A module with no size word is size-free,
+    in all three sizes, only in a group that is so by nature (scrambler, web,
+    painter, ECM, damper, disruptor, and every utility group); a neutralizer
+    or tank module with none gets no row."""
     size = module_size(group, nm)
     out = []
     if group == GROUP_PROP:
@@ -332,10 +344,12 @@ def _equipment_pools(f, group, nm, needs):
         out.append(("tank", size))
     if any(group in EWAR_GROUPS[n] for n in needs if n in EWAR_GROUPS):
         out.append(("ewar", size))
+    if group in UTILITY_GROUPS["all"] or group in UTILITY_GROUPS.get(f.get("tank"), ()):
+        out.append(("utility", size))
     free = {g for n in ("SCRAM", "WEB", "EWAR") for g in EWAR_GROUPS[n]}
     return [(k, s) for k, sz in out
             for s in ([] if sz == EXCLUDED else [sz] if sz
-                      else SIZES if k == "ewar" and group in free else [])]
+                      else SIZES if k == "utility" or (k == "ewar" and group in free) else [])]
 
 
 def is_capital_named(group, nm):
@@ -639,9 +653,9 @@ def clone_tag_problems(types, rows):
 def equipment_problems(kinds):
     """The check on `npc/loot.tsv`'s `kinds` (`{kind: row count}`): each of
     C6 R7's equipment kinds has rows. An old bundle (extracted before #123)
-    has no tank, prop or ewar rows and must be re-extracted."""
+    has no tank, prop, ewar or utility rows and must be re-extracted."""
     return ["npc/loot.tsv: no %s rows (C6 R7's equipment pool; re-extract the bundle)" % k
-            for k in ("weapon", "tank", "prop", "ewar") if not kinds.get(k)]
+            for k in ("weapon", "tank", "prop", "ewar", "utility") if not kinds.get(k)]
 
 
 #: [A] #170: the dearest Tech I module a rat of hull size s carries:
@@ -656,7 +670,7 @@ EQUIP_PRICE_BOUND = {1: 1e6, 2: 5e6, 3: 25e6}
 #: 4x the dearest S/M/L T1 crystal in the 3670638 bundle; an XL crystal is far
 #: above all three). Falsifier: as above.
 AMMO_UNIT_BOUND = {1: 2e4, 2: 2e5, 3: 2e6}
-BOUNDED_EQUIPMENT = ("weapon", "tank", "prop", "ewar")
+BOUNDED_EQUIPMENT = ("weapon", "tank", "prop", "ewar", "utility")
 
 
 def price_bound_problems(rows, prices, bounds):

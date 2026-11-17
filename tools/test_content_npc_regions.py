@@ -426,14 +426,17 @@ class Equipment(unittest.TestCase):
     def setUp(self):
         # Invented group ids stand in for the client's, which the module
         # constants name; the tests patch them so no real id is pinned.
-        self.patches = (npr.GROUP_PROP, npr.GROUP_PLATE, npr.TANK_GROUPS, npr.EWAR_GROUPS)
+        self.patches = (npr.GROUP_PROP, npr.GROUP_PLATE, npr.TANK_GROUPS, npr.EWAR_GROUPS,
+                        npr.UTILITY_GROUPS)
+        npr.UTILITY_GROUPS = {"all": (98040, 98041), "shield": (98042,), "armor": (98043,)}
         npr.GROUP_PROP, npr.GROUP_PLATE = 98001, 98021
         npr.TANK_GROUPS = {"shield": (98010, 98011), "armor": (98020, 98021)}
         npr.EWAR_GROUPS = {"SCRAM": (98030,), "WEB": (98031,), "NEUT": (98032,),
                            "EWAR": (98033, 98034)}
 
     def tearDown(self):
-        npr.GROUP_PROP, npr.GROUP_PLATE, npr.TANK_GROUPS, npr.EWAR_GROUPS = self.patches
+        (npr.GROUP_PROP, npr.GROUP_PLATE, npr.TANK_GROUPS, npr.EWAR_GROUPS,
+         npr.UTILITY_GROUPS) = self.patches
 
     def rows(self, tank, needs, types, names):
         f = {P1: {"tank": tank, "ammo_groups": {}, "tags": []}}
@@ -514,14 +517,48 @@ class Equipment(unittest.TestCase):
             (1, "tank", 990661, 1), (1, "tank", 990662, 1), (2, "tank", 990663, 1),
             (3, "tank", 990664, 1), (3, "tank", 990665, 1)})
 
+    def test_utility_all_groups_go_to_every_faction_by_size(self):
+        types = {990701: self.mod(98040), 990702: self.mod(98041), 990703: self.mod(98041),
+                 990704: self.mod(98041), 990705: self.mod(98040)}
+        names = {990701: "Example Damage Control I", 990702: "Small Example Battery I",
+                 990703: "Medium Example Battery I", 990704: "Large Example Battery I",
+                 990705: "Capital Example Damage Control"}
+        want = ({(s, "utility", 990701, 1) for s in npr.SIZES}
+                | {(1, "utility", 990702, 1), (2, "utility", 990703, 1),
+                   (3, "utility", 990704, 1)})
+        for tank in (None, "shield", "armor"):
+            self.assertEqual(self.rows(tank, [], types, names), want)
+
+    def test_utility_resists_follow_the_factions_tank_key(self):
+        types = {990711: self.mod(98042), 990712: self.mod(98043)}
+        names = {990711: "Example Shield Hardener I", 990712: "Example Armor Hardener I"}
+        all3 = lambda t: {(s, "utility", t, 1) for s in npr.SIZES}  # noqa: E731
+        self.assertEqual(self.rows("shield", [], types, names), all3(990711))
+        self.assertEqual(self.rows("armor", [], types, names), all3(990712))
+        self.assertEqual(self.rows(None, [], types, names), set())
+
+    def test_utility_is_tech1_only_and_a_sized_resist_goes_to_its_size(self):
+        types = {990721: self.mod(98042, meta=NOT_TECH1, level=5), 990722: self.mod(98042),
+                 990723: self.mod(98043)}
+        names = {990721: "Example Shield Hardener II", 990722: "Medium Example Amplifier",
+                 990723: "Capital Example Hardener"}
+        self.assertEqual(self.rows("shield", [], types, names), {(2, "utility", 990722, 1)})
+        self.assertEqual(self.rows("armor", [], types, names), set())
+
+    def test_the_check_names_an_empty_utility_kind(self):
+        bad = npr.equipment_problems({"weapon": 3, "tank": 1, "prop": 1, "ewar": 1})
+        self.assertEqual(len(bad), 1, bad)
+        self.assertIn("no utility rows", bad[0])
+
     def test_the_check_names_each_empty_equipment_kind(self):
         self.assertEqual(npr.equipment_problems(
-            {"weapon": 3, "tank": 1, "prop": 1, "ewar": 1, "ammo": 9}), [])
-        bad = npr.equipment_problems({"weapon": 3, "tank": 1, "prop": 1, "ammo": 9})
+            {"weapon": 3, "tank": 1, "prop": 1, "ewar": 1, "utility": 1, "ammo": 9}), [])
+        bad = npr.equipment_problems({"weapon": 3, "tank": 1, "prop": 1, "utility": 1,
+                                      "ammo": 9})
         self.assertEqual(len(bad), 1, bad)
         self.assertIn("no ewar rows", bad[0])
         self.assertIn("re-extract", bad[0])
-        self.assertEqual(len(npr.equipment_problems({})), 4)
+        self.assertEqual(len(npr.equipment_problems({})), 5)
 
     def test_an_empty_tank_column_is_no_tank(self):
         row = ("599001\t1999001\t\t39000001\t1\t1999002\t99101\t\t\t1=99201\t\t"
