@@ -5820,7 +5820,22 @@ impl Bot {
                 Ok(())
             }
             Act::HyperNet => {
-                let turned = crate::nes_use::hypernet::turn(conn, &mut self.memory.hypernet);
+                // What the fit plan and the acquire order name is not surplus.
+                let role = self.memory.policy.role;
+                let flying = self.obs.ship.and_then(|s| s.type_id);
+                let kit = crate::fit_plan::kit_for_hull(
+                    crate::acquire::kit_of(role),
+                    flying,
+                    crate::progression::weapon_for(flying, self.memory.seed),
+                );
+                let order = crate::acquire::Order::from_kit(&kit);
+                let keep: std::collections::BTreeSet<i64> = order
+                    .modules
+                    .iter()
+                    .chain(&order.charges)
+                    .map(|p| p.0)
+                    .collect();
+                let turned = crate::nes_use::hypernet::turn(conn, &mut self.memory.hypernet, &keep);
                 self.track.docked_dirty = true;
                 self.track.cargo_dirty = true;
                 self.note = Some(turned?);

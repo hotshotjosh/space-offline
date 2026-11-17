@@ -26,7 +26,7 @@ use crate::verbs::{FLAG_HANGAR, ItemRow};
 use crate::{Conn, Error, Result};
 use eve_marshal::PyValue;
 use eve_server::hypernet as hn;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 /// How often a docked bot spends a turn here **[A]**. Falsified by a soak with
@@ -68,6 +68,8 @@ const GROUP_MINERAL: i64 = 18;
 pub struct State {
     pub checked: Option<Instant>,
     wait: BTreeMap<&'static str, Instant>,
+    /// Item ids of prizes this bot won: never offered again.
+    won: BTreeSet<i64>,
     /// Offers made, tickets bought, prizes claimed, in all.
     pub offered: u64,
     pub tickets: u64,
@@ -82,42 +84,40 @@ impl State {
     fn back_off(&mut self, what: &'static str, now: Instant) {
         self.wait.insert(what, now + BACKOFF);
     }
-}
 
-/// How often a bot with no cores and no dealings spends a turn here **[A]**:
-/// it only looks for good-value tickets. Falsified by a soak where such bots
-/// never buy a ticket in a day (shorter) or where these looks show in the
-/// act log's share (longer).
-pub const IDLE_RECHECK: Duration = Duration::from_secs(8 * 3600);
-
-impl State {
-    /// The bot has dealings here: it made an offer, bought a ticket or
-    /// claimed a prize, and so has something to watch.
-    pub fn engaged(&self) -> bool {
-        self.offered + self.tickets + self.claimed > 0
+    /// Item ids of prizes this bot has won.
+    pub fn won(&self) -> &BTreeSet<i64> {
+        &self.won
     }
 }
 
-/// **Is a turn due?** (pure) [`RECHECK`] since the last for a bot that holds
-/// cores or has dealings here, [`IDLE_RECHECK`] for any other. A bot that has
-/// not been looked at yet is not due: the first look starts its clock, so a
-/// thousand bots docking together do not all turn at once.
-pub fn due_at(checked: Option<Instant>, now: Instant, busy: bool) -> bool {
-    let every = if busy { RECHECK } else { IDLE_RECHECK };
-    checked.is_some_and(|t| now.saturating_duration_since(t) >= every)
+/// **Is a turn due?** (pure) [`RECHECK`] since the last look.
+pub fn due_at(checked: Option<Instant>, now: Instant) -> bool {
+    checked.is_some_and(|t| now.saturating_duration_since(t) >= RECHECK)
 }
 
-/// The brain's docked hook: a turn when [`due_at`] says so.
+/// Where a bot's clock starts (pure): `now` less its character id modulo
+/// [`RECHECK`], so a thousand bots docking together (or logging in after a
+/// restart) turn spread over one period, and a bot holding a won ticket
+/// claims within one [`RECHECK`].
+pub fn first_look(now: Instant, me: i64) -> Instant {
+    let off = Duration::from_secs(me.unsigned_abs() % RECHECK.as_secs());
+    now.checked_sub(off).unwrap_or(now)
+}
+
+/// The brain's docked hook: a turn when [`due_at`] says so. A bot whose
+/// session has not named its character yet (`me` 0) has no turn.
 pub fn due(
     m: &mut crate::brain::Memory,
     o: &crate::brain::Observation,
 ) -> Option<Vec<crate::brain::Act>> {
-    if m.hypernet.checked.is_none() {
-        m.hypernet.checked = Some(o.now);
+    if o.me == 0 {
         return None;
     }
-    let busy = m.hypernet.engaged() || o.hangar.iter().any(|r| r.type_id == hn::TOKEN_TYPE_ID);
-    if !due_at(m.hypernet.checked, o.now, busy) {
+    if m.hypernet.checked.is_none() {
+        m.hypernet.checked = Some(first_look(o.now, o.me));
+    }
+    if !due_at(m.hypernet.checked, o.now) {
         return None;
     }
     m.hypernet.checked = Some(o.now);
@@ -132,14 +132,18 @@ pub struct Prize {
     pub item_id: i64,
     pub type_id: i64,
     pub quantity: i64,
-    /// `averagePrice x quantity`.
+    /// `averagePrice` of the one item.
     pub estimate: f64,
 }
 
-/// **The surplus item** (pure): of the stacks in `rows`' hangar at `here`, the
-/// most valuable one that `wanted` does not name, is not ore, mineral, PLEX or
-/// a HyperCore, and whose estimate (`avg` per unit times quantity) is at least
-/// `min_isk`. Lowest item id on a tie.
+/// The charge category (rounds, crystals, scripts) **[V-data]**: never offered.
+const CATEGORY_CHARGE: i64 = 8;
+
+/// **The surplus item** (pure): of the single items (quantity 1: a raffle
+/// carries no quantity and moves the whole stack, so a stack would never
+/// sell) in `rows`' hangar at `here`, the most valuable one that `wanted` does
+/// not name, is not a charge, ore, mineral, PLEX or a HyperCore, and whose
+/// average price is at least `min_isk`. Lowest item id on a tie.
 pub fn surplus_item(
     rows: &[ItemRow],
     here: i64,
@@ -148,20 +152,21 @@ pub fn surplus_item(
     min_isk: f64,
 ) -> Option<Prize> {
     rows.iter()
-        .filter(|r| r.flag_id == FLAG_HANGAR && r.location_id == here)
+        .filter(|r| r.flag_id == FLAG_HANGAR && r.location_id == here && r.quantity == 1)
         .filter(|r| {
             r.category_id != CATEGORY_ASTEROID
+                && r.category_id != CATEGORY_CHARGE
                 && r.group_id != GROUP_MINERAL
                 && r.type_id != hn::PLEX_TYPE_ID
                 && r.type_id != hn::TOKEN_TYPE_ID
         })
         .filter(|r| !wanted(r))
         .filter_map(|r| {
-            let estimate = avg(r.type_id)? * r.quantity.max(1) as f64;
-            (estimate >= min_isk).then(|| Prize {
+            let estimate = avg(r.type_id)?;
+            (estimate >= min_isk).then_some(Prize {
                 item_id: r.item_id,
                 type_id: r.type_id,
-                quantity: r.quantity.max(1),
+                quantity: 1,
                 estimate,
             })
         })
@@ -214,6 +219,9 @@ pub fn ticket_budget(wallet: f64, reserve: f64, share: f64) -> f64 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Seen {
     pub raffle_id: i64,
+    /// Orders the history pages.
+    pub running_id: i64,
+    pub item_id: i64,
     pub owner_id: i64,
     pub type_id: i64,
     pub count: i64,
@@ -309,6 +317,8 @@ pub fn raffle_of(v: &PyValue) -> Option<Seen> {
     let s = state_of(v)?;
     Some(Seen {
         raffle_id: int(s.get(1))?,
+        running_id: int(s.first())?,
+        item_id: int(s.get(5))?,
         owner_id: int(s.get(2))?,
         type_id: int(s.get(6))?,
         count: int(s.get(7))?,
@@ -391,16 +401,44 @@ fn core_stack(rows: &[ItemRow], here: i64) -> Option<(i64, i64)> {
         .map(|r| (r.item_id, r.quantity))
 }
 
-/// Step 1: claim what was won.
+/// Pages of history read at most in one turn **[A]**. Falsified by wins
+/// older than this many pages that stay unclaimed.
+pub const HISTORY_PAGES: usize = 5;
+
+/// The page size a `GetMyRaffleHistory` answer names (the tuple's second
+/// element), else the server's.
+fn page_size(v: &PyValue) -> usize {
+    match v {
+        PyValue::Tuple(t) => int(t.get(1)).and_then(|n| usize::try_from(n).ok()),
+        _ => None,
+    }
+    .filter(|n| *n > 0)
+    .unwrap_or(hn::PAGE)
+}
+
+/// Step 1: claim what was won. Reads the history a page at a time (the last
+/// row's running id while a page is full, [`HISTORY_PAGES`] at most) and
+/// returns every raffle read.
 fn claim(conn: &mut Conn, st: &mut State, me: i64, notes: &mut Vec<String>) -> Result<Vec<Seen>> {
-    let v = match verb(conn, "GetMyRaffleHistory", vec![PyValue::None])? {
-        Ok(v) => v,
-        Err(e) => {
-            notes.push(format!("history: {e}"));
-            return Ok(Vec::new());
+    let mut mine: Vec<Seen> = Vec::new();
+    let mut before = PyValue::None;
+    for _ in 0..HISTORY_PAGES {
+        let v = match verb(conn, "GetMyRaffleHistory", vec![before.clone()])? {
+            Ok(v) => v,
+            Err(e) => {
+                notes.push(format!("history: {e}"));
+                break;
+            }
+        };
+        let page = raffles_of(&v);
+        let full = page.len() >= page_size(&v);
+        let last = page.last().map(|r| r.running_id);
+        mine.extend(page);
+        match last {
+            Some(id) if full => before = PyValue::Int(id),
+            _ => break,
         }
-    };
-    let mine = raffles_of(&v);
+    }
     for r in mine
         .iter()
         .filter(|r| r.status == hn::FINISHED_UNDELIVERED && r.winner == Some(me))
@@ -408,12 +446,26 @@ fn claim(conn: &mut Conn, st: &mut State, me: i64, notes: &mut Vec<String>) -> R
         match verb(conn, "AwardItem", vec![PyValue::Int(r.raffle_id)])? {
             Ok(_) => {
                 st.claimed += 1;
+                st.won.insert(r.item_id);
                 notes.push(format!("claimed the prize of offer {}", r.raffle_id));
             }
             Err(e) => notes.push(format!("claim {}: {e}", r.raffle_id)),
         }
     }
+    // A prize claimed on an earlier turn (or before a restart) is no surplus.
+    for r in mine
+        .iter()
+        .filter(|r| r.status == hn::FINISHED_DELIVERED && r.winner == Some(me) && r.owner_id != me)
+    {
+        st.won.insert(r.item_id);
+    }
     Ok(mine)
+}
+
+/// **ISK to spend on cores** (pure): what is spendable above `reserve`, at
+/// most `price x need`.
+pub fn core_budget(spendable: f64, reserve: f64, price: f64, need: i64) -> f64 {
+    (spendable - reserve).max(0.0).min(price * need as f64)
 }
 
 /// Steps 2 and 4: an offer of the surplus stack, with the cores held or
@@ -426,16 +478,20 @@ fn offer(
     me: i64,
     avg: &BTreeMap<i64, f64>,
     plex: f64,
+    keep: &BTreeSet<i64>,
     now: Instant,
     notes: &mut Vec<String>,
 ) -> Result<()> {
     let rows = conn.hangar_items()?;
     // What no fit plan wants: whole stacks the loot rule hands out.
     let lots = crate::contracts::stock(crate::contracts::Career::Explorer, &rows);
+    // Nor what the fit plan or the acquire order names, nor a prize it won.
     let wanted = |r: &ItemRow| {
-        !lots
-            .iter()
-            .any(|l| l.item_id == r.item_id && l.quantity == r.quantity)
+        keep.contains(&r.type_id)
+            || st.won.contains(&r.item_id)
+            || !lots
+                .iter()
+                .any(|l| l.item_id == r.item_id && l.quantity == r.quantity)
     };
     let Some(prize) = surplus_item(
         &rows,
@@ -461,7 +517,12 @@ fn offer(
         match (book, ask) {
             (Some(book), Some(a)) if a.price <= CORE_MAX_ISK => {
                 let wallet = crate::acquire::spendable(conn)?;
-                let budget = wallet.min(a.price * (shape.tokens - held) as f64);
+                let budget = core_budget(wallet, RESERVE, a.price, shape.tokens - held);
+                if budget <= 0.0 {
+                    st.back_off("offer", now);
+                    notes.push("no ISK above the reserve for HyperCores".to_owned());
+                    return Ok(());
+                }
                 let got = soft(
                     crate::capital::buy_units(
                         conn,
@@ -522,8 +583,30 @@ fn buy_tickets(
     if budget <= 0.0 {
         return Ok(());
     }
-    let Ok(v) = verb(conn, "Grab", vec![])? else {
-        return Ok(());
+    // `FilteredGrab` by the bot's own system: the server's filter has no
+    // region key, so the system stands for the neighbourhood **[A]**.
+    // Falsified by offers in the bot's region but another system that the
+    // bots never buy into.
+    let v = match conn.session().solar_system_id2() {
+        Some(sys) => {
+            let out = conn.call_kw(
+                "raffleProxy",
+                "FilteredGrab",
+                vec![],
+                vec![(
+                    eve_server::pyutil::pydict(vec![("solar_system_id", PyValue::Int(sys))]),
+                    eve_server::pyutil::bstr("filters"),
+                )],
+            )?;
+            match (out.refusal(), out.value()) {
+                (None, Some(v)) => v,
+                _ => return Ok(()),
+            }
+        }
+        None => match verb(conn, "Grab", vec![])? {
+            Ok(v) => v,
+            Err(_) => return Ok(()),
+        },
     };
     let picks = pick_raffles(
         &raffles_of(&v),
@@ -550,7 +633,7 @@ fn buy_tickets(
 }
 
 /// **One turn** (module header). A transport fault is the only error.
-pub fn turn(conn: &mut Conn, st: &mut State) -> Result<String> {
+pub fn turn(conn: &mut Conn, st: &mut State, keep: &BTreeSet<i64>) -> Result<String> {
     let (Some(station), Some(me)) = (conn.session().station_id(), conn.session().char_id()) else {
         return Err(Error::NotSent("hypernet: not docked".to_owned()));
     };
@@ -563,7 +646,7 @@ pub fn turn(conn: &mut Conn, st: &mut State) -> Result<String> {
         .filter(|r| r.owner_id == me && r.status == hn::RUNNING)
         .count();
     if open < MAX_OPEN && !st.backed_off("offer", now) {
-        offer(conn, st, station, me, &avg, plex, now, &mut notes)?;
+        offer(conn, st, station, me, &avg, plex, keep, now, &mut notes)?;
     }
     buy_tickets(conn, st, me, &avg, &mut notes)?;
     Ok(if notes.is_empty() {
@@ -607,7 +690,7 @@ mod tests {
         let min = 5_000.0;
         let none = |_: &ItemRow| false;
         let good = row(1, 990_101, 1);
-        let cheap = row(2, 990_102, 10);
+        let cheap = row(2, 990_102, 1);
         let unpriced = row(3, 990_999, 5);
         let mut ore = row(4, 990_101, 1);
         ore.category_id = CATEGORY_ASTEROID;
@@ -624,12 +707,14 @@ mod tests {
         ];
         let got = surplus_item(&rows, HERE, &none, &avg_of, min).expect("the good stack");
         assert_eq!((got.item_id, got.estimate), (1, 8_000.0));
-        // The cheap stack counts once its quantity makes it worth the line.
-        let rows = [row(2, 990_102, 200), cheap];
-        assert_eq!(
-            surplus_item(&rows, HERE, &none, &avg_of, min).map(|p| p.item_id),
-            Some(2)
-        );
+        // A stack is never offered, however much it is worth: the offer
+        // moves the whole stack and carries no quantity.
+        let rows = [row(2, 990_102, 200), row(3, 990_101, 2)];
+        assert_eq!(surplus_item(&rows, HERE, &none, &avg_of, min), None);
+        // A charge (a round, a crystal) is never offered.
+        let mut charge = row(4, 990_101, 1);
+        charge.category_id = CATEGORY_CHARGE;
+        assert_eq!(surplus_item(&[charge], HERE, &none, &avg_of, min), None);
         // A wanted stack is never offered.
         let wanted = |r: &ItemRow| r.item_id == 1;
         assert_eq!(surplus_item(&[good], HERE, &wanted, &avg_of, min), None);
@@ -675,6 +760,8 @@ mod tests {
     fn seen(id: i64, owner: i64, type_id: i64, count: i64, price: i64, sold: i64) -> Seen {
         Seen {
             raffle_id: id,
+            running_id: id,
+            item_id: id,
             owner_id: owner,
             type_id,
             count,
@@ -715,24 +802,30 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_is_due_by_how_busy_the_bot_is() {
-        let t0 = Instant::now();
-        assert!(
-            !due_at(None, t0, true),
-            "the first look only starts the clock"
-        );
-        assert!(!due_at(
-            Some(t0),
-            t0 + RECHECK - Duration::from_secs(1),
-            true
-        ));
-        assert!(due_at(Some(t0), t0 + RECHECK, true));
-        assert!(!due_at(Some(t0), t0 + RECHECK, false), "idle waits longer");
-        assert!(due_at(Some(t0), t0 + IDLE_RECHECK, false));
-        let mut st = State::default();
-        assert!(!st.engaged());
-        st.tickets = 1;
-        assert!(st.engaged());
+    fn a_turn_is_due_every_recheck_from_a_staggered_first_look() {
+        let t0 = Instant::now() + Duration::from_secs(10 * 3600);
+        assert!(!due_at(None, t0), "no clock yet");
+        assert!(!due_at(Some(t0), t0 + RECHECK - Duration::from_secs(1)));
+        assert!(due_at(Some(t0), t0 + RECHECK));
+        // The first look is back-dated by the character id modulo the period:
+        // never later than one period from the look, and different bots differ.
+        let a = first_look(t0, 90_000_017);
+        let b = first_look(t0, 90_000_018);
+        assert!(a <= t0 && b <= t0);
+        assert_ne!(a, b);
+        assert!(due_at(Some(a), a + RECHECK));
+        assert!(t0.duration_since(a) < RECHECK);
+        assert_eq!(first_look(t0, 0), t0);
+    }
+
+    #[test]
+    fn core_budget_stops_at_the_reserve_and_the_price_of_what_is_needed() {
+        // Below or at the reserve: nothing.
+        assert_eq!(core_budget(100.0, 100.0, 5.0, 3), 0.0);
+        assert_eq!(core_budget(40.0, 100.0, 5.0, 3), 0.0);
+        // Above it: the lesser of the headroom and the price of the need.
+        assert_eq!(core_budget(108.0, 100.0, 5.0, 3), 8.0);
+        assert_eq!(core_budget(500.0, 100.0, 5.0, 3), 15.0);
     }
 
     #[test]
