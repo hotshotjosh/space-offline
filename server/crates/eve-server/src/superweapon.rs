@@ -137,6 +137,10 @@ pub const SHAPE_CONE: i64 = 3;
 /// `controlPaths.py:43-55`). Falsifier: damage outside the client's cone.
 pub const CONE_HALF_ANGLE_DEG: f64 = 30.0;
 
+/// `doomsdayAOEShape` 4: the projected sphere (the Oscillator) **[V]**
+/// `positionalControl.py:13`. This server does not fire it yet (#33).
+pub const SHAPE_PROJECTED_SPHERE: i64 = 4;
+
 /// `doomsdayAOEShape` 1: the cylinder.
 pub const SHAPE_CYLINDER: i64 = 1;
 
@@ -533,7 +537,7 @@ fn prepare(
         ));
     }
     if own(w, type_id, ATTR_SHAPE).map(|v| v.round() as i64) != Some(shape) {
-        return Err(notify("This server cannot fire that doomsday yet."));
+        return Err(notify("This server does not fire that doomsday yet."));
     }
     if crate::bubble::forbidden_here(w, type_id, here.solar_system_id) {
         return Err(notify("That doomsday cannot be fired in empire space."));
@@ -649,11 +653,15 @@ pub fn fire_lance(
 ) -> Result<(), ServiceError> {
     // The one point-targeted call serves the cylinder (Lance, Disruptive
     // Lance) and the cone (Bosonic); the type's own shape says which.
-    let shape = actor
+    let raw = actor
         .and_then(|_| w.item(module_id).map(|i| i.type_id))
         .and_then(|t| own(w, t, ATTR_SHAPE))
-        .map_or(SHAPE_CYLINDER, |v| v.round() as i64);
-    let shape = if shape == SHAPE_CONE {
+        .map(|v| v.round() as i64);
+    // Only the cone is told apart here; every other value (the projected
+    // sphere, an unknown shape, a missing attribute) is asked for as a
+    // cylinder, and `prepare` refuses it ("does not fire that doomsday yet")
+    // after the ownership and fit checks and before `pay`.
+    let shape = if raw == Some(SHAPE_CONE) {
         SHAPE_CONE
     } else {
         SHAPE_CYLINDER

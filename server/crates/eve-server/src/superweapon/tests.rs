@@ -21,6 +21,9 @@ const DISRUPTIVE: i64 = 990_195_006;
 const FRIGATE: i64 = 990_195_007;
 const REAPER: i64 = 990_195_008;
 const BOSONIC: i64 = 990_195_009;
+const PROJECTED: i64 = 990_195_010;
+const ODD: i64 = 990_195_011;
+const SHAPELESS: i64 = 990_195_012;
 /// Alice is a long way from the origin, so an aim read as a world point fails.
 const OFF: f64 = 1.0e9;
 const LEGACY_EFFECT: i64 = LEGACY_EFFECTS[0];
@@ -75,6 +78,21 @@ fn content() -> crate::content::Content {
          713={FUEL}.0;714={BURN}.0;{ATTR_WARNING}={WARN_MS}.0;{ATTR_RADIUS}=1000.0;\
          {ATTR_DAMAGE_DURATION}=3000.0;{ATTR_DAMAGE_CYCLE}=1000.0;{ATTR_POINT_TARGETED}=1.0;\
          {ATTR_NO_JUMP}=100000.0;{ATTR_IMMOBILE}=30000.0;{ATTR_SHAPE}=2.0\tInvented Reaper\n\
+         type\t{PROJECTED}\t588\t7\t1\t1\t50.0\t0.0\t0.0\t1.0\t0\t12,16\t\
+         {ATTR_CAP_NEED}={NEED};{ATTR_RANGE}=20000.0;{ATTR_CYCLE}=60000.0;114=1000.0;116=0.0;117=0.0;118=0.0;\
+         713={FUEL}.0;714={BURN}.0;{ATTR_WARNING}={WARN_MS}.0;{ATTR_RADIUS}=1000.0;\
+         {ATTR_DAMAGE_DURATION}=3000.0;{ATTR_DAMAGE_CYCLE}=1000.0;{ATTR_POINT_TARGETED}=1.0;\
+         {ATTR_NO_JUMP}=100000.0;{ATTR_IMMOBILE}=30000.0;{ATTR_FIXED_RANGE}=1.0;{ATTR_SHAPE}={SHAPE_PROJECTED_SPHERE}.0\tInvented Oscillator\n\
+         type\t{ODD}\t588\t7\t1\t1\t50.0\t0.0\t0.0\t1.0\t0\t12,16\t\
+         {ATTR_CAP_NEED}={NEED};{ATTR_RANGE}=20000.0;{ATTR_CYCLE}=60000.0;114=1000.0;116=0.0;117=0.0;118=0.0;\
+         713={FUEL}.0;714={BURN}.0;{ATTR_WARNING}={WARN_MS}.0;{ATTR_RADIUS}=1000.0;\
+         {ATTR_DAMAGE_DURATION}=3000.0;{ATTR_DAMAGE_CYCLE}=1000.0;{ATTR_POINT_TARGETED}=1.0;\
+         {ATTR_NO_JUMP}=100000.0;{ATTR_IMMOBILE}=30000.0;{ATTR_FIXED_RANGE}=1.0;{ATTR_SHAPE}=9.0\tInvented Odd Shape\n\
+         type\t{SHAPELESS}\t588\t7\t1\t1\t50.0\t0.0\t0.0\t1.0\t0\t12,16\t\
+         {ATTR_CAP_NEED}={NEED};{ATTR_RANGE}=20000.0;{ATTR_CYCLE}=60000.0;114=1000.0;116=0.0;117=0.0;118=0.0;\
+         713={FUEL}.0;714={BURN}.0;{ATTR_WARNING}={WARN_MS}.0;{ATTR_RADIUS}=1000.0;\
+         {ATTR_DAMAGE_DURATION}=3000.0;{ATTR_DAMAGE_CYCLE}=1000.0;{ATTR_POINT_TARGETED}=1.0;\
+         {ATTR_NO_JUMP}=100000.0;{ATTR_IMMOBILE}=30000.0;{ATTR_FIXED_RANGE}=1.0\tInvented Shapeless\n\
          type\t{FRIGATE}\t25\t6\t1\t1\t0.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Frigate\n\
          type\t{FUEL}\t18\t4\t1\t1\t0.1\t0.0\t0.0\t1.0\t0\t\t\tInvented Fuel\n\
          type\t{HULL}\t659\t6\t1\t1\t0.0\t0.0\t0.0\t1.0\t0\t\t482=1000.0;55=300000.0\tInvented Titan\n\
@@ -692,4 +710,45 @@ fn the_beam_fx_leaves_on_the_clock_not_on_the_next_call() {
         .collect();
     assert_eq!(due.len(), 1, "the start, on the clock");
     assert_eq!(due[0].1[7], PyValue::Int(1), "start");
+}
+
+/// The refusal text the client shows, and nothing spent.
+fn assert_refused_untouched(lance: i64) {
+    let now = crate::pyutil::filetime_now();
+    let mut reg = world_with(lance, HULL);
+    let err = fire_lance(&mut reg, Some(ALICE), ALICE_LANCE, AIM, now).expect_err("refused");
+    assert_eq!(
+        format!("{err:?}"),
+        format!(
+            "{:?}",
+            notify("This server does not fire that doomsday yet.")
+        )
+    );
+    assert_eq!(fuel_left(&reg), BURN * 3, "no fuel taken");
+    let cap = crate::modules::capacitor_at(&reg, ship(ALICE), HULL, now).0;
+    assert!(cap >= 1000.0 - 1e-6, "no capacitor taken: {cap}");
+    assert!(!immobile_at(&reg, ship(ALICE), now), "no hold");
+    assert!(!no_jump_at(&reg, ship(ALICE), now), "no jump lock");
+    assert!(
+        reg.ext::<State>().ready.is_empty(),
+        "no cooldown entry for the module"
+    );
+    assert!(pushed(&mut reg).is_empty(), "nothing pushed for the caller");
+    run_to(&mut reg, now + (WARN_MS + 3_000) * MSEC);
+    assert!(!hurt(&reg, BOB), "nothing booked");
+}
+
+#[test]
+fn a_projected_sphere_is_refused_and_takes_no_fuel_cap_or_hold() {
+    assert_refused_untouched(PROJECTED);
+}
+
+#[test]
+fn an_unknown_shape_is_refused() {
+    assert_refused_untouched(ODD);
+}
+
+#[test]
+fn a_shapeless_type_is_refused_too() {
+    assert_refused_untouched(SHAPELESS);
 }
