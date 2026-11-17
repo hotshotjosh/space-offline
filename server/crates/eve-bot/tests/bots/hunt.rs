@@ -295,9 +295,26 @@ fn the_directional_scan_finds_ships_by_cone_and_the_sweep_counts_pilots() {
     let addr = serve(cfg);
     let mut bob = in_space(addr, "Bob");
     let mut alice = in_space(addr, "Alice");
+    // Both stop and the scans wait until Alice sees both ships still: a ship still
+    // coasting off the undock drifts out of the narrow cone's reach while a loaded
+    // server answers, and the cone then finds nothing (two gate reds on 11-17).
+    bob.stop().expect("Bob stops");
+    alice.stop().expect("Alice stops");
+    let still = |c: &mut eve_bot::Conn, id: i64| {
+        c.world_now()
+            .get(id)
+            .is_some_and(|b| b.motion.velocity.iter().map(|v| v * v).sum::<f64>().sqrt() < 1.0)
+    };
+    let until = std::time::Instant::now() + Duration::from_secs(60);
+    while !(still(&mut alice, BOB_SHIP) && still(&mut alice, ALICE_SHIP)) {
+        assert!(
+            std::time::Instant::now() < until,
+            "both ships stop within 60 s"
+        );
+        let _ = alice.collect_pushes(Duration::from_millis(200));
+        let _ = bob.collect_pushes(Duration::from_millis(50));
+    }
     // Where each is, from Alice's own view of the park.
-    let _ = alice.collect_pushes(Duration::from_millis(200));
-    let _ = bob.collect_pushes(Duration::from_millis(200));
     let ego = alice
         .world_now()
         .ego_ball()
@@ -310,6 +327,13 @@ fn the_directional_scan_finds_ships_by_cone_and_the_sweep_counts_pilots() {
         .expect("Bob is on her grid")
         .motion
         .position;
+    // Two ships that share an undock mouth can coast to rest almost on top of each
+    // other, where no cone direction means anything.
+    let apart = (0..3)
+        .map(|i| (bob_at[i] - ego[i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    assert!(apart > 200.0, "the ships came to rest apart: {apart} m");
     let manager = alice.system_scan_manager().expect("the scan manager");
     let sphere = alice
         .directional_scan(&manager, std::f64::consts::TAU, 1.0e12, [1.0, 0.0, 0.0])
