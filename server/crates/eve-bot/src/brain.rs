@@ -508,6 +508,8 @@ pub struct Memory {
     /// motherlodes this bot heard of and the one it was told of
     /// ([`crate::geode_haul`]).
     pub econ: crate::nes_use::State,
+    /// HN-3: the HyperNet turn ([`crate::nes_use::hypernet`], #203).
+    pub hypernet: crate::nes_use::hypernet::State,
     pub heard: crate::geode_haul::Heard,
     /// L7b: the escort's job from the request board ([`crate::escort_board`]).
     pub job: crate::escort_board::Mind,
@@ -592,6 +594,7 @@ impl Memory {
             upwell_home: crate::upwell_home::Mind::default(),
             rare: crate::rare_ore::State::default(),
             econ: crate::nes_use::State::default(),
+            hypernet: crate::nes_use::hypernet::State::default(),
             heard: crate::geode_haul::Heard::default(),
             job: crate::escort_board::Mind::default(),
             told: crate::geode_haul::Told::default(),
@@ -1370,6 +1373,10 @@ pub enum Act {
     /// or extract skill points, sell surplus PLEX: one [`crate::nes_use::turn`]
     /// (L7 BOT-ECON).
     Econ,
+    /// One docked HyperNet turn: claim a won prize, offer surplus loot, buy
+    /// tickets with spare ISK: one [`crate::nes_use::hypernet::turn`]
+    /// (HN-3, #203).
+    HyperNet,
     /// One sov turn: the alliance's plan, then this pilot's duty flown: one
     /// [`crate::sov_bot::turn`] (SOC-D5).
     Sov,
@@ -1483,6 +1490,7 @@ pub enum ActKind {
     Stance,
     Rare,
     Econ,
+    HyperNet,
     Align,
     /// A fleet boss's order carried out ([`crate::fleet_orders`]).
     Order,
@@ -1570,6 +1578,7 @@ impl ActKind {
             ActKind::Stance => "stance",
             ActKind::Rare => "rare",
             ActKind::Econ => "econ",
+            ActKind::HyperNet => "hypernet",
             ActKind::Align => "align",
             ActKind::Order => "order",
             ActKind::Resync => "resync",
@@ -1686,6 +1695,7 @@ impl Act {
             Act::Stance { .. } => ActKind::Stance,
             Act::Rare => ActKind::Rare,
             Act::Econ => ActKind::Econ,
+            Act::HyperNet => ActKind::HyperNet,
             Act::AlignTo(_) => ActKind::Align,
             Act::Stop | Act::TravelTo { .. } | Act::JumpGate { .. } => ActKind::Order,
             Act::Resync => ActKind::Resync,
@@ -1978,6 +1988,10 @@ fn choose(m: &mut Memory, o: &Observation) -> Vec<Act> {
             // PLEX sold; then a miner or foreman flies to a motherlode it
             // heard of.
             if let Some(acts) = crate::nes_use::due(m, o) {
+                return acts;
+            }
+            // HN-3 (#203): HyperNet offers, tickets and claims.
+            if let Some(acts) = crate::nes_use::hypernet::due(m, o) {
                 return acts;
             }
             if let Some(acts) = to_motherlode(m, o) {

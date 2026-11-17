@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**69% proved** (231 of 333) · **93% built** (310 of 333) · 3 parked, not counted.
+**69% proved** (231 of 334) · **93% built** (311 of 334) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -98,6 +98,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] A pool founder's buy and bid budgets set aside the pledges it holds: *built-unproved*, acquire::budget/hold_back/spendable from corpmind reserved_for, at every builder and acquire buy site (#159), and since #160 in reactor, t3, trader, hull_choice part bids, travel, skill_plan and drone_use's hull buy (own asks excluded at t3 and reactor too); and since #159 rest contracts (bargains, copies), insurance premiums and doctrine bids; listing fees (builder, loot, hulls) and station repair spend the raw wallet on purpose, so a founder can still sell and stay safe
 - [ ] Live 200 against 200 battle: *partial*, one run, commit f5177ea fixed its stalls; #100 tools: tools/client-ci.sh --release and --bots-args, tools/client-ci/scenarios/fci_battle.py (a cloaked client on the brawl's grid, stepped to N a side), tools/battle_summary.py (PASS/STALLS/INCOMPLETE per the clock budgets); fci_battle PASS 31/31 at 20 a side (debug build) on 11-10 (var/ci-1111b-battle); 200 a side not run
 - [ ] Bots roll the mutaplasmids they hold, fly a good roll in place of its source and sell the rest by contract: *built-unproved*, server/crates/eve-bot/src/contracts/mutate.rs unit tests (plan, score, verdict, info read); driver Act::SellLoot calls roll_held; no soak yet; the fit-refusal refit path (wire) has no test. supply: abyss caches (row 245); every number [A] (MAX_PER_DOCK, KEEP_SCORE, ASK_SPAN)
+- [ ] Bots run HyperNet offers with surplus loot, buy tickets with surplus ISK and claim wins: *built-unproved*, server/crates/eve-bot/src/nes_use/hypernet.rs (Act::HyperNet; surplus_item, offer_shape, ticket_budget, pick_raffles unit tests) and tests/bots/hypernet_bots.rs on a live socket: a loot-holding bot offers with cores it holds or buys from an ask, a second bot buys every ticket, the seller is paid less the fee and the winner claims; no GM grants and no cores from nowhere; no soak or client run yet. RECHECK, IDLE_RECHECK, MIN_ITEM_ISK, MIN_TICKET_ISK, RESERVE, SPEND, CORE_MAX_ISK and MAX_OPEN are [A] (falsifiers beside each constant)
 - [ ] /bots despawn takes a dev bot's anchored units out of space with it; the bot's ship leaves by the log-off rule: *built-unproved*, bot_control.rs remove_bot_units/remove_doomed (only after eve-bots answers despawned; only provision-made bots; exact group match, rebuilt from bot accounts after a restart), crimewatch.rs release_holds logs every kept or dropped hold, tests/bot_despawn_socket.rs (a closed socket's ship leaves the roster after the hold), eve-bot tests/bots/bot_ctl.rs drives /bots despawn through the real driver to the log-off hold, and the hull leaves when the hold's end is ticked (crimewatch::tick by hand). A group of 11+ next to its namesake-plus-digit group is ambiguous after a restart [A]; the exact fix is a delta kind (hot)
 - [ ] Doctrines and counters: *built-unproved*, doctrine*.rs, counter.rs; unit tests only
 - [ ] Prices move with demand: *built-unproved*, demand.rs; unit tests only
@@ -161,7 +162,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 23 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 38 | 2 | 0 | 2 |
+| Bots | 11 | 39 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
@@ -357,7 +358,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 53 proved, 42 open</summary>
+<details><summary><b>Bots</b>: 11 of 54 proved, 43 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -369,6 +370,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] A camping HIC runs its warp disruption field on a bubbleable prey: *client-proved*, fci_bot_hic_camp (regress-w32e, 23/23): two Onyx camp a gate; the client sees the field start (OnSpecialFX) and a warp inside it raises WarpScrambledByWarpDisruptionFieldGenerator; camp.rs generator_acts/field_now/hic_standoff. FIELD_MARGIN is [A]
 - [ ] A camping HIC loads the focused script and points a prey no bubble holds: *built-unproved*, server/crates/eve-bot/tests/hic_point_socket.rs: camp::acts on live sockets locks a warpBubbleImmune hull past a nearer bubbleable decoy, loads the Focused Warp Disruption Script and runs the generator as a point on it, and the prey's warp is refused WarpScrambled; mutation-checked (nearest-prey and no-immunity mutants go red); camp.rs immune_target/load_script_now/point_now, pvp_kit.rs FieldPoint/ScriptOut. No client can fly a super here; the 60 s script hold, LEARN_TURNS and the cloak/logoff misfire of learned immunity are [A]
 - [ ] Bots roll the mutaplasmids they hold, fly a good roll in place of its source and sell the rest by contract: *built-unproved*, server/crates/eve-bot/src/contracts/mutate.rs unit tests (plan, score, verdict, info read); driver Act::SellLoot calls roll_held; no soak yet; the fit-refusal refit path (wire) has no test. supply: abyss caches (row 245); every number [A] (MAX_PER_DOCK, KEEP_SCORE, ASK_SPAN)
+- [ ] Bots run HyperNet offers with surplus loot, buy tickets with surplus ISK and claim wins: *built-unproved*, server/crates/eve-bot/src/nes_use/hypernet.rs (Act::HyperNet; surplus_item, offer_shape, ticket_budget, pick_raffles unit tests) and tests/bots/hypernet_bots.rs on a live socket: a loot-holding bot offers with cores it holds or buys from an ask, a second bot buys every ticket, the seller is paid less the fee and the winner claims; no GM grants and no cores from nowhere; no soak or client run yet. RECHECK, IDLE_RECHECK, MIN_ITEM_ISK, MIN_TICKET_ISK, RESERVE, SPEND, CORE_MAX_ISK and MAX_OPEN are [A] (falsifiers beside each constant)
 - [ ] /bots despawn takes a dev bot's anchored units out of space with it; the bot's ship leaves by the log-off rule: *built-unproved*, bot_control.rs remove_bot_units/remove_doomed (only after eve-bots answers despawned; only provision-made bots; exact group match, rebuilt from bot accounts after a restart), crimewatch.rs release_holds logs every kept or dropped hold, tests/bot_despawn_socket.rs (a closed socket's ship leaves the roster after the hold), eve-bot tests/bots/bot_ctl.rs drives /bots despawn through the real driver to the log-off hold, and the hull leaves when the hold's end is ticked (crimewatch::tick by hand). A group of 11+ next to its namesake-plus-digit group is ambiguous after a restart [A]; the exact fix is a delta kind (hot)
 - [x] A real client beside live bots: *client-proved*, fci_wing_follow W10. The first bot half really ran in wave 5
 - [x] Hostile bots use smartbombs: *client-proved*, fci_bot_smartbomb W10

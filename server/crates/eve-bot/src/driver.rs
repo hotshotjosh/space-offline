@@ -5819,6 +5819,13 @@ impl Bot {
                 self.note = Some(turned?);
                 Ok(())
             }
+            Act::HyperNet => {
+                let turned = crate::nes_use::hypernet::turn(conn, &mut self.memory.hypernet);
+                self.track.docked_dirty = true;
+                self.track.cargo_dirty = true;
+                self.note = Some(turned?);
+                Ok(())
+            }
             Act::Sov => {
                 let Some(hall) = self.memory.policy.sov.clone() else {
                     return Err(Error::NotSent(crate::sov_bot::MISSING_HALL.to_owned()));
@@ -8006,6 +8013,10 @@ fn describe(act: &Act) -> (String, Vec<i64>) {
         Act::Wing(op) => op.describe(),
         Act::Econ => (
             "econ turn: geodes, SKIN, injectors, PLEX".to_owned(),
+            vec![],
+        ),
+        Act::HyperNet => (
+            "hypernet turn: claim wins, offer surplus, buy tickets".to_owned(),
             vec![],
         ),
         Act::Rare => (

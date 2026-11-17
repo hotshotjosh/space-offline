@@ -45,6 +45,10 @@ use eve_server::skill_trading::{BUCKET, MIN_TO_EXTRACT, TYPE_EXTRACTOR, TYPE_LAR
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+/// HN-3 (#203): bots use the HyperNet (a submodule here because `lib.rs` is
+/// a hot file).
+pub mod hypernet;
+
 /// How often a docked bot spends a turn here **[A]**. Falsified by a hangar
 /// that holds unopened geodes for hours (shorter) or a docked bot that never
 /// seems to be doing anything else (longer).

@@ -56,6 +56,7 @@ mod handshake;
 mod hangar;
 mod hostile;
 mod hunt;
+mod hypernet_bots;
 mod ice_tier;
 mod industry;
 mod insure;
