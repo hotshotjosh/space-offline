@@ -30,6 +30,8 @@ pub enum Met {
     IHelped,
     Fleet,
     Theft,
+    /// Seen in Local; nothing passed.
+    Seen,
 }
 
 impl Met {
@@ -41,6 +43,7 @@ impl Met {
             Met::IHelped => "i_helped",
             Met::Fleet => "fleet",
             Met::Theft => "theft",
+            Met::Seen => "seen",
         }
     }
 
@@ -52,6 +55,7 @@ impl Met {
             "i_helped" => Met::IHelped,
             "fleet" => Met::Fleet,
             "theft" => Met::Theft,
+            "seen" => Met::Seen,
             _ => return None,
         })
     }
@@ -131,6 +135,16 @@ pub fn path_for(dir: &Path, name: &str) -> PathBuf {
     p
 }
 
+/// Seconds between two Seen notes of one pilot. **[A]**: one note a pilot an
+/// hour; falsified if the know.tsv flush rate or the book churn shows in a
+/// 1,000-bot profile, or if regulars never form.
+pub const SEEN_EVERY: u64 = 3600;
+
+/// Whether `name` has not noted `who` for [`SEEN_EVERY`] seconds (or ever).
+pub fn seen_due(name: &str, who: i64, now: u64) -> bool {
+    recall(name, who).is_none_or(|a| now.saturating_sub(a.last) >= SEEN_EVERY)
+}
+
 /// Remember a meeting with `who` in `system` at `now`.
 pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
     if who <= 0 {
@@ -142,6 +156,7 @@ pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
         // The stalest of the least eventful goes first.
         evict_one(b);
     }
+    let fresh = !b.pilots.contains_key(&who);
     let a = b.pilots.entry(who).or_insert(Acquaintance {
         who,
         first: now,
@@ -155,12 +170,15 @@ pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
     a.first = a.first.min(now);
     a.last = a.last.max(now);
     a.system = system;
-    a.last_kind = kind;
+    // A bare sighting never overwrites what happened at the last meeting.
+    if kind != Met::Seen || fresh {
+        a.last_kind = kind;
+    }
     match kind {
         Met::KilledMe => a.killed_me = a.killed_me.saturating_add(1),
         Met::IKilled => a.i_killed = a.i_killed.saturating_add(1),
         Met::HelpedMe | Met::IHelped => a.helps = a.helps.saturating_add(1),
-        Met::Fleet | Met::Theft => {}
+        Met::Fleet | Met::Theft | Met::Seen => {}
     }
     b.dirty = true;
     b.rev += 1;
@@ -314,6 +332,39 @@ mod tests {
         assert_eq!((a.killed_me, a.i_killed, a.helps), (1, 0, 0));
         assert_eq!(recall(me, 9002), None);
         assert_eq!(recall("know-t1-other", 9001), None);
+    }
+
+    #[test]
+    fn a_seen_note_keeps_the_last_fight() {
+        let me = "know-seen1";
+        note(me, 5, Met::KilledMe, 1, 100);
+        note(me, 5, Met::Seen, 2, 200);
+        let a = recall(me, 5).unwrap();
+        assert_eq!((a.last, a.system, a.last_kind), (200, 2, Met::KilledMe));
+        assert_eq!((a.killed_me, a.i_killed, a.helps), (1, 0, 0));
+        note(me, 6, Met::Seen, 3, 300);
+        assert_eq!(recall(me, 6).unwrap().last_kind, Met::Seen);
+    }
+
+    #[test]
+    fn seen_is_due_once_an_hour() {
+        let me = "know-seen2";
+        assert!(seen_due(me, 8, 1000));
+        note(me, 8, Met::Seen, 1, 1000);
+        assert!(!seen_due(me, 8, 1000 + SEEN_EVERY - 1));
+        assert!(seen_due(me, 8, 1000 + SEEN_EVERY));
+    }
+
+    #[test]
+    fn a_book_with_a_seen_row_round_trips() {
+        let dir = scratch("seen3");
+        let me = "know-seen3";
+        note(me, 9, Met::Seen, 4, 400);
+        flush(&dir, me).unwrap();
+        let text = std::fs::read_to_string(path_for(&dir, me)).unwrap();
+        let rows = parse(&text).expect("parses");
+        assert_eq!(rows[&9].last_kind, Met::Seen);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -2449,8 +2449,31 @@ impl Bot {
                 }
             }
         }
+        let here = match self.obs.place {
+            Place::InSpace { system, .. } => Some(system),
+            Place::Docked { station } => self
+                .memory
+                .policy
+                .travel
+                .as_deref()
+                .and_then(|m| m.system_of(station)),
+            Place::Transit => None,
+        };
         for a in chat.take_arrived() {
             if human(a.char_id) {
+                // A sighting, once an hour a pilot (#209).
+                if let Some(sys) = here {
+                    let now = clock::unix_secs();
+                    if crate::know::seen_due(&self.memory.name, a.char_id, now) {
+                        crate::know::note(
+                            &self.memory.name,
+                            a.char_id,
+                            crate::know::Met::Seen,
+                            sys,
+                            now,
+                        );
+                    }
+                }
                 talk.arrived.push(Arrival {
                     seq: a.seq,
                     char_id: a.char_id,

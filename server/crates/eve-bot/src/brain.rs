@@ -2232,6 +2232,10 @@ pub(crate) fn dwell_then_undock(m: &mut Memory, o: &Observation) -> Vec<Act> {
             } else {
                 m.policy.dwell
             };
+            // Temperament (#209): a diligent pilot lingers less. A zero
+            // range (a quick-ish policy) stays zero.
+            let linger = crate::mind::temperament(&m.name).linger;
+            let range = (range.0.mul_f64(linger), range.1.mul_f64(linger));
             let t = o.now + m.jitter(range);
             m.dwell_until = Some(t);
             t
@@ -3323,6 +3327,26 @@ mod tests {
         });
         let (_, acts) = decide(&fast("Miner1"), &o);
         assert_eq!(acts, vec![Act::Online(LASER)]);
+    }
+
+    #[test]
+    fn a_diligent_bot_dwells_less() {
+        use crate::mind::{TRAIT_COUNT, Trait, Traits, register};
+        let mut lazy = [0.5; TRAIT_COUNT];
+        lazy[Trait::Diligence as usize] = 0.1;
+        let mut keen = [0.5; TRAIT_COUNT];
+        keen[Trait::Diligence as usize] = 0.9;
+        register("Dwell-Lazy", Traits(lazy));
+        register("Dwell-Keen", Traits(keen));
+        let o = docked_ready();
+        let waited = |name: &str| {
+            let mut m = Memory::new(name, Policy::human());
+            // A zero-span range keeps the jitter out of the comparison.
+            m.policy.dwell = (Duration::from_secs(20), Duration::from_secs(20));
+            let (m, _) = decide(&m, &o);
+            m.dwell_until.expect("a deadline") - o.now
+        };
+        assert!(waited("Dwell-Keen") < waited("Dwell-Lazy"));
     }
 
     #[test]
