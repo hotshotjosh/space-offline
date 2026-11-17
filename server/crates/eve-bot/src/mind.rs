@@ -119,7 +119,7 @@ pub struct Temperament {
     pub retreat: f64,
     /// Times `escort::REPAIR_ARMOUR`: `1.3 - 0.6 x risk` **[A]**.
     pub repair: f64,
-    /// Times a docked dwell: `1.5 - diligence` **[A]**. No reader yet (P4).
+    /// Times a docked dwell: `1.5 - diligence` **[A]**. Read by `brain::dwell_then_undock`.
     pub linger: f64,
 }
 

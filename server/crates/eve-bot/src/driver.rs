@@ -2498,17 +2498,7 @@ impl Bot {
         let in_local: BTreeSet<i64> = chat.local().members().map(|m| m.char_id).collect();
         talk.known.retain(|id, _| in_local.contains(id));
         talk.names.clone_from(&self.chat_names);
-        let place_system = match self.obs.place {
-            Place::InSpace { system, .. } => Some(system),
-            Place::Docked { station } => self
-                .memory
-                .policy
-                .travel
-                .as_deref()
-                .and_then(|m| m.system_of(station)),
-            Place::Transit => None,
-        };
-        talk.system_name = place_system.and_then(|s| {
+        talk.system_name = here.and_then(|s| {
             let map = self.memory.policy.travel.as_deref()?;
             Some(map.name_of(s)?.to_owned())
         });

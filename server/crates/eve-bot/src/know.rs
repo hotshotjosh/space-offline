@@ -109,11 +109,23 @@ fn evict_one(b: &mut Book) {
 /// Fold the loaded `a` into `m`: first meeting kept, last meeting's place and
 /// kind from the later side, counts summed.
 fn merge(m: &mut Acquaintance, a: Acquaintance) {
-    if a.last > m.last {
+    let loaded_later = a.last > m.last;
+    if loaded_later {
         m.last = a.last;
         m.system = a.system;
-        m.last_kind = a.last_kind;
     }
+    // The kind is the later real meeting's: a bare sighting never replaces a
+    // real meeting's kind, whichever side it is on.
+    m.last_kind = match (m.last_kind, a.last_kind) {
+        (Met::Seen, k) | (k, Met::Seen) => k,
+        (mk, ak) => {
+            if loaded_later {
+                ak
+            } else {
+                mk
+            }
+        }
+    };
     m.first = m.first.min(a.first);
     m.killed_me = m.killed_me.saturating_add(a.killed_me);
     m.i_killed = m.i_killed.saturating_add(a.i_killed);
@@ -153,6 +165,10 @@ pub fn note(name: &str, who: i64, kind: Met, system: i64, now: u64) {
     let mut all = books();
     let b = all.entry(name.to_owned()).or_default();
     if !b.pilots.contains_key(&who) && b.pilots.len() >= KNOW_KEEP {
+        // A bare sighting may only displace another bare sighting.
+        if kind == Met::Seen && b.pilots.values().map(Acquaintance::weight).min() != Some(0) {
+            return;
+        }
         // The stalest of the least eventful goes first.
         evict_one(b);
     }
@@ -344,6 +360,39 @@ mod tests {
         assert_eq!((a.killed_me, a.i_killed, a.helps), (1, 0, 0));
         note(me, 6, Met::Seen, 3, 300);
         assert_eq!(recall(me, 6).unwrap().last_kind, Met::Seen);
+    }
+
+    #[test]
+    fn a_sighting_never_evicts_a_fight() {
+        let me = "know-seen4";
+        for i in 0..KNOW_KEEP as i64 {
+            note(me, 100 + i, Met::KilledMe, 1, 10 + i as u64);
+        }
+        note(me, 999, Met::Seen, 2, 5000);
+        assert_eq!(recall(me, 999), None);
+        assert_eq!(books().get(me).unwrap().pilots.len(), KNOW_KEEP);
+    }
+
+    #[test]
+    fn a_sighting_before_attach_keeps_the_loaded_kind() {
+        let mut m = Acquaintance {
+            who: 1,
+            first: 50,
+            last: 100,
+            system: 1,
+            last_kind: Met::Seen,
+            killed_me: 0,
+            i_killed: 0,
+            helps: 0,
+        };
+        let loaded = Acquaintance {
+            last: 60,
+            last_kind: Met::KilledMe,
+            killed_me: 1,
+            ..m
+        };
+        merge(&mut m, loaded);
+        assert_eq!((m.last, m.last_kind), (100, Met::KilledMe));
     }
 
     #[test]
