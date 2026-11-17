@@ -481,6 +481,28 @@ pub fn module_types(content: &eve_server::content::Content, effect: i64) -> Vec<
         .collect()
 }
 
+/// **The module types the hull may carry**: `types` kept in order, less those the server's own
+/// hull rule refuses ([`eve_server::fitting::hull_allows`], the `canFitShipGroup*` and
+/// `canFitShipType*` attributes). A type missing from the table is dropped. Without this an alt
+/// in a standard generator's hull could buy, or keep re-picking from its hangar, a covert
+/// generator its hull refuses.
+pub fn hull_types(
+    content: &eve_server::content::Content,
+    types: Vec<i64>,
+    hull_group: i64,
+    hull_type: i64,
+) -> Vec<i64> {
+    let table = eve_server::typedata::installed_in(content).table();
+    types
+        .into_iter()
+        .filter(|&m| {
+            table.get(m).is_some_and(|t| {
+                eve_server::fitting::hull_allows(|a| t.attribute(a), hull_group, hull_type)
+            })
+        })
+        .collect()
+}
+
 /// Where the module comes from.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pick {
@@ -584,6 +606,11 @@ pub fn fit_effect(
         return Ok(None);
     }
     let types = module_types(content, effect);
+    // Only what the active hull may carry: a refused fit would be re-picked every backoff.
+    let types = match rows.iter().find(|r| r.item_id == ship) {
+        Some(h) => hull_types(content, types, h.group_id, h.type_id),
+        None => types,
+    };
     if types.is_empty() {
         *retry = Some(now + STOCK_BACKOFF);
         return Ok(None);
@@ -1031,6 +1058,51 @@ mod tests {
             }
         );
         assert!(matches!(pick(&[], &types, &[], 0.0), Pick::Nothing(_)));
+    }
+
+    /// A hull that only one generator fits: the other is never picked, from the hangar or the
+    /// market (invented ids).
+    #[test]
+    fn only_a_generator_the_hull_allows_is_picked() {
+        use eve_server::fitting::CAN_FIT_GROUP_ATTRS as ATTRS;
+        const GEN_STD: i64 = 990_734_321;
+        const GEN_COVERT: i64 = 990_734_322;
+        const HULL_STD: i64 = 990_734_331;
+        const HULL_COVERT: i64 = 990_734_332;
+        const HULL_TYPE: i64 = 990_734_341;
+        let a0 = ATTRS[0];
+        let rows = format!(
+            "{}\
+             type\t{GEN_STD}\t515\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t{fx}\t{a0}={HULL_STD}\tFixture Generator S\n\
+             type\t{GEN_COVERT}\t515\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t{fx}\t{a0}={HULL_COVERT}\tFixture Generator C\n",
+            eve_server::typedata::FIXTURE,
+            fx = crate::capital::CYNO_EFFECT_ID,
+        );
+        let mut c = Content::fixture();
+        let table = eve_server::typedata::Table::parse(&rows).expect("rows parse");
+        c.insert("typedata", eve_server::typedata::Installed::build(table));
+        let all = module_types(&c, crate::capital::CYNO_EFFECT_ID);
+        let types = hull_types(&c, all.clone(), HULL_STD, HULL_TYPE);
+        assert_eq!(types, vec![GEN_STD]);
+        assert_eq!(
+            hull_types(&c, all, HULL_COVERT, HULL_TYPE),
+            vec![GEN_COVERT]
+        );
+        assert_eq!(
+            pick(&[(7, GEN_COVERT), (8, GEN_STD)], &types, &[], 0.0),
+            Pick::Hangar(8)
+        );
+        assert_eq!(
+            pick(&[], &types, &[(GEN_COVERT, 10.0), (GEN_STD, 50.0)], 100.0),
+            Pick::Buy {
+                type_id: GEN_STD,
+                price: 50.0
+            }
+        );
+        assert_eq!(
+            hull_types(&c, vec![990_734_399], HULL_STD, HULL_TYPE),
+            vec![]
+        );
     }
 
     /// A dev roster's cyno alt: the dev kit leaves the generator in the hangar and the

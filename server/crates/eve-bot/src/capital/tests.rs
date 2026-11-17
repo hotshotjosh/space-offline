@@ -842,6 +842,26 @@ fn generator_hull_groups_are_the_groups_every_generator_names() {
 }
 
 #[test]
+fn generators_that_share_no_hull_group_fall_back_to_the_first_generators_groups() {
+    use eve_server::fitting::CAN_FIT_GROUP_ATTRS as ATTRS;
+    let (a0, a1) = (ATTRS[0], ATTRS[1]);
+    let row = |id: i64, attrs: &str| {
+        format!(
+            "type\t{id}\t{GROUP_CYNO}\t7\t1\t1\t5.0\t0.0\t0.0\t0.0\t0\t{CYNO_EFFECT_ID}\t{attrs}\tInvented {id}\n"
+        )
+    };
+    let text = format!(
+        "{}{}",
+        row(9_200_011, &format!("{a0}=990822;{a1}=990821")),
+        row(9_200_012, &format!("{a0}=990833")),
+    );
+    let table = eve_server::typedata::Table::parse(&text).expect("the invented rows parse");
+    let gens = generator_types(&table);
+    assert_eq!(gens, vec![9_200_011, 9_200_012]);
+    assert_eq!(generator_hull_groups(&table, &gens), vec![990_821, 990_822]);
+}
+
+#[test]
 fn a_pair_role_forms_no_dev_group_fleet() {
     assert!(is_pair_role(&ROLE) && is_pair_role(&ALT_ROLE));
     assert!(is_pilot_role(&ROLE) && !is_pilot_role(&ALT_ROLE));

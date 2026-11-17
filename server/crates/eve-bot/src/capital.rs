@@ -1045,10 +1045,15 @@ pub fn generator_types(table: &eve_server::typedata::Table) -> Vec<i64> {
 /// `canFitShipGroup*` attributes ([`eve_server::fitting::CAN_FIT_GROUP_ATTRS`]), read from the
 /// type table at run time, as the **intersection** over the generators (the fit may pick any of
 /// them, so only a group all of them name is safe). A generator unknown to the table, or naming
-/// no group, puts no restriction on the set and is skipped. Ascending and unique; empty when no
-/// generator names a group or the generators share none.
+/// no group, puts no restriction on the set and is skipped. When the generators share no group
+/// (the standard and the covert generator fit disjoint hulls), the groups of the first
+/// generator that names any stand in: **[A]** the lowest id is the standard generator (see
+/// [`generator_types`]); the fit then takes only a generator the boarded hull allows
+/// ([`crate::capital_fight::hull_types`]). Ascending and unique; empty only when no generator
+/// names a group.
 pub fn generator_hull_groups(table: &eve_server::typedata::Table, generators: &[i64]) -> Vec<i64> {
     let mut common: Option<Vec<i64>> = None;
+    let mut first: Option<Vec<i64>> = None;
     for t in generators.iter().filter_map(|&g| table.get(g)) {
         let mut own: Vec<i64> = eve_server::fitting::CAN_FIT_GROUP_ATTRS
             .iter()
@@ -1061,12 +1066,18 @@ pub fn generator_hull_groups(table: &eve_server::typedata::Table, generators: &[
         }
         own.sort_unstable();
         own.dedup();
+        if first.is_none() {
+            first = Some(own.clone());
+        }
         common = Some(match common {
             None => own,
             Some(c) => c.into_iter().filter(|g| own.contains(g)).collect(),
         });
     }
-    common.unwrap_or_default()
+    match common {
+        Some(c) if !c.is_empty() => c,
+        _ => first.unwrap_or_default(),
+    }
 }
 
 /// [`generator_types`] of the bundle's type data.
