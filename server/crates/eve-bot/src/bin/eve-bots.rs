@@ -873,6 +873,34 @@ fn run() -> Result<(), String> {
                 "eve-bots: real fits: {} hulls, {rows} rows, {usable} usable",
                 r.by_hull.len()
             );
+            // #129: which kinds of module keep fits unusable: by group of the
+            // first unmakeable part, per fit and then per hull.
+            if let Some(c) = tables.as_deref() {
+                let group = |t: i64| eve_server::typedata::item_in(c, t).map_or(-1, |i| i.group_id);
+                let top = |m: BTreeMap<i64, usize>| {
+                    let mut v: Vec<(i64, usize)> = m.into_iter().collect();
+                    v.sort_by_key(|(g, n)| (std::cmp::Reverse(*n), *g));
+                    v.iter()
+                        .take(10)
+                        .map(|(g, n)| format!("{g}:{n}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                let mut fits: BTreeMap<i64, usize> = BTreeMap::new();
+                let mut hulls: BTreeMap<i64, usize> = BTreeMap::new();
+                for (hull, list) in &r.by_hull {
+                    for f in list {
+                        if let Some(t) = eve_bot::real_fits::RealFits::fit_blocker(f, &ok) {
+                            *fits.entry(group(t)).or_default() += 1;
+                        }
+                    }
+                    if let Some(t) = r.first_blocker(*hull, &ok) {
+                        *hulls.entry(group(t)).or_default() += 1;
+                    }
+                }
+                println!("eve-bots: real fits blocked by group: {}", top(fits));
+                println!("eve-bots: real hulls blocked by group: {}", top(hulls));
+            }
         }
         let h = match tables.as_deref().and_then(|c| {
             eve_bot::doctrine_hall::DoctrineWorld::from_content_with(

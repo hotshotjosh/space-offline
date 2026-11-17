@@ -165,6 +165,37 @@ impl RealFits {
             })
     }
 
+    /// Why one fit is not usable: the first module (ascending), then charge,
+    /// that fails `has`. `None` when nothing but the hull fails, or the fit
+    /// is usable or empty (an unmakeable hull is its own reason, not a
+    /// part's).
+    pub fn fit_blocker(fit: &RealFit, has: &dyn Fn(i64) -> bool) -> Option<i64> {
+        if !has(fit.hull) || (fit.modules.is_empty() && fit.drones.is_empty()) {
+            return None;
+        }
+        fit.modules
+            .iter()
+            .map(|m| m.0)
+            .chain(fit.charges.iter().map(|c| c.1))
+            .find(|t| !has(*t))
+    }
+
+    /// Why a hull has no usable fit: [`RealFits::fit_blocker`] of its most
+    /// common non-empty fit. `None` when the hull has a usable fit or no
+    /// non-empty fit. The #129 measurement counts these by group to see
+    /// which kind of module the world cannot make.
+    pub fn first_blocker(&self, hull: i64, has: &dyn Fn(i64) -> bool) -> Option<i64> {
+        if self.usable(hull, has).next().is_some() {
+            return None;
+        }
+        let fit = self
+            .by_hull
+            .get(&hull)?
+            .iter()
+            .find(|f| !(f.modules.is_empty() && f.drones.is_empty()))?;
+        Self::fit_blocker(fit, has)
+    }
+
     /// [`RealFits::usable`], but a fit whose only parts that fail `has` are
     /// rigs (`is_rig`) is kept, with those rigs listed beside it as
     /// `(type, copies)`: the builder drops them or swaps a makeable rig of
@@ -615,6 +646,27 @@ mod tests {
         let no_hull = |x: i64| x != 9001;
         assert_eq!(t.usable(9001, &no_hull).count(), 0);
         assert_eq!(t.usable(9002, &all).count(), 0);
+    }
+
+    #[test]
+    fn first_blocker_names_the_first_unmakeable_part_of_the_top_fit() {
+        let t = parse(TABLE).unwrap();
+        // Fit ccc (60 %) is empty and skipped; aaa (30 %) is the top fit.
+        assert_eq!(t.first_blocker(9001, &|_| true), None);
+        // A usable fit (bbb) exists, so the hull is not blocked.
+        assert_eq!(t.first_blocker(9001, &|x| x != 104), None);
+        // Both fits blocked: aaa's first failing part is module 101.
+        assert_eq!(t.first_blocker(9001, &|x| x != 101), Some(101));
+        // An unmakeable hull is no part's blocker; then the charge, when every module is makeable.
+        assert_eq!(t.first_blocker(9001, &|x| x != 9001), None);
+        assert_eq!(t.first_blocker(9001, &|x| x != 200 && x != 201), Some(200));
+        assert_eq!(t.first_blocker(9002, &|_| false), None);
+        let fits = &t.by_hull[&9001];
+        let aaa = fits.iter().find(|f| f.hash == "aaa").unwrap();
+        assert_eq!(RealFits::fit_blocker(aaa, &|x| x != 102), Some(102));
+        assert_eq!(RealFits::fit_blocker(aaa, &|_| true), None);
+        let ccc = fits.iter().find(|f| f.hash == "ccc").unwrap();
+        assert_eq!(RealFits::fit_blocker(ccc, &|_| false), None);
     }
 
     #[test]
