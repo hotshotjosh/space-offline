@@ -43,6 +43,11 @@
 //! waiting hours, planet definitions gone stale after a content change, or
 //! launches refused for distance.
 //!
+//! **[A] B1a-7** [`REFUSE_BACKOFF`] is 30 min and [`LEARN_RETRY`] 15 min.
+//! Falsified by a soak where a refused target is retried every pass (too
+//! short) or a fixed cause (a role granted, a window passed) waits an hour
+//! (too long).
+//!
 //! **[A] B1a-6** a steward is any Haul pilot; the one with the role does the
 //! role acts. Falsified by alliances whose haulers never hold a role (every
 //! launch refused): then `corp_ops` should grant the role.
@@ -58,6 +63,7 @@ use eve_marshal::PyValue;
 use eve_server::skyhook::{GROUP_SKYHOOK, LAUNCH_RANGE, Refused, TRANSFER_RANGE};
 use eve_server::sov_resources::GROUP_COLONY_REAGENTS;
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -71,6 +77,11 @@ pub const ROLE_BACKOFF: Duration = Duration::from_secs(6 * 3600);
 pub const DEFS_TTL: Duration = Duration::from_secs(3600);
 /// How far from the planet's surface the launch is made (**[A] B1a-5**).
 pub const LAUNCH_STANDOFF: f64 = LAUNCH_RANGE / 5.0;
+/// After a refusal the target is left alone this long (**[A] B1a-7**).
+pub const REFUSE_BACKOFF: Duration = Duration::from_secs(30 * 60);
+/// After a scout trip that learned nothing, the next waits this long
+/// (**[A] B1a-7**).
+pub const LEARN_RETRY: Duration = Duration::from_secs(15 * 60);
 /// [`HAUL_MIN`] when the skyhook's definition has no cap (**[A] B1a-2**).
 pub const HAUL_MIN_FALLBACK: u64 = 100;
 /// Units of an unburned reagent worth hauling to the bay (**[A] B1a-3**).
@@ -107,6 +118,9 @@ pub struct HookView {
     pub unsecured: u64,
     /// The unsecured capacity, from the definition entry.
     pub unsecured_cap: Option<u64>,
+    /// Seen not to be in this system's park (the record lists the corp's
+    /// skyhooks everywhere).
+    pub elsewhere: bool,
 }
 
 impl HookView {
@@ -153,6 +167,12 @@ pub struct StewardView<'a> {
     pub may_manage: bool,
     pub hold_free_m3: f64,
     pub item_m3: &'a dyn Fn(i64) -> f64,
+    /// Targets refused lately (planets, skyhooks), left alone.
+    pub refused: &'a [i64],
+    /// The bay refused a deposit lately: no deposit, and no extraction.
+    pub deposit_blocked: bool,
+    /// The pilot is docked (the fetch and the want are docked acts).
+    pub docked: bool,
 }
 
 /// One thing the steward does.
@@ -196,14 +216,30 @@ impl StewardAct {
 pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
     let mut acts = Vec::new();
     let mut late = Vec::new();
+    // Skyhooks of the corp that stand in this system (or may): the ones seen
+    // elsewhere are not this plan's.
+    let here: Vec<&HookView> = v.hooks.iter().filter(|h| !h.elsewhere).collect();
+    // Placed on a planet of this system: the only ones acted on.
+    let placed: Vec<&HookView> = here
+        .iter()
+        .copied()
+        .filter(|h| {
+            h.planet
+                .is_some_and(|p| v.planets.iter().any(|d| d.planet == p))
+        })
+        .collect();
     // 1. A yield planet without our skyhook (own hooks whose planet is not
     //    known cover as many as they number).
-    let unplaced = v.hooks.iter().filter(|h| h.planet.is_none()).count();
+    let unplaced = here.iter().filter(|h| h.planet.is_none()).count();
     let mut lacking: Vec<i64> = v
         .planets
         .iter()
         .map(|p| p.planet)
-        .filter(|p| !v.skipped.contains(p) && !v.hooks.iter().any(|h| h.planet == Some(*p)))
+        .filter(|p| {
+            !v.skipped.contains(p)
+                && !v.refused.contains(p)
+                && !here.iter().any(|h| h.planet == Some(*p))
+        })
         .collect();
     lacking.truncate(lacking.len().saturating_sub(unplaced));
     if v.may_manage
@@ -211,7 +247,9 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
     {
         if let Some(item) = v.kit_cargo {
             acts.push(StewardAct::Launch { item, planet });
-        } else if let Some(t) = v.skyhook_type {
+        } else if v.docked
+            && let Some(t) = v.skyhook_type
+        {
             if v.kit_hangar || v.ask_known {
                 late.push(StewardAct::Fetch { item_type: t });
             } else {
@@ -221,23 +259,27 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
     }
     // 2. An own, built, inactive skyhook is switched on.
     if v.may_manage {
-        for h in v
-            .hooks
+        for h in placed
             .iter()
-            .filter(|h| !h.active && !v.building.contains(&h.id))
+            .filter(|h| !h.active && !v.building.contains(&h.id) && !v.refused.contains(&h.id))
         {
             acts.push(StewardAct::Activate { skyhook: h.id });
         }
     }
     // 3. Reagents in the hold go to the bay first.
-    for &(reagent, qty) in v.cargo_reagents.iter().filter(|(_, q)| *q > 0) {
-        acts.push(StewardAct::Deposit { reagent, qty });
+    if !v.deposit_blocked {
+        for &(reagent, qty) in v.cargo_reagents.iter().filter(|(_, q)| *q > 0) {
+            acts.push(StewardAct::Deposit { reagent, qty });
+        }
     }
-    // 4. A skyhook worth the trip, while the bay holds less than the days.
+    // 4. A skyhook worth the trip, while the bay holds less than the days;
+    //    no more than the bay lacks.
     let mut free = v.hold_free_m3;
-    for h in v.hooks {
+    for h in placed {
         let Some(reagent) = h.reagent else { continue };
-        if h.stock() < haul_min(h)
+        if v.deposit_blocked
+            || v.refused.contains(&h.id)
+            || h.stock() < haul_min(h)
             || v.cargo_reagents
                 .iter()
                 .any(|(t, q)| *t == reagent && *q > 0)
@@ -249,12 +291,13 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
             .iter()
             .find(|(t, _, _)| *t == reagent)
             .map_or((0, 0), |&(_, a, p)| (a, p));
-        let short = if per_hour > 0 {
-            amount < steward_days_units(per_hour)
+        let want = if per_hour > 0 {
+            steward_days_units(per_hour)
         } else {
-            amount < IDLE_STOCK
+            IDLE_STOCK
         };
-        if !short {
+        let lack = want.saturating_sub(amount);
+        if lack == 0 {
             continue;
         }
         let unit = (v.item_m3)(reagent);
@@ -263,7 +306,7 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
         } else {
             0
         };
-        let qty = room.min(h.stock() as i64);
+        let qty = room.min(h.stock() as i64).min(lack as i64);
         if qty > 0 {
             free -= qty as f64 * unit;
             acts.push(StewardAct::Extract { skyhook: h.id, qty });
@@ -275,22 +318,38 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
 
 // ---- one steward per hub ---------------------------------------------------------------
 
-static CLAIMS: Mutex<BTreeMap<i64, (i64, Instant)>> = Mutex::new(BTreeMap::new());
+/// A hub on one gateway: two servers in one process never collide.
+type Key = (Option<SocketAddr>, i64);
+
+static CLAIMS: Mutex<BTreeMap<Key, (i64, Instant)>> = Mutex::new(BTreeMap::new());
+
+fn held_by_other_at(g: &BTreeMap<Key, (i64, Instant)>, key: Key, pilot: i64, now: Instant) -> bool {
+    matches!(g.get(&key), Some((holder, at))
+        if *holder != pilot && now.saturating_duration_since(*at) < STEWARD_TTL)
+}
+
+/// Whether another pilot holds the claim on `hub` at `now` (a look, no take).
+pub fn held_by_other(gateway: Option<SocketAddr>, hub: i64, pilot: i64, now: Instant) -> bool {
+    let g = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
+    held_by_other_at(&g, (gateway, hub), pilot, now)
+}
 
 /// Whether `pilot` is the steward of `hub` at `now`: the claim is taken when
 /// free or lapsed (older than [`STEWARD_TTL`]), and renewed by its holder.
-pub fn claim(hub: i64, pilot: i64, now: Instant) -> bool {
+pub fn claim(gateway: Option<SocketAddr>, hub: i64, pilot: i64, now: Instant) -> bool {
     let mut g = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
-    match g.get(&hub) {
-        Some((holder, at))
-            if *holder != pilot && now.saturating_duration_since(*at) < STEWARD_TTL =>
-        {
-            false
-        }
-        _ => {
-            g.insert(hub, (pilot, now));
-            true
-        }
+    if held_by_other_at(&g, (gateway, hub), pilot, now) {
+        return false;
+    }
+    g.insert((gateway, hub), (pilot, now));
+    true
+}
+
+/// Let go of the claim on `hub` if `pilot` holds it.
+pub fn release(gateway: Option<SocketAddr>, hub: i64, pilot: i64) {
+    let mut g = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
+    if g.get(&(gateway, hub)).is_some_and(|(p, _)| *p == pilot) {
+        g.remove(&(gateway, hub));
     }
 }
 
@@ -336,20 +395,29 @@ pub fn decode_hooks(payload: &[u8]) -> Vec<HookView> {
                 unsecured_cap: gw::bytes(r, 4)
                     .and_then(|d| gw::bytes(d, 2))
                     .and_then(|d| gw::uint(d, 5)),
+                elsewhere: false,
             })
         })
         .collect()
 }
 
-/// `hub.fuel.api.GetResponse`: `{1* {1 id(type), 2 amount, 3 per hour}}`.
-pub fn decode_bay(payload: &[u8]) -> Vec<(i64, u64, u64)> {
+/// `hub.fuel.api.GetResponse`: `{1* {1 id(type), 2 amount, 3 per hour}, 2
+/// stamp {1 seconds}}`. Each amount is stated at the stamp, so what the bay
+/// burned since (`now_unix` minus the stamp, at the entry's rate) is taken
+/// off.
+pub fn decode_bay(payload: &[u8], now_unix: u64) -> Vec<(i64, u64, u64)> {
+    let since = gw::bytes(payload, 2)
+        .and_then(|t| gw::uint(t, 1))
+        .map_or(0, |stamp| now_unix.saturating_sub(stamp));
     gw::fields(payload, 1)
         .into_iter()
         .filter_map(|e| {
+            let per_hour = gw::uint(e, 3).unwrap_or(0);
+            let burned = since.saturating_mul(per_hour) / 3600;
             Some((
                 i64::try_from(gw::read_id(e, 1)?).ok()?,
-                gw::uint(e, 2).unwrap_or(0),
-                gw::uint(e, 3).unwrap_or(0),
+                gw::uint(e, 2).unwrap_or(0).saturating_sub(burned),
+                per_hour,
             ))
         })
         .collect()
@@ -386,9 +454,17 @@ pub struct Mind {
     pub planets: BTreeMap<i64, Vec<i64>>,
     /// Planets a launch was refused for ("already has a skyhook").
     pub skipped: BTreeSet<i64>,
+    /// Own skyhooks seen not to be in the held system's park.
+    pub elsewhere: BTreeSet<i64>,
+    /// Targets (planets, skyhooks, the hub, a kit type) refused, and when.
+    pub refused: BTreeMap<i64, Instant>,
+    /// A scout trip is not made again before this.
+    pub learn_retry: Option<Instant>,
 }
 
-static DEFS: Mutex<Option<(Instant, Vec<PlanetDef>)>> = Mutex::new(None);
+type Defs = BTreeMap<Option<SocketAddr>, (Instant, Vec<PlanetDef>)>;
+
+static DEFS: Mutex<Defs> = Mutex::new(BTreeMap::new());
 
 // ---- the arm ---------------------------------------------------------------------------
 
@@ -418,6 +494,13 @@ fn is_role_text(text: &str) -> bool {
     text == Refused::NoRole.text()
 }
 
+/// A role refusal: this pilot waits for a role and gives up the claim, so a
+/// pilot that has the role can take it.
+fn role_refused(st: &mut Mind, gateway: Option<SocketAddr>, hub: i64, who: i64, now: Instant) {
+    st.no_role_until = Some(now + ROLE_BACKOFF);
+    release(gateway, hub, who);
+}
+
 /// **The steward arm** ([`super::ARMS`]): `Ok(None)` for a pilot that is not
 /// the steward of its hub, or whose pass found nothing to do.
 pub fn arm(
@@ -440,7 +523,13 @@ pub fn arm(
         return Ok(None);
     };
     let now = clock::instant();
-    if !claim(hub, who, now) {
+    let gateway = gw::gateway_of(c);
+    // A pilot that waits for a role does not hold the claim.
+    if m.sov.extras.steward.no_role_until.is_some_and(|t| now < t) {
+        release(gateway, hub, who);
+        return Ok(None);
+    }
+    if held_by_other(gateway, hub, who, now) {
         return Ok(None);
     }
     let Some(corp) = c.session().get_i64("corpid") else {
@@ -455,8 +544,8 @@ pub fn arm(
     };
     let mut lines: Vec<String> = Vec::new();
 
-    // The reads.
-    let Some(defs) = read_defs(&mut s, &mut m.sov.extras, now) else {
+    // The reads; the claim is taken once they have all been answered.
+    let Some(defs) = read_defs(&mut s, &mut m.sov.extras, gateway, now) else {
         return Ok(None);
     };
     let Some((200, hooks_raw)) = s.ask(
@@ -473,17 +562,37 @@ pub fn arm(
     ) else {
         return Ok(None);
     };
+    if !claim(gateway, hub, who, now) {
+        return Ok(None);
+    }
     let mut hooks = decode_hooks(&hooks_raw);
-    let bay = decode_bay(&bay_raw);
+    let bay = decode_bay(&bay_raw, clock::wall_unix_secs());
+    {
+        let st = &mut m.sov.extras.steward;
+        st.refused
+            .retain(|_, at| now.saturating_duration_since(*at) < REFUSE_BACKOFF);
+        for h in &mut hooks {
+            h.planet = st.placed.get(&h.id).copied();
+            h.elsewhere = st.elsewhere.contains(&h.id);
+        }
+    }
 
-    // The planets of the system: from the park once seen.
-    if !m.sov.extras.steward.planets.contains_key(&system) {
+    // The planets of the system and the place of every own skyhook come from
+    // the park: a scout trip when something is unknown (not again for a
+    // while when it learned nothing).
+    let known = m.sov.extras.steward.planets.contains_key(&system);
+    let unresolved = hooks.iter().any(|h| h.planet.is_none() && !h.elsewhere);
+    let may_scout = m.sov.extras.steward.learn_retry.is_none_or(|t| now >= t);
+    if (!known || unresolved) && may_scout {
+        m.sov.extras.steward.learn_retry = Some(now + LEARN_RETRY);
         let here =
             c.session().solar_system_id2() == Some(system) && c.session().station_id().is_none();
         if !here {
             fly_to_system_noting(c, map, system)?;
         }
-        learn(c, &mut m.sov.extras.steward, system, &defs, &hooks);
+        if learn(c, &mut m.sov.extras.steward, system, &defs, &hooks) {
+            m.sov.extras.steward.learn_retry = None;
+        }
         let home = crate::sov_bot::go_home(c, m, map)?;
         let n = m
             .sov
@@ -496,8 +605,8 @@ pub fn arm(
             "sov steward: scouted system {system}, {n} planets; {home}"
         )));
     }
-    for h in &mut hooks {
-        h.planet = m.sov.extras.steward.placed.get(&h.id).copied();
+    if !known {
+        return Ok(None);
     }
     let st = &m.sov.extras.steward;
     let planets: Vec<PlanetDef> = defs
@@ -510,6 +619,8 @@ pub fn arm(
         .copied()
         .collect();
     let skipped: Vec<i64> = st.skipped.iter().copied().collect();
+    let refused: Vec<i64> = st.refused.keys().copied().collect();
+    let deposit_blocked = st.refused.contains_key(&hub);
     let building: Vec<i64> = st
         .launched
         .iter()
@@ -518,7 +629,7 @@ pub fn arm(
         })
         .map(|(id, _)| *id)
         .collect();
-    let may_manage = st.no_role_until.is_none_or(|t| now >= t);
+    let may_manage = true; // a pilot waiting for a role returned above
 
     let docked = c.session().station_id().is_some();
     let cargo = c.cargo()?;
@@ -535,23 +646,26 @@ pub fn arm(
     let kit_hangar = hangar.iter().any(|r| r.group_id == GROUP_SKYHOOK);
     let cargo_reagents = reagents_in(&cargo);
     let volume = |t: i64| eve_server::item::find_in(content, t).map_or(0.0, |t| t.volume);
-    let hold = hold_free_m3(c, content, &cargo);
-    // Whether the market has one (only read when it matters).
-    let needs_kit = may_manage
-        && kit_cargo.is_none()
-        && !kit_hangar
-        && docked
-        && planets.iter().any(|p| {
-            !skipped.contains(&p.planet) && !hooks.iter().any(|h| h.planet == Some(p.planet))
-        });
+    let capacity = hold_capacity(c, content);
+    let used: f64 = cargo
+        .iter()
+        .map(|r| r.quantity.max(1) as f64 * volume(r.type_id))
+        .sum();
+    let hold = (capacity - used).max(0.0);
+    // Whether a skyhook is on sale in reach (only read when it matters).
+    let lacks_planet = planets.iter().any(|p| {
+        !skipped.contains(&p.planet)
+            && !refused.contains(&p.planet)
+            && !hooks
+                .iter()
+                .any(|h| !h.elsewhere && h.planet == Some(p.planet))
+    });
+    let needs_kit = may_manage && kit_cargo.is_none() && !kit_hangar && docked && lacks_planet;
     let ask_known = match (needs_kit, skyhook_type) {
-        (true, Some(t)) => c
-            .market_orders(t)
-            .map(|b| b.asks.iter().any(|a| !a.bid && a.vol_remaining > 0))
-            .unwrap_or(false),
+        (true, Some(t)) => reachable_book(c, map, t)?.is_some(),
         _ => false,
     };
-    let acts = steward_plan(&StewardView {
+    let mut acts = steward_plan(&StewardView {
         planets: &planets,
         skipped: &skipped,
         hooks: &hooks,
@@ -565,7 +679,27 @@ pub fn arm(
         may_manage,
         hold_free_m3: hold,
         item_m3: &volume,
+        refused: &refused,
+        deposit_blocked,
+        docked,
     });
+    // A skyhook the hull's hold cannot take is neither wanted nor bought.
+    if let Some(t) = skyhook_type
+        && volume(t) > capacity
+        && acts
+            .iter()
+            .any(|a| matches!(a, StewardAct::Want(_) | StewardAct::Fetch { .. }))
+    {
+        acts.retain(|a| a.in_space());
+        let st = &mut m.sov.extras.steward;
+        if let std::collections::btree_map::Entry::Vacant(e) = st.refused.entry(t) {
+            e.insert(now);
+            lines.push(format!("MISSING a hull whose hold takes {} m3", volume(t)));
+            if acts.is_empty() {
+                return Ok(Some(format!("sov steward: {}", lines.join("; "))));
+            }
+        }
+    }
     if acts.is_empty() {
         return Ok(None);
     }
@@ -576,7 +710,7 @@ pub fn arm(
         fly_to_system_noting(c, map, system)?;
         learn(c, &mut m.sov.extras.steward, system, &defs, &hooks);
         for act in &space {
-            let line = do_space(c, m, &mut s, hub, act)?;
+            let line = do_space(c, m, &mut s, hub, act, gateway)?;
             lines.push(line);
         }
         // Reagents taken are put into the bay on the same trip.
@@ -592,6 +726,7 @@ pub fn arm(
                     &mut s,
                     hub,
                     &StewardAct::Deposit { reagent, qty },
+                    gateway,
                 )?);
             }
         }
@@ -623,8 +758,8 @@ fn reagents_in(rows: &[ItemRow]) -> Vec<(i64, i64)> {
     by.into_iter().collect()
 }
 
-/// The free room of the active hull's hold, m3 (0 when the hull is unknown).
-fn hold_free_m3(c: &mut Conn, content: &eve_server::content::Content, cargo: &[ItemRow]) -> f64 {
+/// The active hull's hold, m3 (0 when the hull is unknown).
+fn hold_capacity(c: &mut Conn, content: &eve_server::content::Content) -> f64 {
     let hull = match c.session().station_id() {
         Some(_) => {
             let ship = c.session().ship_id();
@@ -635,24 +770,20 @@ fn hold_free_m3(c: &mut Conn, content: &eve_server::content::Content, cargo: &[I
         }
         None => c.world_now().ego_ball().and_then(|b| b.type_id()),
     };
-    let capacity = hull
-        .and_then(|h| eve_server::item::find_in(content, h))
-        .map_or(0.0, |t| t.capacity);
-    let used: f64 = cargo
-        .iter()
-        .map(|r| {
-            r.quantity.max(1) as f64
-                * eve_server::item::find_in(content, r.type_id).map_or(0.0, |t| t.volume)
-        })
-        .sum();
-    (capacity - used).max(0.0)
+    hull.and_then(|h| eve_server::item::find_in(content, h))
+        .map_or(0.0, |t| t.capacity)
 }
 
-/// The planet definitions: the process's, kept [`DEFS_TTL`].
-fn read_defs(s: &mut Session, mind: &mut ExtrasMind, now: Instant) -> Option<Vec<PlanetDef>> {
+/// The planet definitions: the process's per gateway, kept [`DEFS_TTL`].
+fn read_defs(
+    s: &mut Session,
+    mind: &mut ExtrasMind,
+    gateway: Option<SocketAddr>,
+    now: Instant,
+) -> Option<Vec<PlanetDef>> {
     {
         let g = DEFS.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((at, defs)) = g.as_ref()
+        if let Some((at, defs)) = g.get(&gateway)
             && now.saturating_duration_since(*at) < DEFS_TTL
         {
             return Some(defs.clone());
@@ -663,7 +794,9 @@ fn read_defs(s: &mut Session, mind: &mut ExtrasMind, now: Instant) -> Option<Vec
         return None;
     }
     let defs = decode_defs(&payload);
-    *DEFS.lock().unwrap_or_else(|e| e.into_inner()) = Some((now, defs.clone()));
+    DEFS.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(gateway, (now, defs.clone()));
     Some(defs)
 }
 
@@ -673,24 +806,33 @@ fn fly_to_system_noting(c: &mut Conn, map: &crate::travel::Map, system: i64) -> 
     crate::sov_bot::fly_to_system(c, map, system)
 }
 
-/// **Learn the park** (in the system): which defined planets are here, and
-/// which planet each own skyhook in the park stands over (the nearest one).
-fn learn(c: &mut Conn, st: &mut Mind, system: i64, defs: &[PlanetDef], hooks: &[HookView]) {
+/// **Learn the park** (in the system): which defined planets are here, which
+/// planet each own skyhook in the park stands over (the nearest one), and
+/// which own skyhooks are not here at all. `false` when the pilot is not in
+/// the system's park yet.
+fn learn(c: &mut Conn, st: &mut Mind, system: i64, defs: &[PlanetDef], hooks: &[HookView]) -> bool {
     if c.session().solar_system_id2() != Some(system) || !c.world().has_state() {
-        return;
+        return false;
     }
     let world = c.world_now();
     let planets: Vec<(i64, [f64; 3])> = defs
         .iter()
         .filter_map(|d| world.get(d.planet).map(|b| (d.planet, b.motion.position)))
         .collect();
+    if planets.is_empty() {
+        return false;
+    }
     for h in hooks {
+        let Some(ball) = world.get(h.id) else {
+            if !st.placed.contains_key(&h.id) {
+                st.elsewhere.insert(h.id);
+            }
+            continue;
+        };
+        st.elsewhere.remove(&h.id);
         if st.placed.contains_key(&h.id) {
             continue;
         }
-        let Some(ball) = world.get(h.id) else {
-            continue;
-        };
         let near = planets
             .iter()
             .map(|(p, at)| {
@@ -706,6 +848,7 @@ fn learn(c: &mut Conn, st: &mut Mind, system: i64, defs: &[PlanetDef], hooks: &[
     }
     st.planets
         .insert(system, planets.iter().map(|(p, _)| *p).collect());
+    true
 }
 
 /// Warp to `ball` and wait for the landing (a planet: its warp-in point is
@@ -731,8 +874,19 @@ fn do_space(
     s: &mut Session,
     hub: i64,
     act: &StewardAct,
+    gateway: Option<SocketAddr>,
 ) -> Result<String> {
     let now = clock::instant();
+    let who = c.session().char_id().unwrap_or(0);
+    // A gateway act is not worth the flight once the session is gone.
+    if s.gw.is_none()
+        && matches!(
+            act,
+            StewardAct::Activate { .. } | StewardAct::Deposit { .. }
+        )
+    {
+        return Ok("no gateway, act skipped".to_owned());
+    }
     match act {
         StewardAct::Launch { item, planet } => {
             arrive(c, *planet, LAUNCH_STANDOFF)?;
@@ -745,8 +899,9 @@ fn do_space(
                 }
                 Err(text) => {
                     let st = &mut m.sov.extras.steward;
+                    st.refused.insert(*planet, now);
                     if is_role_text(&text) {
-                        st.no_role_until = Some(now + ROLE_BACKOFF);
+                        role_refused(st, gateway, hub, who, now);
                     } else if text == Refused::HasSkyhook.text() {
                         st.skipped.insert(*planet);
                     }
@@ -758,11 +913,21 @@ fn do_space(
             let ty = format!("{}{ACTIVATE}", gw::SKYHOOK_PKG);
             Ok(match s.ask(&mut m.sov.extras, &ty, &id_body(*skyhook)) {
                 Some((200, _)) => format!("switched skyhook {skyhook} on"),
-                Some((403, _)) => {
-                    m.sov.extras.steward.no_role_until = Some(now + ROLE_BACKOFF);
-                    format!("skyhook {skyhook} not switched on (403: no role)")
+                Some((status, _)) => {
+                    let st = &mut m.sov.extras.steward;
+                    st.refused.insert(*skyhook, now);
+                    // A role refusal only when the skyhook stands here and
+                    // has had time to build.
+                    let built = st.launched.get(skyhook).is_none_or(|at| {
+                        clock::since(*at)
+                            >= 2 * Duration::from_secs(eve_server::skyhook::ACTIVATION_S)
+                    });
+                    let here = st.placed.contains_key(skyhook) && !st.elsewhere.contains(skyhook);
+                    if status == 403 && here && built {
+                        role_refused(st, gateway, hub, who, now);
+                    }
+                    format!("skyhook {skyhook} not switched on ({status})")
                 }
-                Some((status, _)) => format!("skyhook {skyhook} not switched on ({status})"),
                 None => format!("skyhook {skyhook} not switched on (no gateway)"),
             })
         }
@@ -777,10 +942,16 @@ fn do_space(
             )?;
             Ok(match out.refusal() {
                 None => format!("took up to {qty} reagents from skyhook {skyhook}"),
-                Some(why) => format!("skyhook {skyhook} refused the take: {why}"),
+                Some(why) => {
+                    m.sov.extras.steward.refused.insert(*skyhook, now);
+                    format!("skyhook {skyhook} refused the take: {why}")
+                }
             })
         }
         StewardAct::Deposit { reagent, .. } => {
+            if m.sov.extras.steward.refused.contains_key(&hub) {
+                return Ok("deposit held back (the bay refused lately)".to_owned());
+            }
             crate::sov_bot::warp_near(c, hub, TRANSFER_RANGE * RANGE_USE)?;
             let stacks: Vec<ItemRow> = c
                 .cargo()?
@@ -794,7 +965,11 @@ fn do_space(
                 let ty = format!("{}{FUEL_ADD}", gw::FUEL_PKG);
                 match s.ask(&mut m.sov.extras, &ty, &add_body(r.item_id, qty, hub)) {
                     Some((200, _)) => put += qty,
-                    Some((status, _)) => notes.push(format!("{status}")),
+                    Some((status, _)) => {
+                        m.sov.extras.steward.refused.insert(hub, now);
+                        notes.push(format!("{status}"));
+                        break;
+                    }
                     None => {
                         notes.push("no gateway".to_owned());
                         break;
@@ -816,22 +991,25 @@ fn do_space(
 
 fn do_docked(c: &mut Conn, map: &crate::travel::Map, act: &StewardAct) -> Result<String> {
     match act {
-        StewardAct::Want(product) => {
-            super::kit::want(*product);
-            let wallet = crate::acquire::spendable(c)? * WALLET_SHARE;
-            let posted = soft(crate::hull_choice::bid_for(c, *product, 1, wallet))?;
-            Ok(format!(
-                "MISSING skyhook {product} ({})",
-                if posted == Some(true) {
-                    "bid posted"
-                } else {
-                    "bid stands"
-                }
-            ))
-        }
+        StewardAct::Want(product) => want(c, *product),
         StewardAct::Fetch { item_type } => fetch(c, map, *item_type),
         _ => Ok(String::new()),
     }
+}
+
+/// The want on the board and a standing bid for the skyhook (docked).
+fn want(c: &mut Conn, product: i64) -> Result<String> {
+    super::kit::want(product);
+    let wallet = crate::acquire::spendable(c)? * WALLET_SHARE;
+    let posted = soft(crate::hull_choice::bid_for(c, product, 1, wallet))?;
+    Ok(format!(
+        "MISSING skyhook {product} ({})",
+        if posted == Some(true) {
+            "bid posted"
+        } else {
+            "bid stands"
+        }
+    ))
 }
 
 fn soft<T>(r: Result<T>) -> Result<Option<T>> {
@@ -842,26 +1020,65 @@ fn soft<T>(r: Result<T>) -> Result<Option<T>> {
     }
 }
 
+/// The book of `ty` without the pilot's own orders, when it holds an ask in
+/// reach: at the docked station, or at a seller [`crate::travel::sources`]
+/// names within the wallet's share.
+fn reachable_book(
+    c: &mut Conn,
+    map: &crate::travel::Map,
+    ty: i64,
+) -> Result<Option<crate::verbs::Book>> {
+    let Some(station) = c.session().station_id() else {
+        return Ok(None);
+    };
+    let Some(book) = soft(c.market_orders(ty))? else {
+        return Ok(None);
+    };
+    let own = crate::capital::own_ids_soft(c)?;
+    let book = crate::verbs::Book {
+        asks: book
+            .asks
+            .into_iter()
+            .filter(|a| !a.bid && a.vol_remaining > 0 && !own.contains(&a.order_id))
+            .collect(),
+        bids: Vec::new(),
+    };
+    if book.asks.iter().any(|a| a.station_id == station) {
+        return Ok(Some(book));
+    }
+    let cap = crate::acquire::spendable(c)? * WALLET_SHARE;
+    let Some(system) = map.system_of(station) else {
+        return Ok(None);
+    };
+    let trips = crate::travel::Trips {
+        map,
+        floor: crate::sov_bot::SOV_FLOOR,
+    };
+    Ok(
+        (!crate::travel::sources(&book, trips, system, station, Some(cap), 1).is_empty())
+            .then_some(book),
+    )
+}
+
 /// **Fetch one skyhook** (docked): from the hangar, else the asks here, else
-/// the nearest seller in reach (a trip home again), then into the hold.
+/// the nearest seller in reach (a trip home again), then into the hold. The
+/// want goes on the board; a bid is rested only when nothing is on sale.
 fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
     let Some(station) = c.session().station_id() else {
         return Ok("fetch: not docked".to_owned());
     };
+    super::kit::want(ty);
     let mut notes: Vec<String> = Vec::new();
     let owned = |c: &mut Conn| -> Result<Option<ItemRow>> {
         Ok(c.hangar_items()?
             .into_iter()
             .find(|r| r.type_id == ty && r.group_id == GROUP_SKYHOOK))
     };
-    if owned(c)?.is_none() {
-        let book = c.market_orders(ty)?;
-        let here = book
-            .asks
-            .iter()
-            .any(|a| !a.bid && a.station_id == station && a.vol_remaining > 0);
-        if here {
-            let budget = crate::acquire::spendable(c)? * WALLET_SHARE;
+    if owned(c)?.is_none()
+        && let Some(book) = reachable_book(c, map, ty)?
+    {
+        let budget = crate::acquire::spendable(c)? * WALLET_SHARE;
+        if book.asks.iter().any(|a| a.station_id == station) {
             let got = crate::capital::buy_units(c, &book, ty, 1, budget)?;
             notes.push(format!("bought {got} skyhook here"));
         } else if let Some(system) = map.system_of(station) {
@@ -869,9 +1086,10 @@ fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
                 map,
                 floor: crate::sov_bot::SOV_FLOOR,
             };
-            if let Some(src) = crate::travel::sources(&book, trips, system, station, None, 1)
-                .into_iter()
-                .next()
+            if let Some(src) =
+                crate::travel::sources(&book, trips, system, station, Some(budget), 1)
+                    .into_iter()
+                    .next()
             {
                 match soft(crate::travel::fetch(
                     c,
@@ -879,7 +1097,7 @@ fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
                     &src,
                     ty,
                     1,
-                    None,
+                    Some(budget),
                     crate::travel::Haul::Cargo,
                 ))? {
                     Some(f) => notes.push(f.summary()),
@@ -889,14 +1107,8 @@ fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
         }
     }
     let Some(row) = owned(c)? else {
-        return Ok(format!(
-            "MISSING skyhook {ty} (none in the hangar or on sale in reach){}",
-            if notes.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", notes.join("; "))
-            }
-        ));
+        // Nothing to carry: the bid stands for a builder's ask.
+        return want(c, ty);
     };
     let loaded = c.load_cargo(
         row.item_id,

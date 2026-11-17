@@ -50,6 +50,7 @@ fn hook(id: i64, planet: i64, stock: u64) -> HookView {
         secured: 0,
         unsecured: stock,
         unsecured_cap: Some(400),
+        elsewhere: false,
     }
 }
 
@@ -66,6 +67,9 @@ struct Fixture {
     cargo_reagents: Vec<(i64, i64)>,
     may_manage: bool,
     hold: f64,
+    refused: Vec<i64>,
+    deposit_blocked: bool,
+    docked: bool,
 }
 
 impl Fixture {
@@ -86,6 +90,9 @@ impl Fixture {
             cargo_reagents: vec![],
             may_manage: true,
             hold: 10_000.0,
+            refused: vec![],
+            deposit_blocked: false,
+            docked: true,
         }
     }
 
@@ -104,6 +111,9 @@ impl Fixture {
             may_manage: self.may_manage,
             hold_free_m3: self.hold,
             item_m3: &|_| 1.0,
+            refused: &self.refused,
+            deposit_blocked: self.deposit_blocked,
+            docked: self.docked,
         })
     }
 
@@ -328,22 +338,39 @@ fn the_extract_is_clipped_to_the_free_hold() {
 fn one_steward_per_hub() {
     let now = clock::instant();
     let hub = SYSTEM_HUB + 1;
-    assert!(claim(hub, 1, now), "the first takes it");
+    let gw = Some(addr(1));
+    assert!(claim(gw, hub, 1, now), "the first takes it");
+    assert!(held_by_other(gw, hub, 2, now), "a look takes nothing");
     assert!(
-        !claim(hub, 2, now + Duration::from_secs(1)),
+        !claim(gw, hub, 2, now + Duration::from_secs(1)),
         "a second waits"
     );
     // The holder's renewal keeps it past the first TTL.
     let renewed = now + STEWARD_TTL - Duration::from_secs(1);
-    assert!(claim(hub, 1, renewed));
-    assert!(!claim(hub, 2, now + STEWARD_TTL + Duration::from_secs(1)));
+    assert!(claim(gw, hub, 1, renewed));
+    assert!(!claim(
+        gw,
+        hub,
+        2,
+        now + STEWARD_TTL + Duration::from_secs(1)
+    ));
     // Unrenewed, it lapses.
-    assert!(claim(hub, 2, renewed + STEWARD_TTL));
-    // Another hub is its own.
-    assert!(claim(hub + 1, 1, now));
+    assert!(claim(gw, hub, 2, renewed + STEWARD_TTL));
+    // Another hub is its own, and so is the same id on another server.
+    assert!(claim(gw, hub + 1, 1, now));
+    assert!(claim(Some(addr(2)), hub, 3, now));
+    // A pilot lets go of its own claim only.
+    release(gw, hub, 1);
+    assert!(held_by_other(gw, hub, 1, now), "pilot 2 still holds it");
+    release(gw, hub, 2);
+    assert!(!held_by_other(gw, hub, 1, now));
 }
 
 // ---- the decoders, against hand-built bytes in the server's layouts ------------------
+
+fn addr(port: u16) -> std::net::SocketAddr {
+    std::net::SocketAddr::from(([127, 0, 0, 1], port))
+}
 
 fn ident(id: u64) -> Vec<u8> {
     super::gw::id(id)
@@ -422,6 +449,7 @@ fn a_by_corp_record_decodes_stock_activity_and_cap_and_tolerates_none() {
                 secured: 4,
                 unsecured: 9,
                 unsecured_cap: Some(80),
+                elsewhere: false,
             },
             HookView {
                 id: HOOK_B,
@@ -431,6 +459,7 @@ fn a_by_corp_record_decodes_stock_activity_and_cap_and_tolerates_none() {
                 secured: 0,
                 unsecured: 0,
                 unsecured_cap: None,
+                elsewhere: false,
             },
         ]
     );
@@ -451,7 +480,7 @@ fn the_bay_and_the_add_body_use_the_servers_layouts() {
     put_bytes(&mut payload, 1, &idle);
     put_bytes(&mut payload, 2, &[8, 1]);
     assert_eq!(
-        decode_bay(&payload),
+        decode_bay(&payload, 0),
         vec![(REAGENT, 70, 2), (REAGENT + 1, 0, 0)]
     );
     let body = add_body(CARGO_SKYHOOK, 12, SYSTEM_HUB);
@@ -485,4 +514,123 @@ fn a_launch_refusal_reads_as_its_notify_text() {
         PyValue::Int(CARGO_SKYHOOK),
     )]);
     assert_eq!(super::gw::launch_result(&ok, CARGO_SKYHOOK), Ok(8_922_300));
+}
+
+#[test]
+fn the_bay_amount_is_taken_forward_from_its_stamp() {
+    let stamp = 1_000_000u64;
+    let mut payload = Vec::new();
+    let mut e = Vec::new();
+    put_bytes(&mut e, 1, &ident(REAGENT as u64));
+    put_uint(&mut e, 2, 70);
+    put_uint(&mut e, 3, 6);
+    put_bytes(&mut payload, 1, &e);
+    let mut burnt_out = Vec::new();
+    put_bytes(&mut burnt_out, 1, &ident(REAGENT as u64 + 1));
+    put_uint(&mut burnt_out, 2, 3);
+    put_uint(&mut burnt_out, 3, 6);
+    put_bytes(&mut payload, 1, &burnt_out);
+    let mut ts = Vec::new();
+    put_uint(&mut ts, 1, stamp);
+    put_bytes(&mut payload, 2, &ts);
+    // Two hours on: 12 units burned off the first, the second is gone, not
+    // negative.
+    assert_eq!(
+        decode_bay(&payload, stamp + 2 * 3600),
+        vec![(REAGENT, 58, 6), (REAGENT + 1, 0, 6)]
+    );
+    // A clock behind the stamp burns nothing.
+    assert_eq!(decode_bay(&payload, stamp - 5)[0].1, 70);
+}
+
+#[test]
+fn a_skyhook_seen_elsewhere_is_not_acted_on_or_counted_as_cover() {
+    let mut f = Fixture::new().stocked(1_000);
+    f.hooks[2].elsewhere = true;
+    f.hooks[0].active = false;
+    f.hooks[0].elsewhere = true;
+    f.hooks.remove(1);
+    f.kit_cargo = Some(CARGO_SKYHOOK);
+    let acts = f.plan();
+    assert!(
+        !acts
+            .iter()
+            .any(|a| matches!(a, StewardAct::Extract { .. } | StewardAct::Activate { .. })),
+        "{acts:?}"
+    );
+    // Their planets are not covered by them.
+    assert!(acts.iter().any(|a| matches!(a, StewardAct::Launch { .. })));
+}
+
+#[test]
+fn an_unplaced_skyhook_not_seen_elsewhere_covers_a_planet_but_is_not_extracted() {
+    let mut f = Fixture::new();
+    f.hooks = vec![HookView {
+        planet: None,
+        unsecured: 1_000,
+        ..hook(HOOK_A, 0, 0)
+    }];
+    f.kit_cargo = Some(CARGO_SKYHOOK);
+    let acts = f.plan();
+    assert!(
+        !acts.iter().any(|a| matches!(a, StewardAct::Extract { .. })),
+        "{acts:?}"
+    );
+    assert_eq!(acts.len(), 1, "two planets lack one: {acts:?}");
+}
+
+#[test]
+fn a_refused_target_is_skipped_and_a_refused_deposit_holds_the_deposit_rule() {
+    let mut f = Fixture::new().stocked(1_000);
+    f.refused = vec![8_922_203];
+    assert_eq!(f.plan(), vec![], "the refused skyhook is left alone");
+    let mut f = Fixture::new();
+    f.hooks.clear();
+    f.kit_cargo = Some(CARGO_SKYHOOK);
+    f.refused = vec![POWER_PLANET];
+    assert_eq!(
+        f.plan(),
+        vec![StewardAct::Launch {
+            item: CARGO_SKYHOOK,
+            planet: LAND_PLANET
+        }],
+        "the refused planet is passed over"
+    );
+    let mut f = Fixture::new().stocked(1_000);
+    f.cargo_reagents = vec![(REAGENT + 1, 30)];
+    f.deposit_blocked = true;
+    assert_eq!(f.plan(), vec![], "no deposit, and no taking more");
+}
+
+#[test]
+fn the_extract_is_clipped_to_what_the_bay_lacks() {
+    let per_hour = 1;
+    let need = steward_days_units(per_hour);
+    let mut f = Fixture::new().stocked(1_000);
+    f.bay = vec![(REAGENT, need - 7, per_hour)];
+    assert_eq!(
+        f.plan(),
+        vec![StewardAct::Extract {
+            skyhook: 8_922_203,
+            qty: 7
+        }]
+    );
+    f.bay = vec![(REAGENT, IDLE_STOCK - 5, 0)];
+    assert_eq!(
+        f.plan(),
+        vec![StewardAct::Extract {
+            skyhook: 8_922_203,
+            qty: 5
+        }]
+    );
+}
+
+#[test]
+fn the_fetch_and_the_want_are_docked_acts_only() {
+    let mut f = Fixture::new();
+    f.hooks.remove(0);
+    f.docked = false;
+    assert_eq!(f.plan(), vec![]);
+    f.docked = true;
+    assert_eq!(f.plan(), vec![StewardAct::Want(SKYHOOK_TYPE)]);
 }

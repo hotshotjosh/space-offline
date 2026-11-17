@@ -346,6 +346,9 @@ fn the_reagents_reach_the_hub_bay() {
         // `last_cycle` back is undone by the claim-time clamp.
         sk.unsecured = 35;
         skyhook::put(w.deltas_mut(), &sk);
+        // The hub burns the reagent (an invented rate), so the days rule
+        // decides how much is wanted.
+        eve_server::sov_hub_fuel::set_burn(w.deltas_mut(), s.hub, FIXTURE_REAGENT_TYPE, 1, now);
     }
     let hub = s.hub;
     let mut notes = Vec::new();
