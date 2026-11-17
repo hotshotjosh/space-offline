@@ -18,6 +18,10 @@ server ran with EVE_ECON_TSV (tools/soak.sh sets it), `econ.tsv`. One line per i
   deploy    act `rare  ...: deployed to STATION (system S, ...) -> ok` (rare_ore.rs)
   carry     act `rare  ...: carried N (> 0) units home to STATION -> ok` (rare_ore.rs)
   miner     econ.tsv `career miner` rows from day 3 have hours > 0 and per_h > 0
+  miner-band  miner net ISK/h by security band from day 3 (econ.tsv `career_band miner:<band>`, hours-weighted):
+            PASS when low and null (each where present) are >= high; FAIL otherwise; NO_SIGNAL with no band
+            rows, or with no high row or no low/null row to compare [A] the issue's intent that deeper belts pay
+            more; falsified by the owner saying high may pay more
 #2 economy items (PASS on one ok line each)
   haul      act `haul ... -> ok` (driver.rs Act::Haul)
   geode     econ act note `opened N geode(s) of type T` (nes_use.rs)
@@ -26,6 +30,8 @@ server ran with EVE_ECON_TSV (tools/soak.sh sets it), `econ.tsv`. One line per i
   injector  econ act note `injected about P points` or `sold N injector(s)` / `sold the injector`
   pi        act `pi ... -> ok`, or a `[settle] ... pi_farmer` line
   build     econ.tsv `build` row with hours > 0, or an `isk_sink industry fees` row with isk > 0
+  plex-held, nes-day   information only (verdict n/a): PLEX held by career on the last day with a `plex held:` row,
+            and the nes_* counts (geodes, SKINs, injections, extractions) summed over the run (econ_report/nes.rs)
   careers   `[settle]` lines for at least 3 careers
   gm-setup  with --closed: no `gm-setup` act line (and some act lines to read)
 
@@ -840,6 +846,8 @@ def verdicts(run, closed=False, belts=0, scale=1.0, bands=None):
             out.append(("miner", "miner net ISK/h > 0 from day 3", FAIL if bad else PASS,
                         f"{len(days)} days read" + (f"; not positive on days {bad}" if bad else "")))
 
+    out.append(miner_band(run))
+
     # --- #2 items
     hits = run.ok_acts("haul")
     out.append(("haul", "freighter haul", PASS if hits else FAIL,
@@ -863,6 +871,7 @@ def verdicts(run, closed=False, belts=0, scale=1.0, bands=None):
                    if r["scope"] == "all" and r["kind"] == "isk_sink" and r["key"] == "industry fees")
         out.append(("build", "builders pay job time and fees", PASS if jobs > 0 or fees > 0 else FAIL,
                     f"{jobs:.0f} job-hours, {fees:.0f} ISK industry fees"))
+    out.extend(nes_info(run))
     careers = sorted({c for _, c, _, _ in run.settles})
     if not run.settles:
         out.append(("careers", f">= {MIN_CAREERS} careers settled", NO_SIGNAL,
@@ -888,6 +897,53 @@ def verdicts(run, closed=False, belts=0, scale=1.0, bands=None):
         if status == ff.NA:
             out = [(k, name, NA, f"{why}; was {v}: {detail}") for k, name, v, detail in out]
     return out
+
+
+def miner_band(run):
+    """The miner-band line (#23): miner net ISK/h by security band from day 3."""
+    name = "miner net ISK/h by band from day 3"
+    if run.tsv is None:
+        return ("miner-band", name, NO_SIGNAL, "no econ.tsv (the server needs EVE_ECON_TSV)")
+    net, hours = {}, {}
+    for r in run.tsv:
+        k = r["key"]
+        if (r["scope"] == "all" and r["kind"] == "career_band" and k.startswith("miner:")
+                and int(r["day"]) >= MINER_FROM_DAY and float(r["hours"]) > 0):
+            band = k.split(":", 1)[1]
+            net[band] = net.get(band, 0.0) + float(r["isk"])
+            hours[band] = hours.get(band, 0.0) + float(r["hours"])
+    if not net:
+        return ("miner-band", name, NO_SIGNAL, "no `career_band miner:<band>` row with hours > 0 from day 3 in econ.tsv")
+    rate = {b: net[b] / hours[b] for b in net}
+    shown = ", ".join(f"{b} {v:.0f}/h" for b, v in sorted(rate.items()))
+    deep = [b for b in ("low", "null") if b in rate]
+    if "high" not in rate or not deep:
+        return ("miner-band", name, NO_SIGNAL, f"{shown}: needs a high row and a low or null row to compare")
+    bad = [b for b in deep if rate[b] < rate["high"]]
+    return ("miner-band", name, FAIL if bad else PASS, shown + (f"; {','.join(bad)} below high" if bad else ""))
+
+
+def nes_info(run):
+    """The plex-held and nes-day lines: counts only, verdict n/a."""
+    if run.tsv is None:
+        return [("plex-held", "PLEX held by bots", NA, "no econ.tsv"), ("nes-day", "NES uses by bots", NA, "no econ.tsv")]
+    held = {}
+    for r in run.tsv:
+        if r["scope"] == "all" and r["kind"] == "plex" and r["key"].startswith("held:"):
+            held.setdefault(int(r["day"]), {})[r["key"][5:]] = float(r["n"])
+    if held:
+        last = max(held)
+        plex = (f"day {last}: " + ", ".join(f"{c} {v:.0f}" for c, v in sorted(held[last].items()))
+                + f" (total {sum(held[last].values()):.0f})")
+    else:
+        plex = "no `plex held:<career>` row in econ.tsv"
+    sums = {}
+    for r in run.tsv:
+        if r["scope"] == "all" and r["kind"].startswith("nes_"):
+            n, u = sums.get(r["kind"][4:], (0, 0))
+            sums[r["kind"][4:]] = (n + int(r["n"]), u + int(float(r["isk"])))
+    nes = ", ".join(f"{k} {n} (units {u})" for k, (n, u) in sorted(sums.items())) or "no nes_* row in econ.tsv"
+    return [("plex-held", "PLEX held by bots", NA, plex), ("nes-day", "NES uses by bots, whole run", NA, nes)]
 
 
 def _ff():

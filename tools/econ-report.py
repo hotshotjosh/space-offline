@@ -581,6 +581,45 @@ def run_identity(run_dir, src_dir=None, bands=None):
     return verdict, lines
 
 
+NES_KINDS = (("nes_geode", "geode opens"), ("nes_skin", "SKINs applied"),
+             ("nes_inject", "injections (n injectors, isk = points)"),
+             ("nes_extract", "extractions (n, isk = points)"), ("nes_crate", "other crate opens"))
+
+
+def nes(rows):
+    """Print the per-day NES tables (#2): the nes_* kinds by career and the PLEX rows.
+
+    Returns True when there was something to print.  nes_* rows: key career, n
+    count, isk units.  plex rows: held:<career> n PLEX, avg isk price, in:<src>
+    and out:<key> n PLEX moved since the last day line.
+    """
+    printed = False
+    for kind, title in NES_KINDS:
+        sel = {(int(r["day"]), r["key"]): r for r in rows if r["kind"] == kind}
+        if not sel:
+            continue
+        printed = True
+        keys = sorted({k for _, k in sel})
+        days = sorted({d for d, _ in sel})
+        table("%s by career, per day (count/units)" % title, days, keys,
+              lambda d, k, sel=sel: "%s/%s" % (sel[(d, k)]["n"], sel[(d, k)]["isk"]) if (d, k) in sel else "-")
+    plex = [r for r in rows if r["kind"] == "plex"]
+    if plex:
+        printed = True
+        sel = {(int(r["day"]), r["key"]): r for r in plex}
+        keys = sorted({k for _, k in sel})
+        days = sorted({d for d, _ in sel})
+
+        def cell(d, k):
+            r = sel.get((d, k))
+            if r is None:
+                return "-"
+            return "%.0f" % float(r["isk"]) if k == "avg" else r["n"]
+
+        table("PLEX per day (held:career = PLEX held, avg = ISK, in/out = PLEX moved)", days, keys, cell)
+    return printed
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("tsv", nargs="?", help="the TSV, or - for stdin")
@@ -592,6 +631,7 @@ def main():
     ap.add_argument("--shock", type=int, metavar="DAY", help="pre/post ratios across a shock on DAY")
     ap.add_argument("--judge", action="store_true", help="PASS/FAIL the #94 checks; exit 1 on a FAIL")
     ap.add_argument("--warmup", type=int, default=2, metavar="K", help="warm-up days for --judge (default 2)")
+    ap.add_argument("--nes", action="store_true", help="print only the PLEX / crate / SKIN / injector tables (#2); they also follow the default tables when rows exist")
     ap.add_argument("--log", metavar="FILE", help="the server log; print the income multipliers its `[econ] scale` line names")
     a = ap.parse_args()
     if a.identity:
@@ -636,7 +676,12 @@ def main():
     if a.tape:
         tape(rows, a.scope, a.basket)
         return
-    for kind, title in (("career", "net ISK/h by career"), ("tier", "net ISK/h by ship tier")):
+    if a.nes:
+        if not nes(rows):
+            print("no nes_* or plex rows")
+        return
+    for kind, title in (("career", "net ISK/h by career"), ("tier", "net ISK/h by ship tier"),
+                        ("band", "net ISK/h by security band"), ("career_band", "net ISK/h by career and band")):
         sel = {(int(r["day"]), r["key"]): r for r in rows if r["kind"] == kind}
         keys = sorted({k for _, k in sel})
 
@@ -655,6 +700,7 @@ def main():
         print("goods minted/destroyed per class, per day")
         for r in goods:
             print("  day %s %-10s minted %s destroyed %s" % (r["day"], r["key"], r["isk"], r["isk2"]))
+    nes(rows)
 
 
 if __name__ == "__main__":

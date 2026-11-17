@@ -131,6 +131,45 @@ class MinerCareer(unittest.TestCase):
         self.assertEqual(got(run())["miner"][0], ber.NO_SIGNAL)
 
 
+class MinerBand(unittest.TestCase):
+    def band(self, *rows):
+        return got(run(tsv=list(rows)))["miner-band"]
+
+    def test_deep_belts_at_least_high_passes(self):
+        v, d = self.band(trow(3, "career_band", "miner:high", 2, 10, isk=100),
+                         trow(3, "career_band", "miner:low", 2, 10, isk=150),
+                         trow(4, "career_band", "miner:null", 1, 10, isk=100))
+        self.assertEqual(v, ber.PASS, d)
+
+    def test_a_deep_band_below_high_fails(self):
+        v, d = self.band(trow(3, "career_band", "miner:high", 2, 10, isk=100),
+                         trow(3, "career_band", "miner:null", 2, 10, isk=50))
+        self.assertEqual(v, ber.FAIL, d)
+        self.assertIn("null below high", d)
+
+    def test_no_rows_or_nothing_to_compare_is_no_signal(self):
+        self.assertEqual(self.band()[0], ber.NO_SIGNAL)
+        self.assertEqual(self.band(trow(1, "career_band", "miner:high", 2, 10, isk=100))[0], ber.NO_SIGNAL)
+        self.assertEqual(self.band(trow(3, "career_band", "miner:high", 2, 10, isk=100))[0], ber.NO_SIGNAL)
+        self.assertEqual(self.band(trow(3, "career_band", "ratter:low", 2, 10, isk=100))[0], ber.NO_SIGNAL)
+
+
+class NesInfo(unittest.TestCase):
+    def test_the_counts_are_printed_with_an_na_verdict(self):
+        v = got(run(tsv=[trow(3, "plex", "held:miner", 12), trow(4, "plex", "held:miner", 9),
+                         trow(4, "plex", "held:ratter", 3),
+                         trow(3, "nes_geode", "miner", 4, isk=4), trow(4, "nes_geode", "miner", 1, isk=1)]))
+        self.assertEqual(v["plex-held"][0], ber.NA)
+        self.assertIn("day 4: miner 9, ratter 3 (total 12)", v["plex-held"][1])
+        self.assertEqual(v["nes-day"][0], ber.NA)
+        self.assertIn("geode 5 (units 5)", v["nes-day"][1])
+
+    def test_no_rows_say_so(self):
+        v = got(run(tsv=[trow(1, "career", "miner", 1, 1)]))
+        self.assertIn("no `plex held", v["plex-held"][1])
+        self.assertIn("no nes_* row", v["nes-day"][1])
+
+
 class Economy(unittest.TestCase):
     def test_each_item_passes_on_its_line(self):
         r = run([act("H1", "haul", "freighter cycle: hull, bulk trade, home: hauled 3 loads"),
@@ -193,8 +232,8 @@ class Cli(unittest.TestCase):
 
 # ---- soak-D judges (invented rows; invented thresholds, never the [A] defaults) ------------------------
 
-OLD_KEYS = ["dry", "spread", "deploy", "carry", "miner", "haul", "geode", "plex", "skin", "injector", "pi",
-            "build", "careers"]
+OLD_KEYS = ["dry", "spread", "deploy", "carry", "miner", "miner-band", "haul", "geode", "plex", "skin", "injector", "pi",
+            "build", "plex-held", "nes-day", "careers"]
 B = ber.Bands(cap_share=0.5, ledger_ok=0.4, ledger_bad=0.6, installers=2, ref_median=0.05, ref_floor=-0.05,
               real_fail=-0.2, real_fills=2, real_builders=2, line=1000.0, stall_secs=60.0, reserve_tol=1.0,
               pi_floor=0.5, plex_wallet=700.0, idle_turns=2, carry_days=1, day_secs=100.0)

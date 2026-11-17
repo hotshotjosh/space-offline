@@ -470,5 +470,36 @@ class Identity(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
 
 
+class Nes(unittest.TestCase):
+    ROWS = [
+        row(3, "nes_geode", "miner", n=4, isk=4),
+        row(3, "nes_inject", "human", n=2, isk=1000),
+        row(3, "plex", "held:miner", n=12),
+        row(3, "plex", "avg", isk=1500000),
+        row(3, "plex", "in:invented", n=5),
+        row(4, "plex", "out:invented", n=2),
+        row(3, "career_band", "miner:low", n=1, hours=10, isk=500, isk2=600, per_h=50),
+    ]
+
+    def run_nes(self, rows):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            printed = er.nes(rows)
+        return printed, buf.getvalue()
+
+    def test_the_nes_tables_print_counts_and_plex(self):
+        printed, out = self.run_nes(self.ROWS)
+        self.assertTrue(printed)
+        self.assertIn("geode opens by career", out)
+        self.assertIn("4/4", out)
+        self.assertIn("2/1000", out)
+        self.assertIn("held:miner", out)
+        self.assertIn("1500000", out)
+        self.assertIn("out:invented", out)
+
+    def test_no_rows_prints_nothing(self):
+        self.assertEqual(self.run_nes([row(1, "career", "pve")]), (False, ""))
+
+
 if __name__ == "__main__":
     unittest.main()
