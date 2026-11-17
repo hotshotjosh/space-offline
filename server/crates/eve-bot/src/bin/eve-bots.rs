@@ -1360,7 +1360,7 @@ fn run() -> Result<(), String> {
             }
         }
         if let Some(b) = bubble_run.as_mut() {
-            for line in b.step(clock::unix_secs(), eve_bot::bubble::wall_unix_secs()) {
+            for line in b.step(clock::unix_secs(), clock::wall_unix_secs()) {
                 println!("{line}");
             }
         }

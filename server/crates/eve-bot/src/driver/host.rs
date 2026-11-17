@@ -26,7 +26,7 @@
 //!
 //! The bubble (`--bubble`) is refused with the host: there is one global
 //! clock slot, so one origin, and the server stamps `bubble.tsv` in wall time
-//! (the bubble reader compares it with the wall, see `bubble::wall_unix_secs`).
+//! (the bubble reader compares it with the wall, `clock::wall_unix_secs`).
 
 use crate::clock;
 use crate::clock::Mode;
@@ -74,6 +74,9 @@ pub const REFUSED: &[&str] = &[
     "--chat-advertise",
 ];
 
+// Note for the `--host` wiring: when `eve_offline_server::MODULES` is passed to
+// `start`, a module's own listener flags (a module may define one) must be
+// refused here too, not only the core flags in `REFUSED`.
 /// The server's arguments for a host: `extra` checked against [`REFUSED`]
 /// (bare or `flag=value`) and the time-scale variable (`env` reads it), with
 /// `--bind 127.0.0.1:0` put first.

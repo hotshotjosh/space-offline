@@ -95,12 +95,6 @@ const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "kept real: the gateway HTTP socket, a wall-clock timeout",
     ),
     (
-        "bubble.rs",
-        "UNIX_EPOCH",
-        1,
-        "kept real: `wall_unix_secs`, the wall's unix second; the server stamps `bubble.tsv` in wall time, so the reader compares it with the wall (#147 H1)",
-    ),
-    (
         "lib.rs",
         "set_read_timeout(",
         3,

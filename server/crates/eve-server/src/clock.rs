@@ -250,6 +250,15 @@ impl Slot {
         self.touch();
         SystemTime::now()
     }
+
+    /// Whole seconds of the real clock since the Unix epoch (0 before it).
+    /// For stamps another process reads against the wall, such as
+    /// `bubble.tsv` (#147 H1).
+    pub fn wall_unix_secs(&self) -> u64 {
+        self.wall_system()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs())
+    }
 }
 
 impl Default for Slot {
@@ -313,6 +322,11 @@ pub fn wall_since(earlier: Instant) -> Duration {
 /// Real-time `SystemTime::now()`, for seeds and ids.
 pub fn wall_system() -> SystemTime {
     GLOBAL.wall_system()
+}
+
+/// Whole seconds of the real clock since the Unix epoch.
+pub fn wall_unix_secs() -> u64 {
+    GLOBAL.wall_unix_secs()
 }
 
 /// The raw time sources the lint counts.
@@ -481,7 +495,7 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
         "push.rs",
         "SystemTime::now",
         2,
-        "pending #145 hot-ok: hot file",
+        "pending #145 hot-ok: hot file; one is the bubble.tsv stamp (push.rs:2625), which must stay wall time (clock::wall_unix_secs) because eve-bot bubble.rs reads it against the wall (#147 H1), so the hot batch does not convert it to game time",
     ),
     (
         "push.rs",

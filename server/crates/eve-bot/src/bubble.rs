@@ -680,13 +680,6 @@ pub fn is_busy(obs: Option<&crate::brain::Observation>, live: bool, last: Option
     obs.is_some_and(|o| o.place == Place::Transit) || (live && (fighting || moving))
 }
 
-/// The wall clock's unix second: what the server stamps into `bubble.tsv`.
-pub fn wall_unix_secs() -> u64 {
-    clock::wall_system()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 impl Runner {
     /// `dir` is the control directory the server writes `bubble.tsv` into.
     pub fn new(dir: &std::path::Path, map: Arc<Map>, floor: f64, handles: Vec<Handle>) -> Runner {
@@ -766,7 +759,7 @@ impl Runner {
     /// Run one step if its time has come; the lines to print (decisions and
     /// the fill ledger). `game_unix` is the game clock's unix second (the
     /// bots' windows are game time); `wall_unix` is the wall's
-    /// ([`wall_unix_secs`]), because the server stamps `bubble.tsv` in wall
+    /// ([`clock::wall_unix_secs`]), because the server stamps `bubble.tsv` in wall
     /// time and a fast-forward clock would read every sample stale (#147 H1).
     pub fn step(&mut self, game_unix: u64, wall_unix: u64) -> Vec<String> {
         let at = clock::instant();
@@ -892,8 +885,12 @@ mod tests {
         assert_eq!(r.read(wall + 1).map(|s| s.seq), Some(7));
         assert_eq!(r.read(wall + SAMPLE_STALE_S + 1).map(|s| s.seq), None);
         // `step` reads the wall argument, not the game one.
-        let lines = r.step(wall + 10_000, wall + 1);
-        assert!(lines.is_empty());
+        r.step(wall + 10_000, wall + 1);
+        assert_eq!(r.planner.last_seq, Some(7));
+        // The negative: a sample older than the wall's window is not taken.
+        let mut stale = Runner::new(&dir, Arc::new(Map::new()), 0.0, Vec::new());
+        stale.step(wall + 1, wall + SAMPLE_STALE_S + 1);
+        assert_eq!(stale.planner.last_seq, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

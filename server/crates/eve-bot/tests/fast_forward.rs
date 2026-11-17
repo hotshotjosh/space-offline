@@ -3,6 +3,9 @@
 //! server's) makes a later `install` fail (`clock.rs`), so these tests cannot
 //! share a process with `tests/bots`. Both tests call [`install_once`] first.
 //!
+//! The Wall install here also means Affine can never flip in place: a real
+//! Affine test needs its own test target (one clock mode per process).
+//!
 //! Everything here is invented: the pilot's name, the temp paths.
 
 use eve_bot::Conn;
