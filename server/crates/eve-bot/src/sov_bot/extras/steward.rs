@@ -275,6 +275,8 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
     // 4. A skyhook worth the trip, while the bay holds less than the days;
     //    no more than the bay lacks.
     let mut free = v.hold_free_m3;
+    // What each reagent's bay still lacks, lowered by every take planned.
+    let mut lacking_of: BTreeMap<i64, u64> = BTreeMap::new();
     for h in placed {
         let Some(reagent) = h.reagent else { continue };
         if v.deposit_blocked
@@ -296,7 +298,9 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
         } else {
             IDLE_STOCK
         };
-        let lack = want.saturating_sub(amount);
+        let lack = *lacking_of
+            .entry(reagent)
+            .or_insert_with(|| want.saturating_sub(amount));
         if lack == 0 {
             continue;
         }
@@ -309,6 +313,9 @@ pub fn steward_plan(v: &StewardView<'_>) -> Vec<StewardAct> {
         let qty = room.min(h.stock() as i64).min(lack as i64);
         if qty > 0 {
             free -= qty as f64 * unit;
+            if let Some(l) = lacking_of.get_mut(&reagent) {
+                *l = l.saturating_sub(qty as u64);
+            }
             acts.push(StewardAct::Extract { skyhook: h.id, qty });
         }
     }
@@ -712,6 +719,15 @@ pub fn arm(
         for act in &space {
             let line = do_space(c, m, &mut s, hub, act, gateway)?;
             lines.push(line);
+            // A role refusal ends the trip.
+            if m.sov
+                .extras
+                .steward
+                .no_role_until
+                .is_some_and(|t| clock::instant() < t)
+            {
+                break;
+            }
         }
         // Reagents taken are put into the bay on the same trip.
         if space
@@ -733,7 +749,7 @@ pub fn arm(
         lines.push(crate::sov_bot::go_home(c, m, map)?);
     }
     for act in acts.iter().filter(|a| !a.in_space()) {
-        lines.push(do_docked(c, map, act)?);
+        lines.push(do_docked(c, map, &mut m.sov.extras.steward, act)?);
     }
     if s.lost {
         lines.push("MISSING gateway".to_owned());
@@ -819,9 +835,7 @@ fn learn(c: &mut Conn, st: &mut Mind, system: i64, defs: &[PlanetDef], hooks: &[
         .iter()
         .filter_map(|d| world.get(d.planet).map(|b| (d.planet, b.motion.position)))
         .collect();
-    if planets.is_empty() {
-        return false;
-    }
+    // A system with no defined planet is known to have none.
     for h in hooks {
         let Some(ball) = world.get(h.id) else {
             if !st.placed.contains_key(&h.id) {
@@ -917,8 +931,8 @@ fn do_space(
                     let st = &mut m.sov.extras.steward;
                     st.refused.insert(*skyhook, now);
                     // A role refusal only when the skyhook stands here and
-                    // has had time to build.
-                    let built = st.launched.get(skyhook).is_none_or(|at| {
+                    // has had time to build (an unknown launch time counts as not built).
+                    let built = st.launched.get(skyhook).is_some_and(|at| {
                         clock::since(*at)
                             >= 2 * Duration::from_secs(eve_server::skyhook::ACTIVATION_S)
                     });
@@ -989,10 +1003,15 @@ fn do_space(
     }
 }
 
-fn do_docked(c: &mut Conn, map: &crate::travel::Map, act: &StewardAct) -> Result<String> {
+fn do_docked(
+    c: &mut Conn,
+    map: &crate::travel::Map,
+    st: &mut Mind,
+    act: &StewardAct,
+) -> Result<String> {
     match act {
         StewardAct::Want(product) => want(c, *product),
-        StewardAct::Fetch { item_type } => fetch(c, map, *item_type),
+        StewardAct::Fetch { item_type } => fetch(c, map, st, *item_type),
         _ => Ok(String::new()),
     }
 }
@@ -1063,7 +1082,7 @@ fn reachable_book(
 /// **Fetch one skyhook** (docked): from the hangar, else the asks here, else
 /// the nearest seller in reach (a trip home again), then into the hold. The
 /// want goes on the board; a bid is rested only when nothing is on sale.
-fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
+fn fetch(c: &mut Conn, map: &crate::travel::Map, st: &mut Mind, ty: i64) -> Result<String> {
     let Some(station) = c.session().station_id() else {
         return Ok("fetch: not docked".to_owned());
     };
@@ -1101,7 +1120,11 @@ fn fetch(c: &mut Conn, map: &crate::travel::Map, ty: i64) -> Result<String> {
                     crate::travel::Haul::Cargo,
                 ))? {
                     Some(f) => notes.push(f.summary()),
-                    None => notes.push("the trip failed".to_owned()),
+                    None => {
+                        // A failed trip backs off.
+                        st.refused.insert(ty, clock::instant());
+                        notes.push("the trip failed".to_owned());
+                    }
                 }
             }
         }

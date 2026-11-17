@@ -634,3 +634,25 @@ fn the_fetch_and_the_want_are_docked_acts_only() {
     f.docked = true;
     assert_eq!(f.plan(), vec![StewardAct::Want(SKYHOOK_TYPE)]);
 }
+
+#[test]
+fn two_skyhooks_of_one_reagent_do_not_overshoot_what_the_bay_lacks() {
+    let mut f = Fixture::new().stocked(1_000);
+    // A second skyhook over the reagent planet's twin, same reagent.
+    let mut second = hook(8_922_204, LAND_PLANET, 1_000);
+    second.planet = Some(POWER_PLANET);
+    f.hooks.push(second);
+    f.hooks[0].planet = Some(LAND_PLANET);
+    f.hooks[0].reagent = None;
+    f.hooks[1].reagent = None;
+    f.bay = vec![(REAGENT, IDLE_STOCK - 8, 0)];
+    let taken: i64 = f
+        .plan()
+        .iter()
+        .filter_map(|a| match a {
+            StewardAct::Extract { qty, .. } => Some(*qty),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(taken, 8, "the bay lacks 8 in all");
+}
