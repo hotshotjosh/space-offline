@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**69% proved** (230 of 333) · **93% built** (310 of 333) · 3 parked, not counted.
+**69% proved** (231 of 333) · **93% built** (310 of 333) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -36,7 +36,6 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Shooting a station or gate in low sec is a suspect act (no status charge [A], no CONCORD response); criminal in high sec, free in null: *built-unproved*, concord.rs law_verdict / attack_on_law low-sec AttackFacility arm, crimewatch.rs flag_suspect and attack_refusal suspect key (crimewatchSvc.py:603-606 [V], null gated at :382-383 [V]); tests shooting_a_station_or_gate_in_low_sec_makes_a_suspect, a_station_or_gate_is_criminal_in_high_sec_and_free_in_null_sec, a_faction_police_ship_in_low_sec_stays_free
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
-- [ ] A bot summoned by a cloaked pilot never lands within decloak range of him: *built-unproved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests. fci_bot_ess still re-cloaks the client; a run without that workaround proves it
 - [ ] A camping HIC loads the focused script and points a prey no bubble holds: *built-unproved*, server/crates/eve-bot/tests/hic_point_socket.rs: camp::acts on live sockets locks a warpBubbleImmune hull past a nearer bubbleable decoy, loads the Focused Warp Disruption Script and runs the generator as a point on it, and the prey's warp is refused WarpScrambled; mutation-checked (nearest-prey and no-immunity mutants go red); camp.rs immune_target/load_script_now/point_now, pvp_kit.rs FieldPoint/ScriptOut. No client can fly a super here; the 60 s script hold, LEARN_TURNS and the cloak/logoff misfire of learned immunity are [A]
 - [ ] Rosters and gates: *built-unproved*, tools/soak.sh --hunters/--society-pvp and --dictors/--hics/--foes (a dev roster that buys bubblers), tools/pvp-report.py; every behaviour logs its decision (counter.rs, camp.rs, #136); soak B 2026-11-05 (dictors, HICs, hunters, foes in null sec): probes, fields and bubble holds PASS; it found dictor-held logged by the bubbling side and 459 re-locks of warping targets, fixed in counter.rs (held needs a hostile bubbler on grid) and hunt.rs (LockBackoff, 1 s per target, only the lock act waits) [A] at most 5 cancels per warp burst; drill soak (smartbomb, MJD, gate camp) still to run
 - [ ] Capitals fight: *partial*, capital_fight.rs: bot dreads and FAXes siege/triage on a fight grid and stock the fuel (#34); a sieged pilot locks and fires its guns at the nearest hostile off high sec (#37); they fit the siege or triage module from their own stock or buy it (#140); sov_bot guards launch an owned cyno inhibitor at an enemy capital pair and forget it at expiry (#36); the theatre machine commits our capital pilots against enemy capitals and disengages with none (doctrine_theatre.rs, doctrine::Role::Capital, no seat without a hull seen on sale or held; #35); unit tests; a pair forms in dev rosters and in society play from a held or bought hull; Readiness.capital from a held, paired hull (#35); scenario and titans open
@@ -165,7 +164,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Bots | 11 | 38 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
-| Fleet | 10 | 1 | 0 | 0 | 0 |
+| Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 2 | 1 | 2 | 0 |
@@ -466,7 +465,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Fleet</b>: 10 of 11 proved, 1 open</summary>
+<details><summary><b>Fleet</b>: all 11 proved</summary>
 
 - [x] Fleet composition with live locations: *client-proved*, fci_fleet_comp W10; green 22/22 11-15 (var/ci-1115m-b)
 - [x] Bots join your wing and follow: *client-proved*, fci_wing_follow W10
@@ -475,7 +474,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Typed wing orders: *client-proved*, fci_wing_words W10
 - [x] Warp Fleet to a mission bookmark: *client-proved*, fci_fleet_mission W10
 - [x] Bots summoned to you: *client-proved*, fci_gang_summon W10
-- [ ] A bot summoned by a cloaked pilot never lands within decloak range of him: *built-unproved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests. fci_bot_ess still re-cloaks the client; a run without that workaround proves it
+- [x] A bot summoned by a cloaked pilot never lands within decloak range of him: *client-proved*, eve-bot summon.rs (every summon warp at MIN_CLOAKING_DISTANCE + both radii; settles only on the server's too-short refusal; settle ends on a grid change, the caller in sight or 60 s [A]), driver.rs summon_turn, verbs.rs warp_to_member passes the notify text; unit tests; fci_summon_cloaked green 11-17: the cloak stayed on for 180 s, the bot's closest approach about 2.6 km, every warp asked for 3031 m. the bot re-warps to the unseen caller every 30 s (the server accepts the short warp, so it never settles); harmless to the cloak, noted on #162
 - [x] Fleet kept across a reconnect: *client-proved*, fleet.rs offer_rejoins: a held pilot who logs back in inside the window gets an auto-accepted rejoin invite and is re-seated (#195); fci_fleet_reconnect green 11-07 (var/regress-1107r1), fci_fleet_comp and fci_wing_follow green beside it; fci_fleet_reconnect now checks the re-seat in a second wing and squad (#1; first run 11-15 red on a scenario race, MoveMember inside the fleet panel's first second, the scenario now waits for the panel; rerun green 11-15, var/ci-1115h-a), and fleet/tests.rs a_held_pilot_in_a_second_wing_is_reseated_in_that_wing_and_squad, a_held_squad_commander_keeps_his_seat_and_nobody_takes_it_meanwhile, a_held_members_squad_and_wing_cannot_be_deleted_under_him and a_lazy_reconnect_reseats_in_the_second_wing_too pin it in the state machine; two-minute window by owner decision
 - [x] Fleet kept across a client quit: *client-proved*, fleet.rs reconnect_lazy: the client's own Reconnect after a quit keeps the held seat and makes the auto-accepted rejoin invite due at once (#200); fci_fleet_lazy green 18/18 on its first run 11-15 (var/ci-1115e), fci_fleet_reconnect and fci_wing_follow green beside it 11-15; fci_fleet_comp green 22/22 beside them 11-15 (var/ci-1115m-b)
 - [x] A far fleet member does not show as on grid: *client-proved*, fci_fleet_comp grid ladder (regress-w28a): the fleet window's on-grid equals park membership; a mate is on grid to ~3.7 Mm and off past ~4.3 Mm (the server's GRID_ENTER/LEAVE [A]), never past GRIDSIZE; a TQ-like radius is an owner decision

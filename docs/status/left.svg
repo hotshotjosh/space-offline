@@ -42,9 +42,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="254.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="258.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="262.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="271.3" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.8" y="47.0" width="3" height="1.5" class="part-f"/>
-<text x="278.8" y="50.0" class="s xs">10</text>
+<rect x="267.3" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="266.8" y="47.0" width="3" height="1.5" class="part-f"/>
+<text x="274.8" y="50.0" class="s xs">9</text>
 <text x="16.0" y="66.0" class="t">3.4 Upwell</text>
 <rect x="234.8" y="61.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="61.5" width="3" height="3" class="built"/>

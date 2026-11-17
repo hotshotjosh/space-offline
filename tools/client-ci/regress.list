@@ -153,6 +153,8 @@ lobby_guests --with-second -- --character Alice --character Bob
 # dev worlds (reset before each run)
 fci_dev_mode -- --dev
 fci_gang_summon --with-bots --serial -- --dev
+# summon-cloaked (#162): a called bot never decloaks a cloaked caller: the cloak byte stays on for 180 s with no re-activation, no pilot ball within 2 km, at most one non-refused WarpToMember in the bot's act log
+fci_summon_cloaked --with-bots --serial -- --dev
 fci_mine_crit -- --dev
 fci_dock_range
 fci_wh_range
