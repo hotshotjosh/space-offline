@@ -23,6 +23,9 @@
 
 pub mod gw;
 pub mod kit;
+pub mod steward;
+#[cfg(test)]
+mod steward_tests;
 #[cfg(test)]
 mod tests;
 
@@ -43,13 +46,15 @@ pub struct Mind {
     pub next: Option<Instant>,
     /// When the gateway was last found missing ([`gw::GW_BACKOFF`]).
     pub gw_down: Option<Instant>,
+    /// The steward's memory (B1-a).
+    pub steward: steward::Mind,
 }
 
 /// One duty: `Ok(None)` is nothing to do this pass.
 type Arm = fn(&mut Conn, &mut Memory, &Ctx<'_>, &Plan, Duty) -> Result<Option<String>>;
 
 /// The duties, in order; the first that answers a line wins the turn.
-const ARMS: &[Arm] = &[];
+const ARMS: &[Arm] = &[steward::arm];
 
 /// **The hook** `sov_bot::turn` calls before the duty match: `Ok(None)` means
 /// the old duty runs unchanged. A dead connection (`Io`, `Protocol`) is the

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="286" viewBox="0 0 480 286" role="img" aria-label="Progress by system, one mark per feature">
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="302" viewBox="0 0 480 302" role="img" aria-label="Progress by system, one mark per feature">
 <title>Progress by system, one mark per feature</title>
 <style>
 .bg{fill:#fcfcfb}.t{fill:#0b0b0b}.s{fill:#52514e}.rule{fill:#e1e0d9}
@@ -16,7 +16,7 @@
 text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 .big{font-size:26px;font-weight:600}.b{font-weight:600}.xs{font-size:11px}
 </style>
-<rect width="480" height="286" rx="6" class="bg"/>
+<rect width="480" height="302" rx="6" class="bg"/>
 <text x="16.0" y="18.0" class="t">Login and sessions</text>
 <rect x="198.8" y="13.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="13.5" width="3" height="3" class="proved"/>
@@ -207,34 +207,13 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="390.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="394.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="398.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="403.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="402.8" y="111.0" width="3" height="1.5" class="part-f"/>
+<rect x="402.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="407.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="406.8" y="111.0" width="3" height="1.5" class="part-f"/>
-<rect x="410.8" y="109.5" width="3" height="3" class="unknown"/>
+<rect x="411.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="410.8" y="111.0" width="3" height="1.5" class="part-f"/>
 <rect x="414.8" y="109.5" width="3" height="3" class="unknown"/>
-<text x="422.8" y="114.0" class="s xs">11/55</text>
-<text x="16.0" y="130.0" class="t">Industry and mining</text>
-<rect x="198.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="202.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="206.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="210.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="214.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="218.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="222.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="226.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="230.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="234.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="238.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="242.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="246.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="250.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="254.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="258.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="262.8" y="125.5" width="3" height="3" class="proved"/>
-<rect x="267.3" y="126.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="271.3" y="126.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="275.3" y="126.0" width="2" height="2" fill="none" class="missing"/>
-<text x="282.8" y="130.0" class="s xs">17/20</text>
-<text x="16.0" y="146.0" class="t">Corp and social</text>
+<rect x="198.8" y="125.5" width="3" height="3" class="unknown"/>
+<text x="206.8" y="130.0" class="s xs">11/56</text>
+<text x="16.0" y="146.0" class="t">Industry and mining</text>
 <rect x="198.8" y="141.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="141.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="141.5" width="3" height="3" class="proved"/>
@@ -252,11 +231,11 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="254.8" y="141.5" width="3" height="3" class="proved"/>
 <rect x="258.8" y="141.5" width="3" height="3" class="proved"/>
 <rect x="262.8" y="141.5" width="3" height="3" class="proved"/>
-<rect x="266.8" y="141.5" width="3" height="3" class="proved"/>
-<rect x="271.3" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.8" y="143.0" width="3" height="1.5" class="part-f"/>
-<rect x="275.3" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="274.8" y="143.0" width="3" height="1.5" class="part-f"/>
-<text x="282.8" y="146.0" class="s xs">18/20</text>
-<text x="16.0" y="162.0" class="t">Fleet</text>
+<rect x="267.3" y="142.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="271.3" y="142.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="275.3" y="142.0" width="2" height="2" fill="none" class="missing"/>
+<text x="282.8" y="146.0" class="s xs">17/20</text>
+<text x="16.0" y="162.0" class="t">Corp and social</text>
 <rect x="198.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="157.5" width="3" height="3" class="proved"/>
@@ -268,8 +247,17 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="230.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="234.8" y="157.5" width="3" height="3" class="proved"/>
 <rect x="238.8" y="157.5" width="3" height="3" class="proved"/>
-<text x="246.8" y="162.0" class="s xs">11/11</text>
-<text x="16.0" y="178.0" class="t">Sovereignty</text>
+<rect x="242.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="246.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="250.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="254.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="258.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="262.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="266.8" y="157.5" width="3" height="3" class="proved"/>
+<rect x="271.3" y="158.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.8" y="159.0" width="3" height="1.5" class="part-f"/>
+<rect x="275.3" y="158.0" width="2" height="2" fill="none" class="part-o"/><rect x="274.8" y="159.0" width="3" height="1.5" class="part-f"/>
+<text x="282.8" y="162.0" class="s xs">18/20</text>
+<text x="16.0" y="178.0" class="t">Fleet</text>
 <rect x="198.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="173.5" width="3" height="3" class="proved"/>
@@ -277,15 +265,12 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="214.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="218.8" y="173.5" width="3" height="3" class="proved"/>
 <rect x="222.8" y="173.5" width="3" height="3" class="proved"/>
-<rect x="226.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="230.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="234.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="173.5" width="3" height="3" class="built"/>
-<rect x="251.3" y="174.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.8" y="175.0" width="3" height="1.5" class="part-f"/>
-<text x="258.8" y="178.0" class="s xs">7/14</text>
-<text x="16.0" y="194.0" class="t">Upwell structures</text>
+<rect x="226.8" y="173.5" width="3" height="3" class="proved"/>
+<rect x="230.8" y="173.5" width="3" height="3" class="proved"/>
+<rect x="234.8" y="173.5" width="3" height="3" class="proved"/>
+<rect x="238.8" y="173.5" width="3" height="3" class="proved"/>
+<text x="246.8" y="178.0" class="s xs">11/11</text>
+<text x="16.0" y="194.0" class="t">Sovereignty</text>
 <rect x="198.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="189.5" width="3" height="3" class="proved"/>
@@ -293,75 +278,47 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="214.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="218.8" y="189.5" width="3" height="3" class="proved"/>
 <rect x="222.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="226.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="230.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="234.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="238.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="242.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="246.8" y="189.5" width="3" height="3" class="proved"/>
-<rect x="250.8" y="189.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="189.5" width="3" height="3" class="built"/>
-<rect x="259.3" y="190.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="191.0" width="3" height="1.5" class="part-f"/>
-<rect x="263.3" y="190.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.8" y="191.0" width="3" height="1.5" class="part-f"/>
-<rect x="267.3" y="190.0" width="2" height="2" fill="none" class="part-o"/><rect x="266.8" y="191.0" width="3" height="1.5" class="part-f"/>
-<rect x="271.3" y="190.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="275.3" y="190.0" width="2" height="2" fill="none" class="missing"/>
-<text x="282.8" y="194.0" class="s xs">13/20</text>
-<text x="16.0" y="210.0" class="t">Factional warfare</text>
+<rect x="226.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="230.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="234.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="238.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="242.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="246.8" y="189.5" width="3" height="3" class="built"/>
+<rect x="251.3" y="190.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.8" y="191.0" width="3" height="1.5" class="part-f"/>
+<text x="258.8" y="194.0" class="s xs">7/14</text>
+<text x="16.0" y="210.0" class="t">Upwell structures</text>
 <rect x="198.8" y="205.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="205.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="205.5" width="3" height="3" class="proved"/>
-<rect x="210.8" y="205.5" width="3" height="3" class="built"/>
-<rect x="214.8" y="205.5" width="3" height="3" class="built"/>
-<rect x="219.3" y="206.0" width="2" height="2" fill="none" class="part-o"/><rect x="218.8" y="207.0" width="3" height="1.5" class="part-f"/>
-<rect x="223.3" y="206.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="227.3" y="206.0" width="2" height="2" fill="none" class="missing"/>
-<text x="234.8" y="210.0" class="s xs">3/8</text>
-<text x="16.0" y="226.0" class="t">Missions and exploration</text>
+<rect x="210.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="214.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="218.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="222.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="226.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="230.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="234.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="238.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="242.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="246.8" y="205.5" width="3" height="3" class="proved"/>
+<rect x="250.8" y="205.5" width="3" height="3" class="built"/>
+<rect x="254.8" y="205.5" width="3" height="3" class="built"/>
+<rect x="259.3" y="206.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="207.0" width="3" height="1.5" class="part-f"/>
+<rect x="263.3" y="206.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.8" y="207.0" width="3" height="1.5" class="part-f"/>
+<rect x="267.3" y="206.0" width="2" height="2" fill="none" class="part-o"/><rect x="266.8" y="207.0" width="3" height="1.5" class="part-f"/>
+<rect x="271.3" y="206.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="275.3" y="206.0" width="2" height="2" fill="none" class="missing"/>
+<text x="282.8" y="210.0" class="s xs">13/20</text>
+<text x="16.0" y="226.0" class="t">Factional warfare</text>
 <rect x="198.8" y="221.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="221.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="210.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="214.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="218.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="222.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="226.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="230.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="234.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="238.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="242.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="246.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="250.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="254.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="258.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="262.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="266.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="270.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="274.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="278.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="282.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="286.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="290.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="294.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="298.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="302.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="306.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="310.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="314.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="318.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="322.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="326.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="330.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="334.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="338.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="342.8" y="221.5" width="3" height="3" class="proved"/>
-<rect x="346.8" y="221.5" width="3" height="3" class="built"/>
-<rect x="350.8" y="221.5" width="3" height="3" class="built"/>
-<rect x="354.8" y="221.5" width="3" height="3" class="built"/>
-<rect x="358.8" y="221.5" width="3" height="3" class="built"/>
-<rect x="362.8" y="221.5" width="3" height="3" class="built"/>
-<text x="370.8" y="226.0" class="s xs">37/42</text>
-<text x="16.0" y="242.0" class="t">Tools and remote clients</text>
+<rect x="210.8" y="221.5" width="3" height="3" class="built"/>
+<rect x="214.8" y="221.5" width="3" height="3" class="built"/>
+<rect x="219.3" y="222.0" width="2" height="2" fill="none" class="part-o"/><rect x="218.8" y="223.0" width="3" height="1.5" class="part-f"/>
+<rect x="223.3" y="222.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="227.3" y="222.0" width="2" height="2" fill="none" class="missing"/>
+<text x="234.8" y="226.0" class="s xs">3/8</text>
+<text x="16.0" y="242.0" class="t">Missions and exploration</text>
 <rect x="198.8" y="237.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="237.5" width="3" height="3" class="proved"/>
 <rect x="206.8" y="237.5" width="3" height="3" class="proved"/>
@@ -373,24 +330,68 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="230.8" y="237.5" width="3" height="3" class="proved"/>
 <rect x="234.8" y="237.5" width="3" height="3" class="proved"/>
 <rect x="238.8" y="237.5" width="3" height="3" class="proved"/>
-<rect x="242.8" y="237.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="237.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="237.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="237.5" width="3" height="3" class="built"/>
-<rect x="259.3" y="238.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="239.0" width="3" height="1.5" class="part-f"/>
-<rect x="263.3" y="238.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.8" y="239.0" width="3" height="1.5" class="part-f"/>
-<rect x="267.3" y="238.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="271.3" y="238.0" width="2" height="2" fill="none" class="missing"/>
-<text x="278.8" y="242.0" class="s xs">11/19</text>
-<rect x="16.0" y="254.0" width="9" height="9" class="proved"/>
-<text x="30.0" y="262.0" class="s xs">Proved</text>
-<rect x="78.3" y="254.0" width="9" height="9" class="built"/>
-<text x="92.3" y="262.0" class="s xs">Built</text>
-<rect x="134.7" y="254.5" width="8" height="8" fill="none" class="part-o"/><rect x="134.2" y="258.5" width="9" height="4.5" class="part-f"/>
-<text x="148.2" y="262.0" class="s xs">Part built</text>
-<rect x="222.5" y="254.5" width="8" height="8" fill="none" class="missing"/>
-<text x="236.0" y="262.0" class="s xs">Missing</text>
-<rect x="290.6" y="254.0" width="9" height="9" class="unknown"/>
-<text x="304.6" y="262.0" class="s xs">Unknown</text>
-<text x="464.0" y="278.0" class="s xs" text-anchor="end">right: proved / features</text>
+<rect x="242.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="246.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="250.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="254.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="258.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="262.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="266.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="270.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="274.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="278.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="282.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="286.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="290.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="294.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="298.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="302.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="306.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="310.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="314.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="318.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="322.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="326.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="330.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="334.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="338.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="342.8" y="237.5" width="3" height="3" class="proved"/>
+<rect x="346.8" y="237.5" width="3" height="3" class="built"/>
+<rect x="350.8" y="237.5" width="3" height="3" class="built"/>
+<rect x="354.8" y="237.5" width="3" height="3" class="built"/>
+<rect x="358.8" y="237.5" width="3" height="3" class="built"/>
+<rect x="362.8" y="237.5" width="3" height="3" class="built"/>
+<text x="370.8" y="242.0" class="s xs">37/42</text>
+<text x="16.0" y="258.0" class="t">Tools and remote clients</text>
+<rect x="198.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="202.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="206.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="210.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="214.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="218.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="222.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="226.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="230.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="234.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="238.8" y="253.5" width="3" height="3" class="proved"/>
+<rect x="242.8" y="253.5" width="3" height="3" class="built"/>
+<rect x="246.8" y="253.5" width="3" height="3" class="built"/>
+<rect x="250.8" y="253.5" width="3" height="3" class="built"/>
+<rect x="254.8" y="253.5" width="3" height="3" class="built"/>
+<rect x="259.3" y="254.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="255.0" width="3" height="1.5" class="part-f"/>
+<rect x="263.3" y="254.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.8" y="255.0" width="3" height="1.5" class="part-f"/>
+<rect x="267.3" y="254.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="271.3" y="254.0" width="2" height="2" fill="none" class="missing"/>
+<text x="278.8" y="258.0" class="s xs">11/19</text>
+<rect x="16.0" y="270.0" width="9" height="9" class="proved"/>
+<text x="30.0" y="278.0" class="s xs">Proved</text>
+<rect x="78.3" y="270.0" width="9" height="9" class="built"/>
+<text x="92.3" y="278.0" class="s xs">Built</text>
+<rect x="134.7" y="270.5" width="8" height="8" fill="none" class="part-o"/><rect x="134.2" y="274.5" width="9" height="4.5" class="part-f"/>
+<text x="148.2" y="278.0" class="s xs">Part built</text>
+<rect x="222.5" y="270.5" width="8" height="8" fill="none" class="missing"/>
+<text x="236.0" y="278.0" class="s xs">Missing</text>
+<rect x="290.6" y="270.0" width="9" height="9" class="unknown"/>
+<text x="304.6" y="278.0" class="s xs">Unknown</text>
+<text x="464.0" y="294.0" class="s xs" text-anchor="end">right: proved / features</text>
 </svg>

@@ -103,6 +103,7 @@ mod sov;
 mod sov_bot;
 mod sov_hub;
 mod sov_index;
+mod sov_steward;
 mod t3;
 mod theatre_reinforce;
 mod threat;

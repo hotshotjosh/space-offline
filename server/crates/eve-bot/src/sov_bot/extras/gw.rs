@@ -247,6 +247,25 @@ pub fn component_call(
     c.bound_call("CallComponentFromClient", all)
 }
 
+/// The words of one refusal `(label, args)`: the `notify` text of a
+/// `CustomNotify` (what the server's launch refusals are), else the label.
+fn refusal_text(t: &[PyValue]) -> Option<String> {
+    let text = |v: &PyValue| match v {
+        PyValue::Bytes(b) => Some(String::from_utf8_lossy(b).into_owned()),
+        PyValue::Unicode(s) => Some(s.clone()),
+        _ => None,
+    };
+    if let Some(PyValue::Dict(pairs)) = t.get(1)
+        && let Some(n) = pairs
+            .iter()
+            .find(|(_, k)| text(k).as_deref() == Some("notify"))
+            .and_then(|(v, _)| text(v))
+    {
+        return Some(n);
+    }
+    t.first().and_then(text)
+}
+
 /// What a `ship.Drop` answer says of `item`: `Ok(new id)` from `{item:
 /// [newID]}`, `Err(text)` from `{item: [(label, args)]}`, `Err` of a note
 /// when it says nothing.
@@ -261,11 +280,7 @@ pub fn launch_result(answer: &PyValue, item: i64) -> std::result::Result<i64, St
         .filter(|(k, _)| **k == PyValue::Int(item))
         .find_map(|(_, v)| match v {
             PyValue::List(v) | PyValue::Tuple(v) => v.iter().find_map(|e| match e {
-                PyValue::Tuple(t) | PyValue::List(t) => match t.first() {
-                    Some(PyValue::Bytes(b)) => Some(String::from_utf8_lossy(b).into_owned()),
-                    Some(PyValue::Unicode(s)) => Some(s.clone()),
-                    _ => None,
-                },
+                PyValue::Tuple(t) | PyValue::List(t) => refusal_text(t),
                 _ => None,
             }),
             _ => None,
