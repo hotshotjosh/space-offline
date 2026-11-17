@@ -707,6 +707,10 @@ pub fn arm(
             }
         }
     }
+    // A want already on the board (its bid stands) is not posted again each
+    // pass; a pass with nothing else to do answers nothing, so the pilot's
+    // other arms (the den runner) get their turn.
+    drop_standing_wants(&mut acts, &super::kit::wanted(now));
     if acts.is_empty() {
         return Ok(None);
     }
@@ -755,6 +759,11 @@ pub fn arm(
         lines.push("MISSING gateway".to_owned());
     }
     Ok(Some(format!("sov steward: {}", lines.join("; "))))
+}
+
+/// Drop the docked wants of products the want board already holds (pure).
+pub fn drop_standing_wants(acts: &mut Vec<StewardAct>, wanted: &BTreeSet<i64>) {
+    acts.retain(|a| !matches!(a, StewardAct::Want(p) if wanted.contains(p)));
 }
 
 fn skyhook_type(content: &eve_server::content::Content) -> Option<i64> {

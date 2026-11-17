@@ -656,3 +656,19 @@ fn two_skyhooks_of_one_reagent_do_not_overshoot_what_the_bay_lacks() {
         .sum();
     assert_eq!(taken, 8, "the bay lacks 8 in all");
 }
+
+#[test]
+fn a_want_already_on_the_board_is_not_posted_again() {
+    let wanted: std::collections::BTreeSet<i64> = [SKYHOOK_TYPE].into();
+    let mut acts = vec![StewardAct::Want(SKYHOOK_TYPE)];
+    drop_standing_wants(&mut acts, &wanted);
+    assert!(acts.is_empty());
+    let mut acts = vec![
+        StewardAct::Want(SKYHOOK_TYPE),
+        StewardAct::Activate { skyhook: HOOK_A },
+    ];
+    drop_standing_wants(&mut acts, &std::collections::BTreeSet::new());
+    assert_eq!(acts.len(), 2);
+    drop_standing_wants(&mut acts, &wanted);
+    assert_eq!(acts, vec![StewardAct::Activate { skyhook: HOOK_A }]);
+}

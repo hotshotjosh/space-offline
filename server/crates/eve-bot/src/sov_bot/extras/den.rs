@@ -31,7 +31,7 @@
 //!
 //! **[A] B3-3** the activity's site is in the pilot's Expeditions list
 //! (`GetMyEscalatingPathDetails`) with the activity's expiry (matched within
-//! [`SITE_MATCH_S`]), else any escalation of the system. Falsified by a
+//! [`SITE_MATCH_S`]); no match means no run. Falsified by a
 //! started activity with no escalation row (the note says so); the run would
 //! then read the site id from the activity itself.
 //!
@@ -139,6 +139,8 @@ pub struct DenView<'a> {
     pub infomorphs_held: i64,
     /// A den item in the hold or the hangar.
     pub den_item: Option<i64>,
+    /// The type of `den_item`.
+    pub den_item_type: Option<i64>,
     pub den_type: Option<i64>,
     /// Guns fitted: only such a pilot runs the sites.
     pub guns: bool,
@@ -234,7 +236,7 @@ pub fn den_plan(v: &DenView<'_>) -> DenAct {
     // 4. Infomorphs on board are listed (docked).
     if v.docked
         && v.infomorphs_held > 0
-        && let Some(t) = v.infomorph
+        && let Some(t) = v.infomorph.filter(|t| !v.refused.contains(t))
     {
         return DenAct::Sell(t);
     }
@@ -248,7 +250,10 @@ pub fn den_plan(v: &DenView<'_>) -> DenAct {
                 && !v.dens.iter().any(|d| d.skyhook == h.id)
         })
     {
-        if let Some(item) = v.den_item {
+        if let Some(item) = v
+            .den_item
+            .filter(|_| !v.den_item_type.is_some_and(|t| v.refused.contains(&t)))
+        {
             return DenAct::Launch {
                 item,
                 skyhook: h.id,
@@ -263,9 +268,14 @@ pub fn den_plan(v: &DenView<'_>) -> DenAct {
     DenAct::None
 }
 
-/// The escalation of this system that is the activity's site (pure): the row
-/// whose expiry is within [`SITE_MATCH_S`] of `expiry` (a FILETIME), the
-/// nearest; else the plain pick of the system's rows (**[A] B3-3**).
+/// The escalation of this system that is the activity's site (pure): the
+/// row whose expiry is within [`SITE_MATCH_S`] of `expiry` (a FILETIME), the
+/// nearest. No match is `None`: the activity goes quiet rather than the pilot
+/// running another site (**[A] B3-3**).
+///
+/// [V] the site is an `escal` row opened by `activity::start` for the owner
+/// alone, expiring with the activity (`merc_den/activity.rs` `open_site`,
+/// `start`: "one clock with the site's, so the two end together").
 pub fn pick_site(
     rows: &[crate::site_runner::EscalationRow],
     system: i64,
@@ -277,7 +287,6 @@ pub fn pick_site(
         .filter(|r| r.system == system && r.expiry > now && (r.expiry - expiry).abs() <= tol)
         .min_by_key(|r| (r.expiry - expiry).abs())
         .map(|r| r.instance_id)
-        .or_else(|| crate::site_runner::pick_escalation(rows, system, None, now))
 }
 
 // ---- decoders (the server's own field layouts) -----------------------------------------
@@ -368,6 +377,10 @@ pub struct Run {
     pub started: Instant,
     /// Since when no NPC has been on the grid.
     pub quiet_since: Option<Instant>,
+    /// The activity's own expiry, wall unix seconds.
+    pub expiry: u64,
+    /// The ship the run started in.
+    pub ship: Option<i64>,
 }
 
 /// A den runner's memory (a field of [`super::Mind`]).
@@ -377,8 +390,10 @@ pub struct Mind {
     pub wait_until: Option<Instant>,
     /// Targets (dens, skyhooks, the den type) refused, and when.
     pub refused: BTreeMap<i64, Instant>,
-    /// Activities left alone, and since when.
-    pub quiet: BTreeMap<[u8; 16], Instant>,
+    /// Activities left alone, until this wall unix second.
+    pub quiet: BTreeMap<[u8; 16], u64>,
+    /// Own skyhooks seen not to be in the hub's system (no expiry).
+    pub elsewhere: std::collections::BTreeSet<i64>,
     /// The site being run.
     pub run: Option<Run>,
 }
@@ -432,6 +447,21 @@ pub fn arm(
     plan: &Plan,
     duty: Duty,
 ) -> Result<Option<String>> {
+    // A site being run is held first: it needs no gateway, and no duty
+    // filter below lets the pilot off it (when one fails the run is ended).
+    if m.sov.extras.den.run.is_some() {
+        let live = matches!(duty, Duty::Haul(h) if plan.fuel.iter().any(|(_, x)| *x == h));
+        return match (live, ctx.map) {
+            (true, Some(map)) => hold_run(c, m, map),
+            _ => {
+                if let Some(run) = m.sov.extras.den.run.take() {
+                    quiet_for(m, run.activity, run.expiry);
+                }
+                m.sov.post = None;
+                Ok(None)
+            }
+        };
+    }
     let Duty::Haul(hub) = duty else {
         return Ok(None);
     };
@@ -441,10 +471,6 @@ pub fn arm(
     let Some(&(system, _)) = plan.fuel.iter().find(|(_, h)| *h == hub) else {
         return Ok(None);
     };
-    // A site being run is held first: it needs no gateway.
-    if m.sov.extras.den.run.is_some() {
-        return hold_run(c, m, map);
-    }
     let now = clock::instant();
     if m.sov.extras.den.wait_until.is_some_and(|t| now < t) {
         return Ok(None);
@@ -465,7 +491,7 @@ pub fn arm(
         .extras
         .den
         .quiet
-        .retain(|_, at| now.saturating_duration_since(*at) < REFUSE_BACKOFF);
+        .retain(|_, until| *until > clock::wall_unix_secs());
 
     // The skill: no den allowed means no den runner, and no more requests for
     // a while.
@@ -485,7 +511,10 @@ pub fn arm(
     let mut dens = Vec::new();
     for id in decode_owned(&raw) {
         let Some(raw) = s.read(&mut m.sov.extras, gw::DEN_PKG, AS_OWNER, &id_body(id)) else {
-            return Ok(None);
+            if s.gw.is_none() {
+                return Ok(None);
+            }
+            continue;
         };
         if let Some(d) = decode_den(id, &raw) {
             dens.push(d);
@@ -548,11 +577,16 @@ pub fn arm(
             .sum()
     };
     let infomorphs_held = held_of(&cargo) + held_of(&hangar);
-    let den_item = cargo
+    let den_row = cargo
         .iter()
         .chain(&hangar)
-        .find(|r| r.group_id == GROUP_MERCENARY_DEN)
-        .map(|r| r.item_id);
+        .find(|r| r.group_id == GROUP_MERCENARY_DEN);
+    let den_item = den_row.map(|r| r.item_id);
+    let den_item_type = den_row.map(|r| r.type_id);
+    let hooks: Vec<HookRow> = hooks
+        .into_iter()
+        .filter(|h| !m.sov.extras.den.elsewhere.contains(&h.id))
+        .collect();
     let held: Vec<i64> = plan.fuel.iter().map(|(s, _)| *s).collect();
     let refused: Vec<i64> = m.sov.extras.den.refused.keys().copied().collect();
     let quiet: Vec<[u8; 16]> = m.sov.extras.den.quiet.keys().copied().collect();
@@ -568,6 +602,7 @@ pub fn arm(
         infomorph,
         infomorphs_held,
         den_item,
+        den_item_type,
         den_type,
         guns,
         docked,
@@ -580,7 +615,13 @@ pub fn arm(
     }
     let mut lines: Vec<String> = Vec::new();
     match act {
-        DenAct::Want(t) => lines.push(want(c, t)?),
+        DenAct::Want(t) => {
+            let (line, bought) = want(c, t)?;
+            if !bought {
+                m.sov.extras.den.wait_until = Some(now + IDLE_PASS);
+            }
+            lines.push(line);
+        }
         DenAct::Launch { item, skyhook } => {
             lines.push(launch(
                 c,
@@ -598,10 +639,20 @@ pub fn arm(
             if c.session().station_id().is_some()
                 && let Some(t) = infomorph
             {
-                lines.push(sell(c, t)?);
+                let (line, ok) = sell(c, t)?;
+                if !ok {
+                    m.sov.extras.den.refused.insert(t, now);
+                }
+                lines.push(line);
             }
         }
-        DenAct::Sell(t) => lines.push(sell(c, t)?),
+        DenAct::Sell(t) => {
+            let (line, ok) = sell(c, t)?;
+            if !ok {
+                m.sov.extras.den.refused.insert(t, now);
+            }
+            lines.push(line);
+        }
         DenAct::Start { activity } => {
             let line = match s.ask(
                 &mut m.sov.extras,
@@ -610,7 +661,7 @@ pub fn arm(
             ) {
                 Some((200, _)) => "started an activity".to_owned(),
                 Some((status, _)) => {
-                    m.sov.extras.den.quiet.insert(activity, now);
+                    quiet_for(m, activity, 0);
                     format!("activity not started ({status})")
                 }
                 None => "activity not started (no gateway)".to_owned(),
@@ -674,7 +725,7 @@ fn in_park(c: &mut Conn, ball: i64) -> bool {
 
 /// A den bought or bid for (docked): the asks at this station, else a want on
 /// the builders' board and a standing bid (**[A] B3-6**).
-fn want(c: &mut Conn, ty: i64) -> Result<String> {
+fn want(c: &mut Conn, ty: i64) -> Result<(String, bool)> {
     super::kit::want(ty);
     let wallet = crate::acquire::spendable(c)? * WALLET_SHARE;
     let book = soft(c.market_orders(ty))?;
@@ -696,18 +747,21 @@ fn want(c: &mut Conn, ty: i64) -> Result<String> {
         if !book.asks.is_empty() {
             let got = crate::capital::buy_units(c, &book, ty, 1, wallet)?;
             if got > 0 {
-                return Ok(format!("bought {got} den {ty} (in the hangar)"));
+                return Ok((format!("bought {got} den {ty} (in the hangar)"), true));
             }
         }
     }
     let posted = soft(crate::hull_choice::bid_for(c, ty, 1, wallet))?;
-    Ok(format!(
-        "MISSING den {ty} ({})",
-        if posted == Some(true) {
-            "bid posted"
-        } else {
-            "bid stands"
-        }
+    Ok((
+        format!(
+            "MISSING den {ty} ({})",
+            if posted == Some(true) {
+                "bid posted"
+            } else {
+                "bid stands"
+            }
+        ),
+        false,
     ))
 }
 
@@ -741,7 +795,7 @@ fn launch(
     crate::sov_bot::fly_to_system(c, map, system)?;
     // A skyhook the park does not show is not in this system.
     if !c.world().has_state() || !in_park(c, skyhook) {
-        m.sov.extras.den.refused.insert(skyhook, now);
+        m.sov.extras.den.elsewhere.insert(skyhook);
         let home = crate::sov_bot::go_home(c, m, map)?;
         return Ok(format!(
             "skyhook {skyhook} is not in system {system}; {home}"
@@ -797,9 +851,9 @@ fn extract(
 
 /// **List the infomorphs** (docked): the hold's into the hangar, then every
 /// stack at the reservation price (**[A] B3-2**).
-fn sell(c: &mut Conn, ty: i64) -> Result<String> {
+fn sell(c: &mut Conn, ty: i64) -> Result<(String, bool)> {
     let Some(station) = c.session().station_id() else {
-        return Ok("sell: not docked".to_owned());
+        return Ok(("sell: not docked".to_owned(), true));
     };
     let in_hold: Vec<ItemRow> = c.cargo()?.into_iter().filter(|r| r.type_id == ty).collect();
     for r in in_hold {
@@ -811,11 +865,11 @@ fn sell(c: &mut Conn, ty: i64) -> Result<String> {
         .filter(|r| r.type_id == ty && r.quantity > 0)
         .collect();
     if stacks.is_empty() {
-        return Ok("no infomorphs to list".to_owned());
+        return Ok(("no infomorphs to list".to_owned(), true));
     }
     let mut prices = crate::pricing::Prices::read(c)?;
     let Some(price) = prices.reservation(c, ty)?.filter(|p| *p > 0.0) else {
-        return Ok(format!("MISSING a price for infomorph {ty}; kept"));
+        return Ok((format!("MISSING a price for infomorph {ty}; kept"), false));
     };
     let mut listed = 0;
     for r in stacks {
@@ -836,7 +890,7 @@ fn sell(c: &mut Conn, ty: i64) -> Result<String> {
             listed += r.quantity;
         }
     }
-    Ok(format!("listed {listed} infomorphs of {ty}"))
+    Ok((format!("listed {listed} infomorphs of {ty}"), listed > 0))
 }
 
 /// **Run an activity's site**: to the system, the Expeditions entry's warp,
@@ -850,7 +904,6 @@ fn run_site(
     expiry: u64,
 ) -> Result<String> {
     use crate::site_runner::{ESCALATION_METHOD, ESCALATION_SERVICE, ESCALATION_SUBJECT};
-    let now = clock::instant();
     crate::sov_bot::fly_to_system(c, map, system)?;
     if c.ballpark().is_none() {
         crate::capital::bind(c)?;
@@ -868,7 +921,7 @@ fn run_site(
         eve_server::pyutil::filetime_now(),
     );
     let Some(site) = site else {
-        m.sov.extras.den.quiet.insert(activity, now);
+        quiet_for(m, activity, expiry);
         let home = crate::sov_bot::go_home(c, m, map)?;
         return Ok(format!(
             "activity site: no Expeditions entry in system {system}; {home}"
@@ -886,7 +939,7 @@ fn run_site(
         )],
     )?;
     if let Some(why) = warp.refusal() {
-        m.sov.extras.den.quiet.insert(activity, now);
+        quiet_for(m, activity, 0);
         let home = crate::sov_bot::go_home(c, m, map)?;
         return Ok(format!("warp to the site {site} refused: {why}; {home}"));
     }
@@ -906,12 +959,26 @@ fn run_site(
         system,
         started: clock::instant(),
         quiet_since: None,
+        expiry,
+        ship: c.session().ship_id(),
     });
     // The extras pass again at the next sov turn, not a minute on.
     m.sov.extras.next = None;
     Ok(format!(
         "running the activity site {site} in system {system}"
     ))
+}
+
+/// Leave `activity` alone until `expiry` (wall unix seconds) when that is in
+/// the future, else for [`REFUSE_BACKOFF`].
+fn quiet_for(m: &mut Memory, activity: [u8; 16], expiry: u64) {
+    let wall = clock::wall_unix_secs();
+    let until = if expiry > wall {
+        expiry
+    } else {
+        wall + REFUSE_BACKOFF.as_secs()
+    };
+    m.sov.extras.den.quiet.insert(activity, until);
 }
 
 /// **Hold the site** (each sov turn while a run is on): a line while the site
@@ -924,6 +991,7 @@ fn hold_run(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<Op
         return Ok(None);
     };
     let gone = c.session().station_id().is_some()
+        || c.session().ship_id() != run.ship
         || c.session().solar_system_id2() != Some(run.system)
         || !c.world().has_state();
     let npc = !gone && c.world_now().balls().any(crate::driver::is_npc);
@@ -932,8 +1000,9 @@ fn hold_run(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<Op
     } else {
         run.quiet_since.or(Some(now))
     };
+    let over_limit = now.saturating_duration_since(run.started) >= RUN_LIMIT;
     let cleared = gone
-        || now.saturating_duration_since(run.started) >= RUN_LIMIT
+        || over_limit
         || quiet_since.is_some_and(|q| now.saturating_duration_since(q) >= SITE_QUIET);
     if !cleared {
         if let Some(r) = m.sov.extras.den.run.as_mut() {
@@ -946,7 +1015,8 @@ fn hold_run(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<Op
     m.sov.extras.den.run = None;
     // The activity is left alone for a while: a completed one is gone, one
     // that is not is not rerun at once.
-    m.sov.extras.den.quiet.insert(run.activity, now);
+    // A run that hit the limit is not retried before the activity expires.
+    quiet_for(m, run.activity, if over_limit { run.expiry } else { 0 });
     if gone {
         return Ok(Some(
             "sov den: the site run ended (not on the grid)".to_owned(),

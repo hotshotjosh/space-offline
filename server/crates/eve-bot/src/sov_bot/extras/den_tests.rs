@@ -107,6 +107,7 @@ impl Fixture {
             infomorph: Some(INFOMORPH),
             infomorphs_held: self.infomorphs_held,
             den_item: self.den_item,
+            den_item_type: self.den_item.map(|_| DEN_TYPE),
             den_type: Some(DEN_TYPE),
             guns: self.guns,
             docked: self.docked,
@@ -336,13 +337,26 @@ fn the_site_is_the_row_whose_expiry_matches_the_activity() {
 }
 
 #[test]
-fn with_no_matching_expiry_the_plain_pick_of_the_system_serves() {
+fn with_no_matching_expiry_there_is_no_site() {
     let rows = [row(7, SYSTEM, NOW + 500 * S), row(5, SYSTEM, NOW + 600 * S)];
-    assert_eq!(pick_site(&rows, SYSTEM, NOW + 9_000 * S, NOW), Some(5));
+    assert_eq!(pick_site(&rows, SYSTEM, NOW + 9_000 * S, NOW), None);
     assert_eq!(pick_site(&rows, OTHER_SYSTEM, NOW + 500 * S, NOW), None);
     // A row that has run out is no site.
     let old = [row(1, SYSTEM, NOW - S)];
     assert_eq!(pick_site(&old, SYSTEM, NOW - S, NOW), None);
+}
+
+#[test]
+fn a_refused_den_type_is_neither_launched_nor_wanted_and_a_refused_infomorph_is_not_sold() {
+    let mut f = Fixture::new();
+    f.refused = vec![DEN_TYPE];
+    assert_eq!(f.plan(), DenAct::None);
+    let mut f = Fixture::new();
+    f.den_item = None;
+    f.hooks.clear();
+    f.infomorphs_held = 5;
+    f.refused = vec![INFOMORPH];
+    assert_eq!(f.plan(), DenAct::None);
 }
 
 // ---- the decoders ------------------------------------------------------------------------

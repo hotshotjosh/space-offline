@@ -10,8 +10,7 @@
 //! The server runs at `--time-scale 60`; the gateway is started here on a
 //! loopback port of its own (not through `Config`, whose gateway field the
 //! shared binary's source scan keeps out of every test) and the bot is told
-//! where it is. A second pilot id holds the hub's steward claim, so the
-//! steward arm (which runs first) leaves the pilot to the den arm. **Invented
+//! where it is. **Invented
 //! furniture only**: the system, the planets' positions, the den, the
 //! infomorph and the dungeons are invented.
 
@@ -19,7 +18,6 @@ use super::common::{SYSTEM, config, gm, login, pilot};
 use eve_bot::Conn;
 use eve_bot::brain::{Memory, Policy};
 use eve_bot::sov_bot::extras::gw::set_gateway_for;
-use eve_bot::sov_bot::extras::steward;
 use eve_bot::sov_bot::{self, Ctx, SovHall};
 use eve_bot::travel::Map;
 use eve_marshal::PyValue;
@@ -35,8 +33,6 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 const ALICE: i64 = 90_000_922;
-/// The pilot that holds the steward claim.
-const STEWARD: i64 = 90_000_923;
 const SKYHOOK_TYPE: i64 = 990_922_001;
 const DEN_TYPE: i64 = 990_922_003;
 const GUN: i64 = 990_922_004;
@@ -49,6 +45,7 @@ const P_REAGENT: i64 = 40_922_001;
 const P_POWER: i64 = 40_922_011;
 const P_LAND: i64 = 40_922_012;
 const SCALE: u32 = 60;
+const INFOMORPH_REF: f64 = 50.0;
 /// An invented skill group.
 const SKILL_GROUP: i64 = 990_922_900;
 
@@ -139,6 +136,14 @@ fn content() -> eve_server::content::Content {
         merc_den::activity::fixture_table(),
     );
     c.insert("dungeons", dungeons());
+    // A price source for the infomorph (an invented reference price).
+    c.insert(
+        "econ_prices",
+        eve_server::econ_prices::Table::parse(&[format!(
+            "{FIXTURE_INFOMORPH}\t{INFOMORPH_REF}\tbase\t{INFOMORPH_REF}\t4\t4824\t\t1"
+        )])
+        .expect("the prices parse"),
+    );
     // The den skill as an invented row under its id.
     let skills = eve_server::skill::Table::parse(&format!(
         "{}skill\t{SKILL_DEN_MANAGEMENT}\t{SKILL_GROUP}\t1\t165\t166\t0.01\t\tInvented Den Skill\n",
@@ -291,7 +296,7 @@ fn setup(armed: bool) -> Setup {
             vec![],
         )
         .expect("Drop is answered");
-    let hub = match answer.value.as_ref() {
+    let _hub = match answer.value.as_ref() {
         Some(PyValue::Dict(pairs)) => match pairs.first() {
             Some((PyValue::List(ids), _)) => match ids.first() {
                 Some(PyValue::Int(id)) => *id,
@@ -333,13 +338,6 @@ fn setup(armed: bool) -> Setup {
     let map = Map::new()
         .with_security(SYSTEM, -0.4)
         .with_station(station, SYSTEM);
-    // Someone else is the hub's steward.
-    assert!(steward::claim(
-        Some(gateway),
-        hub,
-        STEWARD,
-        eve_bot::clock::instant()
-    ));
     Setup {
         alice,
         mem,
@@ -410,13 +408,12 @@ fn a_den_runner_launches_a_den_beside_the_workforce_skyhook_and_lists_the_infomo
         notes.iter().any(|n| n.contains("took up to")),
         "the extraction: {notes:#?}"
     );
-    let w = s.world.read().expect("the world reads");
+    let orders = s.alice.my_orders().expect("the pilot's orders");
     assert!(
-        w.store()
-            .items()
+        orders
             .iter()
-            .any(|i| i.type_id == FIXTURE_INFOMORPH && i.owner_id == ALICE),
-        "the pilot holds (or has listed) the infomorphs: {notes:#?}"
+            .any(|o| o.type_id == FIXTURE_INFOMORPH && !o.bid),
+        "the pilot listed the infomorphs: {orders:?}\nnotes: {notes:#?}"
     );
 }
 
