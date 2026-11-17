@@ -1031,7 +1031,7 @@ fn want(c: &mut Conn, product: i64) -> Result<String> {
     ))
 }
 
-fn soft<T>(r: Result<T>) -> Result<Option<T>> {
+pub(super) fn soft<T>(r: Result<T>) -> Result<Option<T>> {
     match r {
         Ok(v) => Ok(Some(v)),
         Err(e @ (Error::Io(_) | Error::Protocol(_))) => Err(e),
@@ -1042,7 +1042,7 @@ fn soft<T>(r: Result<T>) -> Result<Option<T>> {
 /// The book of `ty` without the pilot's own orders, when it holds an ask in
 /// reach: at the docked station, or at a seller [`crate::travel::sources`]
 /// names within the wallet's share.
-fn reachable_book(
+pub(super) fn reachable_book(
     c: &mut Conn,
     map: &crate::travel::Map,
     ty: i64,

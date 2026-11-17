@@ -28,6 +28,9 @@ pub mod steward;
 mod steward_tests;
 #[cfg(test)]
 mod tests;
+pub mod upgrades;
+#[cfg(test)]
+mod upgrades_tests;
 
 use super::{Ctx, Duty, Plan};
 use crate::brain::Memory;
@@ -54,7 +57,7 @@ pub struct Mind {
 type Arm = fn(&mut Conn, &mut Memory, &Ctx<'_>, &Plan, Duty) -> Result<Option<String>>;
 
 /// The duties, in order; the first that answers a line wins the turn.
-const ARMS: &[Arm] = &[steward::arm];
+const ARMS: &[Arm] = &[steward::arm, upgrades::arm];
 
 /// **The hook** `sov_bot::turn` calls before the duty match: `Ok(None)` means
 /// the old duty runs unchanged. A dead connection (`Io`, `Protocol`) is the
