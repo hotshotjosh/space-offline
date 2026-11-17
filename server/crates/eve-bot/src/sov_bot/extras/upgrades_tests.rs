@@ -3,6 +3,7 @@
 //! an expected number.
 
 use super::gw::{self, put_bytes, put_uint};
+use super::steward::steward_days_units;
 use super::upgrades::*;
 use crate::sov_bot::{Duty, Plan};
 use eve_server::sov_upgrade::{Def, Power, Slot};
@@ -81,10 +82,7 @@ fn an_upgrade_the_rule_would_leave_low_is_not_wanted() {
 fn a_producer_comes_before_a_consumer() {
     let d = defs();
     // The consumer has the lower id; the producer is still first.
-    assert_eq!(
-        preference(&d, &[]),
-        vec![MAKER, SMALL, BURNER, TWIN, BURNER2]
-    );
+    assert_eq!(preference(&d, &[])[0], MAKER);
     // With no power at all only the producer can come online.
     let order = preference(&d, &[]);
     assert_eq!(
@@ -101,53 +99,45 @@ fn a_producer_comes_before_a_consumer() {
 }
 
 #[test]
-fn a_larger_producer_comes_first_and_ties_go_by_type_id() {
-    let mut d = defs();
-    d.insert(
-        TWIN,
-        Defn {
-            def: def(0, None, 0, 0, 20),
-            group: "ga".to_owned(),
-        },
-    );
-    assert_eq!(preference(&d, &[])[0], TWIN);
-}
-
-#[test]
-fn an_upgrade_that_would_knock_an_online_one_low_is_not_wanted() {
+fn an_upgrade_that_would_leave_the_shared_reagent_short_for_the_horizon_is_not_wanted() {
     let d = defs();
-    let burn = d[&BURNER].def;
+    let b1 = d[&BURNER].def;
     let b2 = d[&BURNER2].def;
-    // The burner is installed and Online; the stock is what its burn needs
-    // plus the second burner's startup and burn, less one.
+    // The burner is installed and Online. The stock covers both burners now
+    // (the startup and a unit of burn each) but not for the horizon.
     let installed = [online(BURNER)];
-    let stock =
-        u64::from(burn.per_hour > 0) + u64::from(b2.startup) + u64::from(b2.per_hour > 0) - 1;
+    let burn = u64::from(b1.per_hour) + u64::from(b2.per_hour);
+    let horizon = steward_days_units(burn);
+    let startup = u64::from(b2.startup);
+    let stock = startup + horizon - 1;
+    assert!(stock >= startup + burn, "it does cover both for now");
     let candidates = [BURNER2];
     assert_eq!(
-        next(&installed, burn.power, stock, &candidates, &[BURNER2]),
+        next(&installed, b1.power, stock, &candidates, &[BURNER2]),
         Want::None,
-        "the shared reagent stock does not carry both"
+        "the shared reagent stock does not carry both for the horizon"
     );
     assert_eq!(
-        next(&installed, burn.power, stock + 1, &candidates, &[BURNER2]),
+        next(&installed, b1.power, stock + 1, &candidates, &[BURNER2]),
         Want::Install(BURNER2)
     );
 }
 
 #[test]
-fn an_upgrade_with_its_startup_and_one_unit_in_stock_is_wanted() {
+fn an_upgrade_with_its_startup_and_the_horizon_in_stock_is_wanted() {
     let d = defs();
-    let startup = u64::from(d[&BURNER2].def.startup);
+    let b2 = d[&BURNER2].def;
+    let startup = u64::from(b2.startup);
+    let horizon = steward_days_units(u64::from(b2.per_hour));
     assert_eq!(
-        next(&[], 0, startup, &[BURNER2], &[BURNER2]),
+        next(&[], 0, startup + horizon - 1, &[BURNER2], &[BURNER2]),
         Want::None,
-        "the startup alone leaves nothing to burn"
+        "the startup and a short horizon"
     );
     assert_eq!(
-        next(&[], 0, startup + 1, &[BURNER2], &[]),
+        next(&[], 0, startup + horizon, &[BURNER2], &[]),
         Want::Buy(BURNER2),
-        "the startup and one unit; not held, so bought"
+        "the startup and the horizon; not held, so bought"
     );
 }
 

@@ -34,6 +34,11 @@ const HULL: i64 = 990_000_001;
 const PRODUCER: i64 = 990_922_501;
 const BIG: i64 = 990_922_502;
 const BURNER: i64 = 990_922_503;
+/// What the bay is seeded with: the steward's horizon of the burner's burn
+/// (one unit an hour, named through the helper) and its startup to spare.
+fn seeded() -> u64 {
+    eve_bot::sov_bot::extras::steward::steward_days_units(1) + 10
+}
 const SCALE: u32 = 60;
 
 fn uni(s: &str) -> PyValue {
@@ -250,8 +255,9 @@ fn setup() -> Setup {
     };
     let out = slash(&mut alice, &format!("/sov capture here {alliance}"));
     assert!(out.contains("captured"), "{out}");
-    // Back home, docked, with the upgrades in the hangar (the builders' kind
-    // of item: bought, not made by a GM line during the bot's turns).
+    // Back home, docked. The `/createitem` lines below are the person's
+    // stand-in for upgrades a builder made and the pilot bought: setup, done
+    // before the bot's first turn, never by the bot.
     let landed =
         super::common::warp_and_arrive(&mut alice, station, 20_000.0, Duration::from_secs(60));
     assert!(landed, "back at the station");
@@ -275,7 +281,7 @@ fn setup() -> Setup {
             w.deltas_mut(),
             hub,
             FIXTURE_REAGENT_TYPE,
-            10,
+            seeded(),
             eve_server::skyhook::now(),
         );
     }
@@ -348,7 +354,16 @@ fn a_steward_installs_the_producer_then_the_burner_and_leaves_the_one_it_cannot_
             .any(|n| n.contains(&format!("sov steward: upgrade {PRODUCER} online"))),
         "the soak line: {notes:#?}"
     );
-    // The big upgrade is still in the hangar, not installed.
+    // The installed items are gone from the hangar and the hold (consumed by
+    // the save); the big upgrade is still in the hangar, not installed.
+    let hangar = s.alice.hangar_items().expect("lists");
+    let hold = s.alice.cargo().expect("lists");
+    for ty in [PRODUCER, BURNER] {
+        assert!(
+            !hangar.iter().chain(&hold).any(|r| r.type_id == ty),
+            "upgrade {ty} was consumed"
+        );
+    }
     assert!(
         s.alice
             .hangar_items()
@@ -364,6 +379,6 @@ fn a_steward_installs_the_producer_then_the_burner_and_leaves_the_one_it_cannot_
     // The burner's startup came out of the bay.
     let w = s.world.read().expect("the world reads");
     let left = eve_server::sov_hub_fuel::stock(w.deltas(), s.hub, FIXTURE_REAGENT_TYPE).amount;
-    assert!(left < 10, "the startup was paid from the bay: {left}");
+    assert!(left < seeded(), "the startup was paid from the bay: {left}");
     let _ = s.corp;
 }

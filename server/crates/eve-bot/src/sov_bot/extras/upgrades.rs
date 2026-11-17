@@ -237,9 +237,15 @@ pub fn preference(defs: &BTreeMap<i64, Defn>, installed: &[Slot]) -> Vec<i64> {
 
 /// **The next upgrade** (pure): the first of `candidates` that the rule would
 /// leave `Online` as a new last slot with `power`, `workforce` and the reagent
-/// stock `fuel`, and that changes no installed slot's state (an Online upgrade
-/// is never knocked Low). [`Want::Install`] when its item is among `held`,
-/// else [`Want::Buy`].
+/// stock `fuel`, and whose reagent the bay then still covers for the horizon:
+/// after the startups due, the stock must hold [`steward::steward_days_units`]
+/// of the summed burn of every Online burner of that reagent, the new one
+/// included (**[A] B1b-5**: the horizon is the steward's deposit days; falsified
+/// by soak upgrades going Low within a day of install, or by hubs that never
+/// install a burner because the bay never holds that many days). An Online
+/// upgrade is never knocked Low by the new slot (it goes last), but the shared
+/// stock is what it could drain. [`Want::Install`] when its item is among
+/// `held`, else [`Want::Buy`].
 pub fn next_upgrade(
     installed: &[Slot],
     defs: &dyn Fn(i64) -> Option<Def>,
@@ -249,7 +255,6 @@ pub fn next_upgrade(
     candidates: &[i64],
     held: &[i64],
 ) -> Want {
-    let base = simulate(installed, defs, power, workforce, fuel);
     for &t in candidates {
         if installed.iter().any(|s| s.type_id == t) {
             continue;
@@ -265,13 +270,28 @@ pub fn next_upgrade(
         let Some((last, _)) = sim.last() else {
             continue;
         };
-        let n = installed.len();
-        let knocks = sim[..n]
-            .iter()
-            .zip(&base)
-            .any(|((after, _), (before, _))| after != before);
-        if *last != Power::Online || knocks {
+        if *last != Power::Online {
             continue;
+        }
+        if let Some(reagent) = defs(t).and_then(|d| d.fuel) {
+            let burns = |s: &Slot| defs(s.type_id).filter(|d| d.fuel == Some(reagent));
+            let per_hour: u64 = with
+                .iter()
+                .zip(&sim)
+                .filter(|(_, (state, _))| *state == Power::Online)
+                .filter_map(|(s, _)| burns(s))
+                .map(|d| u64::from(d.per_hour))
+                .sum();
+            let startups: u64 = with
+                .iter()
+                .zip(&sim)
+                .filter(|(s, _)| burns(s).is_some())
+                .map(|(_, (_, paid))| *paid)
+                .sum();
+            let need = startups.saturating_add(steward::steward_days_units(per_hour));
+            if fuel(reagent) < need {
+                continue;
+            }
         }
         return if held.contains(&t) {
             Want::Install(t)
@@ -299,6 +319,69 @@ pub fn hub_of(plan: &Plan, duty: Duty) -> Option<(i64, i64)> {
 type Defs = BTreeMap<Option<SocketAddr>, (Instant, BTreeMap<i64, Defn>)>;
 
 static DEFS: Mutex<Defs> = Mutex::new(BTreeMap::new());
+
+/// What the steward reads of a hub: the installed upgrades, the budget before
+/// upgrades and the bay at the time of the read.
+struct View {
+    slots: Vec<Slot>,
+    power: u64,
+    workforce: u64,
+    bay: Vec<(i64, u64, u64)>,
+}
+
+impl View {
+    /// From the three answers (hub upgrades, resources, bay).
+    fn decode(raw: &[Vec<u8>], defs: &BTreeMap<i64, Defn>) -> Option<View> {
+        let installed = decode_hub_upgrades(raw.first()?);
+        let (power, workforce, allocated) = decode_resources(raw.get(1)?)?;
+        let bay = steward::decode_bay(raw.get(2)?, clock::wall_unix_secs());
+        let (power, workforce) = budget((power, workforce), allocated, &installed, defs);
+        Some(View {
+            slots: slots(&installed),
+            power,
+            workforce,
+            bay,
+        })
+    }
+
+    /// [`next_upgrade`] over this view.
+    fn next(&self, defs: &BTreeMap<i64, Defn>, candidates: &[i64], held: &[i64]) -> Want {
+        let stock = |r: i64| {
+            self.bay
+                .iter()
+                .find(|(t, _, _)| *t == r)
+                .map_or(0, |(_, amount, _)| *amount)
+        };
+        next_upgrade(
+            &self.slots,
+            &|t| defs.get(&t).map(|d| d.def),
+            self.power,
+            self.workforce,
+            &stock,
+            candidates,
+            held,
+        )
+    }
+}
+
+/// The three reads of one hub, in [`View::decode`]'s order. `Err(status)` for
+/// the first that failed (`None` for a lost gateway).
+fn read_hub(
+    g: &mut Gw,
+    mind: &mut ExtrasMind,
+    hub: i64,
+) -> std::result::Result<Vec<Vec<u8>>, Option<u32>> {
+    let reads = [
+        (gw::UPGRADE_PKG, HUB_UPGRADES),
+        (gw::HUB_PKG, RESOURCES),
+        (gw::FUEL_PKG, "GetRequest"),
+    ];
+    let mut raw = Vec::new();
+    for (pkg, name) in reads {
+        raw.push(read(g, mind, &format!("{pkg}{name}"), &id_body(hub))?);
+    }
+    Ok(raw)
+}
 
 /// One request; `None` when the gateway answers a transport error or a status
 /// other than 200 (the status is returned in the `Err` for the caller).
@@ -386,40 +469,23 @@ pub fn arm(
     if defs.is_empty() {
         return Ok(None);
     }
-    let reads = [
-        (gw::UPGRADE_PKG, HUB_UPGRADES),
-        (gw::HUB_PKG, RESOURCES),
-        (gw::FUEL_PKG, "GetRequest"),
-    ];
-    let mut raw: Vec<Vec<u8>> = Vec::new();
-    for (pkg, name) in reads {
-        match read(
-            &mut g,
-            &mut m.sov.extras,
-            &format!("{pkg}{name}"),
-            &id_body(hub),
-        ) {
-            Ok(p) => raw.push(p),
-            Err(status) => {
-                // A refusal of the hub backs off; a lost gateway does not
-                // refuse anything.
-                if status.is_some() {
-                    m.sov.extras.steward.refused.insert(-hub, now);
-                }
-                return Ok(None);
+    let raw = match read_hub(&mut g, &mut m.sov.extras, hub) {
+        Ok(raw) => raw,
+        Err(status) => {
+            // A refusal of the hub backs off; a lost gateway does not refuse
+            // anything.
+            if status.is_some() {
+                m.sov.extras.steward.refused.insert(-hub, now);
             }
+            return Ok(None);
         }
-    }
+    };
     if !steward::claim(gateway, hub, who, now) {
         return Ok(None);
     }
-    let installed = decode_hub_upgrades(&raw[0]);
-    let Some((power, workforce, allocated)) = decode_resources(&raw[1]) else {
+    let Some(view) = View::decode(&raw, &defs) else {
         return Ok(None);
     };
-    let bay = steward::decode_bay(&raw[2], clock::wall_unix_secs());
-    let (power, workforce) = budget((power, workforce), allocated, &installed, &defs);
-    let slot_list = slots(&installed);
 
     let docked = c.session().station_id().is_some();
     let cargo = c.cargo()?;
@@ -436,24 +502,11 @@ pub fn arm(
         .map(|r| r.type_id)
         .collect();
     let refused = &m.sov.extras.steward.refused;
-    let candidates: Vec<i64> = preference(&defs, &slot_list)
+    let candidates: Vec<i64> = preference(&defs, &view.slots)
         .into_iter()
         .filter(|t| !refused.contains_key(t))
         .collect();
-    let stock = |r: i64| {
-        bay.iter()
-            .find(|(t, _, _)| *t == r)
-            .map_or(0, |(_, amount, _)| *amount)
-    };
-    let next = next_upgrade(
-        &slot_list,
-        &|t| defs.get(&t).map(|d| d.def),
-        power,
-        workforce,
-        &stock,
-        &candidates,
-        &held,
-    );
+    let next = view.next(&defs, &candidates, &held);
     let mut lines: Vec<String> = Vec::new();
     match next {
         Want::None => return Ok(None),
@@ -465,8 +518,6 @@ pub fn arm(
             lines.push(acquire(c, map, &mut m.sov.extras.steward, ty)?);
         }
         Want::Install(ty) => {
-            let toggles: Vec<(i64, bool)> =
-                slot_list.iter().map(|s| (s.type_id, s.online)).collect();
             lines.push(install(
                 c,
                 m,
@@ -476,7 +527,7 @@ pub fn arm(
                 hub,
                 ty,
                 !in_cargo.iter().any(|r| r.type_id == ty),
-                &toggles,
+                &defs,
             )?);
         }
     }
@@ -566,7 +617,7 @@ fn install(
     hub: i64,
     ty: i64,
     from_hangar: bool,
-    installed: &[(i64, bool)],
+    defs: &BTreeMap<i64, Defn>,
 ) -> Result<String> {
     let now = clock::instant();
     let held_in_hold = |c: &mut Conn| -> Result<Option<ItemRow>> {
@@ -604,34 +655,81 @@ fn install(
         return Ok(format!("upgrade {ty} is not in the hold"));
     };
     let mut lines = Vec::new();
-    crate::sov_bot::fly_to_system(c, map, system)?;
-    crate::sov_bot::warp_near(c, hub, TRANSFER_RANGE * RANGE_USE)?;
+    // A flight or a warp that fails softly backs the type off and goes home.
+    let arrived = match soft(crate::sov_bot::fly_to_system(c, map, system))? {
+        Some(()) => soft(crate::sov_bot::warp_near(
+            c,
+            hub,
+            TRANSFER_RANGE * RANGE_USE,
+        ))?,
+        None => None,
+    };
+    if arrived.is_none() {
+        m.sov.extras.steward.refused.insert(ty, now);
+        lines.push(format!("upgrade {ty}: the flight to hub {hub} failed"));
+    } else {
+        lines.push(save(m, g, hub, ty, item.item_id, defs, now));
+    }
+    lines.push(crate::sov_bot::go_home(c, m, map)?);
+    Ok(lines.join("; "))
+}
+
+/// At the hub: read it again (the budget and the bay move while the pilot
+/// flies), run the plan for this one type, and save the configuration only when
+/// it still says [`Want::Install`].
+#[allow(clippy::too_many_arguments)]
+fn save(
+    m: &mut Memory,
+    g: &mut Gw,
+    hub: i64,
+    ty: i64,
+    item: i64,
+    defs: &BTreeMap<i64, Defn>,
+    now: Instant,
+) -> String {
+    let view = match read_hub(g, &mut m.sov.extras, hub)
+        .ok()
+        .and_then(|raw| View::decode(&raw, defs))
+    {
+        Some(v) => v,
+        None => return format!("upgrade {ty}: the hub could not be read again"),
+    };
+    if view.next(defs, &[ty], &[ty]) != Want::Install(ty) {
+        st(m).refused.insert(ty, now);
+        return format!("upgrade {ty} no longer comes online; kept in the hold");
+    }
+    let toggles: Vec<(i64, bool)> = view.slots.iter().map(|s| (s.type_id, s.online)).collect();
     let ty_name = format!("{}{PROCESS}", gw::UPGRADE_PKG);
-    let body = configuration_body(item.item_id, installed, ty, hub);
-    lines.push(match g.ask(&mut m.sov.extras, &ty_name, &body) {
+    let body = configuration_body(item, &toggles, ty, hub);
+    match g.ask(&mut m.sov.extras, &ty_name, &body) {
         Ok((200, payload)) => {
             let after = decode_hub_upgrades(&payload);
             match after.iter().find(|(t, _)| *t == ty) {
                 Some((_, Power::Online)) => format!("upgrade {ty} online"),
                 Some((_, state)) => {
-                    m.sov.extras.steward.refused.insert(ty, now);
+                    st(m).refused.insert(ty, now);
                     format!("upgrade {ty} installed but {state:?}")
                 }
                 None => {
-                    m.sov.extras.steward.refused.insert(ty, now);
+                    st(m).refused.insert(ty, now);
                     format!("upgrade {ty} is not in the saved list")
                 }
             }
         }
         Ok((status, _)) => {
-            m.sov.extras.steward.refused.insert(ty, now);
+            st(m).refused.insert(ty, now);
+            // A 403 cannot be told apart (holder, role, range, held): the hub
+            // is left alone, no more buys or flights to it.
+            if status == 403 {
+                st(m).refused.insert(-hub, now);
+            }
             format!("upgrade {ty} refused ({status})")
         }
-        Err(_) => {
-            m.sov.extras.steward.refused.insert(ty, now);
-            "MISSING gateway".to_owned()
-        }
-    });
-    lines.push(crate::sov_bot::go_home(c, m, map)?);
-    Ok(lines.join("; "))
+        // A transport error says nothing about the type.
+        Err(_) => "MISSING gateway".to_owned(),
+    }
+}
+
+fn st(m: &mut Memory) -> &mut steward::Mind {
+    &mut m.sov.extras.steward
 }
