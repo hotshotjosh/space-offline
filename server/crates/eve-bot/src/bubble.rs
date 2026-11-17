@@ -680,6 +680,13 @@ pub fn is_busy(obs: Option<&crate::brain::Observation>, live: bool, last: Option
     obs.is_some_and(|o| o.place == Place::Transit) || (live && (fighting || moving))
 }
 
+/// The wall clock's unix second: what the server stamps into `bubble.tsv`.
+pub fn wall_unix_secs() -> u64 {
+    clock::wall_system()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 impl Runner {
     /// `dir` is the control directory the server writes `bubble.tsv` into.
     pub fn new(dir: &std::path::Path, map: Arc<Map>, floor: f64, handles: Vec<Handle>) -> Runner {
@@ -701,10 +708,10 @@ impl Runner {
     }
 
     /// The sample on disk, `None` when absent, unreadable or stale.
-    fn read(&mut self, unix_now: u64) -> Option<Sample> {
+    fn read(&mut self, wall_unix: u64) -> Option<Sample> {
         let text = std::fs::read_to_string(&self.file).ok()?;
         let st = eve_server::bot_control::BubbleState::parse(&text)?;
-        if unix_now.saturating_sub(st.unix_s) > SAMPLE_STALE_S {
+        if wall_unix.saturating_sub(st.unix_s) > SAMPLE_STALE_S {
             return None;
         }
         let mut humans = Vec::new();
@@ -757,19 +764,22 @@ impl Runner {
     }
 
     /// Run one step if its time has come; the lines to print (decisions and
-    /// the fill ledger).
-    pub fn step(&mut self, unix_now: u64) -> Vec<String> {
+    /// the fill ledger). `game_unix` is the game clock's unix second (the
+    /// bots' windows are game time); `wall_unix` is the wall's
+    /// ([`wall_unix_secs`]), because the server stamps `bubble.tsv` in wall
+    /// time and a fast-forward clock would read every sample stale (#147 H1).
+    pub fn step(&mut self, game_unix: u64, wall_unix: u64) -> Vec<String> {
         let at = clock::instant();
         if at < self.next {
             return Vec::new();
         }
         self.next = at + Duration::from_millis(WAKE_GAP_MS);
         let now = u64::try_from(at.duration_since(self.started).as_millis()).unwrap_or(u64::MAX);
-        let sample = self.read(unix_now);
+        let sample = self.read(wall_unix);
         let views: Vec<BotView> = self
             .handles
             .iter()
-            .map(|h| self.view(h, unix_now))
+            .map(|h| self.view(h, game_unix))
             .collect();
         let (map, floor) = (Arc::clone(&self.map), self.floor);
         let dist = move |a: i64, b: i64| map.jumps(a, b, floor);
@@ -861,6 +871,30 @@ mod tests {
             can_mine_now: true,
             leased_to: None,
         }
+    }
+
+    /// #147 H1: the server stamps `bubble.tsv` in wall time. Under a fast
+    /// clock the game's unix second runs far ahead of it; the sample must
+    /// still read fresh, because it is compared with the wall.
+    #[test]
+    fn a_wall_stamped_sample_is_fresh_while_game_time_runs_ahead() {
+        let dir = std::env::temp_dir().join(format!("bubble-h1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wall = 1_000_000u64;
+        let st = eve_server::bot_control::BubbleState {
+            seq: 7,
+            unix_s: wall,
+            p95_ms: 5.0,
+            humans: Vec::new(),
+        };
+        std::fs::write(dir.join(eve_server::bot_control::BUBBLE_FILE), st.render()).unwrap();
+        let mut r = Runner::new(&dir, Arc::new(Map::new()), 0.0, Vec::new());
+        assert_eq!(r.read(wall + 1).map(|s| s.seq), Some(7));
+        assert_eq!(r.read(wall + SAMPLE_STALE_S + 1).map(|s| s.seq), None);
+        // `step` reads the wall argument, not the game one.
+        let lines = r.step(wall + 10_000, wall + 1);
+        assert!(lines.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn sample(seq: u64, p95: f64, humans: &[i64]) -> Sample {

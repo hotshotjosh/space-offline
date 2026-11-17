@@ -648,6 +648,12 @@ fn run() -> Result<(), String> {
         }
     }
 
+    // A state directory a fast-forward host wrote holds game time: a normal
+    // run must not read it as wall time (#147).
+    if let Some(d) = state.as_deref() {
+        eve_bot::driver::host::refuse_marked_state(Path::new(d))?;
+    }
+
     // **Society mode** (SOC-A2): the mind picks the role, so no --loop;
     // its flags only beside it.
     let society = society_options(
@@ -1354,7 +1360,7 @@ fn run() -> Result<(), String> {
             }
         }
         if let Some(b) = bubble_run.as_mut() {
-            for line in b.step(clock::unix_secs()) {
+            for line in b.step(clock::unix_secs(), eve_bot::bubble::wall_unix_secs()) {
                 println!("{line}");
             }
         }

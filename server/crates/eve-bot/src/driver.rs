@@ -86,6 +86,8 @@
 //!   tethered to leaves the park, one `UpdateStateRequest` per park state
 //!   puts the ego back where the server has it.
 
+pub mod host;
+
 use crate::brain::{
     self, Act, ActKind, Ball, FarewellKit, FleetView, GunInfo, Health, Homing, Hostile, Invite,
     Memory, ModuleInfo, Observation, ParkView, Place, Policy, RoleRef, ShipInfo, Stop, StopReason,
