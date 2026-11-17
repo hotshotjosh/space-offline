@@ -1975,6 +1975,9 @@ fn climb(
     tail.extend(doctrine);
     tail.extend(arms);
     tail.extend(capital);
+    if let Some(s) = sourcing {
+        tail.extend(crate::sov_bot::extras::kit::rungs(s.content, recipes));
+    }
     let rungs = ladder_with(&tail);
     let mut lacking = lacking_rungs_by(&rungs, &held, recipes, &ok);
     // FE-BUILD: a rung whose product is dear -- a doctrine wants it, or bids

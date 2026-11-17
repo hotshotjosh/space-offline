@@ -651,6 +651,8 @@ pub struct Mind {
     /// A guard's post: `(system, hub)`.
     pub post: Option<(i64, i64)>,
     pub duty: Duty,
+    /// The sov extras' memory ([`extras`]).
+    pub extras: extras::Mind,
     pub next_turn: Option<Instant>,
     pub shop_next: Option<Instant>,
     /// The last hub a hauler fuelled, and when.
@@ -1838,6 +1840,10 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
     }
     let duty = ctx.hall.duty(alliance, who);
     m.sov.duty = duty;
+    if let Some(line) = extras::turn(c, m, ctx, &plan, duty)? {
+        notes.push(line);
+        return Ok(notes.join("; "));
+    }
     let line = match (duty, &plan.target) {
         (Duty::Entosis, Some(t)) => {
             let Some(content) = ctx.content else {
@@ -1892,6 +1898,8 @@ impl PartialEq for SovHall {
         std::ptr::eq(self, other)
     }
 }
+
+pub mod extras;
 
 #[cfg(test)]
 mod tests;
