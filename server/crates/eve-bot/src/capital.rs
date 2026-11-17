@@ -224,6 +224,8 @@ pub struct Mind {
     pub fuel: Option<Fuel>,
     /// No hull shopping before this ([`SHOP_EVERY`]).
     pub shop_next: Option<Instant>,
+    /// The `[cap] ... from=aboard` line was printed ([`log_aboard`]).
+    pub aboard_logged: bool,
     /// The station the pair started at, to dock at when home again.
     pub home_station: Option<i64>,
     /// What the grid looked like at the last turn (siege and triage,
@@ -1363,13 +1365,64 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
     }
 }
 
+/// Where a [`get_hull`] answer got the hull: `("hangar", item id)` for
+/// `boarded ID`, `("market", type id)` for `bought hull T ...`.
+fn hull_source(how: &str) -> Option<(&'static str, i64)> {
+    if let Some(r) = how.strip_prefix("boarded ") {
+        return r.trim().parse().ok().map(|id| ("hangar", id));
+    }
+    let r = how.strip_prefix("bought hull ")?;
+    r.split(' ').next()?.parse().ok().map(|t| ("market", t))
+}
+
+/// One bot-log line naming where the capital pilot's hull came from (#35):
+/// `[cap] NAME hull=TYPE from=hangar|market`. The log is read by
+/// `tools/pvp-report.py` (`capital sourced`).
+fn log_source(c: &mut Conn, name: &str, how: &str) {
+    let Some((from, n)) = hull_source(how) else {
+        return;
+    };
+    let hull = if from == "market" {
+        Some(n)
+    } else {
+        c.hangar_items()
+            .ok()
+            .and_then(|rows| rows.iter().find(|r| r.item_id == n).map(|r| r.type_id))
+    };
+    if let Some(t) = hull {
+        eprintln!("[cap] {name} hull={t} from={from}");
+    }
+}
+
+/// The first "flying one" of a run: `[cap] NAME hull=T from=aboard`, once. The
+/// hull was already aboard at login, so its source is not known.
+fn log_aboard(c: &mut Conn, m: &mut Memory) {
+    if m.capital.aboard_logged {
+        return;
+    }
+    let Some(active) = c.session().ship_id() else {
+        return;
+    };
+    let hull = c
+        .hangar_items()
+        .ok()
+        .and_then(|rows| rows.iter().find(|r| r.item_id == active).map(|r| r.type_id));
+    if let Some(t) = hull {
+        m.capital.aboard_logged = true;
+        eprintln!("[cap] {} hull={t} from=aboard", m.name);
+    }
+}
+
 fn pilot(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
     if c.session().station_id().is_some()
         && let Some(content) = ctx.content
     {
         match get_hull(c, content, &JUMPER_GROUPS, &mut m.capital.shop_next)? {
-            Ok(how) if how != "flying one" => return Ok(format!("capital: {how}")),
-            Ok(_) => {}
+            Ok(how) if how != "flying one" => {
+                log_source(c, &m.name, &how);
+                return Ok(format!("capital: {how}"));
+            }
+            Ok(_) => log_aboard(c, m),
             Err(why) => return Ok(format!("capital: {why}")),
         }
     }

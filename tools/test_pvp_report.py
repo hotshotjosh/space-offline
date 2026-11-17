@@ -95,12 +95,47 @@ class Signals(unittest.TestCase):
         self.assertEqual(r["gate"][0], pr.PASS)
 
 
+SIEGE = "capital: siege on, fuel 900 -> 880"
+
+
+class CapitalSourced(unittest.TestCase):
+    def test_sourced_passes(self):
+        r, _ = run(["[cap] Dread1 hull=9907001 from=hangar", f"Dread1 +00:09.0 capital     {SIEGE} -> ok"])
+        self.assertEqual(r["capital"][0], pr.PASS)
+        self.assertIn("1 siege lines, 1 sourced", r["capital"][1])
+
+    def test_unsourced_fails_naming_the_bot(self):
+        r, _ = run(["[cap] Dread1 hull=9907001 from=market", f"Dread1 +00:09.0 capital     {SIEGE} -> ok",
+                    f"Dread2 +00:10.0 capital     {SIEGE} -> ok"])
+        self.assertEqual(r["capital"][0], pr.FAIL)
+        self.assertIn("Dread2", r["capital"][1])
+        self.assertNotIn("Dread1,", r["capital"][1])
+
+    def test_cap_line_after_the_siege_is_not_earlier(self):
+        r, _ = run([f"Dread1 +00:09.0 capital     {SIEGE} -> ok", "[cap] Dread1 hull=9907001 from=hangar"])
+        self.assertEqual(r["capital"][0], pr.FAIL)
+
+    def test_aboard_only_is_na_not_fail(self):
+        r, _ = run(["[cap] Dread1 hull=9907001 from=aboard", f"Dread1 +00:09.0 capital     {SIEGE} -> ok"])
+        self.assertEqual(r["capital"][0], pr.NA)
+        self.assertIn("aboard at login", r["capital"][1])
+
+    def test_real_nested_note_shape(self):
+        note = ("X +01:00.0 capital     capital pair: stock, fleet, light or jump: "
+                "capital: siege on, fuel 1500 -> 1480 -> ok")
+        self.assertEqual(run([note])[0]["capital"][0], pr.FAIL)
+        self.assertEqual(run(["[cap] X hull=9907001 from=hangar", note])[0]["capital"][0], pr.PASS)
+
+    def test_no_siege_is_na(self):
+        self.assertEqual(run([])[0]["capital"][0], pr.NA)
+
+
 class Output(unittest.TestCase):
     def test_one_line_each_and_status(self):
         log = pr.Log()
         log.feed([act("H", "launch probe from 1"), act("H", "field on 2"),
                   "[warp_bubble] H: held", "[warp_bubble] H: free after 1 s"])
-        self.assertEqual(len(pr.report(log)), 8)
+        self.assertEqual(len(pr.report(log)), 9)
         self.assertEqual(pr.status(log), 0)
         self.assertEqual(pr.status(log, strict=True), 1)
         self.assertEqual(pr.status(pr.Log()), 1)

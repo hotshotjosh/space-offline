@@ -1033,4 +1033,15 @@ mod targets {
         assert_eq!(may(&t, HUMAN_BALL), Some(false));
         assert_eq!(may(&t, NPC_BALL), Some(true));
     }
+
+    #[test]
+    fn hull_source_reads_the_two_get_hull_answers() {
+        assert_eq!(hull_source("boarded 9907001"), Some(("hangar", 9_907_001)));
+        assert_eq!(
+            hull_source("bought hull 9907002 for 5 ISK and boarded it"),
+            Some(("market", 9_907_002))
+        );
+        assert_eq!(hull_source("flying one"), None);
+        assert_eq!(hull_source("boarded x"), None);
+    }
 }

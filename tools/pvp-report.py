@@ -15,6 +15,7 @@ it). One line per behaviour:
   bomb      keep off a smartbomb      `[counter] NAME: bomb-keepoff ... ok=1|0`
   mjd       answer an MJD with a scram `[counter] NAME: mjd-scram ... ok=1|0`
   gate      a gang holds a gate       `[camp] NAME: holding gate=ID system=S ok=1|0`
+  capital   capital sourced           `[cap] NAME hull=TYPE from=hangar|market|aboard` before `capital: siege on` (n/a with no siege line)
 
 The first three read the act and `[warp_bubble]` lines. The last five read the
 `[counter]` and `[camp]` lines that counter.rs `log_decision` prints (#136), at
@@ -22,6 +23,11 @@ the engaged target (`counter::orbit`), the drive answer (`counter::mjd_scram`)
 and the post (`camp::post`), once per change of target and outcome. A log with
 none of them says FAIL-NO-SIGNAL, never PASS. Exit status: 1 if any line is FAIL, or with --strict any FAIL-NO-SIGNAL;
 else 0. Only the standard library.
+
+The capital line reads the `[cap]` lines and the `capital: siege on` act note (also inside a
+longer note, `capital pair: ...: capital: siege on, ...`). A bot's `[cap]` line and its siege
+must be in the same file, or the files given in time order. A bot whose only source is
+`from=aboard` (the hull was aboard at login) counts as n/a ("aboard at login"), never sourced.
 """
 # Move `tools/` to the end of `sys.path` so the standard library wins; see
 # `tools/dis.py` for why every tool here carries this line. Only when run as
@@ -35,7 +41,7 @@ import argparse
 import os
 import re
 
-PASS, FAIL, NO_SIGNAL = "PASS", "FAIL", "FAIL-NO-SIGNAL"
+PASS, FAIL, NO_SIGNAL, NA = "PASS", "FAIL", "FAIL-NO-SIGNAL", "n/a"
 
 # An act line (driver.rs `record_as`): `NAME +MM:SS.s KIND  WHAT -> TAIL`.
 ACT = re.compile(r"^(?P<bot>\S+) \+\d+:[\d.]+ (?P<kind>\S+)\s+(?P<what>.*) -> (?P<tail>.*)$")
@@ -43,6 +49,11 @@ ACT = re.compile(r"^(?P<bot>\S+) \+\d+:[\d.]+ (?P<kind>\S+)\s+(?P<what>.*) -> (?
 BUBBLE = re.compile(r"\[warp_bubble\] (?P<bot>[^:\s]+): (?P<what>held over the budget|held|free after \d+ s)")
 # The proposed lines: `[counter] NAME: KIND ... ok=1`, `[camp] NAME: holding ... ok=1`.
 SIGNAL = re.compile(r"\[(?P<tag>counter|camp)\] (?P<bot>[^:\s]+): (?P<kind>[\w-]+)(?P<rest>.*)$")
+
+# capital.rs `log_source`: `[cap] NAME hull=TYPE from=hangar|market`; and the act note
+# `capital: siege on, ...` (capital_fight.rs) a siege pilot leaves.
+CAP = re.compile(r"\[cap\] (?P<bot>\S+) hull=\d+ from=(?P<src>hangar|market|aboard)\b")
+SIEGE_ON = re.compile(r"capital: siege on\b")
 
 # [A] a counter or gate behaviour passes when at least this share of its
 # outcome-marked lines say ok=1. Falsified by a soak whose fights show the
@@ -77,11 +88,29 @@ class Log:
         self.over_budget = 0
         self.signals = {}  # (tag, kind) -> [ok bot names]
         self.bad = {}  # (tag, kind) -> count of ok=0
+        self.cap_sourced = set()  # bots with a hangar or market `[cap]` line so far
+        self.cap_aboard = set()  # bots with only a from=aboard line so far
+        self.sieged = []  # bots whose `capital: siege on` came with no earlier [cap] line
+        self.aboard_sieged = []  # sieged bots whose only source line is from=aboard
+        self.siege_lines = 0
 
     def feed(self, lines):
         for line in lines:
             line = line.rstrip("\n")
+            m = CAP.search(line)
+            if m:
+                (self.cap_aboard if m["src"] == "aboard" else self.cap_sourced).add(m["bot"])
+                continue
             m = ACT.match(line)
+            if m and SIEGE_ON.search(m["what"] + " " + m["tail"]):
+                self.siege_lines += 1
+                bot = m["bot"]
+                if bot not in self.cap_sourced:
+                    if bot in self.cap_aboard:
+                        if bot not in self.aboard_sieged:
+                            self.aboard_sieged.append(bot)
+                    elif bot not in self.sieged:
+                        self.sieged.append(bot)
             if m and m["kind"] == "kit":
                 self.act(m["bot"], m["what"], m["tail"])
                 continue
@@ -143,6 +172,20 @@ def verdicts(log):
             share = good / (good + bad)
             out.append((key, name, PASS if good and share >= MIN_OK_SHARE else FAIL,
                         f"{good} ok, {bad} not ok ({share:.0%} ok)"))
+    if not log.siege_lines:
+        out.append(("capital", "capital sourced", NA, "no `capital: siege on` line"))
+    else:
+        bots = len(log.cap_sourced)
+        aboard = f"; {len(log.aboard_sieged)} aboard at login" if log.aboard_sieged else ""
+        if log.sieged:
+            v = FAIL
+        elif log.aboard_sieged and not bots:
+            v = NA
+        else:
+            v = PASS
+        out.append(("capital", "capital sourced", v,
+                    f"{log.siege_lines} siege lines, {bots} sourced bots{aboard}"
+                    + (f"; no earlier [cap] line for {', '.join(log.sieged)}" if log.sieged else "")))
     return out
 
 
