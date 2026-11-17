@@ -35,3 +35,6 @@ tmp/
 
 # per-machine agent rules (Claude Code loads it; never committed)
 CLAUDE.local.md
+
+# per-machine state and scratch
+.dev/
