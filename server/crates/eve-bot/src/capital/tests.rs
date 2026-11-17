@@ -578,9 +578,53 @@ fn alt_ready() -> AltFacts {
         lit: false,
         ozone_held: 2_000,
         ozone_needed: 1_000,
+        ozone_cycle: 500,
+        hold_full: false,
         target: Some(FAR),
         pace_wait: Duration::ZERO,
     }
+}
+
+#[test]
+fn a_full_hold_is_marked_only_when_there_was_ozone_to_move() {
+    // The ship took none of the hangar's stock: full at that amount, on that ship.
+    assert_eq!(ozone_cap(7, 600, 0, 400), Some((7, 600)));
+    // Nothing in the hangar and nothing bought (an empty market): no mark, try again.
+    assert_eq!(ozone_cap(7, 0, 0, 0), None);
+    // Some of it moved: not full yet.
+    assert_eq!(ozone_cap(7, 600, 100, 400), None);
+}
+
+#[test]
+fn an_alt_whose_hold_is_full_flies_with_one_cycle_and_waits_with_less() {
+    let a = AltFacts {
+        ozone_held: 600,
+        hold_full: true,
+        ..alt_ready()
+    };
+    assert_eq!(alt_turn(&a), AltStep::Leg(FAR));
+    assert_eq!(
+        alt_turn(&AltFacts {
+            hold_full: false,
+            ..a
+        }),
+        AltStep::Stock(400)
+    );
+    assert!(matches!(
+        alt_turn(&AltFacts {
+            ozone_held: 100,
+            ..a
+        }),
+        AltStep::Missing(_)
+    ));
+    // Exactly one cycle is enough to fly.
+    assert_eq!(
+        alt_turn(&AltFacts {
+            ozone_held: 500,
+            ..a
+        }),
+        AltStep::Leg(FAR)
+    );
 }
 
 #[test]

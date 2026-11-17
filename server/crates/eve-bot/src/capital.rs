@@ -240,6 +240,10 @@ pub struct Mind {
     /// When the alt may next try to fit its own cyno generator
     /// ([`crate::capital_fight::fit_effect`]).
     pub alt_fit_next: Option<Instant>,
+    /// `(ship, ozone held)` when the alt's last stocking had ozone in the hangar and the ship
+    /// took none of it (the hold is full at that amount, [`ozone_cap`]); another ship or another
+    /// amount held clears it.
+    pub ozone_capped: Option<(i64, i64)>,
 }
 
 /// What the hull and the module burn.
@@ -577,6 +581,10 @@ pub struct AltFacts {
     pub lit: bool,
     pub ozone_held: i64,
     pub ozone_needed: i64,
+    /// The ozone one field burns (one cycle): the least the alt flies with.
+    pub ozone_cycle: i64,
+    /// The last stocking moved nothing at this amount held: the hold takes no more.
+    pub hold_full: bool,
     /// Where this leg lands, once chosen.
     pub target: Option<i64>,
     /// How long before the pair may jump again.
@@ -611,7 +619,13 @@ pub fn alt_turn(f: &AltFacts) -> AltStep {
         return AltStep::Hold;
     }
     if f.docked && f.ozone_held < f.ozone_needed {
-        return AltStep::Stock(f.ozone_needed - f.ozone_held);
+        // A hold too small for every cycle flies with what fits, if one cycle fits.
+        if !f.hold_full {
+            return AltStep::Stock(f.ozone_needed - f.ozone_held);
+        }
+        if f.ozone_held < f.ozone_cycle {
+            return AltStep::Missing("a hold that takes a cycle of ozone");
+        }
     }
     if !f.pace_wait.is_zero() {
         return AltStep::Rest(f.pace_wait);
@@ -968,23 +982,79 @@ pub fn load_into(c: &mut Conn, ship: i64, type_id: i64, flag: i64, max: i64) -> 
         if row.type_id != type_id || row.singleton || row.quantity <= 0 {
             continue;
         }
-        let n = row.quantity.min(left);
-        let out = c.call_on(
-            &inventory,
-            "Add",
-            vec![PyValue::Int(row.item_id), PyValue::Int(station)],
-            vec![
-                (PyValue::Int(n), eve_server::pyutil::bstr("qty")),
-                (PyValue::Int(flag), eve_server::pyutil::bstr("flag")),
-            ],
-        )?;
-        if out.refusal().is_some() {
+        // A refused move (no room for all of it): one unit is tried, and refused means the bay
+        // or hold is full (or the hull has none), so the load stops at once; taken, the rest is
+        // tried in halves, so a small hold takes what fits.
+        let mut avail = row.quantity.min(left);
+        let mut n = avail;
+        let mut probed = false;
+        let mut full = false;
+        while n > 0 {
+            if add_to(c, &inventory, row.item_id, station, n, flag)? {
+                left -= n;
+                moved += n;
+                avail -= n;
+                n = n.min(avail);
+                continue;
+            }
+            if n == 1 {
+                full = true;
+                break;
+            }
+            if !probed {
+                probed = true;
+                if !add_to(c, &inventory, row.item_id, station, 1, flag)? {
+                    full = true;
+                    break;
+                }
+                left -= 1;
+                moved += 1;
+                avail -= 1;
+            }
+            n = (n / 2).min(avail);
+        }
+        if full {
             break;
         }
-        left -= n;
-        moved += n;
     }
     Ok(moved)
+}
+
+/// One `Add` of `n` of `item` into the bound ship inventory at `flag`: whether it was taken.
+fn add_to(
+    c: &mut Conn,
+    inventory: &crate::ObjectRef,
+    item: i64,
+    station: i64,
+    n: i64,
+    flag: i64,
+) -> Result<bool> {
+    let out = c.call_on(
+        inventory,
+        "Add",
+        vec![PyValue::Int(item), PyValue::Int(station)],
+        vec![
+            (PyValue::Int(n), eve_server::pyutil::bstr("qty")),
+            (PyValue::Int(flag), eve_server::pyutil::bstr("flag")),
+        ],
+    )?;
+    Ok(out.refusal().is_none())
+}
+
+/// Units of `type_id` in loose stacks in the station hangar.
+pub fn hangar_stock(c: &mut Conn, type_id: i64) -> Result<i64> {
+    Ok(c.hangar_items()?
+        .iter()
+        .filter(|r| r.type_id == type_id && !r.singleton)
+        .map(|r| r.quantity)
+        .sum())
+}
+
+/// **The alt's full-hold mark** after a stocking: `(ship, held)` only when there was ozone in
+/// the hangar to move (`had`) and the ship took none of it (`moved == 0`). An empty market moves
+/// nothing too, but marks nothing, so the alt tries again next turn.
+pub fn ozone_cap(ship: i64, held: i64, moved: i64, had: i64) -> Option<(i64, i64)> {
+    (moved == 0 && had > 0).then_some((ship, held))
 }
 
 /// **Stock the fuel bay** of the docked ship with `units` of `type_id`: the
@@ -992,12 +1062,7 @@ pub fn load_into(c: &mut Conn, ship: i64, type_id: i64, flag: i64, max: i64) -> 
 /// [`fuel_budget`]; the bay takes it, the hold the rest. Returns `(bought,
 /// bayed, held)`.
 pub fn stock_bay(c: &mut Conn, ship: i64, type_id: i64, units: i64) -> Result<(i64, i64, i64)> {
-    let in_hangar: i64 = c
-        .hangar_items()?
-        .iter()
-        .filter(|r| r.type_id == type_id && !r.singleton)
-        .map(|r| r.quantity)
-        .sum();
+    let in_hangar = hangar_stock(c, type_id)?;
     let mut bought = 0;
     if in_hangar < units {
         // #185: a founder's pledged ISK is not fuel money.
@@ -1532,6 +1597,8 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         lit: false,
         ozone_held,
         ozone_needed: per_cycle * OZONE_CYCLES,
+        ozone_cycle: per_cycle,
+        hold_full: m.capital.ozone_capped == Some((ship, ozone_held)),
         target,
         pace_wait: m.capital.pace.wait_for(clock::instant(), hop_ly),
     };
@@ -1559,7 +1626,9 @@ fn alt(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
             ))
         }
         AltStep::Stock(units) => {
+            let in_hangar = hangar_stock(c, ozone_type)?;
             let (bought, bayed, hold) = stock_bay(c, ship, ozone_type, units)?;
+            m.capital.ozone_capped = ozone_cap(ship, ozone_held, bayed + hold, in_hangar + bought);
             Ok(format!(
                 "cyno alt: stocked {units} ozone: bought {bought}, bay {bayed}, hold {hold}"
             ))
