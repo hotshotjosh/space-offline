@@ -936,6 +936,29 @@ def client_constants(path=None):
 # --- validation -----------------------------------------------------------
 
 
+#: The row counts `validate` holds a build to, ``{build: {name: count}}``.
+#: [V] by running `validate` on each install in the analysis container
+#: (3670638 on `tq-offline`, 3707965 on `tq-3707965`); the closure checks pass
+#: on both. A build not listed has its counts noted, not failed, until someone
+#: reads them: add its row after the first run.
+EXPECT_COUNTS = {
+    3670638: {"attributes": 2872, "effects": 3431, "modifiers": 5182,
+              "typedogma rows": 27163, "typedogma attrs": 648950,
+              "typedogma effects": 54336, "requiredskills": 9575},
+    3707965: {"attributes": 2929, "effects": 3499, "modifiers": 5306,
+              "typedogma rows": 27622, "typedogma attrs": 658459,
+              "typedogma effects": 55911, "requiredskills": 9709},
+}
+
+
+def expected_counts(build):
+    """``{name: count}`` for a client build (int or str), or None if unread."""
+    try:
+        return EXPECT_COUNTS.get(int(build))
+    except (TypeError, ValueError):
+        return None
+
+
 def validate(d, out=print):
     """Every check `docs/re/dogma.md` claims, re-run against the client.
 
@@ -945,6 +968,7 @@ def validate(d, out=print):
     against values the layout was calibrated on.
     """
     fails = 0
+    want = expected_counts(fsd.install_build(d.client.root))
 
     def ck(label, ok, detail=""):
         nonlocal fails
@@ -952,8 +976,17 @@ def validate(d, out=print):
             fails += 1
         out("%s %-58s %s" % ("ok  " if ok else "FAIL", label, detail))
 
+    def ckn(label, key, got):
+        """A row count against this build's table; unlisted builds are noted."""
+        if want is None:
+            out("note %-58s %s (no counts table for this build)"
+                % (label, got))
+        else:
+            ck(label, got == want[key], "%s (want %s)" % (got, want[key])
+               if got != want[key] else got)
+
     attrs = d.attributes
-    ck("dogmaattributes: rows", len(attrs) == 2871, len(attrs))
+    ckn("dogmaattributes: rows", "attributes", len(attrs))
     ck("dogmaattributes: attributeID == bucket key",
        all(k == v["attributeID"] for k, v in attrs.items()))
     cats = d.attribute_categories
@@ -971,7 +1004,7 @@ def validate(d, out=print):
            all(i in msgs for i in ids), "%d ids" % len(ids))
 
     effs = d.effects
-    ck("dogmaeffects: rows", len(effs) == 3427, len(effs))
+    ckn("dogmaeffects: rows", "effects", len(effs))
     ck("dogmaeffects: effectID == bucket key",
        all(k == v["effectID"] for k, v in effs.items()))
     for col in ("dischargeAttributeID", "durationAttributeID",
@@ -983,7 +1016,7 @@ def validate(d, out=print):
         ck("dogmaeffects: %s closes into dogmaattributes" % col,
            all(v in attrs for v in vals), "%d values" % len(vals))
     mods = [m for v in effs.values() for m in v["modifierInfo"] or []]
-    ck("dogmaeffects: modifierInfo entries", len(mods) == 5178, len(mods))
+    ckn("dogmaeffects: modifierInfo entries", "modifiers", len(mods))
     ck("dogmaeffects: modifier attribute ids close into dogmaattributes",
        all(m[c] in attrs for m in mods
            for c in ("modifiedAttributeID", "modifyingAttributeID")
@@ -1024,9 +1057,9 @@ def validate(d, out=print):
         seen_attr.update(a)
         seen_eff.update(e["effectID"] for e in row["dogmaEffects"])
         td[key] = a
-    ck("typedogma: rows", nrows == 27160, nrows)
-    ck("typedogma: attribute values", nattr == 648726, nattr)
-    ck("typedogma: effect entries", neff == 54307, neff)
+    ckn("typedogma: rows", "typedogma rows", nrows)
+    ckn("typedogma: attribute values", "typedogma attrs", nattr)
+    ckn("typedogma: effect entries", "typedogma effects", neff)
     ck("typedogma: keys close into types", set(td) <= tkeys)
     ck("typedogma: every attributeID is a dogmaattributes key",
        seen_attr <= set(attrs), "%d distinct" % len(seen_attr))
@@ -1036,7 +1069,7 @@ def validate(d, out=print):
     rs = {k: v["skills"] for k, v in d.table("requiredskillsfortypes").rows()}
     counts = {k: v["skillCount"]
               for k, v in d.table("requiredskillsfortypes").rows()}
-    ck("requiredskillsfortypes: rows", len(rs) == 9573, len(rs))
+    ckn("requiredskillsfortypes: rows", "requiredskills", len(rs))
     ck("requiredskillsfortypes: stored count == decoded dict size",
        all(len(rs[k]) == counts[k] for k in rs))
     ck("requiredskillsfortypes: skill ids close into types",

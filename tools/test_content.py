@@ -436,6 +436,16 @@ class Builds(unittest.TestCase):
         self.assertEqual([b for b, e in reg.items() if e["status"] == "pinned"],
                          [self.dogma.pinned_build()])
 
+    def test_dogma_validate_counts_are_per_build_and_cover_the_pin(self):
+        dg = self.dogma
+        pinned = int(dg.pinned_build())
+        self.assertIn(pinned, dg.EXPECT_COUNTS)
+        keys = {frozenset(c) for c in dg.EXPECT_COUNTS.values()}
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(dg.expected_counts(str(pinned)), dg.EXPECT_COUNTS[pinned])
+        self.assertIsNone(dg.expected_counts(1))
+        self.assertIsNone(dg.expected_counts(None))
+
 
 class Encoding(unittest.TestCase):
     def test_list_map_and_float_round_trip(self):
