@@ -38,6 +38,7 @@ class RePin(unittest.TestCase):
         put(self.repo + "/tools/eve_patch.py", "import os, sys\nopen(os.environ['FAKE_LOG'], 'a').write('eve_patch ' + ' '.join(sys.argv[1:]) + '\\n')\n")
         for f in ("pin-client.sh", "client2-setup.sh", "client-ci/slot-prefix.sh"):
             put(self.repo + "/tools/" + f, STUB % ('echo "  PREFIX=${PREFIX:-} SRC=${EVE_SLOT_SRC_PREFIX:-}" >> "$FAKE_LOG"\n'), 0o755)
+        self.build_rs("L2")
         self.install("tq-offline", 1000001, marker="old")
         self.install("tq-1102", 1000002, marker="new")
         self.install("tq-1000002-control", 1000002, marker="control")
@@ -46,6 +47,12 @@ class RePin(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def build_rs(self, const):
+        put(self.repo + "/server/crates/eve-marshal/src/build.rs",
+            'pub const L1: ReleaseLine = ReleaseLine {\n    codename: "LX",\n};\n'
+            'pub const L2: ReleaseLine = ReleaseLine {\n    macho: 1,\n    codename: "L",\n};\n'
+            "pub const REFERENCE_LINE: ReleaseLine = %s;\n" % const)
 
     def install(self, name, build, marker=""):
         put("%s/%s/start.ini" % (self.eve, name), "[main]\nbuild = %d\ncodename = V1\n" % build)
@@ -126,6 +133,31 @@ class RePin(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("builds.tsv", r.stderr)
         self.assertEqual(self.marker("tq-offline"), "old")
+
+    def test_refuses_when_the_pinned_row_is_not_on_the_reference_line(self):
+        self.build_rs("L1")  # build.rs still serves line LX; the pinned row says L
+        r = self.run_pin("tq-1102")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("REFERENCE_LINE", r.stderr)
+        self.assertEqual(self.marker("tq-offline"), "old")
+        self.assertTrue(os.path.isdir(self.eve + "/tq-1102"))
+        self.assertEqual(self.calls(), "")
+
+    def test_the_codename_is_read_inside_the_const_only(self):
+        # the const has no codename of its own; the next const's must not be taken
+        put(self.repo + "/server/crates/eve-marshal/src/build.rs",
+            'pub const L2: ReleaseLine = ReleaseLine {\n    macho: 1,\n};\n'
+            'pub const L3: ReleaseLine = ReleaseLine {\n    codename: "L",\n};\n'
+            "pub const REFERENCE_LINE: ReleaseLine = L2;\n")
+        r = self.run_pin("tq-1102", "--dry-run")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("no codename", r.stderr)
+
+    def test_refuses_without_build_rs(self):
+        os.remove(self.repo + "/server/crates/eve-marshal/src/build.rs")
+        r = self.run_pin("tq-1102", "--dry-run")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("build.rs", r.stderr)
 
     def test_refuses_the_same_build(self):
         self.install("tq-same", 1000001)

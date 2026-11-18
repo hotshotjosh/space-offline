@@ -19,7 +19,9 @@
 # Refuses, before it changes anything, when: a target exists; the new build is
 # the old one; the registry does not pin the new build; the new build has no
 # stock control copy tq-<new>-control (census.sh's control, made straight after
-# import, before any patch; defect 4 of r-port-1109-1101); out/pyc-<old> or
+# import, before any patch; defect 4 of r-port-1109-1101); the pinned row's
+# line is not build.rs's REFERENCE_LINE (a re-pin to a new line must land the
+# line change with it; track-tq-plan item R2); out/pyc-<old> or
 # out/content-<old> exists; the prefix is the online one (compatdata/8500).
 #
 # Then, in this order:
@@ -78,6 +80,17 @@ NEWB=$(ini_build "$EVE/$NEW"); OLDB=$(ini_build "$EVE/tq-offline")
 
 PINNED=$(awk -F'\t' '!/^#/ && $3 == "pinned" {print $1; exit}' "$REPO/tools/builds.tsv" 2>/dev/null || true)
 [[ $PINNED == "$NEWB" ]] || die "tools/builds.tsv pins '${PINNED:-nothing}', not $NEWB: land the registry row and build.rs first (build-compat.md, Re-pinning step 1)"
+
+# R2: the pinned row must be on the served line (invariant 1 of tracking-tq.md): the registry's
+# line for the new build, against the codename of the const that build.rs's REFERENCE_LINE names.
+BUILD_RS=$REPO/server/crates/eve-marshal/src/build.rs
+[[ -f $BUILD_RS ]] || die "no $BUILD_RS: cannot check that the pinned row is on REFERENCE_LINE"
+REFCONST=$(sed -n 's/^pub const REFERENCE_LINE: *ReleaseLine *= *\([A-Za-z0-9_]*\) *;.*/\1/p' "$BUILD_RS" | head -n 1)
+[[ -n $REFCONST ]] || die "build.rs has no 'pub const REFERENCE_LINE: ReleaseLine = <CONST>;'"
+REFCODE=$(awk -v c="$REFCONST" '$0 ~ "^pub const " c ": *ReleaseLine" {on=1} on && /^};/ {exit} on && /codename:/ {gsub(/.*codename: *"|".*/, ""); print; exit}' "$BUILD_RS")
+[[ -n $REFCODE ]] || die "build.rs: no codename for $REFCONST"
+PINLINE=$(awk -F'\t' -v b="$NEWB" '!/^#/ && $1 == b {print $2; exit}' "$REPO/tools/builds.tsv")
+[[ $PINLINE == "$REFCODE" ]] || die "the pinned row $NEWB is on line '${PINLINE:-?}' but build.rs REFERENCE_LINE is '$REFCODE': land the line change (REFERENCE_LINE) with the re-pin, then run this (build-compat.md, Re-pinning)"
 
 if [[ -n $OLD_NAME ]]; then
     name_ok "$OLD_NAME" || die "bad --old-name '$OLD_NAME'"
