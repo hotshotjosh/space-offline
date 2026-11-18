@@ -1494,6 +1494,15 @@ def eoci_main(EOCI_NAME):
     def eoci_body():
         mark = log_mark()
         pin = int(params().get('conquest_hq_system') or 0)
+        # The harness logs in docked.  A `/tr me` from the station straight into another
+        # system left the station UI half alive: the lobby reopened on a session with no
+        # stationid (stationController.GetOwnerID on a None stationItem) and the hangar
+        # view asked for the station inventory (CharacterNotAtStation) [V: the first
+        # 3707965 run, two tracebacks at login].  Every other scenario undocks first.
+        undocked, detail = undock()
+        precondition('the pilot undocks into space before the first /tr me', undocked, detail)
+        if not undocked:
+            return
         found = None
         park = None
         for hq in ([pin] if pin > 0 else list(HQ_SYSTEMS)):
