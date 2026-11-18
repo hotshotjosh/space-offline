@@ -70,6 +70,24 @@ class Violations(unittest.TestCase):
         v = self.check({"test_a.py": "SCRIPT = 'mod-b.py'\n", "mod_b.py": "import zz_not_a_module\n"})
         self.assertEqual(len(v), 1)
 
+    def test_a_tests_own_top_level_import_counts(self):
+        v = self.check({"test_a.py": "import zz_third\n"})
+        self.assertEqual(v, ["test_a.py:1 imports zz_third at module level, reached from test_a.py"])
+
+    def test_class_bodies_and_except_star_are_walked(self):
+        v = self.check({"test_a.py": "import mod_b\n",
+                        "mod_b.py": "class C:\n    import zz_one\n"})
+        self.assertEqual(len(v), 1)
+        if sys.version_info >= (3, 11):
+            v = self.check({"test_a.py": "import mod_b\n",
+                            "mod_b.py": "try:\n    import zz_two\nexcept* KeyError:\n    pass\n"})
+            self.assertEqual(len(v), 1)
+
+    def test_optional_load_does_not_hide_a_plain_import(self):
+        v = self.check({"test_a.py": "import testenv\nimport mod_b\nM = testenv.optional_load('mod_b', 'zz_x')\n",
+                        "mod_b.py": "import zz_not_a_module\n", "testenv.py": "x = 1\n"})
+        self.assertEqual(len(v), 1)
+
     def test_a_module_no_test_reaches_is_ignored(self):
         self.assertEqual(self.check({"test_a.py": "x = 1\n", "mod_b.py": "import zz_not_a_module\n"}), [])
 

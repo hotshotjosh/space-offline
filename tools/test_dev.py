@@ -27,7 +27,7 @@ def run_dev(max_jobs, host_cpus):
                    EVE_MAX_JOBS=str(max_jobs), EVE_MIN_FREE_GB="0",
                    EVE_TARGET_DIR=os.path.join(d, "target"))
         p = subprocess.run(["bash", DEV, "true"], env=env, capture_output=True, text=True,
-                           timeout=60)
+                           timeout=60, start_new_session=True)
     return p.returncode, p.stdout, p.stderr
 
 
@@ -48,7 +48,7 @@ class CpuCap(unittest.TestCase):
         self.assertNotIn("using", err)
 
 
-def run_dev_meminfo(total_kb, avail_kb, min_free_gb="12"):
+def run_dev_meminfo(total_kb, avail_kb, min_free_gb="12", timeout=30):
     with tempfile.TemporaryDirectory() as d:
         for name, body in (("docker", 'echo "$@"\n'), ("nproc", "echo 4\n")):
             p = os.path.join(d, name)
@@ -61,7 +61,7 @@ def run_dev_meminfo(total_kb, avail_kb, min_free_gb="12"):
         env = testenv.clean_env(PATH=d + os.pathsep + os.environ["PATH"], EVE_MEMINFO=mi,
                                 EVE_MIN_FREE_GB=min_free_gb, EVE_TARGET_DIR=os.path.join(d, "target"))
         p = subprocess.run(["bash", DEV, "true"], env=env, capture_output=True, text=True,
-                           timeout=30, stdin=subprocess.DEVNULL)
+                           timeout=timeout, stdin=subprocess.DEVNULL, start_new_session=True)
     return p.returncode, p.stdout, p.stderr
 
 
@@ -76,6 +76,14 @@ class MemoryWait(unittest.TestCase):
         code, out, err = run_dev_meminfo(67108864, 62914560)
         self.assertEqual(code, 0, err)
         self.assertNotIn("can never be free", err)
+
+
+    def test_a_big_machine_with_little_free_waits(self):
+        with self.assertRaises(subprocess.TimeoutExpired) as cm:
+            run_dev_meminfo(67108864, 4194304, timeout=3)
+        dec = lambda x: x.decode() if isinstance(x, bytes) else (x or "")
+        self.assertIn("waiting for memory", dec(cm.exception.stderr))
+        self.assertNotIn("--cpus", dec(cm.exception.stdout))
 
 
 class FreshClone(unittest.TestCase):
@@ -95,7 +103,8 @@ class FreshClone(unittest.TestCase):
                        EVE_MAX_JOBS="2", EVE_MIN_FREE_GB="0",
                        EVE_TARGET_DIR=os.path.join(bin_, "target"))
             p = subprocess.run(["bash", os.path.join(repo, "tools", "dev.sh"), "true"],
-                               env=env, capture_output=True, text=True, timeout=60)
+                               env=env, capture_output=True, text=True, timeout=60,
+                               start_new_session=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertTrue(os.path.isdir(os.path.join(repo, "server", "target")))
 

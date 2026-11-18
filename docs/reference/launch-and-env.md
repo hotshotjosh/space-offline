@@ -363,6 +363,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 |---|---|---|---|---|
 | `EVE_MAX_JOBS` | `tools/dev.sh` | all cores | cargo jobs and container CPUs | `EVE_MAX_JOBS=6 tools/dev.sh cargo test` |
 | `EVE_MIN_FREE_GB` | `tools/dev.sh` | 12 | wait until this much RAM is free; 0 = no wait | `EVE_MIN_FREE_GB=0` |
+| `EVE_MEMINFO` | `tools/dev.sh`, `tools/host-check.sh` | `/proc/meminfo` | file read for MemTotal and MemAvailable; tests point it at a fake | `EVE_MEMINFO=/path/to/fake` |
 | `EVE_DEV_MEMORY` | `tools/dev.sh`, `tools/arena.sh` | `10g` (arena `8g`) | container memory limit | `EVE_DEV_MEMORY=16g` |
 | `EVE_DEV_TIMEOUT` | `tools/dev.sh` | 3600 | container kill timeout, seconds | `EVE_DEV_TIMEOUT=7200` |
 | `EVE_DEBUG_INFO` | `tools/dev.sh` | `line-tables-only` | cargo debug info level | `EVE_DEBUG_INFO=full` |

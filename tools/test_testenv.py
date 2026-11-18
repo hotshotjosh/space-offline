@@ -31,6 +31,18 @@ class Helpers(unittest.TestCase):
         self.assertEqual(env["GIT_AUTHOR_EMAIL"], "t@test.invalid")
         self.assertEqual(testenv.hermetic_git_env({}, Y="2")["Y"], "2")
 
+    def test_injected_config_in_the_environment_is_dropped(self):
+        import tempfile
+        base = {"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "commit.gpgsign",
+                "GIT_CONFIG_VALUE_0": "true", "GIT_CONFIG_PARAMETERS": "'commit.gpgsign=true'"}
+        env = testenv.hermetic_git_env(base)
+        for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_PARAMETERS"):
+            self.assertNotIn(k, env)
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(["git", "config", "--get", "commit.gpgsign"], cwd=d, env=env,
+                               capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), "")
+
     def test_a_hostile_global_config_does_not_reach_git(self):
         import tempfile
         with tempfile.TemporaryDirectory() as d:

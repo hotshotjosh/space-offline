@@ -18,17 +18,12 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-_GIT_DROP = (
-    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CEILING_DIRECTORIES",
-)
-
-
 def hermetic_git_env(base=None, **extra):
-    """A copy of `base` (default `os.environ`) in which git reads no user config."""
+    """A copy of `base` (default `os.environ`) with every GIT_* key dropped (repo
+    pointers, GIT_CONFIG_COUNT/PARAMETERS and the rest), then ours, then `extra`."""
     env = dict(os.environ if base is None else base)
-    for k in _GIT_DROP:
-        env.pop(k, None)
+    for k in [k for k in env if k.startswith("GIT_")]:
+        env.pop(k)
     env.update(
         GIT_CONFIG_GLOBAL=os.devnull,
         GIT_CONFIG_NOSYSTEM="1",

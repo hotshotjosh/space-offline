@@ -174,7 +174,7 @@ class StaticHelper(unittest.TestCase):
 
     def test_the_parsed_mask_list_finds_the_known_trees(self) -> None:
         trees = masked_host_trees(self.h)
-        for t in ("/run", "/tmp", "/media", "/mnt", os.path.realpath(os.path.expanduser("~"))):
+        for t in ("/run", "/tmp", "/media", "/mnt"):
             self.assertIn(t, trees)
 
     def test_masks_are_the_five_trees_and_shm_is_fresh(self) -> None:
@@ -382,14 +382,12 @@ echo "SHIM-HOSTPID $([[ -e /proc/$HOST_PID_PROBE ]] && echo visible || echo gone
 
 def masked_host_trees(helper_text=None):
     """The host trees `build_view` masks, parsed from the jail script: every
-    `mask_tree LABEL PATH` with a literal path, `$HOME_R` as this process's
-    home, and `$RUNTIME_R` skipped (it lies under /run)."""
+    `mask_tree LABEL PATH` with a literal path; `$HOME_R` and `$RUNTIME_R`
+    are skipped (the launch tests use an invented home; the runtime lies under /run)."""
     body = function_body(helper_text if helper_text is not None else read(HELPER), "build_view")
     trees = []
     for m in re.finditer(r"mask_tree\s+\S+\s+(\"?[^\s\"]+\"?)", body):
         p = m.group(1).strip('"')
-        if p == "$HOME_R":
-            p = os.path.realpath(os.path.expanduser("~"))
         if p.startswith("/"):
             trees.append(p)
     return tuple(trees)

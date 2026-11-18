@@ -68,13 +68,16 @@ def _toplevel_imports(body):
                 out.append((node.lineno, node.module.split(".")[0]))
         elif isinstance(node, ast.If):
             out += _toplevel_imports(node.body) + _toplevel_imports(node.orelse)
-        elif isinstance(node, ast.Try):
+        elif isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
             if not _catches_import_error(node.handlers):
                 out += _toplevel_imports(node.body)
             out += _toplevel_imports(node.orelse) + _toplevel_imports(node.finalbody)
             for h in node.handlers:
                 out += _toplevel_imports(h.body)
-        elif isinstance(node, (ast.With, ast.For, ast.While)):
+        elif isinstance(node, getattr(ast, "Match", ())):
+            for case in node.cases:
+                out += _toplevel_imports(case.body)
+        elif isinstance(node, (ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While, ast.ClassDef)):
             out += _toplevel_imports(node.body)
     return out
 
@@ -95,7 +98,7 @@ def _reach(tree, local, skip):
     """Local module stems a parsed file imports at module level or names as a literal."""
     found = set()
     for _line, name in _toplevel_imports(tree.body):
-        if _stem(name) in local and _stem(name) not in skip:
+        if _stem(name) in local:
             found.add(_stem(name))
     for n in ast.walk(tree):
         if not (isinstance(n, ast.Constant) and isinstance(n.value, str)):
@@ -127,6 +130,12 @@ def violations(tools_dir=_HERE):
         skip = _optional_names(tree)
         seen = {}
         stack = [(m, t) for m in _reach(tree, local, skip)]
+        for line, name in _toplevel_imports(tree.body):
+            if name not in stdlib and _stem(name) not in local:
+                key = (t, line)
+                if key not in reported:
+                    reported.add(key)
+                    out.append("%s:%d imports %s at module level, reached from %s" % (t, line, name, t))
         while stack:
             mod, via = stack.pop()
             if mod in seen:

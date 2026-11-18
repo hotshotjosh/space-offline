@@ -73,9 +73,12 @@ meminfo=${EVE_MEMINFO:-/proc/meminfo}
 
 # A wait that cannot end is a hang: a laptop with 16 GB (WSL2 gets half of it)
 # never has 12 GB free. Cap the wait at half of what the machine has in all.
-total_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo")
+total_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo" 2>/dev/null || true)
 # say MESSAGE: to stderr, and to the terminal too when stderr goes to a log
-# (tools/land.sh writes the gate's output to a file), so the wait is seen.
+# (tools/land.sh writes the gate's output to a file), so the wait is seen. Known
+# limit, accepted for simplicity: from a background job on a terminal with
+# `stty tostop` the write to /dev/tty stops the job; tests run dev.sh in its
+# own session (no controlling terminal), so they never write to a tty.
 say() {
     echo "$1" >&2
     if [[ ! -t 2 ]] && { : >/dev/tty; } 2>/dev/null; then echo "$1" >/dev/tty; fi
@@ -85,7 +88,7 @@ if [[ -n $total_kb ]] && ((min_free_kb > total_kb / 2)); then
     min_free_kb=$((total_kb / 2))
 fi
 waited=0
-while avail=$(awk '/^MemAvailable:/ {print $2}' "$meminfo") && ((avail < min_free_kb)); do
+while avail=$(awk '/^MemAvailable:/ {print $2}' "$meminfo" 2>/dev/null) && ((avail < min_free_kb)); do
     if ((waited % 60 == 0)); then
         say "dev.sh: waiting for memory: $((avail / 1048576)) GB available, want $((min_free_kb / 1048576)) GB"
     fi
