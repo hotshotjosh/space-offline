@@ -132,18 +132,17 @@ still verified. With either install absent it prints a note and skips.
 
 ## Retiring a build
 
-`tools/retire-build.sh <old> [--dry-run]` (planned: `docs/guides/tracking-tq.md` section 4.6)
+`tools/retire-build.sh <old> [--dry-run]` (`docs/guides/tracking-tq.md` section 4.6)
 prints steps 1 to 3 below as edits and deletes the local copies (`tq-<old>`, `tq-<old>-control`,
 `out/pyc-<old>`, `out/content-<old>`, `out/new-build/<old>`); it lands nothing and refuses the
-`pinned` build, a build in the last green `cutover.list` run, and anything under the online
-prefix. Until it exists, do the steps by hand. Retire a build only after the **next** cut-over
-has passed its proof: until then the previous build is the rollback window.
+`pinned` build, the build in `tq-offline`, the rollback-window build (no registered build lies
+between it and the pinned one) and anything under the online prefix. Retire a build only after
+the **next** cut-over has passed its proof: until then the previous build is the rollback window.
 
 1. Delete its row in `tools/builds.tsv` and its entry in
    `eve_marshal::build::BUILDS` together (the table test checks both).
 2. Delete `tools/patches/<build>.json`.
-3. `git rm findings/build-delta-*-<build>.tsv`, or the gate keeps
-   looking for it (it skips cleanly when the install is gone).
+3. Keep `findings/build-delta-*`: history; the gate skips a delta whose install is gone.
 4. Never retire the `pinned` build; re-pinning means moving the whole RE
    corpus and is an owner decision. Nothing was retired at the 2026-10-31
    re-pin: 3619879 and 3628513 became `unverified`, with their manifests and

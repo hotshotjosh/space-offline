@@ -15,11 +15,11 @@ Sizes: S is under a lane-day, M one to three, L more.
 **Which tools exist.** Today: `tools/import-build.sh`, `tools/new-build.sh`, `tools/build-delta.py`,
 `tools/port-surface.sh`, `tools/port-recheck.py`, `tools/bundle-diff.py`, `tools/re-pin.sh`,
 `tools/client-ci-regress.sh`, `tools/regress-compare.py`,
-`tools/content-report.py`, `tools/client-ci/fci-surface.py`, `tools/census.sh`, `tools/tq-lag.py`,
+`tools/content-report.py`, `tools/client-ci/fci-surface.py`, `tools/retire-build.sh`, `tools/census.sh`, `tools/tq-lag.py`,
 `tools/client-setup.sh refresh` (with `tools/pins/<build>.sha256` for `tools/pin-client.sh`) and
 `tools/client-ci/cutover.list`. Planned (each is named where it is used, and tracked on #290):
 `tq-watch.py`, `build-triage.py`, `answer-shapes.py`,
-`intake-issues.py`, `retire-build.sh`,
+`intake-issues.py`,
 `v-audit.py`, and the `recompiled` class of `build-delta.py`. Until a planned tool lands, its
 step is done by hand from the same inputs.
 
@@ -278,13 +278,13 @@ install is not a served build. `tools/pin-client.sh` verifies against the commit
 
 **Rollback window:** the previous build's install, patched copy, `out/pyc-<old>` and
 `out/content-<old>` stay until the **next** cut-over has passed its proof. Then
-`tools/retire-build.sh <old> [--dry-run]` (planned, S) prints build-compat "Retiring a build"
+`tools/retire-build.sh <old> [--dry-run]` prints build-compat "Retiring a build"
 steps 1 to 3 as edits and deletes the local copies (`tq-<old>`, `tq-<old>-control`,
 `out/pyc-<old>`, `out/content-<old>`, `out/new-build/<old>`). It lands nothing itself, and it
-refuses when `<old>` is `pinned`, is in the last green `cutover.list` run, or the path is inside
-the online prefix. Exit 0 done, 2 refused or usage, 1 a step failed. The
-`findings/build-delta-*-<old>.tsv` files stay as history. Until the tool exists, do the steps by
-hand and never delete the pinned build's copies.
+refuses when `<old>` is `pinned`, is the build in `tq-offline`, is the rollback-window build (no
+registered build lies strictly between it and the pinned one) or the path is inside the online
+prefix. Exit 0 done, 2 refused or usage, 1 a step failed. The
+`findings/build-delta-*-<old>.tsv` files stay as history. Never delete the pinned build's copies.
 
 **Rollback** (the new build is served and something is badly wrong). TQ clients cannot go back, so
 rolling back the build is never an option. The options are:
