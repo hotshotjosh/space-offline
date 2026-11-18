@@ -7,6 +7,10 @@
 #              machoVersion, boot.version, codename and region
 #   status     pinned      the build the RE corpus is anchored to (exactly one)
 #              equivalent  tools/build-delta.py PINNED THIS says `equivalent`
+#              provisional a build of the served (reference) line not yet measured
+#                          beyond triage, served by default on the line's pinned or
+#                          equivalent bundle; same line only; becomes equivalent
+#                          (or unverified again) once measured
 #              unverified  seen, not measured: refused by default
 #   data_hash  a content bundle data_hash proved equal for this build, or -
 #   evidence   how the status was earned

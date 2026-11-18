@@ -66,7 +66,7 @@ pub struct Builds {
 
 impl Builds {
     /// The default: every build `eve_marshal::build::BUILDS` accepts on the
-    /// reference build's line (`pinned` and `equivalent`).
+    /// reference build's line (`pinned`, `equivalent` and `provisional`).
     pub fn registered() -> Builds {
         let line = reg::reference().line;
         let accepted = reg::accepted()

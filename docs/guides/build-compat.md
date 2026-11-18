@@ -87,7 +87,7 @@ build.
 |---|---|
 | build | start.ini `build` |
 | line | release line (start.ini `codename`); a line shares machoVersion, boot.version, codename and region |
-| status | `pinned` (exactly one; the RE corpus is anchored to it), `equivalent` (the delta says so and the human check passed), `unverified` (seen, refused unless `--client-build` names it) |
+| status | `pinned` (exactly one; the RE corpus is anchored to it), `equivalent` (the delta says so and the human check passed), `provisional` (a build of the served line not yet measured beyond triage: served by default on the line's pinned or equivalent bundle, same line only; the tools do not take it without `--build`), `unverified` (seen, refused unless `--client-build` names it) |
 | data_hash | a bundle `data_hash` proved equal for this build, or `-` |
 | evidence | how the status was earned (findings file, date) |
 

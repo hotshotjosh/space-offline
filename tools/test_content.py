@@ -412,6 +412,13 @@ class Builds(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.dogma.registry(self.reg)
 
+    def test_a_provisional_row_parses_and_is_not_taken_without_build(self):
+        with open(self.reg, "a") as fh:
+            fh.write("1003\tL1\tprovisional\t-\tx\n")
+        reg = self.dogma.registry(self.reg)
+        self.assertEqual(reg["1003"]["status"], "provisional")
+        self.assertNotIn("1003", self.dogma.accepted_builds(self.reg))
+
     def test_resolve_accepts_an_equivalent_build_and_refuses_the_rest(self):
         self.assertTrue(self.resolve("1000"))
         self.assertTrue(self.resolve("1001"))

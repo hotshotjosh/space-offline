@@ -1330,7 +1330,7 @@ def registry(path=None):
             continue
         f = line.split("\t")
         if len(f) != 5 or not f[0].isdigit() or f[2] not in (
-                "pinned", "equivalent", "unverified"):
+                "pinned", "equivalent", "provisional", "unverified"):
             raise SystemExit("dogma.py: %s line %d is not `build line status "
                              "data_hash evidence`: %r" % (path or BUILDS_FILE, n, line))
         out[f[0]] = {"line": f[1], "status": f[2],

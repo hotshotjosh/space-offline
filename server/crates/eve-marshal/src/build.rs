@@ -13,9 +13,9 @@
 //! `build.rs`). Its test parses `tools/builds.tsv`, the registry the Python
 //! tools read, and fails if the two disagree. A build-specific value becomes
 //! code here only on the day it differs between builds: 3628513 needs none.
-//! Since 2026-10-31 the reference is 3662168; 3619879 and 3628513 stay
-//! registered as `unverified` (reachable with `--client-build`). The
-//! 2026-11-09 build will repeat this re-pin.
+//! The reference is [`REFERENCE`] (re-pinned 2026-11-04); older builds stay
+//! registered as `unverified` (reachable with `--client-build`). The next
+//! line's re-pin moves [`REFERENCE`] and [`REFERENCE_LINE`] together.
 
 /// The wire identity of one release line: everything in H1/H2 the client
 /// compares for equality. Every build of a line shares it.
@@ -45,6 +45,11 @@ pub enum Status {
     /// `tools/build-delta.py PINNED THIS` said `equivalent`: no protocol,
     /// call-surface, schema or static-data change.
     Equivalent,
+    /// A build of the served line not yet measured beyond triage, with no
+    /// login-path finding against it. Served by default, on the line's
+    /// pinned or equivalent bundle (`content::bundle_accepted`). Only on the
+    /// [`REFERENCE_LINE`]: the row is a stopgap for a same-line hotfix.
+    Provisional,
     /// Seen, not measured. Refused in strict mode unless named explicitly.
     Unverified,
 }
@@ -52,7 +57,10 @@ pub enum Status {
 impl Status {
     /// Accepted by default (strict mode, the content bundle).
     pub fn accepted(self) -> bool {
-        matches!(self, Status::Pinned | Status::Equivalent)
+        matches!(
+            self,
+            Status::Pinned | Status::Equivalent | Status::Provisional
+        )
     }
 
     /// The word `tools/builds.tsv` uses.
@@ -60,6 +68,7 @@ impl Status {
         match self {
             Status::Pinned => "pinned",
             Status::Equivalent => "equivalent",
+            Status::Provisional => "provisional",
             Status::Unverified => "unverified",
         }
     }
@@ -184,7 +193,32 @@ pub fn line_min_build(line: &ReleaseLine) -> u32 {
         .filter(|e| e.status.accepted() && e.line == line)
         .map(|e| e.build)
         .min()
-        .expect("every registered line has an accepted build")
+        .expect("line_min_build: the line has no accepted build")
+}
+
+/// The registry's invariants (track-tq-plan 4.2): exactly one `pinned`
+/// row, and every accepted build (a provisional one included) on `line`.
+#[cfg(test)]
+fn check_registry(table: &[BuildEntry], line: &ReleaseLine) -> Result<(), String> {
+    let pinned: Vec<u32> = table
+        .iter()
+        .filter(|e| e.status == Status::Pinned)
+        .map(|e| e.build)
+        .collect();
+    if pinned.len() != 1 {
+        return Err(format!("expected exactly one pinned row, found {pinned:?}"));
+    }
+    for e in table.iter().filter(|e| e.status.accepted()) {
+        if e.line != line {
+            return Err(format!(
+                "{} is {} but not on line {}",
+                e.build,
+                e.status.name(),
+                line.codename
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -243,6 +277,49 @@ mod tests {
             .collect();
         assert_eq!(pinned, vec![REFERENCE]);
         assert_eq!(reference().build, REFERENCE);
+    }
+
+    #[test]
+    fn provisional_is_accepted_and_named() {
+        assert!(Status::Provisional.accepted());
+        assert_eq!(Status::Provisional.name(), "provisional");
+        assert!(!Status::Unverified.accepted());
+    }
+
+    #[test]
+    fn the_registry_keeps_its_invariants() {
+        check_registry(BUILDS, &REFERENCE_LINE).unwrap();
+    }
+
+    #[test]
+    fn check_registry_refuses_a_bad_table() {
+        static OTHER: ReleaseLine = ReleaseLine {
+            codename: "V98.00",
+            codename_at_region: "V98.00@ccp",
+            ..REFERENCE_LINE
+        };
+        let row = |build, line, status| BuildEntry {
+            build,
+            line,
+            status,
+            data_hash: None,
+        };
+        let l = &REFERENCE_LINE;
+        let good = [row(1, l, Status::Pinned), row(2, l, Status::Provisional)];
+        check_registry(&good, l).unwrap();
+        let other_line = [
+            row(1, l, Status::Pinned),
+            row(2, &OTHER, Status::Provisional),
+        ];
+        assert!(check_registry(&other_line, l).unwrap_err().contains("2"));
+        let two_pinned = [row(1, l, Status::Pinned), row(2, l, Status::Pinned)];
+        assert!(
+            check_registry(&two_pinned, l)
+                .unwrap_err()
+                .contains("pinned")
+        );
+        let none = [row(2, l, Status::Unverified)];
+        assert!(check_registry(&none, l).is_err());
     }
 
     #[test]

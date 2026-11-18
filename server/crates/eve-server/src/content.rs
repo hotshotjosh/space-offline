@@ -296,23 +296,44 @@ fn count_rows(text: &str) -> u64 {
 }
 
 /// Why a bundle's data may serve the accepted builds (BA-4): its
-/// `client_build` is one of them, or its `data_hash` is one the registry
+/// `client_build` is one of them, its `data_hash` is one the registry
 /// proved for one of them (`hash_of` is `eve_marshal::build::entry`'s
-/// `data_hash`, a parameter so a test can register an invented one).
-/// `None` when neither holds.
+/// `data_hash`), or an accepted build is `provisional` and the bundle's
+/// `client_build` is a `pinned` or `equivalent` build **on the same line**
+/// (`entry_of` is `eve_marshal::build::entry`). Both are parameters so a
+/// test can register invented ones. `None` when none holds.
 fn bundle_accepted(
     m: &Manifest,
     accepted: &[u32],
     hash_of: &dyn Fn(u32) -> Option<&'static str>,
+    entry_of: &dyn Fn(u32) -> Option<eve_marshal::build::BuildEntry>,
 ) -> Option<String> {
+    use eve_marshal::build::Status;
     if accepted.iter().any(|b| i64::from(*b) == m.client_build) {
         return Some(format!("client_build {} is accepted", m.client_build));
     }
-    let h = m.data_hash.as_deref()?;
+    if let Some(b) = m
+        .data_hash
+        .as_deref()
+        .and_then(|h| accepted.iter().find(|b| hash_of(**b) == Some(h)))
+    {
+        return Some(format!("data_hash equals build {b}'s registered one"));
+    }
+    let of = u32::try_from(m.client_build).ok().and_then(entry_of)?;
+    if !matches!(of.status, Status::Pinned | Status::Equivalent) {
+        return None;
+    }
     accepted
         .iter()
-        .find(|b| hash_of(**b) == Some(h))
-        .map(|b| format!("data_hash equals build {b}'s registered one"))
+        .find(|b| {
+            entry_of(**b).is_some_and(|e| e.status == Status::Provisional && e.line == of.line)
+        })
+        .map(|b| {
+            format!(
+                "serving provisional build {b} on the bundle of build {}",
+                of.build
+            )
+        })
 }
 
 impl Bundle {
@@ -346,20 +367,25 @@ impl Bundle {
             )));
         }
         let hash_of = |b: u32| eve_marshal::build::entry(b).and_then(|e| e.data_hash);
-        if bundle_accepted(&m, accepted, &hash_of).is_none() {
-            return Err(at(format!(
-                "client_build {}: not one of the accepted client builds ({}), and \
+        let entry_of = |b: u32| eve_marshal::build::entry(b).copied();
+        match bundle_accepted(&m, accepted, &hash_of, &entry_of) {
+            Some(why) if why.starts_with("serving provisional") => eprintln!("[content] {why}"),
+            Some(_) => {}
+            None => {
+                return Err(at(format!(
+                    "client_build {}: not one of the accepted client builds ({}), and \
                  its data_hash ({}) is not registered for any of them. Extract from \
                  an accepted client, or prove the data equal (tools/content.py \
                  --check --against) and register it",
-                m.client_build,
-                accepted
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-                m.data_hash.as_deref().unwrap_or("none: format 1.0")
-            )));
+                    m.client_build,
+                    accepted
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    m.data_hash.as_deref().unwrap_or("none: format 1.0")
+                )));
+            }
         }
         for rec in &m.files {
             let p = dir.join(&rec.path);
@@ -915,6 +941,83 @@ mod tests {
     const INVENTED_BUILD: u32 = 77;
     const INVENTED_HASH: &str = "c872ac9e60959d5caf47923836677cc047ee23074e117d08a81654bccda2ba24";
 
+    /// A registry with no rows, for the tests that do not use one.
+    fn no_entries(_: u32) -> Option<eve_marshal::build::BuildEntry> {
+        None
+    }
+
+    #[test]
+    fn a_provisional_build_opens_a_same_line_bundle_and_refuses_another_line() {
+        use eve_marshal::build::{BuildEntry, REFERENCE_LINE, ReleaseLine, Status};
+        // Invented lines and builds.
+        static OTHER: ReleaseLine = ReleaseLine {
+            codename: "V98.00",
+            codename_at_region: "V98.00@ccp",
+            ..REFERENCE_LINE
+        };
+        let rows = [
+            BuildEntry {
+                build: 10,
+                line: &REFERENCE_LINE,
+                status: Status::Equivalent,
+                data_hash: None,
+            },
+            BuildEntry {
+                build: 11,
+                line: &REFERENCE_LINE,
+                status: Status::Provisional,
+                data_hash: None,
+            },
+            BuildEntry {
+                build: 12,
+                line: &REFERENCE_LINE,
+                status: Status::Unverified,
+                data_hash: None,
+            },
+            BuildEntry {
+                build: 20,
+                line: &OTHER,
+                status: Status::Pinned,
+                data_hash: None,
+            },
+        ];
+        let entry_of = |b: u32| rows.iter().find(|e| e.build == b).copied();
+        let no_hash = |_: u32| None;
+        let bundle_of = |b: i64| {
+            let mut m = Manifest::parse(&manifest_1_1(INVENTED_HASH)).unwrap();
+            m.client_build = b;
+            m.data_hash = None;
+            m
+        };
+        // Served build 11 is provisional: the equivalent same-line bundle
+        // of build 10 opens, with the log line's wording.
+        let why = bundle_accepted(&bundle_of(10), &[11], &no_hash, &entry_of).unwrap();
+        assert_eq!(
+            why,
+            "serving provisional build 11 on the bundle of build 10"
+        );
+        // A bundle of another line is refused.
+        assert_eq!(
+            bundle_accepted(&bundle_of(20), &[11], &no_hash, &entry_of),
+            None
+        );
+        // An unverified bundle build is no basis, and an unverified served
+        // build opens nothing but its own.
+        assert_eq!(
+            bundle_accepted(&bundle_of(12), &[11], &no_hash, &entry_of),
+            None
+        );
+        assert_eq!(
+            bundle_accepted(&bundle_of(10), &[12], &no_hash, &entry_of),
+            None
+        );
+        // Without a provisional build in the served set, nothing changes.
+        assert_eq!(
+            bundle_accepted(&bundle_of(10), &[10], &no_hash, &entry_of).as_deref(),
+            Some("client_build 10 is accepted")
+        );
+    }
+
     #[test]
     fn a_bundle_of_another_build_is_accepted_by_a_registered_data_hash() {
         let hash_of = |b: u32| (b == INVENTED_BUILD).then_some(INVENTED_HASH);
@@ -922,14 +1025,20 @@ mod tests {
         // registered for the accepted INVENTED_BUILD.
         let m = Manifest::parse(&manifest_1_1(INVENTED_HASH)).unwrap();
         assert_eq!(m.client_build, 1);
-        let why = bundle_accepted(&m, &[INVENTED_BUILD], &hash_of).unwrap();
+        let why = bundle_accepted(&m, &[INVENTED_BUILD], &hash_of, &no_entries).unwrap();
         assert!(why.contains("data_hash"), "{why}");
-        assert_eq!(bundle_accepted(&m, &[INVENTED_BUILD + 1], &hash_of), None);
+        assert_eq!(
+            bundle_accepted(&m, &[INVENTED_BUILD + 1], &hash_of, &no_entries),
+            None
+        );
         // A 1.0 bundle has no data_hash, so only its build can admit it.
         let mut old = m.clone();
         old.data_hash = None;
-        assert_eq!(bundle_accepted(&old, &[INVENTED_BUILD], &hash_of), None);
-        assert!(bundle_accepted(&old, &[1], &hash_of).is_some());
+        assert_eq!(
+            bundle_accepted(&old, &[INVENTED_BUILD], &hash_of, &no_entries),
+            None
+        );
+        assert!(bundle_accepted(&old, &[1], &hash_of, &no_entries).is_some());
     }
 
     #[test]
