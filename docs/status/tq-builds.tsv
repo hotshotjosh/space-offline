@@ -1,0 +1,11 @@
+# Tranquility builds and how long the server lagged each one (docs/guides/tracking-tq.md,
+# "Metrics"). Build numbers, lines and UTC times only; no client data. Written by
+# `python3 -I tools/tq-lag.py --record STEP BUILD`; `-` is a step not reached.
+#   tier        T0 data only, T1 code change, T2 new line, T3 native protocol change (or -)
+#   seen_by     notes, esi, launcher or report: the source that showed the build first
+#   note        an [A] with its falsifier for every time that is not proved
+# Evidence for the seed rows: tools/builds.tsv (evidence column), the import time in
+# out/new-build/<build>/import.txt [V] and the git log of the re-pin commit [V].
+build	line	tier	seen_utc	seen_by	imported_utc	provisional_utc	served_utc	pinned_utc	retired_utc	issue	note
+3670638	V24.01	T0	2026-11-04T17:41:44Z	launcher	2026-11-04T17:41:44Z	-	2026-11-04T17:53:11Z	2026-11-04T17:53:11Z	-	#131	[A] seen_utc is the import time (import.txt, proved), so the lag is a lower bound; falsifier: ESI or notes history shows the build deployed earlier. [A] served_utc is the re-pin commit time (git log, proved), not the deploy; falsifier: the stack log shows the build accepted at another time. T0 is [I] from builds.tsv (data-only delta)
+3707965	V24.02	T2	2026-11-17T00:00:00Z	notes	2026-11-17T22:59:25Z	-	-	-	-	#290	[A] seen_utc is 2026-11-17 (lane B: compiled 2026-11-16, so likely the 11-17.1 deploy; the honest lower bound of the lag); falsifier: ESI or notes history shows 3707965 first deployed on another day (the expansion day, 2026-11-10, is the other candidate). imported_utc is import.txt, proved

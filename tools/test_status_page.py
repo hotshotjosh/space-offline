@@ -383,6 +383,35 @@ class Tables(unittest.TestCase):
                 f.write("Space\tTwo\tmissing\tnothing\t\t3.1\t\n")
             self.assertEqual(sp.main(["--check"], d), 1)
 
+    TQ = ("# invented\n" + "\t".join(["build", "line", "tier", "seen_utc", "seen_by", "imported_utc", "provisional_utc",
+          "served_utc", "pinned_utc", "retired_utc", "issue", "note"]) + "\n"
+          "9000001\tLX\tT1\t2000-01-01T00:00:00Z\tnotes\t-\t-\t2000-01-01T05:00:00Z\t2000-01-01T06:00:00Z\t-\t-\t\n")
+
+    def test_the_tracking_tq_block_is_in_the_page_when_the_table_exists(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_root(d, self.GOOD)
+            self.assertEqual(sp.main([], d), 0)
+            page = os.path.join(d, "docs/status/README.md")
+            self.assertNotIn("Tracking TQ", open(page, encoding="utf-8").read())
+            with open(os.path.join(d, "docs/status/tq-builds.tsv"), "w", encoding="utf-8") as f:
+                f.write(self.TQ)
+            self.assertEqual(sp.main(["--check"], d), 1)  # the page is stale without the block
+            self.assertEqual(sp.main([], d), 0)
+            self.assertEqual(sp.main(["--check"], d), 0)
+            text = open(page, encoding="utf-8").read()
+            self.assertIn("## Tracking TQ", text)
+            self.assertIn("9000001 (LX)", text)
+            self.assertNotIn("tracker not asked", text)  # reproducible: the page never asks the tracker
+            self.assertLess(text.index("## By system"), text.index("## Tracking TQ"))
+            self.assertLess(text.index("## Tracking TQ"), text.index("## Client regression waves"))
+
+    def test_a_malformed_tq_table_fails_the_page(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_root(d, self.GOOD)
+            with open(os.path.join(d, "docs/status/tq-builds.tsv"), "w", encoding="utf-8") as f:
+                f.write("nonsense\n")
+            self.assertNotEqual(sp.main([], d), 0)
+
     def test_audit_without_var_skips_green(self):
         with tempfile.TemporaryDirectory() as d:
             self.make_root(d, self.GOOD)

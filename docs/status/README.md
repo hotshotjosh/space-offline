@@ -186,6 +186,20 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 </details>
 
+## Tracking TQ
+
+TQ build **3707965 (V24.02)** · served **3670638 (V24.01)** · pinned **3670638 (V24.01)**.
+
+| build | tier | login lag (h) | build lag (h) |
+|---|---|--:|--:|
+| 3707965 | T2 | - | - |
+| 3670638 | T0 | 0.2 | 0.2 |
+
+Median build lag per tier: T0 0.2 h (1).
+Pin drift: 0 builds served since the last re-pin.
+
+Times that are assumptions, not proved (see `note` in `docs/status/tq-builds.tsv`): 3670638, 3707965.
+
 ## Client regression waves
 
 ![Passed, failed and no-verdict rows of each wave](regress.svg)
