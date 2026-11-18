@@ -2299,21 +2299,23 @@ CFSD_VARIANT_FIELDS = {
     "objectivechains": {("struct:contextParameterTrigger", "value")},
 }
 
-#: Container fields whose element type the loader does not state, with the
-#: kind the data proves. The TSV writes ``dict<str,list>`` for these: the
-#: generated getter builds a ``cfsd.dict`` whose value converter is a
-#: ``cfsd.list`` with no element type the scan can read, so without this
-#: table they come back as `CfsdUnknown`.
+#: Container fields whose element type the TSV does not state, with the kind
+#: the loader and the data prove. The TSV writes ``dict<str,list>`` for these:
+#: `pyd_schema.dict_types` stops at "the lookup builds a ``cfsd.list``" and
+#: does not follow that list type's ``sq_item`` the way `list_element` does
+#: for a list field, so without this table they come back as `CfsdUnknown`.
 #:
-#: **[V-data]** ``nodegraphs`` ``graphNode.connections`` is the graph's
-#: edges: an output-port name (``output``, ``on_success``, ``on_failure``,
-#: ``validation``, ...) to the GUIDs of the nodes it leads to. Read as
-#: ``list<str>``, every edge of every graph lands on a node key of the same
-#: graph (20,311 of 20,311 over 594 graphs, build 3707965); read as the
+#: ``nodegraphs`` ``graphNode.connections`` is the graph's edges: an
+#: output-port name (``output``, ``on_success``, ``on_failure``,
+#: ``validation``, ...) to the GUIDs of the nodes it leads to.
+#: **[V]** ``nodeGraphsLoader.pyd`` (build 3707965): the field's ``cfsd.dict``
+#: type's ``mp_subscript`` coerces its key with ``PyString_AsString`` and
+#: builds a ``cfsd.list`` whose ``sq_item`` calls ``PyString_FromStringAndSize``
+#: and no other box (`docs/re/node-graphs.md` section 4a has the walk).
+#: **[V-data]** read as ``list<str>``, every edge of every graph lands on a
+#: node key of the same graph (20,311 of 20,311 over 594 graphs); read as the
 #: 16-byte ``struct:connection`` instead, 17,804 of 20,311 do and the
-#: ``parameter`` half is unprintable bytes. **[I]** the loader's list
-#: converter is a ``PyString`` one; falsified by a disassembly of
-#: ``nodeGraphsLoader.pyd`` that shows a struct or integer element.
+#: ``parameter`` half is unprintable bytes.
 CFSD_ELEMENT_KINDS = {
     "nodegraphs": {("struct:graphNode", "connections"): "dict<str,list<str>>"},
 }

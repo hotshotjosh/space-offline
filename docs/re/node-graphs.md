@@ -179,11 +179,26 @@ objectives, so none of its variants is read.
 
 ## 4a. The edges: `graphNode.connections`
 
-The loader types `connections` as `dict<str,list>` and states no element
-type, so it decoded as `CfsdUnknown` until `CFSD_ELEMENT_KINDS` named one.
-**[V-data]** It is `dict<str,list<str>>`: an output-port name to the GUID
-keys of the nodes that port leads to. Two readings fit the 8-byte list
-pointer, and the data picks one:
+`findings/pyd-schemas.tsv` types `connections` as `dict<str,list>` with no
+element type, so it decoded as `CfsdUnknown` until `CFSD_ELEMENT_KINDS` named
+one. It is `dict<str,list<str>>`: an output-port name to the GUID keys of the
+nodes that port leads to.
+
+**[V]** from the loader, build 3707965, `bin64/nodeGraphsLoader.pyd`, walked
+with `tools/pyd_schema.py`'s own helpers (RVAs):
+
+| step | what it is | evidence |
+|---|---|---|
+| `graphNode` `connections`, `+24` | builds the `cfsd.dict` type object at `0x176b0` | `parse_chain` on `nodeGraphsLoader.graphNode`'s `tp_getattro` |
+| that type's `mp_subscript`, `0x9130` | coerces the key with `PyString_AsString`; the first object it builds is the `cfsd.list` type at `0x20550` | `dict_types`, `_first_wrapper` |
+| that list type's `sq_item`, `0x7a90` | calls `PyString_FromStringAndSize` and no other box | `list_element(mod, 0x20550)` returns `str` |
+
+`dict_types` stops at "the value is a `cfsd.list`"; it does not take the
+second step that `list_element` takes for a list field, which is why the TSV
+has no element type here.
+
+**[V-data]** Two readings fit the 8-byte list pointer, and the data agrees
+with the loader:
 
 | reading of a list element | edges whose target is a node key of the same graph |
 |---|---|
@@ -198,9 +213,7 @@ Build 3707965; the probe is the §4 one with this loop:
 
 The port names are the node types' outputs (`output`, `on_success`,
 `on_failure`, `validation`, `on_start`, `on_stop`, `nodes`, `group_nodes`,
-...). **[I]** the loader's list converter is a `PyString` one; a disassembly
-of `nodeGraphsLoader.pyd` showing a struct or integer element falsifies it.
-`python3 -I tools/fsd.py generic-check /client` is still 0 bad with it.
+...). `python3 -I tools/fsd.py generic-check /client` is still 0 bad with it.
 
 Tests: `tools/test_fsd_generic.py`
 `Unknowns.test_a_stated_element_kind_decodes_an_untyped_list`.
