@@ -18,23 +18,36 @@ Every flag and `EVE_*` variable is in
   always run as `python3 -I`), and, for the client, Steam with Proton and
   `sudo` for the jail.
 - **The client build is pinned.** `tools/builds.tsv` names it: the one row
-  with status `pinned` (today `3662168`). The server refuses other builds
-  unless the registry marks them `equivalent`
-  ([build-compat.md](build-compat.md)).
+  with status `pinned`
+  (`awk -F'\t' '$3=="pinned"{print $1}' tools/builds.tsv` prints it). The
+  launcher always installs the current Tranquility build. When that build is
+  not `pinned` or `equivalent`, the server refuses it until the registry
+  catches up ([build-compat.md](build-compat.md),
+  [tracking-tq.md](tracking-tq.md)). Server-only work (most issues) needs no
+  client at all.
 - **The client comes from the human.** A person installs EVE Online through
   Steam, logs in once with the official launcher, and lets it download
-  every resource file at the pinned build. Nothing in this repository
+  every resource file. Nothing in this repository
   downloads the client. Check the build:
 
   ```sh
   grep '^build' "$HOME/.steam/steam/steamapps/compatdata/8500/pfx/drive_c/CCP/EVE/tq/start.ini"
-  # build = 3662168
+  awk -F'\t' '$3=="pinned"{print "pinned: " $1}' tools/builds.tsv   # the value it should show
   ```
 
   Steam library elsewhere: set `EVE_ONLINE_PREFIX`.
 - **Disk and RAM.** A server build takes 8-11 GB in `server/target`, and
   the client copy plus ResFiles takes tens of GB. `tools/dev.sh` waits until
   `EVE_MIN_FREE_GB` (default 12) of RAM is free.
+
+### Supported platforms
+
+- Linux, and WSL2 with Ubuntu 24.04, run the server, the tools and the gate.
+- Python 3.11 or newer.
+- Docker, for `tools/dev.sh` (builds and tests) and `tools/analysis.sh`.
+- Ubuntu 22.04 (Python 3.10) and macOS are not supported.
+- The client does not run under WSL. It needs Linux with Steam and Proton,
+  or a separate Windows machine; a server-only checkout needs neither.
 
 ## 2. Build the server
 
@@ -218,15 +231,16 @@ on a dev server spawns bots with `/bots spawn`.
 ```sh
 EVE_MAX_JOBS=6 tools/dev.sh cargo test --locked --workspace
 EVE_MAX_JOBS=6 tools/dev.sh cargo clippy --locked --workspace --all-targets -- -D warnings
-docker run --rm --network none -u $(id -u):$(id -g) -v $PWD/server:/s:rw -w /s eve-offline-build cargo fmt --all
-for t in tools/test_*.py; do python3 -I "$t" || echo "FAILED $t"; done
+tools/dev.sh --lock cargo fmt --all
+rc=0; for t in tools/test_*.py; do python3 -I "$t" || { echo "FAILED $t"; rc=1; }; done; echo "tool tests: exit $rc"
 python3 -I tools/env-ref.py --check   # this page set and the code agree
 tools/land.sh --no-push               # the full gate on your branch
 ```
 
 Expected: every cargo test passes, clippy is quiet, each tool test prints
 `OK`. `tools/land.sh` runs `tools/gate.sh` and branches on its exit code
-alone. Never pipe a test command into `&&`, because the pipe hides the
-exit code. Client scenarios (`tools/client-ci.sh`) need a client and are in
+alone. Run it bare: no `| tail`, `| tee`, `; echo` or `&&` after it, because a
+pipe or a list reports its last command's status, 0 even on red. Its last
+line, `land: result: green|red, ...`, is the verdict. Client scenarios (`tools/client-ci.sh`) need a client and are in
 [client-ci.md](client-ci.md). How to contribute is in
 [contributing.md](contributing.md).

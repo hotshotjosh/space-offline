@@ -121,6 +121,55 @@ def private_prefixes(root: str) -> list[str]:
     return []
 
 
+# The contributor path: an outside agent reads these first, so a reference from one of
+# them to a private doc is a dead link in the export and fails (M9). Other docs may
+# still cite private docs; those references are skipped as before.
+CONTRIBUTOR_DOCS = {
+    "AGENTS.md", "README.md", "CONTRIBUTING-terms.md", "docs/README.md",
+    ".github/pull_request_template.md",
+    "docs/guides/contributing.md", "docs/guides/getting-started.md",
+    "docs/guides/working-together.md", "docs/guides/issue-tracking.md",
+}
+
+# (citing contributor doc, cited path) -> why it stays. Each entry waits on an owner
+# ruling or a fix; an entry fails once the citation is gone.
+ABSENT_PRIVATE_OK: dict = {
+    ("docs/guides/getting-started.md", "docs/guides/remote-clients.md"): "client path, owner ruling pending (M4)",
+    ("docs/guides/getting-started.md", "docs/guides/patcher.md"): "client path, owner ruling pending (M4)",
+    ("docs/README.md", "docs/lanes/INDEX.md"): "the index names a private path until the L2 edit lands",
+}
+
+
+USED_ABSENT_OK: set = set()
+
+
+def skip_absent_private(root: str, citing: str, rel: str, prefixes: list[str], used: set | None = None) -> bool:
+    """True when `rel` is a private doc this tree lacks and the citation may be skipped:
+    the citing doc is not on the contributor path, or the pair is in ABSENT_PRIVATE_OK."""
+    rel = os.path.normpath(rel).replace(os.sep, "/")
+    if not absent_private(root, rel, prefixes):
+        return False
+    if citing not in CONTRIBUTOR_DOCS:
+        return True
+    if (citing, rel) in ABSENT_PRIVATE_OK:
+        if used is not None:
+            used.add((citing, rel))
+        return True
+    return False
+
+
+def stale_absent_ok(root: str, used: set) -> list[str]:
+    """ABSENT_PRIVATE_OK entries that no longer match a citation (only checked in a tree
+    where the cited doc is absent, as an exported tree is)."""
+    out = []
+    for (citing, rel) in sorted(ABSENT_PRIVATE_OK):
+        if not os.path.exists(os.path.join(root, citing)) or (citing, rel) in used:
+            continue
+        if absent_private(root, rel):
+            out.append(f"ABSENT_PRIVATE_OK lists {citing} -> {rel}, which is no longer cited: drop the entry")
+    return out
+
+
 def absent_private(root: str, rel: str, prefixes: list[str] | None = None) -> bool:
     """True when `rel` is a private doc that this tree does not hold (an exported tree).
     A dead link to a public doc, or to a private doc in the private tree, still fails."""
@@ -181,8 +230,8 @@ def check_cited_paths(root, files, planned=None, known=None) -> list[str]:
             p = m.group(0)
             if is_placeholder(p) or os.path.exists(os.path.join(root, p)):
                 continue
-            if absent_private(root, p, prefixes):
-                continue  # a private doc, absent from the exported tree on purpose
+            if skip_absent_private(root, rel, p, prefixes, USED_ABSENT_OK):
+                continue  # a private doc cited from outside the contributor path
             if p in planned:
                 continue
             if (rel, p) in known:
@@ -262,7 +311,7 @@ def check_links(root, files) -> list[str]:
                 continue  # not a path (code such as `x](row)` inside a snippet)
             p = os.path.normpath(os.path.join(root, base, t))
             if not os.path.exists(p):
-                if absent_private(root, os.path.relpath(p, root), prefixes):
+                if skip_absent_private(root, rel, os.path.relpath(p, root), prefixes, USED_ABSENT_OK):
                     continue
                 line = text.count("\n", 0, m.start()) + 1
                 fail.append(f"{rel}:{line}: link to {t}, which does not exist")
@@ -446,6 +495,13 @@ class Tree(unittest.TestCase):
     def test_h_relative_links_resolve(self):
         self.assertEqual(check_links(ROOT, self.files), [])
 
+    def test_absent_private_allowlist_has_no_stale_entries(self):
+        # runs after (a) and (h) in name order is not guaranteed, so recompute
+        USED_ABSENT_OK.clear()
+        check_cited_paths(ROOT, self.files)
+        check_links(ROOT, self.files)
+        self.assertEqual(stale_absent_ok(ROOT, USED_ABSENT_OK), [])
+
     def test_i_no_markdown_links_into_lanes(self):
         self.assertEqual(check_lanes_links(ROOT, self.files), [])
 
@@ -527,12 +583,43 @@ class Negatives(unittest.TestCase):
         self.put(D + "a.md", f"see {D}secret/x.md and {D}hidden.md and {D}public-gone.md and [l]({'../' + D}hidden.md) and [m](gone.md)\n")
         self.put("tools/x.py", f"# {D}secret/y.md\n")
         self.assertEqual(check_cited_paths(self.root, self.files(), planned={}, known={}),
-                         [f"{D}a.md:1: cites {D}public-gone.md, which does not exist"])
+                         [f"{D}README.md:4: cites {D}hidden.md, which does not exist",  # the index is on the contributor path
+                          f"{D}a.md:1: cites {D}public-gone.md, which does not exist"])
         self.assertEqual(check_index(self.root, self.files()), [f"{D}a.md: no row in docs/README.md"])
         self.assertEqual(check_links(self.root, self.files()), [f"{D}a.md:1: link to gone.md, which does not exist"])
         self.assertEqual(check_packets(self.root), ["docs/packets.tsv is missing"])
         self.put("tools/doc-private-prefixes.txt", D + "packets.tsv\n")
         self.assertEqual(check_packets(self.root), [])
+
+    def test_a_contributor_doc_citing_an_absent_private_doc_fails(self):
+        self.put("tools/doc-private-prefixes.txt", D + "secret/\n")
+        self.put("AGENTS.md", f"read {D}secret/x.md and [l]({D}secret/y.md)\n")
+        self.put(D + "other.md", f"read {D}secret/x.md\n")
+        fail = check_cited_paths(self.root, self.files(), planned={}, known={})
+        self.assertEqual(fail, [])  # (a) scans server/, tools/ and docs/ only
+        self.put(D + "guides/getting-started.md", f"read {D}secret/x.md and [l](../secret/y.md)\n")
+        fail = check_cited_paths(self.root, self.files(), planned={}, known={})
+        self.assertEqual(fail, [f"{D}guides/getting-started.md:1: cites {D}secret/x.md, which does not exist"])
+        self.assertEqual(check_links(self.root, self.files()),
+                         [f"AGENTS.md:1: link to {D}secret/y.md, which does not exist",
+                          f"{D}guides/getting-started.md:1: link to ../secret/y.md, which does not exist"])
+
+    def test_an_allowlisted_pair_is_skipped_and_a_stale_one_is_reported(self):
+        self.put("tools/doc-private-prefixes.txt", D + "secret/\n")
+        self.put(D + "guides/getting-started.md", f"read {D}secret/x.md\n")
+        global ABSENT_PRIVATE_OK
+        saved = ABSENT_PRIVATE_OK
+        ABSENT_PRIVATE_OK = {(D + "guides/getting-started.md", D + "secret/x.md"): "invented"}
+        try:
+            USED_ABSENT_OK.clear()
+            self.assertEqual(check_cited_paths(self.root, self.files(), planned={}, known={}), [])
+            self.assertEqual(stale_absent_ok(self.root, USED_ABSENT_OK), [])
+            self.put(D + "guides/getting-started.md", "no citation\n")
+            USED_ABSENT_OK.clear()
+            check_cited_paths(self.root, self.files(), planned={}, known={})
+            self.assertEqual(len(stale_absent_ok(self.root, USED_ABSENT_OK)), 1)
+        finally:
+            ABSENT_PRIVATE_OK = saved
 
     def test_d_a_duplicate_id_fails(self):
         hdr = "\t".join(TSV_HEADER) + "\n"

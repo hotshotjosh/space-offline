@@ -22,7 +22,7 @@ behind them.
 ## The open-PR cap
 
 Open PRs per author: one until your first PR is imported, then up to twenty, and no
-limit once twenty are imported. The count comes from the maintainer's import history.
+limit once twenty are imported. The count comes from the maintainer's import history. A maintainer checks it at import; no bot enforces it.
 
 ## Branches, PRs and the gate
 
@@ -30,7 +30,7 @@ limit once twenty are imported. The count comes from the maintainer's import his
   saying `Closes #N` when it closes an issue. Open it as a draft early if you want others
   to see your files.
 - Everyone runs the same gate on their branch, `tools/land.sh --no-push`. It decides
-  by exit code; never pipe a test into `&&`.
+  by exit code; run it bare, never through a pipe or followed by `;`.
 - A maintainer reviews the PR, imports it into the canonical repo and gates it there.
   An independent review pass over the diff and the PR text (not the author's
   conclusions), by a person or a model, is welcome; paste its findings into the PR and
