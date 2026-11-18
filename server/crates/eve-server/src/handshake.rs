@@ -1650,6 +1650,33 @@ mod tests {
     }
 
     #[test]
+    fn the_v24_02_line_greets_with_its_identity_and_refuses_the_v24_01_one() {
+        // Build 3707965 is registered on its own line [V: start.ini, the
+        // build delta]; a run naming it speaks V24.02 alone.
+        let builds = Builds::parse("3707965").unwrap();
+        assert_eq!(builds.line, &reg::V24_02);
+        let config = Config {
+            builds,
+            ..Config::default()
+        };
+        let mut h = Handshake::new(config.clone(), CHALLENGE);
+        let PyValue::Tuple(t) = h.greeting() else {
+            unreachable!()
+        };
+        assert_eq!(t[3], PyValue::Real(24.02));
+        assert_eq!(t[4], PyValue::Int(3_707_965));
+        assert_eq!(t[5], bstr("V24.02@ccp"));
+        // An H2 echoing the V24.01 identity fails on the version field.
+        let mut h = Handshake::new(config, CHALLENGE);
+        h.greeting();
+        let err = h.on_payload(&h2()).unwrap_err();
+        match err {
+            HandshakeError::VersionMismatch { field, .. } => assert_eq!(field, "boot_version"),
+            other => panic!("got {other:?}"),
+        }
+    }
+
+    #[test]
     fn without_accounts_every_token_is_the_catch_all() {
         let config = Config {
             user_id: 7,

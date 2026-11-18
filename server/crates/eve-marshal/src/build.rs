@@ -96,6 +96,20 @@ pub const V24_01: ReleaseLine = ReleaseLine {
     codename_at_region: "V24.01@ccp",
 };
 
+/// V24.02, region `ccp`: build 3707965, the 2026-11-10 expansion. machoVersion,
+/// secret and padding as V24.01 **[V]** (eveMachoNetVersion.pyc and GPS.pyc
+/// unchanged in meaning, findings/build-delta-3670638-3707965.tsv); version and
+/// codename from start.ini **[V]**.
+pub const V24_02: ReleaseLine = ReleaseLine {
+    macho: 496,
+    version: 24.02,
+    codename: "V24.02",
+    region: "ccp",
+    secret: 170_472,
+    padding: 64,
+    codename_at_region: "V24.02@ccp",
+};
+
 /// The release line the server speaks. A new line is a one-constant edit
 /// here (plus its `ReleaseLine` and `BuildEntry` rows): every alias in
 /// `constants::handshake` and every test reads this.
@@ -131,6 +145,12 @@ pub static BUILDS: &[BuildEntry] = &[
         build: REFERENCE,
         line: &V24_01,
         status: Status::Pinned,
+        data_hash: None,
+    },
+    BuildEntry {
+        build: 3_707_965,
+        line: &V24_02,
+        status: Status::Unverified,
         data_hash: None,
     },
 ];
