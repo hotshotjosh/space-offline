@@ -1435,6 +1435,26 @@ def eoci_main(EOCI_NAME):
         except Exception:
             return None
 
+    def client_accurate(item_id, attribute):
+        """The attribute as the client's godma holds it, which the server's
+        pushes drive: `dogmaLocation.GetAccurateAttributeValue` reads godma
+        while the pilot is in space and its own sheet docked [V:
+        clientDogmaLocation.py].  The local sheet (`GetAttributeValue`) starts
+        no activation effect: `OnGodmaShipEffect` only flags the module, so
+        a burst never reaches it [V: fci_rig_set run 2026-11-18, local dogma
+        385.56 through the burst while godma and the ball read 442.68, which
+        is 385.56 x 1.24 / 1.08, the bundle's own modifiers]."""
+        loc = dogma_loc()
+        if loc is None:
+            return None
+        ok, v = safe(lambda: loc.GetAccurateAttributeValue(item_id, attribute))
+        if not ok:
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+
     def gun_damage(gun_ids):
         return [client_attr(g, ATTR_DAMAGE) for g in gun_ids]
 
@@ -1544,7 +1564,7 @@ def eoci_main(EOCI_NAME):
         sleep_ms(5000)
         sess = builtin('session')
         ship_id = getattr_safe(sess, 'shipid')
-        before_ball, before_dogma = top_ball_speed(), client_attr(ship_id, ATTR_MAX_VELOCITY)
+        before_ball, before_dogma = top_ball_speed(), client_accurate(ship_id, ATTR_MAX_VELOCITY)
         check('online: the ball\'s top speed matches the client\'s own dogma',
               before_ball is not None and before_dogma is not None
               and abs(before_ball - before_dogma) < 1.0,
@@ -1554,7 +1574,7 @@ def eoci_main(EOCI_NAME):
         if not ok:
             return
         sleep_ms(3000)
-        during_ball, during_dogma = top_ball_speed(), client_attr(ship_id, ATTR_MAX_VELOCITY)
+        during_ball, during_dogma = top_ball_speed(), client_accurate(ship_id, ATTR_MAX_VELOCITY)
         check('burst: the ball\'s top speed matches the client\'s own dogma (F1)',
               during_ball is not None and during_dogma is not None
               and abs(during_ball - during_dogma) < 1.0,
