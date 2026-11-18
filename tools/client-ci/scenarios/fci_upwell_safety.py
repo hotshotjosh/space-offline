@@ -14,10 +14,14 @@ window's own other route: `structureAssetSafety.MovePersonalAssetsToSafety`
 after its confirm dialog).  Then, read off the client's own services:
 
 1. `GetItemsInSafetyForCharacter` lists the wrap: its row has the keys the
-   client's own `AssetSafetyEntry` reads, and that class's `GetNameAndSystem`
-   and `GetColumnSortValues` accept it; `assetSafety.GetWrapName` agrees with
-   the row's name; `GetStructuresICanDeliverTo` names the nearest NPC station
-   and the structure;
+   client's own `AssetSafetyEntry` reads (build 3707965: `daysUntilCanDeliver`,
+   `daysUntilAutoMove`, `defaultDestinationInfo`, `structureTypeID`), and
+   that class's `GetNameAndSystem` and `GetColumnSortValues` accept it;
+   `assetSafety.GetWrapName` agrees with the row's name;
+   `GetStructuresICanDeliverTo(system, structureTypeID)` answers one flat
+   list (each entry with `solarSystemID` and `typeID`) naming the nearest NPC
+   station and the structure, and the deliver window's own
+   `GetSortedStationList` and `GetSortedStructures` accept it;
 2. delivery before the wait is refused and the wrap stays listed;
 3. after the client's own "Move Timer" step (`MoveEjectTimeGM`, by the number
    of days the row says the wait is) `MoveSafetyWrapToStructure` delivers it
@@ -1585,7 +1589,7 @@ def eoci_main(EOCI_NAME):
         if row is None:
             return
         wrap = row['assetWrapID']
-        near = row['nearestNPCStationInfo']
+        near = row['defaultDestinationInfo']
         check('the wrap is in the pilot\'s system', row['solarSystemID'] == system,
               '%s vs %s' % (text(row['solarSystemID']), text(system)))
         check('its nearest NPC station is named', bool(near['itemID']) and bool(near['typeID']),
@@ -1595,8 +1599,8 @@ def eoci_main(EOCI_NAME):
         age = (now - row['ejectTime']) / float(sec) if now and ok and sec else None
         check('it was made just now (ejectTime is the wrap\'s own clock)',
               age is not None and -60.0 < age < 600.0, 'age %s s' % fmt(age, 0))
-        manual = row['daysUntilCanDeliverConst']
-        auto = row['daysUntilAutoMoveConst']
+        manual = row['daysUntilCanDeliver']
+        auto = row['daysUntilAutoMove']
         check('the manual wait is shorter than the long one', 0 < manual <= auto,
               '%s then %s days' % (text(manual), text(auto)))
         ok, cls = safe(lambda: __import__(
@@ -1612,17 +1616,36 @@ def eoci_main(EOCI_NAME):
         ok, nm = safe(lambda: builtin('sm').GetService('assetSafety').GetWrapName(wrap))
         check('assetSafety.GetWrapName gives the row\'s name', ok and nm == row['wrapName'],
               text(nm)[:200])
-        ok, dest = rcall('structureAssetSafety', 'GetStructuresICanDeliverTo', system)
+        check('the row names its structure type', bool(row.get('structureTypeID')))
+        ok, dest = rcall('structureAssetSafety', 'GetStructuresICanDeliverTo',
+                         system, row['structureTypeID'])
         ids = []
+        near_sys = []
         if ok:
-            ids = [d['itemID'] for d in list(dest[0])]
+            ids = [d['itemID'] for d in list(dest)]
+            near_sys = [d['solarSystemID'] for d in list(dest) if d['itemID'] == near['itemID']]
         check('the delivery window lists the structure and the nearest station',
-              ok and item_id in ids and near['itemID'] in ids and dest[1]['itemID'] == near['itemID'],
+              ok and item_id in ids and near['itemID'] in ids and bool(near_sys),
               text(dest)[:300])
+        entries = list(dest) if ok else []
+        check('every deliver entry has solarSystemID and typeID',
+              ok and all(d.get('solarSystemID') and d.get('typeID') for d in entries),
+              text(dest)[:300])
+        ok, win = safe(lambda: __import__(
+            'eve.client.script.ui.shared.assets.assetSafetyDeliverWindow',
+            fromlist=['GetSortedStationList']))
+        precondition('the client\'s deliver window module imports', ok, text(win)[:200])
+        if ok:
+            ok, v = safe(lambda: win.GetSortedStationList([dict(d) for d in entries]))
+            check('the client\'s own GetSortedStationList accepts the list', ok, text(v)[:200])
+            ok, v = safe(lambda: win.GetSortedStructures(system, [dict(d) for d in entries]))
+            check('and GetSortedStructures', ok, text(v)[:200])
+        # build 3707965 sends the destination's own system as the second argument
+        dest_sys = near_sys[0] if near_sys else system
 
         # 2. too early
         ok, v = rcall_kw('structureAssetSafety', 'MoveSafetyWrapToStructure',
-                         (wrap, system), {'destinationID': near['itemID']})
+                         (wrap, dest_sys), {'destinationID': near['itemID']})
         check('delivery before the wait is refused', not ok, text(v)[:200])
         drop_cache()
         ok, rows = safety_rows()
@@ -1633,7 +1656,7 @@ def eoci_main(EOCI_NAME):
         check('MoveEjectTimeGM (the menu\'s step) is accepted', ok, text(v)[:200])
         before = cash()
         ok, v = rcall_kw('structureAssetSafety', 'MoveSafetyWrapToStructure',
-                         (wrap, system), {'destinationID': near['itemID']})
+                         (wrap, dest_sys), {'destinationID': near['itemID']})
         check('delivery after the wait is accepted', ok, text(v)[:300])
         if not ok:
             return
@@ -1664,7 +1687,7 @@ def eoci_main(EOCI_NAME):
             return
         wrap2 = row['assetWrapID']
         before = cash()
-        ok, v = rcall('structureAssetSafety', 'MoveEjectTimeGM', wrap2, days_of(row['daysUntilAutoMoveConst']))
+        ok, v = rcall('structureAssetSafety', 'MoveEjectTimeGM', wrap2, days_of(row['daysUntilAutoMove']))
         check('MoveEjectTimeGM by the long wait is accepted', ok, text(v)[:200])
 
         def moved():
