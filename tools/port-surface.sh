@@ -25,17 +25,20 @@
 # then joins both sets against what we serve (scan_calls_served.py, and a text
 # search of server/crates) with tools/port_surface.py. Output, in DIR:
 #
-#   surface.md         one section per step G1-G6, SERVED-AND-CHANGED FIRST
+#   surface.md         one section per step G1-G7, SERVED-AND-CHANGED FIRST
 #   surface-diff.tsv   one row per change
 #   old/ new/          each side's tables, meta.txt, per-tool logs
 #   served.json        what our dispatcher answers
+#   shapes/            G7: answer-shapes.py's shapes.md, shapes.tsv, server-keys.tsv
+#                      (a key we emit that the new client reads nowhere is a served impact)
 #
 # DIR defaults to <dir of NEW_PYC>/surface when NEW_PYC is .../pyc (so
 # out/new-build/<build>/surface, which is where tools/new-build.sh --report
 # looks), else out/port-surface/<name of NEW_PYC>.
 #
 # Exit 0: nothing we serve moved. Exit 3: something did (read surface.md).
-# Exit 2: usage or a missing tree. Exit 1: a tool failed (see old/*.log).
+# Exit 2: usage or a missing tree. Exit 1: a tool failed (see old/*.log), or G7 failed (the join
+# still ran and surface.md names G7 as missing).
 #
 # **The cache.** The ten scanners take about ten minutes per tree, nearly all in
 # scan_calls. A side is cached under out/port-surface-cache/ by a key made of the
@@ -193,6 +196,20 @@ if ((rc1 || rc2)); then echo "port-surface: a side failed" >&2; exit 1; fi
 echo "== our dispatcher's served set"
 DK_TREE="" DK_OUT=$out DK_CLIENT="" dk env SCAN_SERVED=/o/served.json python3 /work/tools/scan_calls_served.py > /dev/null
 
+echo "== G7 answer shapes"
+rc7=0
+rm -rf "$out/shapes"   # never a stale answer from an earlier run
+docker run --rm -i --network none --user "$(id -u):$(id -g)" -e PYTHONDONTWRITEBYTECODE=1 \
+    -v "$REPO:/work:ro" -v "$old:/old:ro" -v "$new:/new:ro" -v "$out:/o" -w /o "$IMAGE" \
+    python3 -I /work/tools/answer-shapes.py /old /new --server /work/server/crates --served /o/served.json --out /o/shapes \
+    || rc7=$?
+g7failed=0
+case $rc7 in
+    0|3) ;;
+    # The join still runs (G1-G6 are worth having); G7 says "missing" in surface.md, and we exit 1 at the end.
+    *) echo "port-surface: answer-shapes failed (exit $rc7); G7 is missing from the join" >&2; g7failed=1 ;;
+esac
+
 echo "== joining"
 rc=0
 DK_TREE="" DK_OUT=$out DK_CLIENT="" dk python3 -I /work/tools/port_surface.py /o/old /o/new --out /o --repo /work || rc=$?
@@ -200,5 +217,7 @@ case $rc in
     0|3) ;;
     *) echo "port-surface: the join failed (exit $rc)" >&2; exit 1 ;;
 esac
+((rc7 != 3)) || rc=3   # G7's own verdict folds into ours
 echo "== $out/surface.md ($([[ $rc == 3 ]] && echo "SERVED IMPACT" || echo "no served impact"))"
+if ((g7failed)); then echo "port-surface: exit 1: G7 (answer-shapes) failed, so this verdict is incomplete" >&2; exit 1; fi
 exit "$rc"

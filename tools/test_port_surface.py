@@ -261,7 +261,7 @@ class Compare(unittest.TestCase):
     def test_a_missing_table_is_a_note_not_a_crash(self):
         rep, rows = self.run_cmp()
         self.assertEqual(rep.rows, [])
-        for sec in ('G1', 'G2', 'G3', 'G4', 'G5', 'G6'):
+        for sec in ('G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7'):
             self.assertTrue(rep.notes[sec], sec)
 
     def test_surface_md_lists_served_changes_first_and_keeps_all_rows_in_the_tsv(self):
@@ -279,6 +279,26 @@ class Compare(unittest.TestCase):
         self.assertEqual(tsv[0], 'section\tchange\tkey\tdetail\tserved\timpact')
         self.assertEqual(len(tsv) - 1, 61)
 
+    def test_shapes_rows_are_served_impacts_in_g7(self):
+        head = 'pass\tstatus\tkey\tserver_site\told_readers\tnew_readers\tdetail\n'
+        put(self.out + '/shapes/shapes.tsv',
+            head + 'B\tSERVED gone\tinventedKeyOne\tservice/x.rs:9\t2\t0\tcandidate rename: inventedKeyTwo\n')
+        put(self.out + '/shapes/server-keys.tsv', 'key\tfile:line\tsites\ninventedKeyOne\tservice/x.rs:9\t1\n')
+        rep, rows = self.run_cmp()
+        r = rows[('G7', 'served gone', 'inventedKeyOne')]
+        self.assertTrue(r[5])
+        self.assertIn('candidate rename: inventedKeyTwo', r[3])
+        self.assertEqual(rep.stats['G7 server answer keys'], ('-', 1))
+        self.assertEqual(ps.main([self.old.dir, self.new.dir, '--out', self.out, '--repo', self.repo]), 3)
+        self.assertIn('**SERVED** served gone `inventedKeyOne`', rd(self.out + '/surface.md'))
+
+    def test_empty_shapes_are_no_impact_and_a_missing_file_is_a_note(self):
+        rep, rows = self.run_cmp()
+        self.assertTrue(rep.notes['G7'])
+        put(self.out + '/shapes/shapes.tsv', 'pass\tstatus\tkey\tserver_site\told_readers\tnew_readers\tdetail\n')
+        rep, rows = self.run_cmp()
+        self.assertEqual([r for r in rep.rows if r[0] == 'G7'], [])
+
     def test_unknown_directory_is_a_usage_error(self):
         with self.assertRaises(SystemExit):
             ps.main([self.old.dir, os.path.join(self.tmp, 'nope'), '--out', self.out])
@@ -288,7 +308,7 @@ FAKE_DOCKER = r'''#!/usr/bin/env bash
 # Maps /work, /o, /tree onto the fake checkout and writes tiny invented tables.
 echo "docker $*" >> "$FAKE_LOG"
 [[ $1 == image ]] && exit 0
-work="" o="" tree=""
+work="" o="" tree="" newtree=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
     if [[ ${args[i]} == -v ]]; then
@@ -297,6 +317,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
             *:/work:ro) work=${m%%:*} ;;
             *:/o) o=${m%%:*} ;;
             *:/tree:ro) tree=${m%%:*} ;;
+            *:/new:ro) newtree=${m%%:*} ;;
         esac
     fi
 done
@@ -315,6 +336,14 @@ case $base in
     scan_proto_messages.py) : > "$o/proto-messages.txt" ;;
     gw_dump.py) : > "$o/gw-protos.txt" ;;
     scan_calls_served.py) echo '{"services": ["alpha"], "pairs": ["alpha\tGetThing"]}' > "$o/served.json" ;;
+    answer-shapes.py)
+        [[ -f $newtree/../shape-fails ]] && exit 5
+        mkdir -p "$o/shapes"
+        printf 'pass\tstatus\tkey\tserver_site\told_readers\tnew_readers\tdetail\n' > "$o/shapes/shapes.tsv"
+        echo "args: ${cmd[*]}" >> "$o/shapes-args"
+        [[ -f $newtree/../shape-gone ]] || exit 0
+        printf 'B\tSERVED gone\tinventedKey\tservice/x.rs:1\t1\t0\tn\n' >> "$o/shapes/shapes.tsv"
+        exit 3 ;;
     port_surface.py) exec python3 -I "$work/tools/port_surface.py" "$o/old" "$o/new" --out "$o" --repo "$work" ;;
     *) # scan_remote / scan_services run through `bash -c`
         case "${cmd[*]}" in
@@ -407,6 +436,29 @@ class Wrapper(unittest.TestCase):
         self.assertEqual(r.returncode, 3, r.stderr + r.stdout)
         self.assertIn('**SERVED** arity `alpha.GetThing`', rd(self.tmp + '/o/surface.md'))
         self.assertIn('SERVED IMPACT', r.stdout)
+
+    def test_g7_runs_answer_shapes_on_both_trees_and_its_verdict_folds_in(self):
+        out = os.path.join(self.tmp, 'o')
+        r = self.sh(self.old, self.new, '--out', out)
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertIn('== G7 answer shapes', r.stdout)
+        args = rd(out + '/shapes-args')
+        self.assertIn('/old /new --server /work/server/crates', args)
+        self.assertIn('--out /o/shapes', args)
+        put(os.path.dirname(self.new) + '/shape-gone', '')
+        r = self.sh(self.old, self.new, '--out', out)
+        self.assertEqual(r.returncode, 3, r.stderr + r.stdout)
+        self.assertIn('**SERVED** served gone `inventedKey`', rd(out + '/surface.md'))
+
+    def test_a_failed_g7_still_runs_the_join_and_exits_one_at_the_end(self):
+        out = os.path.join(self.tmp, 'o')
+        put(os.path.join(os.path.dirname(self.new), 'shape-fails'), '')
+        r = self.sh(self.old, self.new, '--out', out)
+        self.assertEqual(r.returncode, 1, r.stderr + r.stdout)
+        self.assertIn('answer-shapes failed (exit 5)', r.stderr)
+        self.assertIn('== joining', r.stdout)
+        self.assertTrue(os.path.isfile(out + '/surface.md'))
+        self.assertIn('shapes/shapes.tsv missing', rd(out + '/surface.md'))
 
     def test_the_cache_serves_an_unchanged_side_and_a_changed_tree_misses(self):
         out = os.path.join(self.tmp, 'o')

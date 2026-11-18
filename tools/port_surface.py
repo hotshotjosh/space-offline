@@ -10,7 +10,7 @@ client-callable.tsv, push-events.tsv, session-keys.tsv, user-errors.tsv,
 proto-messages.txt, gw-protos.txt). This file only reads those tables and our
 own crates; it never reads the client or a bytecode tree.
 
-Writes DIR/surface.md (one section per step G1-G6 of the port-day checklist,
+Writes DIR/surface.md (one section per step G1-G7 of the port-day checklist,
 stage G of r-port-1109 section 1; **served and changed first**) and DIR/surface-diff.tsv (one row per
 change, machine-readable). Exit 0 when nothing we serve moved, 3 when
 something did. An impact is:
@@ -23,7 +23,9 @@ something did. An impact is:
   they build names from) that was removed or changed (G4);
 - a remote service or exported client call our crates name that is gone (G5);
 - a UserError key our crates name that is gone or changed its `loc_args` (G6);
-- a session key that stopped being read at all (G2).
+- a session key that stopped being read at all (G2);
+- a key we emit in an answer that the new client reads nowhere (G7, from `tools/answer-shapes.py`,
+  which port-surface.sh runs first; the key tables above come from DIR/shapes/).
 
 "Our crates" is a text search of `server/crates` for the quoted name (the
 dispatcher's served set comes from `served.json`, which port-surface.sh makes
@@ -562,6 +564,32 @@ def compare_errors(rep, old, new, crates):
                         sv, used and 'loc_args' in diff)
 
 
+# ---------------------------------------------------------------- G7 answer shapes
+
+def compare_shapes(rep, outdir):
+    """Rows of DIR/shapes/shapes.tsv, which tools/answer-shapes.py wrote (port-surface.sh runs it
+    before this join): a key we emit that the new client reads nowhere. Every such row is a
+    served impact: we emit it, so the client would not find it."""
+    t = read_tsv(os.path.join(outdir, 'shapes', 'shapes.tsv'))
+    if t is None:
+        rep.note('G7', 'shapes/shapes.tsv missing: answer shapes not compared')
+        return
+    head, rows = t
+    col = {c: i for i, c in enumerate(head)}
+    need = ('status', 'key', 'server_site', 'detail')
+    if any(c not in col for c in need):
+        rep.note('G7', 'shapes/shapes.tsv has no %s column: not compared' % ', '.join(need))
+        return
+    keys = read_tsv(os.path.join(outdir, 'shapes', 'server-keys.tsv'))
+    rep.stat('G7 server answer keys', '-', len(keys[1]) if keys else '-')
+    for r in rows:
+        if len(r) < len(head):
+            continue
+        status = r[col['status']]
+        rep.add('G7', status.lower(), r[col['key']], '%s; at %s' % (r[col['detail']], r[col['server_site']]),
+                'yes', status.startswith('SERVED'))
+
+
 # ---------------------------------------------------------------- output
 
 SECTIONS = [
@@ -571,6 +599,7 @@ SECTIONS = [
     ('G4', 'Gateway (gw-protos.txt, proto-messages.txt)'),
     ('G5', 'Services (bound-objects.json, remote-services.txt, client-services.json, client-callable.tsv)'),
     ('G6', 'User errors (user-errors.tsv)'),
+    ('G7', 'Answer shapes (shapes/shapes.tsv, from tools/answer-shapes.py)'),
 ]
 
 
@@ -616,7 +645,7 @@ def render(rep, old, new, meta_old, meta_new):
         out.append('')
     out.append('## Not automated')
     out.append('')
-    out.append('- G7: `performanceMetricsService` not reached on the pinned build: grep the client log for `no such service`.')
+    out.append('- `performanceMetricsService` not reached on the pinned build: grep the client log for `no such service`.')
     out.append('- `payload_shape`, `risk` and `notes` of push-events are loose cells (62 of them are judgement); a `shape` row is a prompt to re-read the handler, not a verdict.')
     out.append('- call_site line numbers move with every build; the comparison is on the (service, method) pair, argument counts, kind and consumer.')
     out.append('- Run `tools/port-recheck.py` over `findings/port-recheck.tsv` for the citation and constant checks (step H of the checklist).')
@@ -634,6 +663,7 @@ def run(old, new, outdir, repo):
     compare_gateway(rep, old, new, crates)
     compare_services(rep, old, new, crates, served)
     compare_errors(rep, old, new, crates)
+    compare_shapes(rep, outdir)
     os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, 'surface.md'), 'w', encoding='utf8', newline='\n') as fh:
         fh.write(render(rep, old, new, read_meta(old), read_meta(new)))
