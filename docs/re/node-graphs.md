@@ -177,6 +177,34 @@ variants over 47 distinct tags; `atoms` 178 variants over 19 tags, `nodetypes`
 `objectivechains` has no `contextParameterTrigger` set on any of its 571
 objectives, so none of its variants is read.
 
+## 4a. The edges: `graphNode.connections`
+
+The loader types `connections` as `dict<str,list>` and states no element
+type, so it decoded as `CfsdUnknown` until `CFSD_ELEMENT_KINDS` named one.
+**[V-data]** It is `dict<str,list<str>>`: an output-port name to the GUID
+keys of the nodes that port leads to. Two readings fit the 8-byte list
+pointer, and the data picks one:
+
+| reading of a list element | edges whose target is a node key of the same graph |
+|---|---|
+| `str` (an 8-byte string pointer) | **20,311 of 20,311**, over 594 graphs and 22,062 nodes |
+| `struct:connection` (16 bytes, `node` + `parameter`) | 17,804 of 20,311, and the `parameter` half is unprintable bytes |
+
+Build 3707965; the probe is the §4 one with this loop:
+
+    E = [(g, t) for g in G.values() for n in g["nodes"].values()
+         for p, ts in (n["connections"] or {}).items() for t in ts]
+    print(len(E), sum(t in g["nodes"] for g, t in E))
+
+The port names are the node types' outputs (`output`, `on_success`,
+`on_failure`, `validation`, `on_start`, `on_stop`, `nodes`, `group_nodes`,
+...). **[I]** the loader's list converter is a `PyString` one; a disassembly
+of `nodeGraphsLoader.pyd` showing a struct or integer element falsifies it.
+`python3 -I tools/fsd.py generic-check /client` is still 0 bad with it.
+
+Tests: `tools/test_fsd_generic.py`
+`Unknowns.test_a_stated_element_kind_decodes_an_untyped_list`.
+
 ## 5. The node vocabulary a server needs
 
 `nodetypes` names 45 node types **[V-data]**. The ones that touch the shared
@@ -204,6 +232,6 @@ these nodes.
 
 - The inner numbering of the objective tables' nested arms (tags 65, 66):
   unused in this build.
-- The `dict<str,list>` fields of these tables (`graphNode.connections`,
-  `objectivechains` `triggers`) are still `CfsdUnknown`: their element type is
-  not stated by the loader, and it is a different question from the variant.
+- `objectivechains` `triggers` (`dict<str,list>`) is still `CfsdUnknown`: its
+  element type is not stated by the loader. `graphNode.connections` is
+  decoded (§4a).

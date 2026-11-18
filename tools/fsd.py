@@ -2299,6 +2299,25 @@ CFSD_VARIANT_FIELDS = {
     "objectivechains": {("struct:contextParameterTrigger", "value")},
 }
 
+#: Container fields whose element type the loader does not state, with the
+#: kind the data proves. The TSV writes ``dict<str,list>`` for these: the
+#: generated getter builds a ``cfsd.dict`` whose value converter is a
+#: ``cfsd.list`` with no element type the scan can read, so without this
+#: table they come back as `CfsdUnknown`.
+#:
+#: **[V-data]** ``nodegraphs`` ``graphNode.connections`` is the graph's
+#: edges: an output-port name (``output``, ``on_success``, ``on_failure``,
+#: ``validation``, ...) to the GUIDs of the nodes it leads to. Read as
+#: ``list<str>``, every edge of every graph lands on a node key of the same
+#: graph (20,311 of 20,311 over 594 graphs, build 3707965); read as the
+#: 16-byte ``struct:connection`` instead, 17,804 of 20,311 do and the
+#: ``parameter`` half is unprintable bytes. **[I]** the loader's list
+#: converter is a ``PyString`` one; falsified by a disassembly of
+#: ``nodeGraphsLoader.pyd`` that shows a struct or integer element.
+CFSD_ELEMENT_KINDS = {
+    "nodegraphs": {("struct:graphNode", "connections"): "dict<str,list<str>>"},
+}
+
 #: Where a variant keeps its tag: a ``uint32`` at ``+24`` of its 32 bytes.
 #: The value sits at ``+0``: inline for a scalar (``i32``, ``u8``, ``f32``,
 #: ``i64``), as a payload-relative arena pointer for a string or a list
@@ -2374,6 +2393,7 @@ class CfsdDecoder:
         self.n = len(table.pl)
         self.schema = schema
         self.variants = CFSD_VARIANT_FIELDS.get(schema.table, ())
+        self.elements = CFSD_ELEMENT_KINDS.get(schema.table, {})
         self.variant_arms = CFSD_VARIANT_ARMS.get(
             CFSD_VARIANT_TABLE_ARMS.get(schema.table), ())
         #: ``{field path: {tag: count}}`` -- every variant read, by tag.
@@ -2486,7 +2506,8 @@ class CfsdDecoder:
             if (owner, f.name) in self.variants:
                 row[f.name] = self.variant(base + f.offset, owner + "." + f.name)
                 continue
-            row[f.name] = self.value(f.kind, base + f.offset, owner + "." + f.name)
+            kind = self.elements.get((owner, f.name), f.kind)
+            row[f.name] = self.value(kind, base + f.offset, owner + "." + f.name)
         return row
 
     def variant(self, o, path=None):
