@@ -1530,7 +1530,7 @@ def eoci_main(EOCI_NAME):
         sleep_ms(4000)   # the dogma attribute trails the inventory list [V: fci_x_rig]
         two = gun_damage(fitted)
         check('the rig set raises both guns\' damageMultiplier (client dogma)',
-              all(a is not None and b is not None and b > a for a, b in zip(two, bare)),
+              all(a is not None and b is not None and b > a for a, b in zip(bare, two)),
               '%s -> %s' % (text(bare), text(two)))
 
         ok, why = fit_module(gun, FLAG_HI0 + 2)
