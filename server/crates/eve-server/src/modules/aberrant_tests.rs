@@ -147,10 +147,18 @@ fn top_speed(reg: &Registry) -> f64 {
 fn an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end() {
     let mut reg = world();
     // Online: 400 x 1.08.
-    assert!((top_speed(&reg) - 432.0).abs() < 1e-3, "{}", top_speed(&reg));
+    assert!(
+        (top_speed(&reg) - 432.0).abs() < 1e-3,
+        "{}",
+        top_speed(&reg)
+    );
     go(&mut reg, M_OVERDRIVE, "inventedBurstSpeed", T0);
     // Active: 8 x 3 = 24 percent.
-    assert!((top_speed(&reg) - 496.0).abs() < 1e-3, "{}", top_speed(&reg));
+    assert!(
+        (top_speed(&reg) - 496.0).abs() < 1e-3,
+        "{}",
+        top_speed(&reg)
+    );
     let told = speeds(&mut reg);
     assert_eq!(told.len(), 1, "{told:?}");
     assert!((told[0] - 496.0).abs() < 1e-3);
@@ -185,7 +193,10 @@ fn the_capacitor_is_anchored_before_a_recharge_change() {
     go(&mut reg, M_RECHARGER, "inventedBurstCap", t);
     let c = reg.modules().charge(SHIP).expect("anchored");
     assert_eq!(c.at, t);
-    assert!((c.value - at_old_rate).abs() < 1e-9, "{c:?} vs {at_old_rate}");
+    assert!(
+        (c.value - at_old_rate).abs() < 1e-9,
+        "{c:?} vs {at_old_rate}"
+    );
     // And the burst's own end re-anchors again, at the rate it ran at.
     let end = t + 10 * SEC;
     let (at_burst_rate, _) = capacitor_at(&reg, SHIP, HULL, end);

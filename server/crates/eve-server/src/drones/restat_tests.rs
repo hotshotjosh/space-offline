@@ -3,7 +3,7 @@
 //! the sheet's character node. **Every id and number here is invented**
 //! (the 981_6xx_xxx band): no client value is asserted.
 
-use super::tests::{ALICE, ALICE_SHIP, BIG_BAY,  SK_DRONES, undock, world_in};
+use super::tests::{ALICE, ALICE_SHIP, BIG_BAY, SK_DRONES, undock, world_in};
 use super::*;
 use crate::grid::tests::{drain, sent_to};
 

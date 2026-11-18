@@ -5,7 +5,7 @@
 //! (`mutator_data::value`), never from `dynamic_item::attributes` itself.
 
 use super::tests::{
-    ALICE, ALICE_SHIP, BIG_BAY, DRONE, ONE_BAY,  SK_DRONES, SK_IFACE, SYSTEM, undock, world_in,
+    ALICE, ALICE_SHIP, BIG_BAY, DRONE, ONE_BAY, SK_DRONES, SK_IFACE, SYSTEM, undock, world_in,
 };
 use super::*;
 

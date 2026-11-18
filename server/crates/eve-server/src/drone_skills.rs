@@ -137,9 +137,7 @@ pub fn missing_skill(w: &Registry, owner: i64, type_id: i64) -> Option<(i64, i64
 /// rig's assign or add, as the client's dogma shows it [V: spec F4]. Else
 /// the skill's level.
 pub fn max_active(w: &Registry, owner: i64) -> i64 {
-    let sheet = w
-        .character(owner)
-        .and_then(|c| dogma::sheet(w, c.ship_id));
+    let sheet = w.character(owner).and_then(|c| dogma::sheet(w, c.ship_id));
     match sheet {
         Some(s) => (s.character(ATTR_MAX_ACTIVE).round() as i64).max(0),
         None => level_of(w, owner, SKILL_DRONES),
