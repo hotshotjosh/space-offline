@@ -1550,7 +1550,14 @@ def eoci_main(EOCI_NAME):
         in_t, in_q = list(inputs.items())[0]
         out_t, out_q = list(outputs.items())[0]
         in_t, in_q, out_t, out_q = int(in_t), int(in_q), int(out_t), int(out_q)
-        gm('/createitem %d %d' % (in_t, in_q))
+        # In space `/createitem` puts the stack in the ship hold, and a hold create is
+        # capped at 1000 a call (`slash.rs` create_in_hold BadQuantity [V]: the 3707965
+        # run asked for 45000 in one call and got 0), so give the input in chunks.
+        left = in_q
+        while left > 0:
+            step = min(left, 1000)
+            gm('/createitem %d %d' % (in_t, step))
+            left -= step
         got, _w = wait_for(lambda: cargo_units(in_t) >= in_q, timeout_ms=20000)
         precondition('the cargo holds the recipe input after /createitem', bool(got),
                      'cargo %d of %d' % (cargo_units(in_t), in_q))
