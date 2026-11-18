@@ -14,11 +14,12 @@ Sizes: S is under a lane-day, M one to three, L more.
 
 **Which tools exist.** Today: `tools/import-build.sh`, `tools/new-build.sh`, `tools/build-delta.py`,
 `tools/port-surface.sh`, `tools/port-recheck.py`, `tools/bundle-diff.py`, `tools/re-pin.sh`,
-`tools/client-ci-regress.sh`, `tools/regress-compare.py`, `tools/census.sh`, `tools/tq-lag.py`,
+`tools/client-ci-regress.sh`, `tools/regress-compare.py`,
+`tools/content-report.py`, `tools/census.sh`, `tools/tq-lag.py`,
 `tools/client-setup.sh refresh` (with `tools/pins/<build>.sha256` for `tools/pin-client.sh`) and
 `tools/client-ci/cutover.list`. Planned (each is named where it is used, and tracked on #290):
 `tq-watch.py`, `build-triage.py`, `answer-shapes.py`,
-`client-ci/fci-surface.py`, `content-report.py`, `intake-issues.py`, `retire-build.sh`,
+`client-ci/fci-surface.py`, `intake-issues.py`, `retire-build.sh`,
 `v-audit.py`, and the `recompiled` class of `build-delta.py`. Until a planned tool lands, its
 step is done by hand from the same inputs.
 
@@ -300,7 +301,7 @@ rolling back the build is never an option. The options are:
 
 **The report** (`tools/content-report.py OLD_BUNDLE NEW_BUNDLE [--notes FILE] [--uses]`, planned,
 M) compares two bundles from the **same extractor commit** (the manifest's `extractor` hash must
-match, else exit 2), reusing `bundle-diff.py`'s loader. It writes `content-report.md` and
+match or is missing on either side, else exit 2; `--allow-extractor-mismatch` goes on with a warning in the report), reusing `bundle-diff.py`'s loader. It writes `content-report.md` and
 `intake.tsv` (`area`, `kind`, `what`, `count`, `sample_ids` at most 5, `server_readers`,
 `in_notes`, `verdict` of data-driven, needs work, notes-only or `review`,
 `suggested_title`) under `out/new-build/<N>/content/`. The files hold CCP names and ids, so they
