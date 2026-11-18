@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**69% proved** (232 of 338) · **93% built** (315 of 338) · 3 parked, not counted.
+**68% proved** (232 of 340) · **93% built** (317 of 340) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -136,6 +136,8 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Client kit dry run end to end: *built-unproved*, #180 dry run in --network none containers on a synthetic install: kit built, unpacked, check and copy, remote listener up, probe login and sign-up; fixed the tunnel script mode, the recovery order (never advising rm of the only pinned copy) and the pin-failure output (docs/guides/remote-clients.md "Dry run (#180)"); the real client patch, tunnel, jail relay and a real client connecting are left for the owner
 - [ ] No-jail route for Windows remote players: *missing*, the always-jailed rule stands until a census proves it
 - [ ] Human check card brought up to date: *partial*, results stop at 2026-10-25
+- [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a client that hangs up after the first handshake message is logged by address: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, tools/test_entrypoint.py; no deploy on a host yet
+- [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh keeps the old tq-offline as tq-<oldbuild>, pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
 
 ### 3.9 Corp and social depth
 
@@ -173,7 +175,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 2 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
-| Tools and remote clients | 11 | 4 | 2 | 2 | 0 |
+| Tools and remote clients | 11 | 6 | 2 | 2 | 0 |
 
 </details>
 
@@ -594,7 +596,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Tools and remote clients</b>: 11 of 19 proved, 8 open</summary>
+<details><summary><b>Tools and remote clients</b>: 11 of 21 proved, 10 open</summary>
 
 - [x] The gate: lint, tests, clippy, push only on pass: *done*, tools/land.sh, tools/gate.sh
 - [x] The client regression runner, three clients at once: *done*, tools/client-ci-regress.sh
@@ -615,6 +617,8 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Admin web page: status, pilots, systems, map; bot, broadcast, save and kick actions (token, off by default): *built-unproved*, admin_web.rs tests; deployed on the test server 11-03; no scenario or human check yet; kick (admin_actions.rs tests, evicts like a second login); tools/test_admin_web.py live check (EVE_ADMIN_WEB_LIVE=1): page, every API path and action, 401 without the token; tick p50/p95/max per minute, per-system loads, slowest calls, /api/metrics (admin_web.rs, live_status.rs prof tests)
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots
 - [x] Fleet clean-room rewrite: *done*, b4150be (fleet.rs), aea9611 (service/fleet.rs); fleet and wing scenarios green (regress-fleet 2026-11-03)
+- [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a client that hangs up after the first handshake message is logged by address: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, tools/test_entrypoint.py; no deploy on a host yet
+- [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh keeps the old tq-offline as tq-<oldbuild>, pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
 
 </details>
 
