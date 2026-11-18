@@ -18,10 +18,12 @@ CI account goes back to the old HUD:
 0. the overlay swaps to `ShipHud`;
 1. the controllers, slots and stance buttons are there;
 2. the afterburner's cycle timer (H1): `GetEffectTiming()` has a start, and the
-   client's sim clock is within 2 s of it (the clock [A] under H1 and H3);
+   client's sim clock is within 1 s of it, either side: a start a little ahead of the
+   client's clock is the RTT-compensated sync's normal error, and the ring clamps it
+   (`_CycleLoop`: `elapsed_ms = max(0.0, ...)`) [V] decompile hud ModuleSlot (the clock [A] under H1 and H3);
 3. charges: the slot label equals godma's count and the start count minus
    `chargeRate` times the cycles fired, mid-cycle; the predicted cycles drain;
-4. capacitor and the consumption gauge: its flow is lower with the afterburner on;
+4. capacitor and the consumption gauge: its drain term (not the portion, which also moves with the cap level) is higher with the afterburner on;
 5. the stop: `IsDeactivating`, the winding-down window (kind 1), then the
    reactivation cooldown if the type has one;
 6. reload: the slot's ring runs and the rounds come back; godma reports the
@@ -1471,7 +1473,6 @@ def eoci_main(EOCI_NAME):
     # schedule is A_WAIT_MS + A_GUN_MAX_MS + A_REP_MS + ECM_MS + 60 s of lingering (1050 s);
     # this leaves 150 s over and the whole run well under EOCI_FCI_TIMEOUT_S.  A bound, not a claim.
     B_DEADLINE_MS = 1200000
-    CLOCK_TOL_TICKS = 2 * SEC
 
     def pilot_slims(park, charid):
         return slims_where(park, lambda s: getattr_safe(s, 'charID') == charid)
@@ -1706,6 +1707,23 @@ def eoci_main(EOCI_NAME):
         from hud.client.capacitorFlow import CapacitorFlow
         return CapacitorFlow(layer.controller).GetFlowPortion()
 
+    def flow_sample(layer):
+        """(portion, recharge, drain, [item ids the gauge counts as draining]).
+        The gauge's portion is recharge(cap level) - drain, so two portions at
+        different cap levels are not comparable; the drain term is (it only
+        reads which effects are active).  [V] hud/client/capacitorFlow.py
+        GetFlowPortion / GetLastRates / _GetActiveDefaultEffect."""
+        from hud.client.capacitorFlow import CapacitorFlow
+        flow = CapacitorFlow(layer.controller)
+        portion = flow.GetFlowPortion()
+        recharge, drain = flow.GetLastRates()
+        g = get_svc('godma')
+        counted = []
+        for item_id in sorted(layer.modules_owner.GetControllers().keys()):
+            if flow._GetActiveDefaultEffect(g.GetItem(item_id)) is not None:
+                counted.append(item_id)
+        return portion, recharge, drain, counted
+
     def step_wired(layer, guns, ab, hull_type):
         loaded, waited = wait_for(lambda: layer.controller.IsLoaded(), timeout_ms=30000)
         check('the new HUD\'s ship controller is loaded', bool(loaded), 'after %s ms' % text(waited))
@@ -1731,8 +1749,8 @@ def eoci_main(EOCI_NAME):
         if start is None:
             return ctrl
         delta = sim_now() - start
-        check('the client\'s sim clock is within 2 s of the effect\'s startTime (the H1 clock [A])',
-              0 <= delta <= CLOCK_TOL_TICKS,
+        check('the client\'s sim clock is within 1 s of the effect\'s startTime, either way (the H1 clock [A])',
+              abs(delta) <= SEC,
               'GetSimTime() - startTime = %s ticks (%s s)' % (text(delta), fmt(delta / float(SEC), 3)))
         slot = layer.moduleTray.GetSlotForController(ctrl)
         arc, waited = wait_for(lambda: bool(slot.indicator._cycle_arc.display),
@@ -1786,8 +1804,8 @@ def eoci_main(EOCI_NAME):
     def step_capacitor(layer):
         gauge = getattr_safe(layer.medallion, 'consumptionGauge', None)
         check('the medallion has a consumption gauge', gauge is not None, text(gauge))
-        ok, v = safe(lambda: flow_portion(layer))
-        check('CapacitorFlow.GetFlowPortion answers', ok and v is not None, text(v))
+        ok, v = safe(lambda: flow_sample(layer))
+        check('CapacitorFlow.GetFlowPortion answers', ok and v is not None and v[0] is not None, text(v))
         flow_on = v if ok else None
         g = get_svc('godma')
         ship = g.GetItem(builtin('session').shipid)
@@ -1809,8 +1827,12 @@ def eoci_main(EOCI_NAME):
         check('the stop shows the winding-down window (kind 1, H1)', bool(seen),
               'IsDeactivating %s, window %s after %s ms' % (
                   text(ctrl.IsDeactivating()), text(ctrl.GetUnavailableWindow()), text(waited)))
-        down, waited = wait_for(lambda: not ctrl.IsActive(), timeout_ms=40000, step_ms=250)
-        check('the controller reads inactive after the cycle', bool(down), 'after %s ms' % text(waited))
+        # IsActive is ACTIVATION_ACTIVE only; the module reads DEACTIVATING (IsCycling) through
+        # its last cycle, which runs on after the stop is sent [V: ModuleController
+        # GetActivationState, scratch/expac-H/hud.txt:6760].  Wait for the cycle to end:
+        # one cycle (9.5 s) plus 2 s.
+        down, waited = wait_for(lambda: not ctrl.IsCycling(), timeout_ms=11500, step_ms=100)
+        check('the controller stops cycling after the last cycle', bool(down), 'after %s ms' % text(waited))
         delay = type_attr(ab.typeID, ATTR_REACT_DELAY)
         if delay and delay > 0:
             shown, waited = wait_for(lambda: ctrl.GetCooldownTimes() is not None
@@ -1821,11 +1843,15 @@ def eoci_main(EOCI_NAME):
             check('the afterburner type has no reactivation delay, so no cooldown is shown',
                   ctrl.GetCooldownTimes() is None and not slot.cooldown_timer.IsShowing(),
                   'delay %s, times %s' % (text(delay), text(ctrl.GetCooldownTimes())))
-        sleep_ms(3000)
-        ok, flow_off = safe(lambda: flow_portion(layer))
+        ok, flow_off = safe(lambda: flow_sample(layer))
         if flow_on is not None and ok and flow_off is not None:
-            check('the consumption gauge flow is lower with the afterburner on than off',
-                  flow_on < flow_off, 'on %s, off %s' % (fmt(flow_on, 3), fmt(flow_off, 3)))
+            # Compare the drain terms, not the portions: the portion also moves with
+            # the cap level (recharge peaks at 25 percent and falls above it).
+            check('the consumption gauge drain is higher with the afterburner on than off',
+                  flow_on[2] > flow_off[2] and ab.itemID in flow_on[3] and ab.itemID not in flow_off[3],
+                  'drain on %s (counts %s, recharge %s, portion %s), off %s (counts %s, recharge %s, portion %s)' % (
+                      fmt(flow_on[2], 5), text(flow_on[3]), fmt(flow_on[1], 5), fmt(flow_on[0], 3),
+                      fmt(flow_off[2], 5), text(flow_off[3]), fmt(flow_off[1], 5), fmt(flow_off[0], 3)))
         else:
             check('the consumption gauge flow could be sampled both ways', False,
                   'on %s, off %s' % (text(flow_on), text(flow_off)))
