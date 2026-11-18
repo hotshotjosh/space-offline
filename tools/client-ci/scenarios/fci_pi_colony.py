@@ -938,7 +938,20 @@ def eoci_main(EOCI_NAME):
             t0 = time.time()
             # the table is kept in a file beside the params, so only the first
             # scenario of a prefix pays for ~50 k localisation lookups
-            cache = os.path.join(os.path.dirname(PARAMS_FILE), 'typenames.tsv')
+            # keyed by the client's build, so a client update never reads the
+            # old build's names.  `boot` is NOT a builtin; it is `eveprefs.boot`
+            # [V: autoexec.pyc does `str(boot.build)` after importing it from
+            # eveprefs, and eveprefs/__init__.pyc defines it; census_cc.py reads
+            # `boot.region` the same way].  An unreadable build gets its own
+            # 'unknown' file, so it never reuses a keyed one.
+            try:
+                from eveprefs import boot as _boot
+                bld = getattr_safe(_boot, 'build')
+            except Exception:
+                bld = None
+            bld = ''.join([c for c in text(bld or 'unknown') if c.isalnum()]) or 'unknown'
+            cache = os.path.join(os.path.dirname(PARAMS_FILE), 'typenames-%s.tsv' % bld)
+            say('type-name cache file: %s' % cache)
             try:
                 f = open(cache, 'rb')
                 try:
