@@ -1007,6 +1007,7 @@ fn check(w: &mut Registry, system: i64, ft: BlueTime) {
                 && !crate::escalation::is_escalation_site(i.site_id)
                 && !crate::abyss::is_abyss_site(i.site_id)
                 && !crate::mission::is_mission_site(i.site_id)
+                && !crate::air_npe::is_npe_site(i.site_id)
         })
         .map(|i| i.site_id)
         .collect();
@@ -1940,6 +1941,11 @@ mod tests {
             ),
             ("site instances", INSTANCE_BASE, INSTANCE_END),
             ("war hq items", war::HQ_ITEM_BASE, sov::STAND_IN_HUB_BASE),
+            (
+                "air npe sites",
+                crate::air_npe::NPE_SITE_BASE,
+                crate::air_npe::NPE_SITE_END,
+            ),
             (
                 "sov stand-in hubs",
                 sov::STAND_IN_HUB_BASE,
