@@ -282,8 +282,6 @@ const LICENSE_YEARS: u64 = 9;
 /// `plex.vault` balance in cents of PLEX **[A]**: this server has no PLEX
 /// store, so the vault is empty (falsifier: a window that wants to spend it).
 pub const PLEX_BALANCE_CENTS: u64 = 0;
-/// A career path goal's target (progress is always 0 of it) **[A]**.
-const PATH_GOAL_TARGET: u64 = 100;
 
 /// Requests the client reads as "none", with a `404` and no payload: a
 /// missing single record where an empty message would read as a real one
@@ -306,7 +304,6 @@ fn is_not_found(ty: &str) -> bool {
             | "eve_public.sovereignty.mercenaryden.api.GetAsOwnerRequest"
             | "eve_public.sovereignty.mercenaryden.activity.api.GetForMercenaryDenRequest"
             | "eve_public.sovereignty.mercenaryden.activity.api.StartRequest"
-            | "eve_public.career.goal.api.ClaimRewardRequest"
     ) || is_content_checkpoint(ty)
 }
 
@@ -320,30 +317,6 @@ fn is_content_checkpoint(ty: &str) -> bool {
     ty.ends_with(".cdn.GetLatestRequest")
         || ty.ends_with(".cdn.GetUpdateRequest")
         || ty.ends_with(".definition.api.GetLatestRequest")
-}
-
-/// Careers, as `career.Path`, with the 16-byte id each path goal gets.
-/// The ids are invented; the client only compares them.
-fn career_path_goals() -> Vec<u8> {
-    let mut out = Vec::new();
-    for path in 1u64..=4 {
-        let mut id = Vec::new();
-        put_bytes(
-            &mut id,
-            1,
-            &[
-                0xca, 0x4e, 0xe4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, path as u8,
-            ],
-        );
-        let mut attrs = Vec::new();
-        put_uint(&mut attrs, 4, PATH_GOAL_TARGET);
-        put_uint(&mut attrs, 9, path);
-        let mut goal = Vec::new();
-        put_bytes(&mut goal, 1, &id);
-        put_bytes(&mut goal, 2, &attrs);
-        put_bytes(&mut out, 1, &goal);
-    }
-    out
 }
 
 /// How to answer a request class. **Everything here is a choice made to
@@ -364,10 +337,6 @@ fn career_path_goals() -> Vec<u8> {
 /// - `plex.vault.api.BalanceRequest`: [`PLEX_BALANCE_CENTS`].
 /// - `faction.activity.GetSolarSystemScoresRequest`: the asked system, no
 ///   scores (the client builds `SolarSystemScores` from the echoed id).
-/// - `career.goal.api.GetDefinitionsRequest`: one goal per career path, no
-///   progress rows. `jobboard.relevance_profile` reads each path's goal
-///   (`goal_data_controller.get_career_path_goal`) and raised
-///   `AttributeError: 'NoneType' ... goal_id` with none.
 /// - `pirate.{corruption,suppression}.api.GetSystemInfoRequest`: progress 0/1.
 /// - `sovereignty.hub.workforce.api.{GetConfigurationRequest,GetStateRequest}`:
 ///   the `inactive` mode set. Left empty, `create_from_proto` returns None and
@@ -431,7 +400,6 @@ pub fn answer(ty: &str, body: &[u8], character: i64, g: &Ground) -> Reply {
             }
             typed(out)
         }
-        "eve_public.career.goal.api.GetDefinitionsRequest" => typed(career_path_goals()),
         // A system with no corruption or suppression: progress 0/1 (the
         // insurgency panel divides numerator by denominator, so 0/0 would
         // raise), stage 0. Corruption and suppression `GetSystemInfoResponse`
@@ -2317,26 +2285,6 @@ mod tests {
             7,
         );
         assert_eq!(get_bytes(&v, 1), Some(sys));
-        // Career goals: one per path, each with a target and its career.
-        let (_, v) = ask(
-            &g,
-            "eve_public.career.goal.api.GetDefinitionsRequest",
-            &[],
-            7,
-        );
-        let goals = field(&v, 1);
-        assert_eq!(goals.len(), 4);
-        let mut careers: Vec<u64> = goals
-            .iter()
-            .map(|goal| get_uint(&get_bytes(goal, 2).unwrap(), 9).unwrap())
-            .collect();
-        careers.sort_unstable();
-        assert_eq!(careers, vec![1, 2, 3, 4]);
-        assert!(
-            goals
-                .iter()
-                .all(|goal| { get_bytes(&get_bytes(goal, 1).unwrap(), 1).unwrap().len() == 16 })
-        );
     }
 
     fn read_frame(s: &mut TcpStream) -> (u8, u8, u32, Vec<u8>) {
