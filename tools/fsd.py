@@ -2059,6 +2059,13 @@ CFSD_BUILD_LAYOUTS = {
     # so the base file and the fixes are both builds' [V] by re-extraction:
     # `npc/components.tsv` per-component counts move only by the one new NPC.
     3670638: (None, CFSD_PRESENCE_FIXES),
+    # V24.02 (Fractured Skies). Every loader schema identical to 3670638's (all
+    # 149 `schema` rows of `findings/build-delta-3670638-3707965.tsv`, and a
+    # full pyd_schema regen that differs only in the hand-corrected dungeons
+    # messageTextID row); two new tables, academyship and fittings, are
+    # appended to pyd-schemas.tsv. [V] re-extraction: every component kind
+    # still present in `npc/components.tsv`.
+    3707965: (None, CFSD_PRESENCE_FIXES),
 }
 
 #: The build `pyd-schemas.tsv` itself is the layout of, and what a caller

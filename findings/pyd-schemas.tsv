@@ -1947,3 +1947,20 @@ warzonespositiondata	struct:unnamed_10297343130726714154/solarSystemId	24	i32	V	
 warzonespositiondata	struct:unnamed_10297343130726714154/xpos	28	i32	V	getattro chain, PyInt_FromLong (struct-relative)
 warzonespositiondata	struct:unnamed_10297343130726714154/ypos	32	i32	V	getattro chain, PyInt_FromLong (struct-relative)
 warzonespositiondata	struct:unnamed_10297343130726714154/isVisible	36	u8	V	getattro chain, PyInt_FromLong; 1-byte field, probably bool (struct-relative); optional(bit=0x1,word=+40)
+academyship	#record	-	stride=32 delta=8	V	every offset in this table's rows is RECORD-relative and already includes delta -- do not add it again; delta is the lea immediate in the row factory and is published only so a reader can reconstruct the struct frame; stride computed from the layout; not an immediate in this loader
+academyship	name	8	str	V	getattro chain, PyString_FromStringAndSize
+academyship	categoryID	16	i32	V	getattro chain, PyInt_FromLong
+academyship	descriptionID	20	i32	V	getattro chain, PyInt_FromLong
+academyship	taglineID	24	i32	V	getattro chain, PyInt_FromLong
+fittings	#record	-	stride=72 delta=8	V	every offset in this table's rows is RECORD-relative and already includes delta -- do not add it again; delta is the lea immediate in the row factory and is published only so a reader can reconstruct the struct frame; stride computed from the layout; not an immediate in this loader; [A] presence bit 0x8 (+68) has no detected field: none of the 50 rows has an optional internalDescription/internalName/modules/nameID; falsified by a later build decoding garbage in one of them
+fittings	cargo	8	list<struct:unnamed_13814165582788454097>	V	getattro chain, _PyObject_New(cfsd.list); optional(bit=0x1,word=+68)
+fittings	icon	16	str	V	getattro chain, PyString_FromStringAndSize; optional(bit=0x2,word=+68)
+fittings	insurance	24	str	V	getattro chain, PyString_FromStringAndSize; optional(bit=0x4,word=+68)
+fittings	internalDescription	32	str	V	getattro chain, PyString_FromStringAndSize
+fittings	internalName	40	str	V	getattro chain, PyString_FromStringAndSize
+fittings	modules	48	list<struct:unnamed_13814165582788454097>	V	getattro chain, _PyObject_New(cfsd.list)
+fittings	nameID	56	i32	V	getattro chain, PyInt_FromLong
+fittings	shipTypeID	60	i32	V	getattro chain, PyInt_FromLong; optional(bit=0x10,word=+68)
+fittings	shouldOnlineModules	64	u8	V	getattro chain, PyInt_FromLong; 1-byte field, probably bool
+fittings	struct:unnamed_13814165582788454097/amount	0	i32	V	getattro chain, PyInt_FromLong (struct-relative)
+fittings	struct:unnamed_13814165582788454097/typeID	4	i32	V	getattro chain, PyInt_FromLong (struct-relative)
