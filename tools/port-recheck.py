@@ -113,9 +113,15 @@ def norm_const(k):
     return k
 
 
+#: `from __future__` compiler flags (CO_FUTURE_DIVISION .. CO_FUTURE_UNICODE_LITERALS, Python 2.7).
+#: A recompile that only adds or drops a future import flips these without changing the code.
+FUTURE_FLAGS = 0x3E000
+
+
 def fingerprint(c):
-    """A code object's meaning, with line numbers and the file name left out."""
-    what = (c.argcount, c.flags, bytes(c.code), c.names, c.varnames, c.freevars,
+    """A code object's meaning, with line numbers, the file name and the
+    `from __future__` flag bits left out."""
+    what = (c.argcount, c.flags & ~FUTURE_FLAGS, bytes(c.code), c.names, c.varnames, c.freevars,
             c.cellvars, norm_const(c.consts))
     return hashlib.sha1(repr(what).encode('utf8', 'surrogatepass')).hexdigest()
 

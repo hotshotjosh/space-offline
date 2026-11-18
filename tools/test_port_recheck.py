@@ -199,6 +199,19 @@ class FunctionLevel(Base):
         self.assertEqual(self.row('symbol', 'absent', 'F')[0], 'unresolved')
         self.assertEqual(self.row('module', 'absent', '')[0], 'unresolved')
 
+    def test_a_future_flag_alone_is_not_a_change(self):
+        # CO_FUTURE_DIVISION (0x2000) set on one side only.
+        self.both('m', module(nested=[fn('F', 10, 1, flags=3)]),
+                  module(nested=[fn('F', 10, 1, flags=3 | 0x2000)]))
+        self.assertEqual(self.row('symbol', 'm', 'F')[0], 'same')
+
+    def test_a_real_flag_or_code_change_still_fires(self):
+        self.both('m', module(nested=[fn('F', 10, 1, flags=3)]),
+                  module(nested=[fn('F', 10, 1, flags=1)]))
+        self.assertEqual(self.row('symbol', 'm', 'F')[0], 'changed')
+        self.both('n', module(nested=[fn('F', 10, 1)]), module(nested=[fn('F', 10, 2)]))
+        self.assertEqual(self.row('symbol', 'n', 'F')[0], 'changed')
+
     def test_a_module_that_left_is_gone(self):
         pyc(os.path.join(self.old, 'only_old.pyc'), module(nested=[fn('F', 10)]))
         self.assertEqual(self.row('module', 'only_old', '')[0], 'gone')
