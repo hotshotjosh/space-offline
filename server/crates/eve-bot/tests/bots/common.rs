@@ -187,6 +187,29 @@ pub fn wait_hit(victim: &mut Conn, by_ship: i64) {
     assert!(got, "ship {by_ship}'s volley lands on the victim");
 }
 
+/// Rows for a world whose pilots fly drones: the Drones skill under its id
+/// with the effects that give the character `maxActiveDrones` (352) one per
+/// level, and the character's base `droneControlDistance` (458). The drone
+/// count and range are read off the dogma sheet's character node, so a
+/// test world that launches drones needs the skill's own effect in its
+/// table, as a real bundle has. **Invented effect and attribute ids**, the
+/// attributes 352 and 458 being the ones the server reads.
+pub fn drone_skill_rows() -> String {
+    let skill = eve_server::drones::SKILL_DRONES;
+    let range = eve_server::drones::CONTROL_RANGE;
+    format!(
+        "attribute\t280\t0.0\tskillLevel\n\
+attribute\t352\t0.0\tmaxActiveDrones\n\
+attribute\t458\t{range}\tdroneControlDistance\n\
+attribute\t990790001\t0.0\tinventedDroneLevel\n\
+effect\t990790001\t0\t0\t0\t0\t0\t0\t0\tinventedDroneLevel\t\n\
+effect\t990790002\t0\t0\t0\t0\t0\t0\t0\tinventedDroneCount\t\n\
+modifier\t990790001\titemID\tItemModifier\t990790001\t280\t2\t\t\n\
+modifier\t990790002\tcharID\tItemModifier\t352\t990790001\t2\t\t\n\
+type\t{skill}\t273\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t990790001,990790002\t\tFixture Drones Skill\n"
+    )
+}
+
 #[cfg(test)]
 mod scan {
     //! **Process-global switches stay off in this binary.** eve-server is
@@ -238,27 +261,4 @@ mod scan {
         }
         assert!(hits.is_empty(), "{}", hits.join("\n"));
     }
-}
-
-/// Rows for a world whose pilots fly drones: the Drones skill under its id
-/// with the effects that give the character `maxActiveDrones` (352) one per
-/// level, and the character's base `droneControlDistance` (458). The drone
-/// count and range are read off the dogma sheet's character node, so a
-/// test world that launches drones needs the skill's own effect in its
-/// table, as a real bundle has. **Invented effect and attribute ids**, the
-/// attributes 352 and 458 being the ones the server reads.
-pub fn drone_skill_rows() -> String {
-    let skill = eve_server::drones::SKILL_DRONES;
-    let range = eve_server::drones::CONTROL_RANGE;
-    format!(
-        "attribute\t280\t0.0\tskillLevel\n\
-attribute\t352\t0.0\tmaxActiveDrones\n\
-attribute\t458\t{range}\tdroneControlDistance\n\
-attribute\t990790001\t0.0\tinventedDroneLevel\n\
-effect\t990790001\t0\t0\t0\t0\t0\t0\t0\tinventedDroneLevel\t\n\
-effect\t990790002\t0\t0\t0\t0\t0\t0\t0\tinventedDroneCount\t\n\
-modifier\t990790001\titemID\tItemModifier\t990790001\t280\t2\t\t\n\
-modifier\t990790002\tcharID\tItemModifier\t352\t990790001\t2\t\t\n\
-type\t{skill}\t273\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t990790001,990790002\t\tFixture Drones Skill\n"
-    )
 }
