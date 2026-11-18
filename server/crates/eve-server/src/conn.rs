@@ -133,6 +133,10 @@ pub(crate) fn check_header(buf: &[u8], limit: usize) -> Result<(), FrameError> {
 pub enum ConnEnd {
     /// The peer closed cleanly on a frame boundary.
     PeerClosed,
+    /// The peer closed before it sent anything, after we sent the first
+    /// handshake message. A client of another release line does this: it
+    /// reads H1, finds a version it does not speak and hangs up [I].
+    ClosedAfterGreeting,
     /// We closed, because the dispatch asked us to.
     DispatchClosed,
     /// The peer closed mid-frame.
@@ -155,6 +159,9 @@ impl core::fmt::Display for ConnEnd {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             ConnEnd::PeerClosed => write!(f, "peer closed"),
+            ConnEnd::ClosedAfterGreeting => {
+                write!(f, "peer closed right after our first handshake message")
+            }
             ConnEnd::DispatchClosed => write!(f, "closed by us"),
             ConnEnd::Truncated { buffered } => {
                 write!(f, "peer closed with {buffered} bytes of a partial frame")
@@ -204,6 +211,8 @@ pub fn serve_with(
 
     // The GPS handshake is server-initiated: H1 goes out before we read.
     let greeting = dispatch.greeting();
+    let greeted = !greeting.is_empty();
+    let mut received = false;
     if !greeting.is_empty()
         && let Err(end) = guard(wire).and_then(|mut w| w.send_all(&greeting))
     {
@@ -237,6 +246,7 @@ pub fn serve_with(
             };
             let (payload, consumed) = split;
             buf.drain(..consumed);
+            received = true;
 
             if let Err(end) = guard(wire).and_then(|mut w| w.record_inbound(&payload)) {
                 return end;
@@ -295,7 +305,9 @@ pub fn serve_with(
 
         match stream.read(&mut chunk) {
             Ok(0) => {
-                return if buf.is_empty() {
+                return if buf.is_empty() && greeted && !received {
+                    ConnEnd::ClosedAfterGreeting
+                } else if buf.is_empty() {
                     ConnEnd::PeerClosed
                 } else {
                     ConnEnd::Truncated {
@@ -424,6 +436,54 @@ mod tests {
             }
         }
         out
+    }
+
+    /// Sends a greeting and nothing else: the shape of a GPS server.
+    struct Greeter;
+
+    impl Dispatch for Greeter {
+        fn greeting(&mut self) -> Vec<Vec<u8>> {
+            vec![b"first-message".to_vec()]
+        }
+        fn on_payload(&mut self, _payload: &[u8]) -> Result<Reply, DispatchError> {
+            Ok(Reply::nothing())
+        }
+        fn state(&self) -> String {
+            "greeter".to_owned()
+        }
+    }
+
+    fn greeted_pair() -> (std::thread::JoinHandle<ConnEnd>, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = TcpStream::connect(addr).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        let handle = std::thread::spawn(move || {
+            let wire = Arc::new(Mutex::new(Wire::new(server.try_clone().unwrap(), None)));
+            serve_with(server, &wire, &mut Greeter, SHORT)
+        });
+        (handle, peer)
+    }
+
+    #[test]
+    fn a_peer_that_hangs_up_after_the_greeting_is_named() {
+        let (handle, mut peer) = greeted_pair();
+        assert_eq!(frames(&mut peer, 1, Duration::from_millis(600)).len(), 1);
+        drop(peer);
+        let end = handle.join().unwrap();
+        assert!(matches!(end, ConnEnd::ClosedAfterGreeting), "{end}");
+    }
+
+    #[test]
+    fn a_peer_that_answered_before_hanging_up_is_a_plain_close() {
+        let (handle, mut peer) = greeted_pair();
+        assert_eq!(frames(&mut peer, 1, Duration::from_millis(600)).len(), 1);
+        let mut framed = Vec::new();
+        write_frame(b"reply", &mut framed).unwrap();
+        peer.write_all(&framed).unwrap();
+        drop(peer);
+        let end = handle.join().unwrap();
+        assert!(matches!(end, ConnEnd::PeerClosed), "{end}");
     }
 
     #[test]

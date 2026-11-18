@@ -1069,6 +1069,15 @@ impl Server {
                         let end =
                             serve_one(stream, peer, id, &config, &spec, &writers, &world, &gate);
                         println!("[conn {id}] {peer} ended: {end}");
+                        if matches!(end, ConnEnd::ClosedAfterGreeting) {
+                            // Naming the address only: a client of another
+                            // release line hangs up on our first message [I].
+                            println!(
+                                "[conn {id}] {peer} closed right after the first handshake \
+                                 message; if it is a friend's client, its build is probably \
+                                 of another release line"
+                            );
+                        }
                     });
                 // The closure, its stream and its slot are dropped with the
                 // error: the peer sees a close and the cap is not leaked.
