@@ -67,6 +67,29 @@ def _world():
     return market, prices
 
 
+class RigRecipes(unittest.TestCase):
+    RIG_A, RIG_B, RIG_UP, BP_A, BP_UP = 990351, 990352, 990353, 990361, 990362
+
+    def _market(self):
+        rig = {"group_id": 990397, "category_id": 7, "published": True}
+        return {**{r: dict(rig) for r in (self.RIG_A, self.RIG_B, self.RIG_UP)},
+                S1: _salv(1.0)}
+
+    def _rig(self, t):
+        return t in (self.RIG_A, self.RIG_B, self.RIG_UP)
+
+    def test_a_rig_that_takes_no_salvage_and_no_rig_is_counted_missing(self):
+        got = X.rig_salvage({self.BP_A: self.RIG_A}, {self.BP_A: [990399]},
+                            self._market(), self._rig)
+        self.assertEqual(got, (1, 1, set()))
+
+    def test_a_rig_recipe_that_consumes_a_rig_is_exempt(self):
+        mats = {self.BP_A: [S1], self.BP_UP: [self.RIG_A, self.RIG_B, 990399]}
+        got = X.rig_salvage({self.BP_A: self.RIG_A, self.BP_UP: self.RIG_UP}, mats,
+                            self._market(), self._rig)
+        self.assertEqual(got, (1, 0, {S1}))
+
+
 class Wrecks(unittest.TestCase):
     def setUp(self):
         self.rows = {r[0]: r for r in X.derive_wrecks(_world()[0])}

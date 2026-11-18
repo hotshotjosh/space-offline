@@ -226,15 +226,7 @@ def check(ctx):
                 mats.setdefault(int(f[0]), []).append(int(f[3]))
             elif f[2] == "product":
                 products.setdefault(int(f[0]), int(f[3]))
-        for b, p in sorted(products.items()):
-            m = market.get(p)
-            if not m or not m["published"] or m["category_id"] != 7 or not _is_rig(ctx, p):
-                continue
-            rigs += 1
-            salv = [x for x in mats.get(b, []) if market.get(x, {}).get("group_id") == GROUP_SALVAGE]
-            if not salv:
-                missing += 1
-            used.update(salv)
+        rigs, missing, used = rig_salvage(products, mats, market, lambda t: _is_rig(ctx, t))
     yielded = {r[2] for r in yields}
     lost = sorted(used - yielded)
     if lost:
@@ -246,6 +238,28 @@ def check(ctx):
     ctx.note("salvage: %d wreck types, %d yield rows; %d rig blueprints, %d salvage types "
              "feed them" % (len(wrecks), len(yields), rigs, len(used)))
     return bad
+
+
+def rig_salvage(products, mats, market, is_rig):
+    """`(rigs, missing, used)` over the rig recipes: `products` maps a blueprint
+    to its product, `mats` to its material type ids. A recipe that consumes
+    another rig is an upgrade of it (the 3707965 Synchronizer rigs, built from
+    two navy rigs [V per expac-D-data 1]) and is exempt: it is not counted
+    and needs no salvage."""
+    rigs = missing = 0
+    used = set()
+    for b, p in sorted(products.items()):
+        m = market.get(p)
+        if not m or not m["published"] or m["category_id"] != 7 or not is_rig(p):
+            continue
+        if any(is_rig(x) for x in mats.get(b, [])):
+            continue
+        rigs += 1
+        salv = [x for x in mats.get(b, []) if market.get(x, {}).get("group_id") == GROUP_SALVAGE]
+        if not salv:
+            missing += 1
+        used.update(salv)
+    return rigs, missing, used
 
 
 def _is_rig(ctx, type_id):
