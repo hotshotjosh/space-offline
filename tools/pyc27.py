@@ -133,3 +133,28 @@ def dis(c):
             yield off,name,arg,rep
         else:
             yield off,name,None,''
+
+
+FUTURE_FLAGS = 0x3E000  # CO_FUTURE_DIVISION .. CO_FUTURE_UNICODE_LITERALS (2.7)
+EXEC_STMT = 85
+
+
+def uses_dynamic_code(c):
+    """True when a code object has an exec statement or names eval, compile or
+    execfile: `from __future__` flags then reach the code it compiles at run
+    time, so they are part of its meaning."""
+    if any((n.decode('latin-1') if isinstance(n, bytes) else n) in ('eval', 'compile', 'execfile')
+           for n in (c.names or ())):
+        return True
+    code, i, n = bytes(c.code), 0, len(c.code)
+    while i < n:
+        op = code[i]
+        if op == EXEC_STMT:
+            return True
+        i += 3 if op >= 90 else 1
+    return False
+
+
+def meaning_flags(c):
+    """co_flags with the future bits cleared, unless the code compiles code."""
+    return c.flags if uses_dynamic_code(c) else c.flags & ~FUTURE_FLAGS

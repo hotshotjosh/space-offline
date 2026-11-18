@@ -3,7 +3,7 @@
 
     tools/port-recheck.py OLD_PYC NEW_PYC [--table findings/port-recheck.tsv]
                           [--old-bundle DIR --new-bundle DIR] [--out DIR]
-                          [--repo .] [--no-citations] [--no-consts]
+                          [--repo .] [--no-citations] [--no-docs] [--no-consts]
 
 Run it in the analysis container (tools/analysis.sh python3 -I ...; `tools/new-build.sh
 --report` does). OLD_PYC and NEW_PYC are unpacked bytecode trees and are only read.
@@ -120,8 +120,9 @@ FUTURE_FLAGS = 0x3E000
 
 def fingerprint(c):
     """A code object's meaning, with line numbers, the file name and the
-    `from __future__` flag bits left out."""
-    what = (c.argcount, c.flags & ~FUTURE_FLAGS, bytes(c.code), c.names, c.varnames, c.freevars,
+    `from __future__` flag bits left out (kept for code that
+    uses exec, eval, compile or execfile)."""
+    what = (c.argcount, pyc27.meaning_flags(c), bytes(c.code), c.names, c.varnames, c.freevars,
             c.cellvars, norm_const(c.consts))
     return hashlib.sha1(repr(what).encode('utf8', 'surrogatepass')).hexdigest()
 
@@ -671,20 +672,25 @@ class Cite(object):
                  'module', 'entry', 'via', 'new_line', 'new_end')
 
 
-def source_files(repo):
+def source_files(repo, docs=True):
     roots = [(os.path.join(repo, 'server', 'crates'), '.rs'),
              (os.path.join(repo, 'tools', 'client-ci', 'scenarios'), '.py')]
+    if docs:
+        roots.append((os.path.join(repo, 'docs'), '.md'))
+    #: generated (status), dated records (archive) and V24.01 citations (evejs)
+    skip = tuple(os.path.join(repo, 'docs', d) for d in ('status', 'archive', 'evejs'))
     for root, ext in roots:
         for d, subdirs, files in os.walk(root):
-            subdirs[:] = sorted(s for s in subdirs if s != 'target')
+            subdirs[:] = sorted(s for s in subdirs if s != 'target'
+                                and os.path.join(d, s) not in skip)
             for f in sorted(files):
                 if f.endswith(ext):
                     yield os.path.join(d, f)
 
 
-def find_citations(repo):
+def find_citations(repo, docs=True):
     out = []
-    for full in source_files(repo):
+    for full in source_files(repo, docs):
         with open(full, encoding='utf8', errors='replace') as f:
             lines = f.read().split('\n')
         rel = os.path.relpath(full, repo).replace(os.sep, '/')
@@ -843,8 +849,8 @@ def judge(pair, cite, rel):
             cite.new_end = map_line(e, n, cite.end)
 
 
-def check_citations(pair, repo):
-    cites = find_citations(repo)
+def check_citations(pair, repo, docs=True):
+    cites = find_citations(repo, docs)
     sites = called_sites(repo)
     tree = pair.old
     here = collections.defaultdict(set)
@@ -898,7 +904,7 @@ def shift_lines(cites):
         new = c.token.replace(':%d' % c.line, ':%d' % c.new_line, 1)
         if c.end:
             new = new.replace('-%d' % c.end, '-%d' % c.new_end, 1)
-        old = re.sub(r'([/.&\[\]*])', r'\\\1', c.token)
+        old = re.sub(r'([/.&\[\]*])', r'\\\1', c.token) + r'\b'  # `:10` must not hit `:100`
         out.append("sed -i '%ds/%s/%s/' %s" % (c.lineno, old, new.replace('/', r'\/'), c.file))
     return sorted(set(out))
 
@@ -1119,7 +1125,7 @@ def run(args):
     if args.no_citations:
         stats.append('citations: skipped')
     else:
-        cites = check_citations(pair, args.repo)
+        cites = check_citations(pair, args.repo, not args.no_docs)
         c_tally = collections.Counter(c.status for c in cites)
         stats.append('citations: %d; %s' % (len(cites), ', '.join('%s %d' % kv for kv in sorted(c_tally.items()))))
         via = collections.Counter(c.via for c in cites if c.via)
@@ -1169,6 +1175,7 @@ def main(argv=None):
     p.add_argument('--out')
     p.add_argument('--repo', default='.')
     p.add_argument('--no-citations', action='store_true')
+    p.add_argument('--no-docs', action='store_true', help='do not read docs/**/*.md citations')
     p.add_argument('--no-consts', action='store_true')
     return run(p.parse_args(argv))
 

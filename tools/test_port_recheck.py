@@ -12,6 +12,7 @@ import io
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -212,6 +213,15 @@ class FunctionLevel(Base):
         self.both('n', module(nested=[fn('F', 10, 1)]), module(nested=[fn('F', 10, 2)]))
         self.assertEqual(self.row('symbol', 'n', 'F')[0], 'changed')
 
+    def test_a_future_flag_counts_in_code_that_execs_or_evals(self):
+        for i, (names, body) in enumerate((((), [op(LOAD_CONST, 0), op(85)]),
+                                           (('eval',), [op(LOAD_CONST, 0), op(POP_TOP)]))):
+            def f(flags):
+                return C('F', [(10, body + [op(LOAD_CONST, 0), op(RETURN_VALUE)])], consts=(1,),
+                         names=names, flags=flags)
+            self.both('d%d' % i, module(nested=[f(3)]), module(nested=[f(3 | 0x2000)]))
+            self.assertEqual(self.row('symbol', 'd%d' % i, 'F')[0], 'changed')
+
     def test_a_module_that_left_is_gone(self):
         pyc(os.path.join(self.old, 'only_old.pyc'), module(nested=[fn('F', 10)]))
         self.assertEqual(self.row('module', 'only_old', '')[0], 'gone')
@@ -388,12 +398,55 @@ class Citations(Base):
             f.write('# thing.pyc:10\n')
         self.assertEqual(self.cite()['thing.pyc:10'].status, 'changed')
 
+    def doc(self, body, rel='re/x.md'):
+        path = os.path.join(self.repo, 'docs', rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write(body)
+
+    def test_docs_citations_are_checked_and_shifted(self):
+        self.both('thing', module(nested=[fn('F', 10)]), module(nested=[fn('F', 25)]))
+        self.doc('# invented\n`thing.py:10`\n')
+        rel = '/'.join(('docs', 're', 'x.md'))  # built, so test_docs does not look for it
+        self.assertEqual(self.cite()['thing.py:10'].file, rel)
+        rc, out = self.cli()
+        self.assertIn("sed -i '2s/thing\\.py:10\\b/thing.py:25/' " + rel,
+                      open(os.path.join(out, 'shifts.sh')).read())
+
+    def test_generated_dated_and_evejs_docs_are_skipped(self):
+        self.both('thing', module(nested=[fn('F', 10)]), module(nested=[fn('F', 25)]))
+        for d in ('status', 'archive', 'evejs'):
+            self.doc('`thing.py:10`\n', rel=d + '/y.md')
+        self.assertEqual(self.cite(), {})
+        self.doc('`thing.py:10`\n', rel='guides/y.md')
+        self.assertEqual(self.cite()['thing.py:10'].file, '/'.join(('docs', 'guides', 'y.md')))
+
+    def test_a_shift_for_line_10_does_not_hit_line_100(self):
+        self.both('thing', module(nested=[fn('F', 10)]), module(nested=[fn('F', 25)]))
+        self.rust('// `thing.py:10` `thing.py:100`\n')
+        rc, out = self.cli()
+        sh = open(os.path.join(out, 'shifts.sh')).read()
+        line = [l for l in sh.splitlines() if l.startswith('sed')][0]
+        tgt = os.path.join(self.td, 't.rs')
+        with open(tgt, 'w') as f:
+            f.write('// `thing.py:10` `thing.py:100`\n')
+        # run the script's own sed expression on an invented file
+        expr = line.split("'")[1]
+        subprocess.run(['sed', '-i', expr, tgt], check=True)
+        with open(tgt) as f:
+            self.assertEqual(f.read(), '// `thing.py:25` `thing.py:100`\n')
+
+    def test_no_docs_leaves_docs_out(self):
+        self.both('thing', module(nested=[fn('F', 10)]))
+        self.doc('`thing.py:10`\n')
+        self.assertEqual({c.token for c in pr.check_citations(self.pair(), self.repo, docs=False)}, set())
+
     def test_a_shifted_line_in_unchanged_code_makes_a_sed(self):
         self.both('thing', module(nested=[fn('F', 10)]), module(nested=[fn('F', 25)]))
         self.rust('// one\n// `thing.py:10`\n')
         rc, out = self.cli()
         self.assertEqual(rc, 0)
-        self.assertIn("sed -i '2s/thing\\.py:10/thing.py:25/' server/crates/x/src/lib.rs",
+        self.assertIn("sed -i '2s/thing\\.py:10\\b/thing.py:25/' server/crates/x/src/lib.rs",
                       open(os.path.join(out, 'shifts.sh')).read())
 
     def test_a_range_shifts_at_both_ends(self):
