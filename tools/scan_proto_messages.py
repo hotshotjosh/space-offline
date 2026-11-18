@@ -18,8 +18,6 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.append(_HERE)
 
-from protos import descriptors  # noqa: E402
-
 
 def rows(pyc):
     out = []
@@ -27,6 +25,7 @@ def rows(pyc):
         for f in files:
             if not f.endswith("_pb2.pyc"):
                 continue
+            from protos import descriptors  # needs google.protobuf; only a real scan does
             fd = descriptors(os.path.join(root, f))
             if fd is None:
                 continue
