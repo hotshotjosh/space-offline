@@ -105,6 +105,16 @@ pub const CATEGORY_WRAP: i64 = 29;
 /// `appConst.refAssetSafetyTax` **[V]**: "Asset safety recovery tax".
 pub const REF_ASSET_SAFETY_TAX: i64 = 123;
 
+/// `inventorycommon.const.typeInsurgencyFOBAngel` **[V]** (build 3707965).
+pub const TYPE_INSURGENCY_FOB_ANGEL: i64 = 78_260;
+/// `inventorycommon.const.typeInsurgencyFOBGuristas` **[V]** (build 3707965).
+pub const TYPE_INSURGENCY_FOB_GURISTAS: i64 = 79_172;
+/// The structure types whose wraps may also be delivered to the hub system
+/// (`structures.commonUtil.GetValidDeliverySystems` **[V]**).
+pub const INSURGENCY_FOBS: [i64; 2] = [TYPE_INSURGENCY_FOB_ANGEL, TYPE_INSURGENCY_FOB_GURISTAS];
+/// `appConst.solarSystemZarzakh` **[V]**: the extra delivery system of a FOB.
+pub const SOLAR_SYSTEM_ZARZAKH: i64 = crate::abyss::ZARZAKH;
+
 /// One asset safety wrap.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Wrap {
@@ -119,6 +129,9 @@ pub struct Wrap {
     pub created: i64,
     /// The client's `wrapName`.
     pub name: String,
+    /// The type of the structure it came out of, 0 when unknown (an old row).
+    /// The client's `structureTypeID`.
+    pub origin_type: i64,
 }
 
 fn key(id: i64) -> Vec<String> {
@@ -133,6 +146,7 @@ impl Wrap {
             self.origin.to_string(),
             self.created.to_string(),
             self.name.clone(),
+            self.origin_type.to_string(),
         ]
     }
 
@@ -144,6 +158,7 @@ impl Wrap {
             origin: v.get(2)?.parse().ok()?,
             created: v.get(3)?.parse().ok()?,
             name: v.get(4)?.clone(),
+            origin_type: v.get(5).and_then(|s| s.parse().ok()).unwrap_or(0),
         })
     }
 
@@ -360,6 +375,7 @@ pub fn wrap_structure(
             origin: s.id,
             created: now,
             name: wrap_name(&s.name),
+            origin_type: s.type_id,
         };
         put(reg.deltas_mut(), &w);
         reg.mark_dirty();
@@ -466,6 +482,7 @@ pub fn wrap_place(
         return Err(Refusal::NothingThere);
     }
     let name = s.name;
+    let origin_type = s.type_id;
     let id = crate::service::structures::safety::insert_wrap_item(reg, owner, system);
     let edits: Vec<Edit> = items
         .iter()
@@ -485,6 +502,7 @@ pub fn wrap_place(
         origin: place,
         created: now,
         name: wrap_name(&name),
+        origin_type,
     };
     put(reg.deltas_mut(), &w);
     reg.mark_dirty();
@@ -515,6 +533,71 @@ pub fn destinations(reg: &Registry, actor: i64, system: i64) -> Vec<(i64, i64)> 
         }
     }
     out
+}
+
+/// The systems a wrap of a structure of type `ty` may be delivered in:
+/// `origin`, and `hub` when `ty` is one of `fobs`.
+pub fn delivery_systems(origin: i64, ty: i64, fobs: &[i64], hub: i64) -> Vec<i64> {
+    let mut out = vec![origin];
+    if fobs.contains(&ty) && hub != origin {
+        out.push(hub);
+    }
+    out
+}
+
+/// [`destinations`] over every delivery system, as `(id, type, system)`: the
+/// V24.02 Deliver window's one flat list.
+pub fn places_for(
+    reg: &Registry,
+    actor: i64,
+    origin: i64,
+    ty: i64,
+    fobs: &[i64],
+    hub: i64,
+) -> Vec<(i64, i64, i64)> {
+    delivery_systems(origin, ty, fobs, hub)
+        .into_iter()
+        .flat_map(|sys| {
+            destinations(reg, actor, sys)
+                .into_iter()
+                .map(move |(id, t)| (id, t, sys))
+        })
+        .collect()
+}
+
+/// The NPC station of `system` with the lowest id, as `(id, type)`.
+fn station_in(reg: &Registry, system: i64) -> Option<(i64, i64)> {
+    reg.celestials()
+        .served_in(system)
+        .filter(|c| c.kind == crate::celestial::Kind::Station)
+        .map(|c| (c.id, c.type_id))
+        .min()
+}
+
+/// Where a wrap of a structure of type `ty` in `system` goes by itself, as
+/// `(station, type, system)`. A FOB's is inside the client's valid delivery
+/// set **[V]** (`GetValidDeliverySystems`): a station of its own system, else
+/// one of `hub`; any other wrap goes to [`nearest_station`]. **[A]** the FOB
+/// order (own system first) is TQ's (falsifier: TQ's confirm dialog naming
+/// the hub for a FOB in a system with stations).
+pub fn default_for(
+    reg: &Registry,
+    system: i64,
+    ty: i64,
+    fobs: &[i64],
+    hub: i64,
+) -> Option<(i64, i64, i64)> {
+    if fobs.contains(&ty) {
+        return delivery_systems(system, ty, fobs, hub)
+            .into_iter()
+            .find_map(|sys| station_in(reg, sys).map(|(id, t)| (id, t, sys)));
+    }
+    nearest_station(reg, system).map(|r| (r.station_id, r.type_id, r.solar_system_id))
+}
+
+/// [`default_for`] on the real FOB list and hub.
+pub fn default_of(reg: &Registry, system: i64, ty: i64) -> Option<(i64, i64, i64)> {
+    default_for(reg, system, ty, &INSURGENCY_FOBS, SOLAR_SYSTEM_ZARZAKH)
 }
 
 // -- delivering --------------------------------------------------------------------
@@ -630,6 +713,27 @@ pub fn deliver_to(
     dest: i64,
     now: i64,
 ) -> Result<Delivered, Refusal> {
+    deliver_with(
+        reg,
+        actor,
+        wrap,
+        dest,
+        now,
+        &INSURGENCY_FOBS,
+        SOLAR_SYSTEM_ZARZAKH,
+    )
+}
+
+/// [`deliver_to`] with the FOB types and the hub given (a test's seam).
+fn deliver_with(
+    reg: &mut Registry,
+    actor: i64,
+    wrap: i64,
+    dest: i64,
+    now: i64,
+    fobs: &[i64],
+    hub: i64,
+) -> Result<Delivered, Refusal> {
     let w = get(reg.deltas(), wrap).ok_or(Refusal::NoWrap)?;
     if !acts_for(reg, actor, w.owner) {
         return Err(Refusal::NotYours);
@@ -638,9 +742,9 @@ pub fn deliver_to(
     if now < at {
         return Err(Refusal::TooEarly((at - now) / SECOND));
     }
-    if !destinations(reg, actor, w.system)
+    if !places_for(reg, actor, w.system, w.origin_type, fobs, hub)
         .iter()
-        .any(|&(id, _)| id == dest)
+        .any(|&(id, ..)| id == dest)
     {
         return Err(Refusal::BadDestination);
     }
@@ -705,10 +809,10 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
         {
             continue;
         }
-        let Some(to) = nearest_station(reg, w.system) else {
+        let Some((to, ..)) = default_of(reg, w.system, w.origin_type) else {
             continue;
         };
-        let d = deliver(reg, &w, to.station_id, now);
+        let d = deliver(reg, &w, to, now);
         if get(reg.deltas(), w.id).is_some() {
             if let Ok(mut m) = NEXT_TRY.lock() {
                 m.insert(key, now.saturating_add(RETRY));
@@ -722,7 +826,7 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
             "[safety] wrap {} of {} moved itself to {} ({} items, fee {})",
             w.id,
             w.owner,
-            to.station_id,
+            to,
             d.moved,
             d.fee
         );

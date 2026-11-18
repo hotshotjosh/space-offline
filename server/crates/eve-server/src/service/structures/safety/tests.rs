@@ -50,14 +50,16 @@ fn the_assets_tab_lists_a_persons_wraps_and_the_corp_tab_the_corporations() {
         &PyValue::Unicode("Invented Home Asset Safety".to_owned())
     );
     // The two waits are in days; the invented ones are not whole days.
-    for k in ["daysUntilCanDeliverConst", "daysUntilAutoMoveConst"] {
+    for k in ["daysUntilCanDeliver", "daysUntilAutoMove"] {
         assert!(matches!(field(r, k), PyValue::Real(_)), "{k}");
     }
-    let PyValue::Dict(near) = field(r, "nearestNPCStationInfo") else {
+    let PyValue::Dict(near) = field(r, "defaultDestinationInfo") else {
         panic!("a dict")
     };
     assert_eq!(field(near, "itemID"), &PyValue::Int(HARBOUR));
     assert!(matches!(field(near, "typeID"), PyValue::Int(_)));
+    assert_eq!(field(r, "structureTypeID"), &PyValue::Int(w.origin_type));
+    assert_ne!(w.origin_type, 0);
 
     // The corporation's wrap is on the corp tab, for a director only.
     assert_eq!(
@@ -80,40 +82,47 @@ fn a_whole_number_of_days_is_an_integer() {
     reg.rules_mut().safety_manual_secs = 2 * 86_400;
     reg.rules_mut().safety_auto_secs = 7 * 86_400;
     let mine = rows(call(&mut reg, BOSS, "GetItemsInSafetyForCharacter", &[]).unwrap());
-    assert_eq!(
-        field(&mine[0], "daysUntilCanDeliverConst"),
-        &PyValue::Int(2)
-    );
-    assert_eq!(field(&mine[0], "daysUntilAutoMoveConst"), &PyValue::Int(7));
+    assert_eq!(field(&mine[0], "daysUntilCanDeliver"), &PyValue::Int(2));
+    assert_eq!(field(&mine[0], "daysUntilAutoMove"), &PyValue::Int(7));
 }
 
 #[test]
-fn the_delivery_window_lists_stations_and_the_nearest() {
+fn the_delivery_window_answers_one_flat_list_tagged_with_systems() {
     let (mut reg, ..) = world();
-    let PyValue::Tuple(t) = call(
-        &mut reg,
-        BOSS,
-        "GetStructuresICanDeliverTo",
-        &[PyValue::Int(SYSTEM)],
-    )
-    .unwrap() else {
-        panic!("a pair")
-    };
-    let places = rows(t[0].clone());
+    let places = rows(
+        call(
+            &mut reg,
+            BOSS,
+            "GetStructuresICanDeliverTo",
+            &[PyValue::Int(SYSTEM), PyValue::Int(1_234)],
+        )
+        .unwrap(),
+    );
+    assert!(places.iter().any(|p| {
+        field(p, "itemID") == &PyValue::Int(HARBOUR)
+            && field(p, "solarSystemID") == &PyValue::Int(SYSTEM)
+    }));
     assert!(
         places
             .iter()
-            .any(|p| field(p, "itemID") == &PyValue::Int(HARBOUR))
+            .all(|p| field(p, "itemID") != &PyValue::Int(FAR))
     );
-    assert!(
-        !places
-            .iter()
-            .any(|p| field(p, "itemID") == &PyValue::Int(FAR))
-    );
-    let PyValue::Dict(near) = &t[1] else {
+}
+
+#[test]
+fn the_default_destination_answers_the_origins_station() {
+    let (mut reg, ..) = world();
+    let PyValue::Dict(d) = call(
+        &mut reg,
+        BOSS,
+        "GetDefaultAssetSafetyDestination",
+        &[PyValue::Int(SYSTEM), PyValue::Int(1_234)],
+    )
+    .unwrap() else {
         panic!("a dict")
     };
-    assert_eq!(field(near, "itemID"), &PyValue::Int(HARBOUR));
+    assert_eq!(field(&d, "solarSystemID"), &PyValue::Int(SYSTEM));
+    assert_eq!(field(&d, "itemID"), &PyValue::Int(HARBOUR));
 }
 
 #[test]
@@ -260,7 +269,7 @@ fn a_zero_manual_wait_goes_out_as_a_positive_number_of_days() {
     let _ = unanchor(&mut reg, id, corp);
     reg.rules_mut().safety_manual_secs = 0;
     let mine = rows(call(&mut reg, BOSS, "GetItemsInSafetyForCharacter", &[]).unwrap());
-    let PyValue::Real(d) = field(&mine[0], "daysUntilCanDeliverConst") else {
+    let PyValue::Real(d) = field(&mine[0], "daysUntilCanDeliver") else {
         panic!("a real")
     };
     assert!(*d > 0.0);

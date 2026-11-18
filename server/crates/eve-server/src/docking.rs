@@ -234,9 +234,12 @@ pub const EXCLUDED_DOCKS_BY_STRUCTURE_TYPE: &[(i64, &[i64])] = &[
     // dreadnoughts, lancer dreadnoughts.
     (35_836, &[547, 5120, 1538, 485, 4594]),
     // typeInsurgencyFOBAngel: freighters and jump freighters.
-    (78_260, &[513, 902]),
+    (crate::asset_safety::TYPE_INSURGENCY_FOB_ANGEL, &[513, 902]),
     // typeInsurgencyFOBGuristas: the same two.
-    (79_172, &[513, 902]),
+    (
+        crate::asset_safety::TYPE_INSURGENCY_FOB_GURISTAS,
+        &[513, 902],
+    ),
 ];
 
 /// One docking mouth of one station graphic.

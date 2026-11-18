@@ -5,11 +5,14 @@
 //! - `GetItemsInSafetyForCharacter()` / `ForCorp()`: a list of dicts (the
 //!   Assets window and the corp Accounts tab subscript each), keys
 //!   `assetWrapID`, `wrapName`, `solarSystemID`, `ejectTime` (FILETIME),
-//!   `daysUntilCanDeliverConst`, `daysUntilAutoMoveConst` (days) and
-//!   `nearestNPCStationInfo` (a dict with `itemID` and `typeID`).
-//! - `GetStructuresICanDeliverTo(solarSystemID)`: a pair of the destinations
-//!   (dicts with `itemID` and `typeID`; the window adds `name`) and the
-//!   nearest NPC station (same two keys).
+//!   `daysUntilCanDeliver`, `daysUntilAutoMove` (days), `defaultDestinationInfo`
+//!   (a dict with `itemID` and `typeID`) and `structureTypeID` **[V]** (build
+//!   3707965).
+//! - `GetStructuresICanDeliverTo(solarSystemID, structureTypeID)`: one flat
+//!   list of destinations (dicts with `itemID`, `typeID` and `solarSystemID`;
+//!   the window adds `name`) **[V]**. A FOB's type adds Zarzakh's stations.
+//! - `GetDefaultAssetSafetyDestination(solarSystemID, structureTypeID)`:
+//!   a dict `solarSystemID`, `itemID`, `typeID` (only the system is read **[V]**).
 //! - `GetWrapNames(wrapIDs)`: `{wrapID: name}`.
 //! - `MovePersonalAssetsToSafety(solarSystemID, structureID)`,
 //!   `MoveCorpAssetsToSafety(solarSystemID, structureID)`,
@@ -140,29 +143,29 @@ fn days(secs: i64) -> PyValue {
     }
 }
 
-fn station_info(reg: &Registry, system: i64) -> PyValue {
-    let (id, type_id) =
-        safety::nearest_station(reg, system).map_or((0, 0), |r| (r.station_id, r.type_id));
+fn station_info(id: i64, type_id: i64) -> PyValue {
     pydict(vec![
         ("itemID", PyValue::Int(id)),
         ("typeID", PyValue::Int(type_id)),
     ])
 }
 
-fn row(reg: &Registry, w: &safety::Wrap) -> PyValue {
+fn row(reg: &Registry, w: &safety::Wrap, near: (i64, i64)) -> PyValue {
     let rules = &reg.config().rules;
+    let manual = days(rules.safety_manual_secs.max(1));
+    let auto = days(rules.safety_auto_secs);
     pydict(vec![
         ("assetWrapID", PyValue::Int(w.id)),
         ("wrapName", PyValue::Unicode(w.name.clone())),
         ("solarSystemID", PyValue::Int(w.system)),
         ("ejectTime", PyValue::Long(w.created)),
         // The client divides by this one (`UpdateProgress`): never 0.
-        (
-            "daysUntilCanDeliverConst",
-            days(rules.safety_manual_secs.max(1)),
-        ),
-        ("daysUntilAutoMoveConst", days(rules.safety_auto_secs)),
-        ("nearestNPCStationInfo", station_info(reg, w.system)),
+        ("daysUntilCanDeliver", manual),
+        ("daysUntilAutoMove", auto),
+        ("defaultDestinationInfo", station_info(near.0, near.1)),
+        // [A] 0 is a safe type for a wrap saved before the column existed
+        // (falsifier: a client traceback naming `structureTypeID`).
+        ("structureTypeID", PyValue::Int(w.origin_type)),
     ])
 }
 
@@ -177,10 +180,11 @@ fn rows_of(reg: &Registry, actor: Option<i64>, owner: Option<i64>) -> PyValue {
     PyValue::List(
         safety::of_owner(reg.deltas(), owner)
             .iter()
-            // The client subscripts the station's info and looks the id up:
-            // a wrap with no NPC station to name is left off the list.
-            .filter(|w| safety::nearest_station(reg, w.system).is_some())
-            .map(|w| row(reg, w))
+            // The client subscripts the destination's info and looks the id
+            // up: a wrap with none to name is left off the list.
+            .filter_map(|w| {
+                safety::default_of(reg, w.system, w.origin_type).map(|d| row(reg, w, (d.0, d.1)))
+            })
             .collect(),
     )
 }
@@ -199,20 +203,37 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         }
         "GetStructuresICanDeliverTo" => {
             let (Some(actor), Some(system)) = (req.actor, a.int_or_kw(0, "solarSystemID")) else {
-                return Err(a.bad("GetStructuresICanDeliverTo(solarSystemID)"));
+                return Err(a.bad("GetStructuresICanDeliverTo(solarSystemID, structureTypeID)"));
             };
-            let places = safety::destinations(reg, actor, system)
+            let Some(ty) = a.int_or_kw(1, "structureTypeID") else {
+                return Err(a.bad("GetStructuresICanDeliverTo(solarSystemID, structureTypeID)"));
+            };
+            let (fobs, hub) = (&safety::INSURGENCY_FOBS, safety::SOLAR_SYSTEM_ZARZAKH);
+            let places = safety::places_for(reg, actor, system, ty, fobs, hub)
                 .into_iter()
-                .map(|(id, type_id)| {
+                .map(|(id, t, sys)| {
                     pydict(vec![
                         ("itemID", PyValue::Int(id)),
-                        ("typeID", PyValue::Int(type_id)),
+                        ("typeID", PyValue::Int(t)),
+                        ("solarSystemID", PyValue::Int(sys)),
                     ])
                 })
                 .collect();
-            Ok(PyValue::Tuple(vec![
-                PyValue::List(places),
-                station_info(reg, system),
+            Ok(PyValue::List(places))
+        }
+        "GetDefaultAssetSafetyDestination" => {
+            let Some(system) = a.int_or_kw(0, "solarSystemID") else {
+                return Err(
+                    a.bad("GetDefaultAssetSafetyDestination(solarSystemID, structureTypeID)")
+                );
+            };
+            let ty = a.int_or_kw(1, "structureTypeID").unwrap_or(0);
+            let (id, type_id, sys) =
+                safety::default_of(reg, system, ty).unwrap_or((0, 0, safety::SOLAR_SYSTEM_ZARZAKH));
+            Ok(pydict(vec![
+                ("solarSystemID", PyValue::Int(sys)),
+                ("itemID", PyValue::Int(id)),
+                ("typeID", PyValue::Int(type_id)),
             ]))
         }
         "GetWrapNames" => {

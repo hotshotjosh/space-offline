@@ -673,3 +673,80 @@ fn drop_plan_moves_all_at_chance_one_and_destroys_all_at_zero() {
     }
     assert!(!none.contains(&Edit::Destroy { item_id: kept }));
 }
+
+#[test]
+fn a_wrap_row_saved_before_the_origin_type_column_loads_with_type_0() {
+    let old: Vec<String> = ["7", "31", "5", "100", "Invented"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let w = Wrap::from_row(&["1".to_owned()], &old).expect("loads");
+    assert_eq!(w.origin_type, 0);
+    let mut new = w.to_row();
+    assert_eq!(new.len(), 6);
+    new[5] = "4242".to_owned();
+    assert_eq!(
+        Wrap::from_row(&["1".to_owned()], &new).unwrap().origin_type,
+        4242
+    );
+}
+
+#[test]
+fn a_fob_wrap_offers_its_system_and_the_hub() {
+    let (reg, ..) = world();
+    let fob = 99_001; // an invented FOB type
+    let places = places_for(&reg, BOSS, SYSTEM, fob, &[fob], OTHER_SYSTEM);
+    assert!(
+        places
+            .iter()
+            .any(|&(id, _, s)| id == HARBOUR && s == SYSTEM)
+    );
+    assert!(
+        places
+            .iter()
+            .any(|&(id, _, s)| id == FAR && s == OTHER_SYSTEM)
+    );
+    // Any other type sees its own system only.
+    let plain = places_for(&reg, BOSS, SYSTEM, 99_002, &[fob], OTHER_SYSTEM);
+    assert!(plain.iter().all(|&(_, _, s)| s == SYSTEM));
+}
+
+#[test]
+fn a_fobs_default_is_inside_the_valid_set_own_station_else_the_hub() {
+    let (reg, ..) = world();
+    let fob = 99_001;
+    let bare = 33; // an invented system with no station
+    // Own system first.
+    assert_eq!(
+        default_for(&reg, SYSTEM, fob, &[fob], OTHER_SYSTEM).map(|d| (d.0, d.2)),
+        Some((HARBOUR, SYSTEM))
+    );
+    // No station of its own: the hub's, never a station elsewhere.
+    assert_eq!(
+        default_for(&reg, bare, fob, &[fob], OTHER_SYSTEM).map(|d| (d.0, d.2)),
+        Some((FAR, OTHER_SYSTEM))
+    );
+    // No station in either: none.
+    assert_eq!(default_for(&reg, bare, fob, &[fob], 34), None);
+    // A plain wrap keeps the nearest-station rule.
+    assert!(default_for(&reg, bare, 99_002, &[fob], OTHER_SYSTEM).is_some());
+}
+
+#[test]
+fn a_fob_wrap_is_delivered_to_a_hub_station_and_a_plain_one_is_refused() {
+    let fob = 99_001;
+    let hub = OTHER_SYSTEM;
+    let (mut reg, id, corp) = world();
+    let _ = unanchor(&mut reg, id, corp);
+    let mut w = wrap_of(&reg, BOSS);
+    let ripe = w.created + MANUAL * SECOND;
+    assert_eq!(
+        deliver_with(&mut reg, BOSS, w.id, FAR, ripe, &[fob], hub),
+        Err(Refusal::BadDestination),
+        "a plain wrap"
+    );
+    w.origin_type = fob;
+    put(reg.deltas_mut(), &w);
+    let d = deliver_with(&mut reg, BOSS, w.id, FAR, ripe, &[fob], hub).expect("a FOB wrap");
+    assert_eq!(d.to, FAR);
+}
