@@ -285,6 +285,43 @@ argument count (`in GetStationClones(), 0 args`), plus the handle's provenance
 when it was indirect (`handle via GetInventoryFromId()`), the guard expression,
 the store target, the `pass` target, and the one-hop caller resolution.
 
+### `shape` — how the client reads the answer
+
+A comma-separated set of reads of the answer at this call site, or `-` when none was traced.
+It is the last column, so positional readers of the earlier columns keep working. Each token
+is one kind of read, written once per site:
+
+| token | the client does |
+|---|---|
+| `unpack-N` | `a, b = answer` (`UNPACK_SEQUENCE N`) |
+| `iter` | `for row in answer`, or `list(answer)` and the like |
+| `key:K`, `index:I` | `answer['K']`, `answer[0]` |
+| `get:K`, `has:K` | `answer.get('K')`; `'K' in answer` |
+| `attr:A` | `answer.A` |
+| `len`, `truth` | `len(answer)`; `if answer` |
+
+A read of one element of an iterated answer (`for row in answer: row['K']`) carries a `row.`
+prefix (`row.key:K`). The reads follow a local, a `self.x` that a method stored the answer in
+(read in the other methods of the same class), and a function's return value: for the return
+hop, calls of `self.name` in the same file, and calls of a name that is defined once in the whole
+client. A comma, tab, newline or `%` in a key is written `%2C`, `%09`, `%0A`, `%25`.
+
+`tools/port-surface.sh` compares the sets per (service, method) between two builds (G1):
+`shape` when an unpacked tuple became an iterated list or back; `key added` for a subscripted
+key the client now requires (an impact when we serve the pair and the key is not in
+`shapes/server-keys.tsv`); `key gone` for a key no longer required (informational). A
+subscript that became `.get`, or a key behind `'k' in answer`, is optional and reports nothing.
+
+**What `shape` does not see** (a missing token does not mean "not read"):
+- reads inside dict, set and generator comprehensions: they run in their own code object and the
+  scanner does not hand them the answer, so `{r['K']: r for r in answer}` shows only `iter`;
+- `attr:`, `index:`, `len` and `truth` are recorded but not compared between builds;
+- an answer passed as a parameter to another function: the reads there are not followed;
+- keys built at run time (`'%sID' % x`), and reads more than one hop away through a generic
+  scroll-node dict;
+- the return hop for a name defined more than once, unless it is called on `self` in the same
+  file (then every same-named method of that file is merged).
+
 ---
 
 ## 4. The rows that look like trouble

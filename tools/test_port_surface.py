@@ -279,6 +279,66 @@ class Compare(unittest.TestCase):
         self.assertEqual(tsv[0], 'section\tchange\tkey\tdetail\tserved\timpact')
         self.assertEqual(len(tsv) - 1, 61)
 
+    def shape_calls(self, *rows):
+        head = CALLS_HEAD.rstrip('\n') + '\tshape\n'
+        return head + ''.join(call(s, m, line=i).rstrip('\n') + '\t%s\n' % sh for i, (s, m, sh) in enumerate(rows, 1))
+
+    def run_shapes(self, old, new):
+        self.both('client-calls.tsv', old, new)
+        rep, rows = self.run_cmp()
+        return rows
+
+    def test_tuple_to_list_is_a_served_shape_change(self):
+        rows = self.run_shapes(self.shape_calls(('alpha', 'GetThing', 'unpack-2')),
+                               self.shape_calls(('alpha', 'GetThing', 'iter,row.key:a')))
+        r = rows[('G1', 'shape', 'alpha.GetThing')]
+        self.assertTrue(r[5])
+        self.assertIn('unpack-2 -> iter', r[3])
+
+    def test_a_newly_required_key_counts_only_when_we_do_not_emit_it(self):
+        old = self.shape_calls(('alpha', 'GetOther', 'iter,row.key:oldK'))
+        new = self.shape_calls(('alpha', 'GetOther', 'iter,row.key:newK,row.key:emitted'))
+        rows = self.run_shapes(old, new)
+        r = rows[('G1', 'key added', 'alpha.GetOther')]
+        self.assertFalse(r[5], 'without server-keys.tsv it is informational')
+        put(self.out + '/shapes/server-keys.tsv', 'key\tfile:line\tsites\nemitted\tservice/x.rs:1\t1\n')
+        rows = self.run_shapes(old, new)
+        r = rows[('G1', 'key added', 'alpha.GetOther')]
+        self.assertTrue(r[5])
+        self.assertIn('not emitted by us: row.newK', r[3])
+        put(self.out + '/shapes/server-keys.tsv', 'key\tfile:line\tsites\nemitted\tx:1\t1\nnewK\tx:2\t1\n')
+        self.assertFalse(self.run_shapes(old, new)[('G1', 'key added', 'alpha.GetOther')][5], 'we emit it already')
+
+    def test_key_gone_is_never_an_impact(self):
+        rows = self.run_shapes(self.shape_calls(('alpha', 'GetOther', 'iter,row.key:oldK')),
+                               self.shape_calls(('alpha', 'GetOther', 'iter')))
+        r = rows[('G1', 'key gone', 'alpha.GetOther')]
+        self.assertFalse(r[5])
+        self.assertIn('oldK', r[3])
+
+    def test_a_subscript_that_became_get_or_in_is_not_a_gone_key(self):
+        old = self.shape_calls(('alpha', 'GetOther', 'iter,key:a,key:b'))
+        rows = self.run_shapes(old, self.shape_calls(('alpha', 'GetOther', 'iter,get:a,has:b')))
+        self.assertEqual([k for k in rows if k[1] in ('key gone', 'key added')], [])
+
+    def test_a_key_behind_an_in_test_is_optional(self):
+        rows = self.run_shapes(self.shape_calls(('alpha', 'GetOther', 'iter')),
+                               self.shape_calls(('alpha', 'GetOther', 'iter,has:k,key:k,key:real')))
+        self.assertIn('real', rows[('G1', 'key added', 'alpha.GetOther')][3])
+        self.assertNotIn('reads now: k', rows[('G1', 'key added', 'alpha.GetOther')][3])
+        self.assertNotIn(', k', rows[('G1', 'key added', 'alpha.GetOther')][3])
+
+    def test_optional_reads_and_unserved_pairs_do_not_impact(self):
+        rows = self.run_shapes(self.shape_calls(('gamma', 'Free', 'unpack-2'), ('alpha', 'GetThing', 'get:a')),
+                               self.shape_calls(('gamma', 'Free', 'iter'), ('alpha', 'GetThing', 'get:b')))
+        self.assertFalse(rows[('G1', 'shape', 'gamma.Free')][5])
+        self.assertNotIn(('G1', 'key added', 'alpha.GetThing'), rows)
+
+    def test_a_side_without_the_shape_column_is_not_compared(self):
+        old = CALLS_HEAD + call('alpha', 'GetThing')
+        rows = self.run_shapes(old, self.shape_calls(('alpha', 'GetThing', 'iter')))
+        self.assertEqual([k for k in rows if k[1] in ('shape', 'key added', 'key gone')], [])
+
     def test_shapes_rows_are_served_impacts_in_g7(self):
         head = 'pass\tstatus\tkey\tserver_site\told_readers\tnew_readers\tdetail\n'
         put(self.out + '/shapes/shapes.tsv',

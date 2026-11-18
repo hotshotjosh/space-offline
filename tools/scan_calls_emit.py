@@ -38,6 +38,11 @@ def served_of(svc, meth):
     if svc not in SVC_BASE: return 'no'
     return 'yes' if meth in BY_BASE.get(svc, ()) else 'partial'
 
+def esc(tok):
+    # a shape cell is a comma-joined list: a key that holds `,` (or a tab, newline, `%`)
+    # is written %XX so one token never splits into two.
+    return re.sub(r'[%,\t\r\n]', lambda m: '%%%02X' % ord(m.group(0)), tok)
+
 def clean(t):
     return re.sub(r'\s+', ' ', t.replace('\t', ' ')).strip()
 
@@ -49,15 +54,16 @@ for x in sites:
     if x['indirect']: notes.append('handle via %s' % x['indirect'])
     notes.append('in %s(), %d args' % (x['func'] or '?', x['nargs']))
     notes.extend(x['notes'])
-    key = (svc, x['method'], cs, x['kind'], x['consumer'], x['guard'])
+    shape = ','.join(esc(t) for t in (x.get('shape') or ())) or '-'
+    key = (svc, x['method'], cs, x['kind'], x['consumer'], x['guard'], shape)
     note = clean('; '.join(notes))
     if key in rows: rows[key][1] += 1
     else: rows[key] = [note, 1]
 
 out = []
-for (svc, meth, cs, kind, cons, guard), (note, n) in rows.items():
+for (svc, meth, cs, kind, cons, guard, shape), (note, n) in rows.items():
     if n > 1: note = 'x%d identical sites on this line; %s' % (n, note)
-    out.append((svc, meth, cs, kind, cons, guard, served_of(svc, meth), note))
+    out.append((svc, meth, cs, kind, cons, guard, served_of(svc, meth), note, shape))
 
 def sortkey(r):
     svc, meth, cs = r[0], r[1], r[2]
@@ -65,7 +71,7 @@ def sortkey(r):
     return (svc.lower(), svc, meth.lower(), meth, p, int(ln) if ln.isdigit() else 0)
 
 out.sort(key=sortkey)
-HDR = ('service','method','call_site','kind','consumer','guard','served','notes')
+HDR = ('service','method','call_site','kind','consumer','guard','served','notes','shape')
 with open(CALLS_OUT, 'w') as f:
     f.write('\t'.join(HDR) + '\n')
     for r in out: f.write('\t'.join(r) + '\n')

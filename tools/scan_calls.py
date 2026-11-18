@@ -86,6 +86,13 @@ def promotable(name, where):
     return len(where) <= 3
 PROBE = set()
 PROBE_OUT = []
+# The one hop through `self`: (file, attribute) pairs some method stored a
+# census answer in, and the probe sites the next sweep collects for their readers.
+PROBE_ATTR = set()
+PROBE_ATTR_OUT = []
+# How many code objects of each name the first sweep saw: a return-hop merge by
+# bare function name is only believed for a name defined once in the whole tree.
+DEF_COUNT = collections.Counter()
 # Methods of carbon moniker.Moniker / MonikerCallWrap: local, never on the wire.
 MONIKER_LOCAL = set('''SetSessionCheck ToURLString FromURLString Bind MonikeredCall
 QuickResolve Resolve Unresolve Unbind GetNodeID GetSelfLocal GetMoniker
@@ -149,10 +156,14 @@ def srcpath(c):
     return strip_build_prefix((c.filename or b'').decode('utf8','replace'))
 
 def V(d, svc=None, bm=None, origin=None, indirect=None, site=None, deco=None,
-      isfunc=False, natv=False, code=None, via=None):
+      isfunc=False, natv=False, code=None, via=None, ssite=(), elem=(), recv=None):
+    # `ssite`, `elem` and `recv` serve the `shape` column only (see `shp`): the
+    # sites whose answer this value still is, the sites whose answer this value
+    # is one element of, and the receiver of a not-yet-called `.get`. They never
+    # touch `consumer`, the guard or the comprehension latch.
     return {'d': d, 'svc': svc, 'bm': bm, 'origin': origin, 'indirect': indirect,
             'site': site, 'deco': deco, 'isfunc': isfunc, 'natv': natv, 'code': code,
-            'via': via}
+            'via': via, 'ssite': ssite, 'elem': elem, 'recv': recv}
 
 # A stack value can carry *several* pending sites, not one. The case that needs
 # it is two branches storing to the same local:
@@ -168,6 +179,21 @@ def sites_of(v):
     if s is None: return ()
     return tuple(s) if isinstance(s, list) else (s,)
 
+def shape_sites(v):
+    return tuple(dict.fromkeys(sites_of(v) + tuple(v.get('ssite') or ())))
+
+def quoted(v):
+    """The text of a string constant on the symbolic stack, else None."""
+    d = v['d']
+    return d[1:-1] if len(d) >= 2 and d[0] in '\'"' and d[-1] == d[0] else None
+
+def subscript_token(k):
+    q = quoted(k)
+    if q is not None: return 'key:' + q
+    d = k['d']
+    if d.lstrip('-').isdigit(): return 'index:' + d
+    return 'subscript'
+
 def add_site(v, s):
     cur = v.get('site')
     if cur is None: v['site'] = s
@@ -178,12 +204,16 @@ def add_site(v, s):
 class Site(object):
     __slots__ = ('service','method','path','line','kind','consumer','guard','notes',
                  'nargs','opidx','off','resolved','func','store_key','indirect',
-                 'in_comp','comp_latch')
+                 'in_comp','comp_latch','shape','cls')
     def __init__(self, **kw):
         for k in self.__slots__: setattr(self, k, kw.get(k))
         self.notes = list(kw.get('notes') or [])
         self.resolved = False; self.store_key = None
         self.comp_latch = None
+        # How the client reads the answer, one token per read: `unpack-N`,
+        # `iter`, `key:K`, `index:I`, `attr:A`, `get:K`, `has:K`, `len`,
+        # `truth`; a read of one element of an iterated answer carries `row.`.
+        self.shape = set(kw.get('shape') or ())
 
 # ------------------------------------------------------------------ guards
 def jump_target(off, nm, arg):
@@ -510,6 +540,8 @@ class Machine(object):
         self.merges = {}          # join offset -> stack snapshot of the arm that jumped
         self.comp_sites = []      # sites found inside a comprehension code object
         self.merge_drop = 0       # stack depths that did not reconcile at a join
+        self.cls = None           # the class whose body holds this code object, if any
+        self.sloc = {}            # local or `@self.x` name -> (shape sites, element-of sites)
 
     # --- stack
     def popn(self, k):
@@ -567,6 +599,8 @@ class Machine(object):
         if a is b: return a
         out = dict(a)
         for s in sites_of(b): add_site(out, s)
+        for k in ('ssite', 'elem'):
+            out[k] = tuple(dict.fromkeys(tuple(a.get(k) or ()) + tuple(b.get(k) or ())))
         for k in ('svc', 'bm', 'origin', 'indirect', 'code'):
             if not a.get(k): out[k] = b.get(k)
             elif b.get(k) and a[k] != b[k]:
@@ -644,6 +678,30 @@ class Machine(object):
         return V('%s()' % kind, via=[s for a in args for s in sites_of(a)] +
                  [s for a in args for s in (a.get('via') or ())])
 
+    # --- shape
+    def shp(self, vals, token):
+        """Record one read of these values on every site whose answer they are."""
+        for v in vals:
+            for s in shape_sites(v): s.shape.add(token)
+            for s in (v.get('elem') or ()): s.shape.add('row.' + token)
+
+    def shp_set(self, name, v):
+        ent = (shape_sites(v), tuple(v.get('elem') or ()))
+        if ent[0] or ent[1]: self.sloc[name] = ent
+        else: self.sloc.pop(name, None)
+
+    def attr_shape(self, base, rep):
+        """Shape sites a read of `self.<rep>` carries: what this function stored
+        there, and, in the probe sweep, a probe that collects what other methods
+        of the class do with it (the one hop through `self`)."""
+        if base['d'] != 'self': return ()
+        out = list(self.sloc.get('@self.' + rep, ((), ()))[0])
+        if (self.path, self.cls, rep) in PROBE_ATTR:
+            ps = Site(service='#attr', method=rep, path=self.path, line=0, kind=None,
+                      nargs=0, cls=self.cls, func=(self.c.name or b'').decode('utf8', 'replace'))
+            PROBE_ATTR_OUT.append(ps); out.append(ps)
+        return tuple(out)
+
     # --- taint
     def tc(self, vals, how, extra=None):
         for v in vals:
@@ -700,9 +758,11 @@ class Machine(object):
                     self.push(V(repr(self.cg[rep])))
                 else:
                     sv = self.local_svc.get(rep)
+                    sl = self.sloc.get(rep, ((), ()))
                     self.push(V(rep, svc=sv[0] if sv else None,
                                 origin=sv[1] if sv else None,
-                                indirect='local %s' % rep if sv else None))
+                                indirect='local %s' % rep if sv else None,
+                                ssite=sl[0], elem=sl[1]))
                 for s in self.local_tag.pop(rep, []):
                     if s.consumer is None: add_site(self.stack[-1], s)
             elif nm == 'LOAD_CLOSURE': self.push(V(rep))
@@ -717,6 +777,7 @@ class Machine(object):
                         self.tc([base], 'rowset', 'reads .%s -- a real rowset' % rep)
                     else:
                         self.tc([base], 'attr', 'reads .%s' % rep)
+                    if rep not in ('get', 'has_key'): self.shp([base], 'attr:' + rep)
                     a = self.attr_svc.get(rep)
                     ga = GLOBAL_ATTR.get(rep)
                     if ga and os.path.basename(ga[2]).rsplit('.', 1)[0] == \
@@ -728,7 +789,9 @@ class Machine(object):
                                           else 'attr .%s' % rep) if a else None,
                                 natv=bool(base.get('natv')) or
                                      (rep in self.native_attr) or
-                                     (base['d'].split('.')[0] in NATIVE_ROOTS)))
+                                     (base['d'].split('.')[0] in NATIVE_ROOTS),
+                                ssite=self.attr_shape(base, rep),
+                                recv=base if rep in ('get', 'has_key') else None))
                 for s in self.attr_tag.pop(rep, []):
                     if s.consumer is None: add_site(self.stack[-1], s)
             elif nm.startswith('CALL_FUNCTION'):
@@ -737,6 +800,11 @@ class Machine(object):
                          'CALL_FUNCTION_KW':1,'CALL_FUNCTION_VAR_KW':2}[nm]
                 vals = self.popn(1 + na + 2*nk + extra)
                 callee = vals[0]; args = vals[1:1+na]
+                cshort = callee['d'].split('.')[-1]
+                if callee.get('recv') is not None:
+                    k = quoted(args[0]) if args else None
+                    self.shp([callee['recv']], ('get:' if cshort == 'get' else 'has:') + (k if k is not None else '*'))
+                elif cshort == 'len' and na == 1: self.shp(args, 'len')
                 self.tc(vals[1:], 'call', (callee, na, nk))
                 self.tc([callee], 'pass', '-> called as a function')
                 self.push(self.call_result(callee, args, vals[1:], na, nk, i))
@@ -744,6 +812,7 @@ class Machine(object):
                 v = self.popn(1)[0]
                 if v.get('svc'): self.local_svc[rep] = (v['svc'], v.get('origin') or 'remotesvc')
                 elif rep in self.local_svc: del self.local_svc[rep]
+                self.shp_set(rep, v)
                 self.tc([v], 'store', rep)
                 self.latch(v, rep)
             elif nm == 'STORE_ATTR':
@@ -751,6 +820,7 @@ class Machine(object):
                 if v.get('natv'): self.native_attr.add(rep)
                 if v.get('svc'):
                     self.learned_attr[rep] = (v['svc'], v.get('origin') or 'remotesvc')
+                self.shp_set('@%s.%s' % (base['d'], rep), v)
                 self.tc([v], 'store', '@%s.%s' % (base['d'], rep))
                 self.latch(v, '%s.%s' % (base['d'], rep))
             elif nm == 'STORE_SUBSCR':
@@ -768,26 +838,35 @@ class Machine(object):
             elif nm == 'ROT_FOUR':
                 if len(self.stack) >= 4: self.stack.insert(-3, self.stack.pop())
             elif nm == 'UNPACK_SEQUENCE':
-                self.tc(self.popn(1), 'unpack_%d' % arg)
+                uv = self.popn(1); self.shp(uv, 'unpack-%d' % arg)
+                self.tc(uv, 'unpack_%d' % arg)
                 for _ in range(arg): self.push(V('unpacked'))
             elif nm == 'COMPARE_OP':
                 v = self.popn(2)
+                if arg < len(CMP) and CMP[arg] in ('in', 'not in'):
+                    k = quoted(v[0]); self.shp(v[1:], 'has:' + (k if k is not None else '*'))
                 self.tc(v, 'compare', 'cmp %s' % (CMP[arg] if arg < len(CMP) else '?'))
                 self.push(V('cmp'))
             elif nm.startswith('BINARY_') or nm.startswith('INPLACE_'):
                 v = self.popn(2)
+                if nm == 'BINARY_SUBSCR': self.shp(v[:1], subscript_token(v[1]))
                 self.tc(v, 'subscript' if nm == 'BINARY_SUBSCR' else 'arith')
                 self.push(V('binop'))
             elif nm.startswith('UNARY_'):
-                self.tc(self.popn(1), 'truth' if nm == 'UNARY_NOT' else 'arith')
+                uv = self.popn(1)
+                if nm == 'UNARY_NOT': self.shp(uv, 'truth')
+                self.tc(uv, 'truth' if nm == 'UNARY_NOT' else 'arith')
                 self.push(V('unop'))
             elif nm == 'GET_ITER':
                 v = self.popn(1)
+                self.shp(v, 'iter')
                 self.tc(v, 'iterate')
                 # keep the sites reachable: a comprehension that *stores* its
                 # result decides whether this value's answer can latch at all.
-                self.push(V('iter', via=[s for x in v for s in sites_of(x)]))
-            elif nm == 'FOR_ITER': self.push(V('item'))
+                self.push(V('iter', via=[s for x in v for s in sites_of(x)],
+                            ssite=tuple(dict.fromkeys(s for x in v for s in shape_sites(x)))))
+            elif nm == 'FOR_ITER':
+                self.push(V('item', elem=tuple(self.top().get('ssite') or ())))
             elif nm in ('BUILD_TUPLE','BUILD_LIST','BUILD_SET'):
                 self.tc(self.popn(arg), 'pack'); self.push(V('container'))
             elif nm == 'BUILD_MAP': self.push(V('dict'))
@@ -819,7 +898,8 @@ class Machine(object):
                 v = self.popn(arg + 2)
                 self.push(V('func', isfunc=True, code=v[-1].get('code') if v else None))
             elif nm == 'RAISE_VARARGS': self.tc(self.popn(arg), 'pass', '-> raise')
-            elif nm in COND_JUMP: self.tc(self.popn(1), 'truth')
+            elif nm in COND_JUMP:
+                uv = self.popn(1); self.shp(uv, 'truth'); self.tc(uv, 'truth')
             elif nm == 'JUMP_FORWARD':
                 # **Do not teleport.** This used to be `i = j; continue`, which
                 # skipped the whole `else` arm of every `if`/`else` -- the arm
@@ -888,7 +968,7 @@ class Machine(object):
         if PROBE and short in PROBE:
             ps = Site(service='#probe', method=short, path=self.path, line=0,
                       kind=None, nargs=na, opidx=opidx, off=self.ops[opidx][0],
-                      func=(self.c.name or b'').decode('utf8','replace'))
+                      indirect=d, func=(self.c.name or b'').decode('utf8','replace'))
             PROBE_OUT.append(ps)
             return V('call:%s' % d, site=ps)
         if short in SVC_FACTORY and na == 1 and args:
@@ -971,6 +1051,13 @@ def scan_file(p, helper_svc, want_sites=True):
     try: co = load_pyc(p)
     except Exception: return [], {}, {}
     codes = walk(co)
+    owner = {}
+    for c in codes:
+        # a class body is a code object that is not a function (no CO_OPTIMIZED)
+        # and not the module; its code constants are the class's methods.
+        if (c.name or b'') != b'<module>' and not (c.flags & 1):
+            for k in (c.consts or ()):
+                if isinstance(k, Code): owner[id(k)] = (c.name or b'').decode('utf8', 'replace')
     cg = const_globals_of(codes)
     attr_svc = dict(SEED_ATTR)
     attr_svc.update({k: (v[0], v[1]) for k, v in GLOBAL_ATTR.items()})
@@ -1034,12 +1121,15 @@ def scan_file(p, helper_svc, want_sites=True):
         # whatever that scope does resolve.
         if (c.name or b'') in COMP_NAMES: continue
         m = Machine(c, srcpath(c), helper_svc, attr_svc, func_svc, cg, nattr)
+        m.cls = owner.get(id(c))
+        DEF_COUNT[(c.name or b'').decode('utf8', 'replace')] += 1
         pbase = len(PROBE_OUT)
         got = m.run()
         for ps in PROBE_OUT[pbase:]:
             ps.guard, _ = detect_guard(m.ops, ps, m.with_descs, decos.get(ps.func, []),
                                        m.offmap)
         for s in got:
+            s.cls = m.cls
             s.guard, gn = detect_guard(m.ops, s, m.with_descs, decos.get(s.func, []),
                                        m.offmap)
             s.notes = gn + s.notes
@@ -1139,7 +1229,9 @@ def main():
                  '    tools/analysis.sh python3 /work/tools/scan_calls.py' % ROOT)
     helper_svc = build_helpers()
     learn_sweep(helper_svc)
+    DEF_COUNT.clear()
     allsites, nfiles = sweep(helper_svc)
+    defs = collections.Counter(DEF_COUNT)
     sys.stderr.write('pass1 files=%d sites=%d\n' % (nfiles, len(allsites)))
     # pass 2: a site whose only immediate consumer is `return` hands the value
     # to this function's own callers. Chase one hop by probing every call to a
@@ -1148,7 +1240,27 @@ def main():
     PROBE = set(s.func for s in ret if s.func and not s.func.startswith('<'))
     sys.stderr.write('probing %d function names for %d return-sites\n' % (len(PROBE), len(ret)))
     del PROBE_OUT[:]
+    for s in allsites:
+        sk = s.store_key or ''
+        if sk.startswith('@self.') and sk.count('.') == 1: PROBE_ATTR.add((s.path, s.cls, sk[6:]))
+    del PROBE_ATTR_OUT[:]
     sweep(helper_svc)
+    # The return hop. A call of `self.<name>` in the same file is the same
+    # function; a call of a bare `<name>` elsewhere is believed only when that
+    # name is defined once in the whole tree (161 tokens once leaked into one
+    # `GetRelationships` row from every same-named function).
+    shp_func_local = {}
+    shp_func_any = {}
+    for ps in PROBE_OUT:
+        if (ps.indirect or '').startswith('self.'):
+            shp_func_local.setdefault((ps.path, ps.method), set()).update(ps.shape)
+        shp_func_any.setdefault(ps.method, set()).update(ps.shape)
+    shp_attr = {}
+    for ps in PROBE_ATTR_OUT: shp_attr.setdefault((ps.path, ps.cls, ps.method), set()).update(ps.shape)
+    for s in allsites:
+        sk = s.store_key or ''
+        if sk.startswith('@self.') and sk.count('.') == 1:
+            s.shape |= shp_attr.get((s.path, s.cls, sk[6:]), set())
     agg = {}
     gagg = {}
     for ps in PROBE_OUT:
@@ -1160,6 +1272,8 @@ def main():
                                     n.startswith('reads')))] += 1
     hit = 0
     for s in ret:
+        s.shape |= shp_func_local.get((s.path, s.func), set())
+        if defs.get(s.func, 0) == 1: s.shape |= shp_func_any.get(s.func, set())
         gc = gagg.get(s.func)
         if gc:
             for g, k in gc.most_common(2):
@@ -1188,7 +1302,8 @@ def main():
     sys.stderr.write('return-sites resolved one hop: %d of %d\n' % (hit, len(ret)))
     json.dump([{'service': s.service, 'method': s.method, 'path': s.path, 'line': s.line,
                 'kind': s.kind, 'consumer': s.consumer, 'guard': s.guard, 'notes': s.notes,
-                'nargs': s.nargs, 'func': s.func, 'indirect': s.indirect}
+                'nargs': s.nargs, 'func': s.func, 'indirect': s.indirect,
+                'shape': sorted(s.shape)}
                for s in allsites], open(SITES_OUT, 'w'))
 
 if __name__ == '__main__':

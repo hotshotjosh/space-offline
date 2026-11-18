@@ -1494,15 +1494,6 @@ def eoci_main(EOCI_NAME):
     def eoci_body():
         mark = log_mark()
         pin = int(params().get('conquest_hq_system') or 0)
-        # The harness logs in docked.  A `/tr me` from the station straight into another
-        # system left the station UI half alive: the lobby reopened on a session with no
-        # stationid (stationController.GetOwnerID on a None stationItem) and the hangar
-        # view asked for the station inventory (CharacterNotAtStation) [V: the first
-        # 3707965 run, two tracebacks at login].  Every other scenario undocks first.
-        undocked, detail = undock()
-        precondition('the pilot undocks into space before the first /tr me', undocked, detail)
-        if not undocked:
-            return
         found = None
         park = None
         for hq in ([pin] if pin > 0 else list(HQ_SYSTEMS)):
@@ -1559,14 +1550,7 @@ def eoci_main(EOCI_NAME):
         in_t, in_q = list(inputs.items())[0]
         out_t, out_q = list(outputs.items())[0]
         in_t, in_q, out_t, out_q = int(in_t), int(in_q), int(out_t), int(out_q)
-        # In space `/createitem` puts the stack in the ship hold, and a hold create is
-        # capped at 1000 a call (`slash.rs` create_in_hold BadQuantity [V]: the 3707965
-        # run asked for 45000 in one call and got 0), so give the input in chunks.
-        left = in_q
-        while left > 0:
-            step = min(left, 1000)
-            gm('/createitem %d %d' % (in_t, step))
-            left -= step
+        gm('/createitem %d %d' % (in_t, in_q))
         got, _w = wait_for(lambda: cargo_units(in_t) >= in_q, timeout_ms=20000)
         precondition('the cargo holds the recipe input after /createitem', bool(got),
                      'cargo %d of %d' % (cargo_units(in_t), in_q))

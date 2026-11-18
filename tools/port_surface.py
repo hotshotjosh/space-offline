@@ -161,7 +161,8 @@ NARGS = re.compile(r'(\d+) args?')
 
 
 def calls_by_pair(table):
-    """{(service, method): {'sites': n, 'nargs': set, 'kind': set, 'consumer': set, 'served': str}}"""
+    """{(service, method): {'sites': n, 'nargs': set, 'kind': set, 'consumer': set, 'served': str,
+    'shape': set of read tokens, 'has_shape': whether the table has the column}}"""
     if table is None:
         return None
     head, rows = table
@@ -171,13 +172,16 @@ def calls_by_pair(table):
         if len(r) < len(head):
             continue
         d = out.setdefault((r[ix['service']], r[ix['method']]),
-                           {'sites': 0, 'nargs': set(), 'kind': set(), 'consumer': set(), 'served': ''})
+                           {'sites': 0, 'nargs': set(), 'kind': set(), 'consumer': set(), 'served': '',
+                            'shape': set(), 'has_shape': 'shape' in ix})
         d['sites'] += 1
         m = NARGS.search(r[ix['notes']])
         if m:
             d['nargs'].add(int(m.group(1)))
         d['kind'].add(r[ix['kind']])
         d['consumer'].add(r[ix['consumer']])
+        if 'shape' in ix:
+            d['shape'].update(t for t in r[ix['shape']].split(',') if t and t != '-')
         d['served'] = r[ix['served']] or d['served']
     return out
 
@@ -205,7 +209,7 @@ def load_served(path):
             'by_base': by_base}
 
 
-def compare_calls(rep, old, new, served):
+def compare_calls(rep, old, new, served, server_keys=None):
     a = calls_by_pair(read_tsv(os.path.join(old, 'client-calls.tsv')))
     b = calls_by_pair(read_tsv(os.path.join(new, 'client-calls.tsv')))
     if a is None or b is None:
@@ -229,6 +233,65 @@ def compare_calls(rep, old, new, served):
                 rep.add('G1', 'consumer', name, 'kind %s -> %s, consumer %s -> %s' % (
                     '/'.join(sorted(x['kind'])), '/'.join(sorted(y['kind'])),
                     '/'.join(sorted(x['consumer'])), '/'.join(sorted(y['consumer']))), sv)
+            if x['has_shape'] and y['has_shape']:
+                compare_shape(rep, name, x['shape'], y['shape'], sv, hit, server_keys)
+
+
+STRUCT = re.compile(r'^(unpack-\d+|iter)$')
+
+
+def key_reads(tokens):
+    """(required, optional) key sets from shape tokens, `row.` kept in the name.
+
+    Required: a subscript `key:K` that no `has:K` guards on the same side. Optional: a `get:K`
+    or a `has:K` (`.get('k')` and `'k' in d` both survive a missing key). A key in both
+    `key:` and `get:` stays required: some site subscripts it."""
+    req, opt, has = set(), set(), set()
+    for t in tokens:
+        pre = 'row.' if t.startswith('row.') else ''
+        kind, _, k = t[len(pre):].partition(':')
+        if kind == 'key':
+            req.add(pre + k)
+        elif kind == 'get':
+            opt.add(pre + k)
+        elif kind == 'has':
+            opt.add(pre + k)
+            has.add(pre + k)
+    return req - has, opt
+
+
+def compare_shape(rep, name, old, new, sv, hit, server_keys=None):
+    """Answer shapes, Pass C: how the client reads the answer at the call sites of one pair.
+
+    `shape` changed when the top-level read moved (a 2-tuple unpacked became a list iterated).
+    `key added` is a subscripted key the client newly requires; it is an impact only when we
+    serve the pair and the key is not one we already emit (server_keys, from
+    shapes/server-keys.tsv; without that table it is informational). `key gone` is informational
+    always: a key that is no longer required, or is only read with `.get` or `in` now, breaks
+    nothing. `attr:`, `index:`, `len` and `truth` reads are recorded but not compared.
+    """
+    so, sn = {t for t in old if STRUCT.match(t)}, {t for t in new if STRUCT.match(t)}
+    if so and sn and so != sn:
+        rep.add('G1', 'shape', name, '%s -> %s' % (', '.join(sorted(so)), ', '.join(sorted(sn))), sv, hit)
+    ro, oo = key_reads(old)
+    rn, on = key_reads(new)
+    added = rn - ro
+    if added:
+        fresh = sorted(k for k in added if server_keys is not None and k.replace('row.', '', 1) not in server_keys)
+        rep.add('G1', 'key added', name, 'reads now: %s%s' % (', '.join(sorted(added)),
+                '' if server_keys is None else '; not emitted by us: %s' % (', '.join(fresh) or 'none')),
+                sv, hit and bool(fresh))
+    gone = ro - rn - on
+    if gone:
+        rep.add('G1', 'key gone', name, 'read before, not now: %s' % ', '.join(sorted(gone)), sv, False)
+
+
+def load_server_keys(outdir):
+    t = read_tsv(os.path.join(outdir, 'shapes', 'server-keys.tsv'))
+    if t is None or 'key' not in t[0]:
+        return None
+    ix = t[0].index('key')
+    return {r[ix] for r in t[1] if len(r) > ix}
 
 
 # ---------------------------------------------------------------- G2 session keys
@@ -647,7 +710,7 @@ def render(rep, old, new, meta_old, meta_new):
     out.append('')
     out.append('- `performanceMetricsService` not reached on the pinned build: grep the client log for `no such service`.')
     out.append('- `payload_shape`, `risk` and `notes` of push-events are loose cells (62 of them are judgement); a `shape` row is a prompt to re-read the handler, not a verdict.')
-    out.append('- call_site line numbers move with every build; the comparison is on the (service, method) pair, argument counts, kind and consumer.')
+    out.append('- call_site line numbers move with every build; the comparison is on the (service, method) pair, argument counts, kind, consumer and, when both sides have the shape column, how the client reads the answer (G1 shape, key added, key gone).')
     out.append('- Run `tools/port-recheck.py` over `findings/port-recheck.tsv` for the citation and constant checks (step H of the checklist).')
     out.append('')
     return '\n'.join(out)
@@ -657,7 +720,7 @@ def run(old, new, outdir, repo):
     rep = Report()
     crates = Crates(repo)
     served = load_served(os.path.join(outdir, 'served.json'))
-    compare_calls(rep, old, new, served)
+    compare_calls(rep, old, new, served, load_server_keys(outdir))
     compare_session(rep, old, new)
     compare_push(rep, old, new, crates)
     compare_gateway(rep, old, new, crates)
