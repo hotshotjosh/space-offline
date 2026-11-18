@@ -793,7 +793,13 @@ fn plan_fit_with<'h, 'm>(
     let in_hangar = module.location_id == station && module.flag_id == crate::model::FLAG_HANGAR;
     let in_ship =
         module.location_id == ship_id && crate::item::is_ship_fitting_flag(module.flag_id);
-    if module.owner_id != c.character_id || !(in_hangar || in_ship) {
+    // A module may also come from the ship's own cargo hold, and is then
+    // asked everything one from the hangar is: the AIR tutorial loots one
+    // into the hold (task 1.4.01) and its fitting lesson (1.5.01) has the
+    // pilot drag it from there onto the ship **[V-data]** (the client's
+    // `[AIR] 1.5.01` graph).
+    let in_cargo = module.location_id == ship_id && module.flag_id == FLAG_CARGO;
+    if module.owner_id != c.character_id || !(in_hangar || in_ship || in_cargo) {
         return Err(Refusal::NotAvailable);
     }
     let wrong_kind = Refusal::WrongKind {
@@ -1596,6 +1602,30 @@ mod tests {
         let (reg, ids) = alice_in(CAP_HULL, 0);
         let fit = fit_plan(&reg, &ids, 1).expect("a capital hull takes it");
         assert_eq!(fit.flag_id, Rack::High.first_flag());
+    }
+
+    /// A module in the ship's own cargo hold fits like one from the hangar;
+    /// one elsewhere in the ship (here its drone bay) is still not available.
+    #[test]
+    fn a_module_fits_from_the_ships_cargo_hold() {
+        let (mut reg, ids) = alice_in(SMALL_HULL, 0);
+        let to = crate::item::Slot::new(ALICE, ids[0], FLAG_CARGO);
+        reg.apply_items_quiet(&[crate::item::Edit::Move {
+            item_id: ids[2],
+            to,
+        }])
+        .unwrap();
+        assert!(fit_plan(&reg, &ids, 2).is_ok(), "from the cargo hold");
+        let bay = crate::item::Slot::new(ALICE, ids[0], 87);
+        reg.apply_items_quiet(&[crate::item::Edit::Move {
+            item_id: ids[2],
+            to: bay,
+        }])
+        .unwrap();
+        assert!(matches!(
+            fit_plan(&reg, &ids, 2),
+            Err(Refusal::NotAvailable)
+        ));
     }
 
     /// `CanFitModuleToShipTypeOrGroup` [V]: a module naming no hull fits any;
