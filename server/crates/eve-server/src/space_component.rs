@@ -115,6 +115,12 @@ pub const CALLS: &[Component<'static>] = &[
         crate::jump_bridge::locate,
         &[("GetJumpBridgeInfo", crate::jump_bridge::info)],
     ),
+    // CQ-2 (#291): the FW Conquest item traders' trade.
+    (
+        crate::item_trader::ITEM_TRADER,
+        crate::item_trader::locate,
+        &[("ProcessTrade", crate::item_trader::process_trade)],
+    ),
 ];
 
 /// The notify text the client is given when the caller or the item is not in

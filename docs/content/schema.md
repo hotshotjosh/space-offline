@@ -205,8 +205,8 @@ comment exactly as shown.
 | `moon/beacons.tsv` | #52 MOON-DATA (`content_moon.py`, the `moon` section) | `moon_beacon` (`moon_beacon::Beacons`: the deployment exemption, the mining point warp) |
 | `moon/metenox.tsv` | #52 MOON-DATA (`content_moon.py`) | the Metenox lane (#55); the server does not read it yet |
 | `conquest/emitters.tsv` | #291 CQ-1 (`content_conquest.py`, the `conquest` section) | the FW Conquests lanes (CQ-5, CQ-9, CQ-11); the server does not read it yet |
-| `conquest/traders.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2); not read yet |
-| `conquest/recipes.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2) and `item_trader_hooks` (CQ-4); not read yet |
+| `conquest/traders.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2) |
+| `conquest/recipes.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2) and `item_trader_hooks` (CQ-4) |
 | `conquest/texts.tsv` | #291 CQ-1 (`content_conquest.py`) | `campaign_gw` (CQ-3a); not read yet |
 | `conquest/textures.tsv` | #291 CQ-1 (`content_conquest.py`) | `campaign_gw` (CQ-3a); not read yet |
 | `conquest/npcs.tsv` | #291 CQ-1 (`content_conquest.py`) | `siege_npcs` (CQ-11); not read yet |

@@ -180,6 +180,9 @@ pub mod implants;
 pub mod industry;
 pub mod item;
 pub mod item_names;
+// CQ-2: the FW Conquest item traders and the hook that hears their trades.
+pub mod item_trader;
+pub mod item_trader_hooks;
 pub mod jettison;
 pub mod jump;
 pub mod jump_bridge;

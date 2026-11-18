@@ -1735,6 +1735,12 @@ pub fn scene(
         balls.push(ball);
         slims.push(slim);
     }
+    // **The FW Conquest item traders** (CQ-2, `crate::item_trader`): global
+    // in their system, like the hub.
+    for (ball, slim) in crate::item_trader::balls_in(w, solar_system_id) {
+        balls.push(ball);
+        slims.push(slim);
+    }
     // **The Upwell structures** (U3, `crate::structure_space`): global in
     // their system, like the hub.
     for (ball, slim) in crate::structure_space::balls_in(w, solar_system_id) {

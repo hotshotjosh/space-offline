@@ -1803,7 +1803,7 @@ mod tests {
     fn id_bands() -> Vec<(&'static str, i64, i64)> {
         use crate::{abyss, asteroid, bubble, command_nodes, contracts, cyno, econ_exchange};
         use crate::{ess, item, missile, moon_belt, moon_scan, npc, planet, population, scan};
-        use crate::{sov, trade, war};
+        use crate::{item_trader, sov, trade, war};
         // Design caps of the allocators below (no end const of their own).
         const SPAN: i64 = 100_000_000_000;
         // `service::market::ESCROW_TICKET_BASE` (private there): market
@@ -1863,6 +1863,11 @@ mod tests {
                 hypernet_escrow + SPAN / 2,
             ),
             ("ess", ess::ESS_ID_BASE, ess::ESS_ID_BASE + sys),
+            (
+                "item traders",
+                item_trader::TRADER_ID_BASE,
+                item_trader::TRADER_ID_END,
+            ),
             (
                 "scan probes",
                 scan::PROBE_ID_BASE,

@@ -188,6 +188,7 @@ pub const REFS: &[(i64, Flow, &str)] = &[
     // is paid the total (144) and then the 5 % fee leaves as a plain sink
     // (145; owner ruling 2026-11-07, no pool); an expired offer refunds each
     // ticket (146).
+    (142, Flow::System, "item trader payment"),
     (143, Flow::Held, "HyperNet ticket"),
     (144, Flow::Held, "HyperNet payout"),
     (145, Flow::System, "HyperNet fee (a sink)"),

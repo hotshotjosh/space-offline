@@ -1601,6 +1601,10 @@ impl Registry {
         if let Some(t) = crate::ess::target(self, ball_id) {
             return Some(t);
         }
+        // **A FW Conquest item trader** (CQ-2): approach, orbit, warp to.
+        if let Some(t) = crate::item_trader::target(self, ball_id) {
+            return Some(t);
+        }
         // **A cynosural field** (CAP-D): approach, orbit.
         if let Some(t) = crate::cyno::target(self, ball_id) {
             return Some(t);
