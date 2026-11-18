@@ -10,6 +10,7 @@
 //! | what | client source |
 //! |---|---|
 //! | sales tax `8 % x (1 - 0.11 x Accounting)` | `marketutil/skilllimits.py:86-87` |
+//! | half the sales tax and commission at Oris (build 3707965) | `marketutil/const.py` `*_MODIFIER_BY_STATION` |
 //! | broker commission `3 % - 0.3 % x Broker Relations` | `skilllimits.py:29` (`GetBrokersFeeForLocation`) |
 //! | standings: `- 0.0003 x faction - 0.0002 x corp` | `brokerFee.py:85` (`_GetStationOwnerAdjustedCommissionPercentage`), constants `marketutil/const.py:13-14` |
 //! | fee floor `mktMinimumFee` | `brokerFee.py:74-76` |
@@ -55,6 +56,35 @@ pub const MINIMUM_BROKER_FEE: f64 = 100.0;
 pub const MODIFICATION_DISCOUNT_BASE: f64 = 0.5;
 /// The discount per Margin Trading level **[V]**.
 pub const MODIFICATION_DISCOUNT_PER_LEVEL: f64 = 0.06;
+
+/// Amarr VIII (Oris) Emperor Family Academy station id, the one station with
+/// a fee modifier in build 3707965 **[V]**: `marketutil/const.py` keys
+/// `SALES_TAX_MODIFIER_BY_STATION` and `COMMISSION_PERCENTAGE_MODIFIER_BY_STATION`
+/// by `stationAmarrVIIIOris` (spec expac-B-features.md row 1, expac-I-repin.md
+/// R1), the id from `skilllimits` / `inventorycommon/const.py`.
+pub const STATION_AMARR_VIII_ORIS: i64 = 60_008_494;
+/// The modifier `marketutil/const.py` gives `stationAmarrVIIIOris`, for both
+/// the sales tax and the broker commission **[V]** (same sources).
+pub const ORIS_FEE_MODIFIER: f64 = 0.5;
+/// Every station with a fee modifier and the modifier **[V]**.
+pub const STATION_FEE_MODIFIERS: &[(i64, f64)] = &[(STATION_AMARR_VIII_ORIS, ORIS_FEE_MODIFIER)];
+
+/// The factor the sales tax and the broker commission are multiplied by at
+/// `station_id` (1.0 at any station not in `table`). The table is a parameter
+/// so a test can use an invented station.
+pub fn station_fee_factor_in(station_id: i64, table: &[(i64, f64)]) -> f64 {
+    table
+        .iter()
+        .find(|(s, _)| *s == station_id)
+        .map_or(1.0, |(_, m)| *m)
+}
+
+/// [`station_fee_factor_in`] over [`STATION_FEE_MODIFIERS`]. **[A]** that it
+/// applies to every client line, not only V24.02 sessions; falsifier: a
+/// V24.01 client showing full tax at Oris while we charge half.
+pub fn station_fee_factor(station_id: i64) -> f64 {
+    station_fee_factor_in(station_id, STATION_FEE_MODIFIERS)
+}
 
 /// The skills the market reads, `inventorycommon/const.py` **[V]**.
 pub const TYPE_TRADE: i64 = 3_443;
@@ -145,6 +175,12 @@ impl TradeSkills {
         broker_rate(self.broker_relations, standings)
     }
 
+    /// [`TradeSkills::broker_rate`] at a station with fee modifier `factor`
+    /// ([`broker_rate_with_factor`]).
+    pub fn broker_rate_with_factor(&self, standings: Standings, factor: f64) -> f64 {
+        broker_rate_with_factor(self.broker_relations, standings, factor)
+    }
+
     /// The most open orders ([`max_orders`]).
     pub fn max_orders(&self) -> usize {
         max_orders(self.trade, self.retail, self.wholesale, self.tycoon)
@@ -184,9 +220,19 @@ pub fn sales_tax_rate(accounting: i64) -> f64 {
 /// corp standing` (`skilllimits.py:29`, `brokerFee.py:85`) **[V]**. A negative
 /// standing *raises* it, as the client's does; it never goes below 0.
 pub fn broker_rate(broker_relations: i64, standings: Standings) -> f64 {
+    broker_rate_with_factor(broker_relations, standings, 1.0)
+}
+
+/// [`broker_rate`] at a station whose fee modifier is `factor`
+/// ([`station_fee_factor`]). The order is the client's **[V]**
+/// (`skilllimits.GetBrokersFeeForLocation`, `marketsvc.py:152-159`, then
+/// `brokerFee.GetAdjustedCommissionPercentage`): `((3 % - 0.3 % x BR) x
+/// factor) - standings`, so the factor scales the skill-reduced base only.
+pub fn broker_rate_with_factor(broker_relations: i64, standings: Standings, factor: f64) -> f64 {
     let base = (BROKER_PERCENT
         - broker_relations.clamp(0, 5) as f64 * BROKER_RELATIONS_SKILL_MODIFIER)
-        / 100.0;
+        / 100.0
+        * factor;
     (base
         - standings.faction * FACTION_STANDING_MULTIPLIER
         - standings.corp * NPC_CORP_STANDING_MULTIPLIER)
@@ -286,6 +332,29 @@ pub fn cents(v: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_station_in_the_table_scales_the_fees_and_any_other_does_not() {
+        let table = [(7_000_001, 0.5)];
+        assert_eq!(station_fee_factor_in(7_000_001, &table), 0.5);
+        assert_eq!(station_fee_factor_in(7_000_002, &table), 1.0);
+        assert_eq!(station_fee_factor_in(7_000_001, &[]), 1.0);
+    }
+
+    #[test]
+    fn the_station_factor_scales_the_skill_reduced_base_before_the_standings() {
+        let liked = Standings {
+            faction: 10.0,
+            corp: 10.0,
+        };
+        // ((3 % - 5 x 0.3 %) x 0.5) - 10 x 0.0003 - 10 x 0.0002
+        let got = broker_rate_with_factor(5, liked, 0.5);
+        assert!((got - 0.0025).abs() < 1e-12, "{got}");
+        assert_eq!(
+            broker_rate_with_factor(5, liked, 1.0),
+            broker_rate(5, liked)
+        );
+    }
 
     #[test]
     fn accounting_lowers_the_tax_by_eleven_percent_of_itself_a_level() {

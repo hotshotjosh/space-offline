@@ -495,7 +495,12 @@ fn standings_with_owner(reg: &Registry, who: i64, owner: i64) -> Standings {
 pub(crate) fn broker_rate_at(reg: &Registry, who: i64, station_id: i64) -> f64 {
     let skills = trade_skills(reg, who);
     let owner = station_owner(reg, station_id);
-    skills.broker_rate(standings_with_owner(reg, who, owner))
+    // The station's modifier scales the skill-reduced base, before the
+    // standings (build 3707965, `GetBrokersFeeForLocation`) **[V]**.
+    skills.broker_rate_with_factor(
+        standings_with_owner(reg, who, owner),
+        fees::station_fee_factor(station_id),
+    )
 }
 
 /// The broker's fee on a new order worth `value` at `station_id`, to the
@@ -533,11 +538,16 @@ fn check_order_cap(reg: &Registry, actor: i64, adding: usize) -> Result<(), Serv
 
 /// The sales tax `seller` owes on a sale worth `value`: 0 for an NPC seller,
 /// which has no wallet (`move_isk`).
-fn sales_tax_due(reg: &Registry, seller: i64, value: f64) -> f64 {
+fn sales_tax_due(reg: &Registry, seller: i64, value: f64, station_id: i64) -> f64 {
     if reg.character(seller).is_none() {
         return 0.0;
     }
-    sales_tax(value, skill_level(reg, seller, TYPE_ACCOUNTING))
+    // Half at Oris (`SALES_TAX_MODIFIER_BY_STATION`, build 3707965) **[V]**.
+    cents(
+        value
+            * fees::sales_tax_rate(skill_level(reg, seller, TYPE_ACCOUNTING))
+            * fees::station_fee_factor(station_id),
+    )
 }
 
 /// Charge `seller` the sales tax on a sale worth `value`, journalled as ref
@@ -548,14 +558,15 @@ fn charge_sales_tax(
     seller: i64,
     wallet: Wallet,
     value: f64,
-    station_owner: i64,
+    station_id: i64,
     order_id: i64,
     now: i64,
 ) {
     if reg.character(seller).is_none() {
         return;
     }
-    let tax = sales_tax_due(reg, seller, value);
+    let tax = sales_tax_due(reg, seller, value, station_id);
+    let station_owner = station_owner(reg, station_id);
     corp::pay(
         reg,
         seller,
@@ -2258,8 +2269,15 @@ fn buy(
             false,
         );
         // The seller pays the sales tax on what they sold (CP9).
-        let owner = station_owner(reg, ask.station_id);
-        charge_sales_tax(reg, ask.char_id, seller, value, owner, ask.order_id, now);
+        charge_sales_tax(
+            reg,
+            ask.char_id,
+            seller,
+            value,
+            ask.station_id,
+            ask.order_id,
+            now,
+        );
         // The dev seller leaves no trade: the price history, the index and
         // the bots' price memory never see its 100 ISK.
         if !exchange::is_dev(ask.order_id) {
@@ -2505,7 +2523,7 @@ fn plan_sell(
             continue;
         }
         let value = cents(take as f64 * bid.price);
-        proceeds += value - sales_tax_due(reg, actor, value);
+        proceeds += value - sales_tax_due(reg, actor, value, line.place.station_id);
         *taken.entry(bid.order_id).or_insert(0) += take;
         fills.push((bid, take));
         left -= take;
@@ -2633,8 +2651,15 @@ fn apply_sell(
             (order_id, now),
             npc,
         );
-        let owner = station_owner(reg, line.place.station_id);
-        charge_sales_tax(reg, actor, wallet, value, owner, order_id, now);
+        charge_sales_tax(
+            reg,
+            actor,
+            wallet,
+            value,
+            line.place.station_id,
+            order_id,
+            now,
+        );
         reg.market.record_trade(Trade {
             transaction_id: 0,
             date: now,
