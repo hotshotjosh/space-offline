@@ -422,6 +422,31 @@ class Unknowns(Tmp):
         # ``ja`` branch, which returns None.
         self.assertIsNone(row["p"]["defaultValue"])
 
+    def test_a_stated_element_kind_decodes_an_untyped_list(self):
+        # Invented ports and node keys. The loader writes dict<str,list>;
+        # CFSD_ELEMENT_KINDS names the element, so the edges decode.
+        lines = tsv(
+            rec("nodegraphs", 24),
+            fld("nodegraphs", "n", 8, "struct:graphNode"),
+            fld("nodegraphs", "struct:graphNode/connections", 0, "dict<str,list>"),
+        )
+        sch = fsd.parse_pyd_schemas(lines)["nodegraphs"]
+        edges = {"go": ["node-b", "node-c"], "done": ["node-a"]}
+
+        def fill(a):
+            items = []
+            for port, targets in edges.items():
+                lst = a.vector(len(targets), b"".join(U64.pack(a.string(g)) for g in targets))
+                items.append((a.string(port), lst))
+            ptr, n = a.dict_([items], lambda kp, lp: U64.pack(kp) + U64.pack(lp))
+            return b"\0" * 4 + U64.pack(ptr) + U64.pack(n)
+
+        t = self.table("nodegraphs", [(1, fill)], 1, 24)
+        self.assertEqual(fsd.cfsd_generic_rows(t, sch)[1]["n"]["connections"], edges)
+        with mock.patch.dict(fsd.CFSD_ELEMENT_KINDS, clear=True):
+            got = fsd.cfsd_generic_rows(t, sch)[1]["n"]["connections"]
+        self.assertIsInstance(got, fsd.CfsdUnknown)
+
     def test_bare_tables(self):
         sch = fsd.bare_schema("agenttypes")
         t = self.table("agenttypes", [(4, lambda a: b"\0" * 4 + U64.pack(a.string("ResearchAgent")))], 1, 16)
