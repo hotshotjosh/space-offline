@@ -215,5 +215,20 @@ class CheckDeps(unittest.TestCase):
         self.assertFails("deps.allow", "unused")
 
 
+class PythonFloor(unittest.TestCase):
+    def test_the_version_check_comes_before_tomllib(self):
+        import ast
+        with open(os.path.join(HERE, "check_deps.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        check = toml = None
+        for node in tree.body:
+            if isinstance(node, ast.If) and "version_info" in ast.dump(node.test) and check is None:
+                check = node.lineno
+            if isinstance(node, ast.Import) and any(a.name == "tomllib" for a in node.names):
+                toml = node.lineno
+        self.assertIsNotNone(check, "no sys.version_info check")
+        self.assertLess(check, toml)
+
+
 if __name__ == "__main__":
     unittest.main()

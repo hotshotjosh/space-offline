@@ -29,7 +29,11 @@ if __name__ == "__main__":
 
 import pathlib
 import sys
-import tomllib
+
+if sys.version_info < (3, 11):
+    sys.exit("check_deps: python 3.11 or newer is needed (tomllib); this is %d.%d" % sys.version_info[:2])
+
+import tomllib  # noqa: E402
 
 SERVER = pathlib.Path(__file__).resolve().parent.parent / "server"
 DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
