@@ -142,6 +142,7 @@ stale_help() {
         say "          tools/client-setup.sh copy                        # tq-offline again; it may stop at your old prefix"
         say "          tools/offline-prefix.sh --force$opt   # replaces your own prefix, which holds the old copy"
         say "          tools/client-setup.sh patch"
+        say "        (the by-hand way replaces your own prefix and its saved settings; refresh keeps them)"
     else
         say "        Do NOT remove tq-offline: your install is not a build the server serves ($served), so a tq-offline"
         say "        that is, or may be, a served build is your only copy and cannot be downloaded again."
@@ -171,7 +172,7 @@ step_check() {
         if is_served "$b"; then
             say "  ok    your install is build $b"
             [[ $b == "$target" ]] || say "  WARN  the newest served build is $target: let your launcher update, then run refresh"
-            if [[ -n $ob && $ob != "$b" ]] && is_served "$ob"; then
+            if [[ $ob =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]] && (( b > ob )) && is_served "$ob"; then
                 say "  FAIL  refresh: your tq-offline copy is build $ob, your install is $b: run tools/client-setup.sh refresh"
                 rc=1
             fi
@@ -232,11 +233,10 @@ COPY_PART=""
 cleanup_copy() { [[ -z $COPY_PART ]] || rm -rf -- "$COPY_PART"; }
 
 step_copy() {
-    local full=0 refresh=0 a b ob need_k free
+    local full=0 a b ob need_k free
     for a in "$@"; do
         case $a in
             --full) full=1 ;;
-            --refresh) refresh=1 ;;   # internal: `refresh` makes your own prefix again when it holds another build
             *) die "copy: unknown argument $a (only --full)" ;;
         esac
     done
@@ -288,10 +288,7 @@ step_copy() {
         "$REPO/tools/offline-prefix.sh" --check || say "  (a MISS before 'patch' is expected for cryptoPack; if the prefix itself is damaged: tools/offline-prefix.sh --force ${opts[*]})"
         [[ -f $OFF/tq-offline/bin64/exefile.exe ]] || { say "  FAIL  your own prefix has no tq-offline client; make it again: tools/offline-prefix.sh --force ${opts[*]}"; exit 1; }
         ob=$(ini_get "$OFF/tq-offline/start.ini" build)
-        if (( refresh )) && [[ $ob != "$(ini_get "$ON/tq-offline/start.ini" build)" ]]; then
-            say "== your own prefix holds tq-offline build ${ob:-unknown}; making it again from the refreshed copy"
-            "$REPO/tools/offline-prefix.sh" --force "${opts[@]}"
-        elif ! is_served "$ob"; then
+        if ! is_served "$ob"; then
             say "  FAIL  your own prefix holds tq-offline build ${ob:-unknown}, not the $tlabel $target"; stale_help; exit 1
         fi
     elif [[ -e $EVE_OFFLINE_PREFIX.partial ]]; then
@@ -339,11 +336,50 @@ step_patch() {
     say "next: tools/account.sh login, then the tunnel (docs/guides/remote-clients.md)"
 }
 
-# Your launcher moved on to a newer served build. The old tq-offline is moved to
-# tq-<oldbuild> (kept, a frozen copy you can still play on; delete it yourself),
-# then copy and patch run again for the build the launcher installed.
+# KiB free where PATH is (its nearest existing directory).
+free_k() { df -k --output=avail -- "$(existing_dir "$1")" | tail -1 | tr -d ' '; }
+
+REFRESH_PARTS=()
+cleanup_refresh() { local d; for d in "${REFRESH_PARTS[@]}"; do rm -rf -- "$d"; done; }
+
+# Add the files ResFiles gained since your own prefix was made (hard links, or
+# copies with --full); never replaces or removes a file.
+sync_resfiles() {   # FULL
+    python3 -I -c '
+import os, shutil, sys
+src, dst, full = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+n = 0
+for dp, _, fs in os.walk(src):
+    rel = os.path.relpath(dp, src)
+    os.makedirs(os.path.join(dst, rel), exist_ok=True)
+    for f in fs:
+        d = os.path.join(dst, rel, f)
+        if os.path.lexists(d):
+            continue
+        s = os.path.join(dp, f)
+        try:
+            if full:
+                raise OSError
+            os.link(s, d)
+        except OSError:
+            shutil.copy2(s, d)
+        n += 1
+print("added %d resource files" % n)
+' "$ON/ResFiles" "$OFF/ResFiles" "$1"
+}
+
+# Your launcher moved on to a newer served build. Both tq-offline copies (the
+# one in your online prefix and the one in your own prefix) are swapped for the
+# new build: the new one is copied to tq-offline.partial, then the old one is
+# renamed to tq-<oldbuild> (kept; delete it yourself) and the .partial to
+# tq-offline. Nothing else in either prefix is touched: your own prefix is never
+# made again (no --force), so its saved settings stay. Every refusal comes
+# before the first write.
 step_refresh() {
-    local tqb ob offb dest
+    local full=0 a tqb ob offb need_k res_k free fo moveon=0 moveoff=0 mkown=0
+    for a in "$@"; do
+        case $a in --full) full=1 ;; *) die "refresh: unknown argument $a (only --full)" ;; esac
+    done
     [[ -f $ON/tq/start.ini ]] || die "no install at $ON/tq (run check)"
     tqb=$(ini_get "$ON/tq/start.ini" build)
     if ! is_served "$tqb"; then
@@ -353,21 +389,82 @@ step_refresh() {
         fi
         die "your install is build ${tqb:-unknown}, the server serves $served: update your launcher first. Nothing was changed."
     fi
-    ob=$(ini_get "$ON/tq-offline/start.ini" build)
-    offb=$(ini_get "$OFF/tq-offline/start.ini" build)
-    if [[ $ob == "$tqb" && $offb == "$tqb" ]]; then
-        say "up to date: build $tqb (tq-offline and your own prefix both hold it); nothing to refresh"
+    ob=; [[ ! -e $ON/tq-offline ]] || ob=$(ini_get "$ON/tq-offline/start.ini" build)
+    offb=; [[ ! -e $OFF/tq-offline ]] || offb=$(ini_get "$OFF/tq-offline/start.ini" build)
+    for a in "$ob" "$offb"; do
+        [[ -z $a || $a =~ ^[0-9]+$ ]] || die "a tq-offline copy has no readable build ('$a'): move it aside yourself, then run refresh again. Nothing was changed."
+    done
+    # Only an older copy is replaced; a copy of this build or a newer one stays.
+    if [[ -z $ob || $tqb -gt $ob ]]; then moveon=1; fi
+    if [[ ! -f $EVE_OFFLINE_PREFIX/eve-offline-prefix.txt ]]; then mkown=1
+    elif [[ -z $offb || $tqb -gt $offb ]]; then moveoff=1; fi
+    if (( ! moveon && ! moveoff && ! mkown )); then
+        say "up to date: build ${ob:-$offb} (nothing is older than your install, build $tqb); nothing to refresh"
         return 0
     fi
-    if [[ -e $ON/tq-offline && $ob != "$tqb" ]]; then
-        say "== tq-offline in your online prefix is build ${ob:-unknown} (your install is $tqb)"
-        if prefix_busy "$EVE_ONLINE_PREFIX"; then die "Wine is running in $EVE_ONLINE_PREFIX (pids $(eve_prefix_busy "$EVE_ONLINE_PREFIX")); close EVE and the launcher first"; fi
-        dest=$ON/tq-${ob:-unknown}
-        [[ ! -e $dest ]] || die "$dest exists already; rename or remove it yourself, then run refresh again"
-        mv -T -- "$ON/tq-offline" "$dest"
-        say "   kept as $dest (a frozen copy of build ${ob:-unknown}; delete it yourself when you no longer need it)"
+
+    # --- every refusal, before the first write
+    [[ -f $ON/tq/resfileindex.txt && -d $ON/ResFiles ]] || die "no ResFiles or resfileindex.txt: the install is not fully downloaded (run check). Nothing was changed."
+    res_ok || exit 1
+    local busy_on busy_off
+    busy_on=$(eve_prefix_busy "$EVE_ONLINE_PREFIX" || true)
+    busy_off=$(eve_prefix_busy "$EVE_OFFLINE_PREFIX" || true)
+    [[ -z $busy_on ]] || die "Wine is running in $EVE_ONLINE_PREFIX (pids $busy_on); close EVE and the launcher first. Nothing was changed."
+    [[ -z $busy_off ]] || die "Wine is running in $EVE_OFFLINE_PREFIX (pids $busy_off); close the client first. Nothing was changed."
+    if (( moveoff )) && (( ! full )) && ! same_fs "$ON/ResFiles" "$EVE_OFFLINE_PREFIX"; then
+        die "your resource files and $EVE_OFFLINE_PREFIX are on different filesystems, so new files cannot be hard-linked. Run: tools/client-setup.sh refresh --full. Nothing was changed."
     fi
-    step_copy --refresh "$@"
+    (( ! moveon )) || [[ -z $ob || ! -e $ON/tq-$ob ]] || die "$ON/tq-$ob exists already; rename or remove it yourself, then run refresh again. Nothing was changed."
+    (( ! moveoff )) || [[ -z $offb || ! -e $OFF/tq-$offb ]] || die "$OFF/tq-$offb exists already; rename or remove it yourself, then run refresh again. Nothing was changed."
+    need_k=$(du -sk -- "$ON/tq" | cut -f1)
+    res_k=$(du -sk -- "$ON/ResFiles" | cut -f1)
+    free=$(free_k "$ON")
+    fo=$(free_k "$EVE_OFFLINE_PREFIX")
+    local need_on=0 need_off=0
+    (( ! moveon )) || need_on=$(( need_k + 1048576 ))
+    (( ! moveoff )) || need_off=$(( need_k + 1048576 + (full ? res_k : 0) ))
+    if same_fs "$ON" "$EVE_OFFLINE_PREFIX"; then
+        (( free > need_on + need_off )) || die "not enough room: refresh needs about $(( (need_on + need_off) / 1048576 ))G, $(( free / 1048576 ))G free. Nothing was changed."
+    else
+        (( free > need_on )) || die "not enough room next to $ON/tq: it needs about $(( need_on / 1048576 ))G, $(( free / 1048576 ))G free. Nothing was changed."
+        (( fo > need_off )) || die "not enough room in $EVE_OFFLINE_PREFIX: it needs about $(( need_off / 1048576 ))G, $(( fo / 1048576 ))G free. Nothing was changed."
+    fi
+
+    # --- writes
+    trap cleanup_refresh EXIT
+    trap 'exit 130' INT TERM
+    if (( moveon )); then
+        say "== copying tq (build $tqb) to tq-offline.partial in your online prefix (tq itself is not changed)"
+        rm -rf -- "$ON/tq-offline.partial"; REFRESH_PARTS+=("$ON/tq-offline.partial")
+        cp -aT --reflink=auto -- "$ON/tq" "$ON/tq-offline.partial"
+        [[ $(ini_get "$ON/tq/start.ini" build) == "$tqb" && $(ini_get "$ON/tq-offline.partial/start.ini" build) == "$tqb" ]] \
+            || die "the build changed during the copy; nothing was kept. Run check"
+        [[ -f $ON/tq-offline.partial/bin64/exefile.exe ]] || die "the copy has no bin64/exefile.exe; nothing was kept"
+        if [[ -e $ON/tq-offline ]]; then
+            mv -T -- "$ON/tq-offline" "$ON/tq-${ob:-unknown}"
+            say "   kept the old one as $ON/tq-${ob:-unknown} (delete it yourself when you no longer need it)"
+        fi
+        mv -T -- "$ON/tq-offline.partial" "$ON/tq-offline"
+    fi
+    if (( moveoff )); then
+        say "== your own prefix: swapping only CCP/EVE/tq-offline (its settings and the rest stay)"
+        say "   $(sync_resfiles "$full")"
+        rm -rf -- "$OFF/tq-offline.partial"; REFRESH_PARTS+=("$OFF/tq-offline.partial")
+        cp -aT --reflink=auto -- "$ON/tq-offline" "$OFF/tq-offline.partial"
+        [[ $(ini_get "$OFF/tq-offline.partial/start.ini" build) == "$tqb" ]] || die "the copy in your own prefix is not build $tqb; nothing was kept"
+        if [[ -e $OFF/tq-offline ]]; then
+            mv -T -- "$OFF/tq-offline" "$OFF/tq-${offb:-unknown}"
+            say "   kept the old one as $OFF/tq-${offb:-unknown}"
+        fi
+        mv -T -- "$OFF/tq-offline.partial" "$OFF/tq-offline"
+    fi
+    trap - EXIT INT TERM
+    REFRESH_PARTS=()
+    if (( mkown )); then
+        # No own prefix yet: make one for the first time (never --force).
+        local -a opts=(--link-resfiles); (( ! full )) || opts=()
+        "$REPO/tools/offline-prefix.sh" "${opts[@]}"
+    fi
     step_patch
 }
 

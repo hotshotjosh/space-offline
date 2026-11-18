@@ -28,12 +28,14 @@ BUILDS = ("# invented rows\n"
 STUBS = {
     "pin-client.sh": '#!/bin/bash\necho "pin-client $*" >> "$STUB_LOG"\necho "pin-client: ok"\n',
     "jail-rootless.sh": '#!/bin/bash\necho "ok    probe"\n',
+    # Like the real one: --force replaces the whole prefix (its saved settings go).
     "offline-prefix.sh": r'''#!/bin/bash
 echo "offline-prefix $*" >> "$STUB_LOG"
 [[ $1 == --check ]] && exit 0
 OFF=${EVE_OFFLINE_PREFIX:-$HOME/.local/share/eve-offline/prefix}
 ON=$EVE_ONLINE_PREFIX
-rm -rf "$OFF/pfx/drive_c/CCP/EVE/tq-offline"
+for a; do [[ $a == --force ]] && rm -rf "$OFF"; done
+[[ -f $OFF/eve-offline-prefix.txt ]] && exit 0
 mkdir -p "$OFF/pfx/drive_c/CCP/EVE"
 cp -a "$ON/pfx/drive_c/CCP/EVE/tq-offline" "$OFF/pfx/drive_c/CCP/EVE/tq-offline"
 echo stub > "$OFF/eve-offline-prefix.txt"
@@ -86,11 +88,13 @@ class ServedBuild(unittest.TestCase):
                 self.put(base, "tq-offline/start.ini", "[main]\nbuild = %s\n" % b)
                 self.put(base, "tq-offline/bin64/exefile.exe", "MZ")
         if own:
-            self.put(os.path.join(self.home, ".local", "share", "eve-offline", "prefix"),
-                     "eve-offline-prefix.txt", "stub\n")
+            prefix = os.path.join(self.home, ".local", "share", "eve-offline", "prefix")
+            self.put(prefix, "eve-offline-prefix.txt", "stub marker\n")
+            self.put(self.off, "c_ccp_eve_tq-offline_settings/core_user_1.dat", "my saved settings\n")
+            self.put(self.off, "ResFiles/ab/old_file", "1")
 
-    def run_step(self, *args):
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": self.home,
+    def run_step(self, *args, path=None):
+        env = {"PATH": path or os.environ.get("PATH", "/usr/bin:/bin"), "HOME": self.home,
                "EVE_PROC_DIR": self.proc,
                "EVE_ONLINE_PREFIX": self.pfx,
                "EVE_OFFLINE_PREFIX": os.path.join(self.home, ".local", "share", "eve-offline", "prefix"),
@@ -151,7 +155,19 @@ class ServedBuild(unittest.TestCase):
         self.assertEqual(self.build_of(self.on, "tq-offline"), "101")   # re-copied from tq
         self.assertEqual(self.build_of(self.off, "tq-offline"), "101")  # own prefix made again
         log = self.logged()
-        self.assertIn("offline-prefix --force", log)
+        self.assertNotIn("--force", log)               # your own prefix is never made again
+        self.assertNotIn("offline-prefix", log)        # not even without it: it exists
+        self.assertEqual(self.build_of(self.off, "tq-100"), "100")   # kept in your own prefix too
+        # Its marker and its saved settings survive (a wipe would remove them).
+        prefix = os.path.join(self.home, ".local", "share", "eve-offline", "prefix")
+        self.assertTrue(os.path.isfile(os.path.join(prefix, "eve-offline-prefix.txt")))
+        with open(os.path.join(self.off, "c_ccp_eve_tq-offline_settings", "core_user_1.dat")) as f:
+            self.assertEqual(f.read(), "my saved settings\n")
+        # A resource file the new build added is linked in; the old one stays.
+        self.assertTrue(os.path.isfile(os.path.join(self.off, "ResFiles", "ab", "ab12_cafe")))
+        self.assertTrue(os.path.isfile(os.path.join(self.off, "ResFiles", "ab", "old_file")))
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-offline.partial")))
+        self.assertFalse(os.path.exists(os.path.join(self.off, "tq-offline.partial")))
         self.assertIn("eve_patch apply", log)
         self.assertIn("eve_patch verify", log)
 
@@ -185,6 +201,72 @@ class ServedBuild(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("exists already", r.stderr)
         self.assertEqual(self.build_of(self.on, "tq-offline"), "100")   # not moved
+
+    def test_refresh_does_nothing_when_the_copy_is_not_older_than_the_install(self):
+        self.install("100", "101", "101")
+        r = self.run_step("refresh")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("up to date", r.stdout)
+        self.assertEqual(self.logged(), "")
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-101")))
+
+    def test_a_failed_space_check_changes_nothing(self):
+        self.install("101", "100", "100")
+        stub = os.path.join(self.tmp, "stub-bin")
+        os.makedirs(stub)
+        with open(os.path.join(stub, "df"), "w") as f:
+            f.write('#!/bin/sh\necho Avail\necho 1000\n')
+        os.chmod(os.path.join(stub, "df"), 0o755)
+        r = self.run_step("refresh", path=stub + ":" + os.environ.get("PATH", "/usr/bin:/bin"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not enough room", r.stderr)
+        for base in (self.on, self.off):
+            self.assertEqual(self.build_of(base, "tq-offline"), "100")
+            self.assertFalse(os.path.exists(os.path.join(base, "tq-100")))
+            self.assertFalse(os.path.exists(os.path.join(base, "tq-offline.partial")))
+        self.assertEqual(self.logged(), "")
+
+    def test_an_existing_kept_copy_in_your_own_prefix_refuses_before_any_write(self):
+        self.install("101", "100", "100")
+        self.put(self.off, "tq-100/start.ini", "[main]\nbuild = 100\n")
+        r = self.run_step("refresh")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("exists already", r.stderr)
+        self.assertEqual(self.build_of(self.on, "tq-offline"), "100")   # the online side was not touched
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-100")))
+
+    def test_refresh_refuses_while_wine_runs_in_your_own_prefix(self):
+        self.install("101", "100", "100")
+        d = os.path.join(self.proc, "78")
+        os.makedirs(d)
+        own = os.path.join(self.home, ".local", "share", "eve-offline", "prefix", "pfx")
+        with open(os.path.join(d, "environ"), "wb") as f:
+            f.write(b"WINEPREFIX=" + own.encode() + b"\0")
+        with open(os.path.join(d, "comm"), "w") as f:
+            f.write("wineserver\n")
+        r = self.run_step("refresh")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Wine is running", r.stderr)
+        self.assertEqual(self.build_of(self.on, "tq-offline"), "100")
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-100")))
+
+    def test_missing_resfiles_refuse_before_any_write(self):
+        self.install("101", "100", "100")
+        os.remove(os.path.join(self.on, "ResFiles", "ab", "ab12_cafe"))
+        r = self.run_step("refresh")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("ResFiles incomplete", r.stdout)
+        self.assertEqual(self.build_of(self.on, "tq-offline"), "100")
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-100")))
+        self.assertEqual(self.logged(), "")
+
+    def test_an_unreadable_old_build_refuses_instead_of_naming_a_directory_after_it(self):
+        self.install("101", "100", "100")
+        self.put(self.on, "tq-offline/start.ini", "[main]\nbuild = ../x\n")
+        r = self.run_step("refresh")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no readable build", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.on, "tq-offline.partial")))
 
     def test_refresh_refuses_while_wine_runs_in_the_online_prefix(self):
         self.install("101", "100", "100")
@@ -229,6 +311,28 @@ class PerBuildPins(unittest.TestCase):
         r = self.pin()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("ok, 2 files match build 101", r.stdout)
+
+    def test_write_targets_the_per_build_file_and_refreshes_the_pinned_copy(self):
+        with open(os.path.join(self.repo, "tools", "builds.tsv"), "w") as f:
+            f.write("101\tvA\tpinned\t-\tx\n")
+        open(os.path.join(self.repo, "tools", "pins", "101.sha256"), "w").close()
+        r = self.pin("--write")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        read = lambda n: open(os.path.join(self.repo, "tools", n)).read()
+        self.assertIn("# build:   101", read("pins/101.sha256"))
+        self.assertEqual(read("client-pin.sha256"), read("pins/101.sha256"))
+
+    def test_without_a_per_build_file_write_makes_the_pinned_manifest(self):
+        r = self.pin("--write")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(self.repo, "tools", "client-pin.sha256")))
+        self.assertEqual(os.listdir(os.path.join(self.repo, "tools", "pins")), [])
+
+    def test_the_committed_pinned_copy_equals_its_per_build_file(self):
+        with open(os.path.join(HERE, "builds.tsv")) as f:
+            pinned = [l.split("\t")[0] for l in f if not l.startswith("#") and l.split("\t")[2:3] == ["pinned"]][0]
+        a, b = (os.path.join(HERE, n) for n in ("client-pin.sha256", "pins/%s.sha256" % pinned))
+        self.assertEqual(open(a).read(), open(b).read())
 
     def test_without_a_per_build_file_the_pinned_manifest_is_used(self):
         with open(os.path.join(self.repo, "tools", "client-pin.sha256"), "w") as f:

@@ -84,7 +84,8 @@ EVE_REL=pfx/drive_c/CCP/EVE
 # are case-insensitive, and so is a hostile one). `Application Data` and
 # `Local Settings` are Wine's old names for AppData; when one is a real
 # directory its path is folded onto the AppData one first (norm_rel).
-#   CCP/EVE/{tq,sisi}            the online installs (ResFiles is handled below)
+#   CCP/EVE/{tq,sisi}, CCP/EVE/tq-<build>
+#                                the online installs and kept old copies (ResFiles is handled below)
 #   CCP/EVE/{settings.dat,history.txt,downloads,metadata}, CCP/EVE/c_*/cache/cef
 #                                the online launcher's and client's own state
 #   users/*/AppData/Local/CCP/*  the launcher's login state; only the offline
@@ -107,6 +108,7 @@ excluded_rel() {   # lowercased, normalised path -> 0 if it is left out
         pfx/drive_c/users/*/appdata/local/ccp/c_ccp_eve_tq-offline_*) return 1 ;;
         pfx/drive_c/users/*/appdata/local/ccp/eve | pfx/drive_c/users/*/appdata/local/ccp/eve/c_ccp_eve_tq-offline_*) return 1 ;;
         pfx/drive_c/ccp/eve/tq | pfx/drive_c/ccp/eve/sisi | pfx/drive_c/ccp/eve/resfiles) return 0 ;;
+        pfx/drive_c/ccp/eve/tq-[0-9]*) return 0 ;;   # a kept old copy (client-setup.sh refresh): never copied into a prefix
         pfx/drive_c/ccp/eve/settings.dat | pfx/drive_c/ccp/eve/history.txt) return 0 ;;
         pfx/drive_c/ccp/eve/downloads | pfx/drive_c/ccp/eve/metadata) return 0 ;;
         pfx/drive_c/ccp/eve/c_*/cache/cef) return 0 ;;

@@ -64,6 +64,7 @@ class OfflinePrefix(unittest.TestCase):
         self.write(os.path.join(EVE, "tq-offline", "start.ini"), "[main]\ncryptoPack = Placebo\n")
         self.write(os.path.join(EVE, "tq", "bin64", "exefile.exe"), "MZ online")
         self.write(os.path.join(EVE, "sisi", "bin64", "exefile.exe"), "MZ sisi")
+        self.write(os.path.join(EVE, "tq-1234567", "bin64", "exefile.exe"), "MZ kept old copy")
         self.write(os.path.join(EVE, "ResFiles", "ab", "ab12_cafe"), "resource")
         self.write(os.path.join(EVE, "index_tranquility.txt"), "res:/x,ab/ab12_cafe,0,8\n")
         os.makedirs(os.path.join(self.src, "pfx", "dosdevices"))
@@ -104,7 +105,8 @@ class OfflinePrefix(unittest.TestCase):
                     "eve-offline-prefix.txt"):
             self.assertTrue(os.path.isfile(os.path.join(self.dst, rel)), rel)
         # The online installs are left out.
-        for rel in ("tq", "sisi"):
+        # And so is a kept old copy, tq-<build> (client-setup.sh refresh).
+        for rel in ("tq", "sisi", "tq-1234567"):
             self.assertFalse(os.path.exists(os.path.join(self.dst, EVE, rel)), rel)
         # Relative links stay relative, so they lead into the copy.
         self.assertEqual(os.readlink(os.path.join(self.dst, "pfx", "dosdevices", "c:")), "../drive_c")

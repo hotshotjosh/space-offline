@@ -23,8 +23,11 @@
 # Verify reads `tools/pins/<build>.sha256` for the build in the install's
 # start.ini when that file exists, so each served build has its own manifest;
 # otherwise `tools/client-pin.sha256` (the pinned build's). `--manifest FILE`
-# overrides both. `--write` writes `tools/client-pin.sha256` unless `--manifest`
-# names a file (for a served build: `--manifest tools/pins/<build>.sha256`).
+# overrides both. `--write` writes `tools/pins/<build>.sha256` when that file
+# exists (it is the source of truth for the build), else `tools/client-pin.sha256`;
+# for the pinned build it then refreshes `tools/client-pin.sha256` as an identical
+# copy, because the gate reads that name. A new served build: create an empty
+# `tools/pins/<build>.sha256` and run `--write`.
 #
 # The manifest is hashes, not client data, so it belongs in the repository --
 # the no-client-data rule is about CCP's content, and a sha256 is not content.
@@ -71,7 +74,7 @@ done
 build=$(sed -n 's/^build *= *//p' "$client/start.ini" | tr -d '\r')
 if [[ -z $manifest ]]; then
     manifest=tools/client-pin.sha256
-    if [[ $mode == verify && $build =~ ^[0-9]+$ && -f tools/pins/$build.sha256 ]]; then
+    if [[ $build =~ ^[0-9]+$ && -f tools/pins/$build.sha256 ]]; then
         manifest=tools/pins/$build.sha256
     fi
 fi
@@ -99,6 +102,11 @@ if [[ $mode == write ]]; then
     } >"$tmp"
     mv "$tmp" "$manifest"
     echo "pin-client: wrote $manifest ($(grep -cv '^#' "$manifest") files)"
+    pinned=$(awk -F'\t' '!/^#/ && NF == 5 && $3 == "pinned" { print $1; exit }' tools/builds.tsv 2>/dev/null || true)
+    if [[ $manifest == tools/pins/"$build".sha256 && $build == "$pinned" ]]; then
+        cp -- "$manifest" tools/client-pin.sha256
+        echo "pin-client: refreshed tools/client-pin.sha256 (the pinned build's copy, read by the gate)"
+    fi
     exit 0
 fi
 
