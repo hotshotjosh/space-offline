@@ -401,7 +401,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="198.8" y="269.5" width="3" height="3" class="built"/>
 <rect x="202.8" y="269.5" width="3" height="3" class="built"/>
 <rect x="206.8" y="269.5" width="3" height="3" class="built"/>
-<text x="214.8" y="274.0" class="s xs">0/3</text>
+<rect x="210.8" y="269.5" width="3" height="3" class="built"/>
+<text x="218.8" y="274.0" class="s xs">0/4</text>
 <text x="16.0" y="290.0" class="t">Live service</text>
 <rect x="198.8" y="285.5" width="3" height="3" class="built"/>
 <text x="206.8" y="290.0" class="s xs">0/1</text>

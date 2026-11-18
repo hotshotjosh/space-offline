@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (232 of 354) · **94% built** (331 of 354) · 3 parked, not counted.
+**65% proved** (232 of 355) · **94% built** (332 of 355) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -35,6 +35,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] The 2026-11-09 client port: *missing*, cards P0 to P7; waits on the client. Named by card and docs: the 11-09 port report; the re-pin procedure is docs/guides/build-compat.md
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
+- [ ] Community-track lookups answer no track instance: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
 
 ### 3.3 PvP
 
@@ -190,7 +191,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
-| FW Conquests | 0 | 3 | 0 | 0 | 0 |
+| FW Conquests | 0 | 4 | 0 | 0 | 0 |
 | Live service | 0 | 1 | 0 | 0 | 0 |
 
 </details>
@@ -662,11 +663,12 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>FW Conquests</b>: 0 of 3 proved, 3 open</summary>
+<details><summary><b>FW Conquests</b>: 0 of 4 proved, 4 open</summary>
 
 - [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
 - [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
 - [ ] Item traders trade recipes: *built-unproved*, server item_trader.rs: the four PTC traders stand at the War HQ systems (an [A] placement), ProcessTrade(recipeID=, multiplier=) answers (success, items) and a refusal is (False, []), militia-only by default [A, owner question Q19]; the Beacons beside the traders (97927-97930) are not placed yet; tools/client-ci/scenarios/fci_item_trader.py (not yet run on a client)
+- [ ] Community-track lookups answer no track instance: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
 
 </details>
 

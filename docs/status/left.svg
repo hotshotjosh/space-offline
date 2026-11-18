@@ -37,8 +37,9 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="234.8" y="29.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="29.5" width="3" height="3" class="built"/>
 <rect x="242.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="247.3" y="30.0" width="2" height="2" fill="none" class="missing"/>
-<text x="254.8" y="34.0" class="s xs">4</text>
+<rect x="246.8" y="29.5" width="3" height="3" class="built"/>
+<rect x="251.3" y="30.0" width="2" height="2" fill="none" class="missing"/>
+<text x="258.8" y="34.0" class="s xs">5</text>
 <text x="16.0" y="50.0" class="t">3.3 PvP</text>
 <rect x="234.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="45.5" width="3" height="3" class="built"/>

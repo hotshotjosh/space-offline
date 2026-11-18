@@ -208,6 +208,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             "get_instance_attributes_public" => {
                 Ok(PyValue::Tuple(vec![PyValue::None, PyValue::None]))
             }
+            // The QA insider menu's toggle (communitytracks/client/qa/menu.py) [V];
+            // the client discards the answer.
+            "change_qa_mode" => Ok(PyValue::None),
             _ => Err(reg.no_method(req)),
         },
         // Unreachable: `SERVICES` above gates the call. Spelled out rather
