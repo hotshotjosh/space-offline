@@ -1,22 +1,29 @@
-//! 3707965, spec F (F3): launched drones follow a drone navigation
-//! computer's burst. **Every id and number here is invented**
+//! 3707965, spec F (F3, F4, P4): launched drones follow a drone navigation
+//! computer's burst, and the pilot's drone count and control range come off
+//! the sheet's character node. **Every id and number here is invented**
 //! (the 981_6xx_xxx band): no client value is asserted.
 
-use super::tests::{ALICE, ALICE_SHIP, BIG_BAY, ROWS, SK_DRONES, undock, world_in};
+use super::tests::{ALICE, ALICE_SHIP, BIG_BAY,  SK_DRONES, undock, world_in};
 use super::*;
 use crate::grid::tests::{drain, sent_to};
 
+const HULL: i64 = 981_600_001;
 const DRONE_T: i64 = 981_600_002;
 const DNC: i64 = 981_600_003;
 /// An invented module of a group that is not the navigation computer's
 /// (646), with the same speed effects.
 const LINK: i64 = 981_600_005;
-
+const RIG: i64 = 981_600_004;
 const E_DNC_ONLINE: i64 = 981_600_011;
 const E_DNC_BURST: i64 = 981_600_012;
-/// Module attributes: the speed bonus (percent) and its burst factor.
+const E_HULL: i64 = 981_600_013;
+const E_RIG: i64 = 981_600_014;
+/// Module attributes: the speed bonus (percent) and its burst factor; the
+/// hull's assigned drone count; the rig's range penalty (percent).
 const A_SPEED: i64 = 981_600_501;
 const A_FACTOR: i64 = 981_600_502;
+const A_ASSIGN: i64 = 981_600_503;
+const A_RANGE: i64 = 981_600_504;
 const SEC: i64 = 1_000 * crate::modules::MSEC;
 const T0: i64 = 133_000_000_000_000_000;
 
@@ -24,19 +31,26 @@ fn content() -> crate::content::Content {
     let rows = format!(
         "attribute\t{A_SPEED}\t0.0\tinventedSpeedBonus\n\
 attribute\t{A_FACTOR}\t1.0\tinventedBurstFactor\n\
+attribute\t{A_ASSIGN}\t0.0\tinventedAssign\n\
+attribute\t{A_RANGE}\t0.0\tinventedRangePenalty\n\
+type\t{HULL}\t99580\t6\t1\t1\t20000.0\t100.0\t1000000.0\t40.0\t0\t{E_HULL}\t9=300.0;{A_ASSIGN}=2.0\tInvented Assign Hull\n\
 type\t{DRONE_T}\t100\t18\t1\t1\t4.0\t0.0\t2000.0\t10.0\t10\t10\t\
 9=111.0;37=1000.0;51=3000.0;54=2000.0;64=2.0;70=50.0;117=16.0;182=990581003.0;263=40.0;265=60.0;277=1.0;416=500.0;479=100000.0;482=1.0;508=250.0;552=20.0;1272=5.0\tInvented Drone\n\
 type\t{DNC}\t644\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t{E_DNC_BURST}\t12,16,{E_DNC_ONLINE},{E_DNC_BURST}\t\
 73=10000.0;1014=1.0;{A_SPEED}=20.0;{A_FACTOR}=3.0\tInvented Navigation Computer\n\
 type\t{LINK}\t646\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t{E_DNC_BURST}\t12,16,{E_DNC_ONLINE},{E_DNC_BURST}\t\
 73=10000.0;1014=1.0;{A_SPEED}=20.0;{A_FACTOR}=3.0\tInvented Tracking Link\n\
-
+type\t{RIG}\t99590\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t0\t{E_RIG}\t{A_RANGE}=-60.0\tInvented Drone Rig\n\
 effect\t{E_DNC_ONLINE}\t4\t0\t0\t0\t0\t0\t0\tinventedDncOnline\t\n\
 effect\t{E_DNC_BURST}\t1\t0\t73\t0\t0\t0\t0\tinventedDncBurst\t\n\
+effect\t{E_HULL}\t0\t0\t0\t0\t0\t0\t0\tinventedAssignRole\t\n\
+effect\t{E_RIG}\t4\t0\t0\t0\t0\t0\t0\tinventedRangeRig\t\n\
 modifier\t{E_DNC_ONLINE}\tcharID\tOwnerRequiredSkillModifier\t37\t{A_SPEED}\t6\t990581003\t\n\
-modifier\t{E_DNC_BURST}\titemID\tItemModifier\t{A_SPEED}\t{A_FACTOR}\t4\t\t\n"
+modifier\t{E_DNC_BURST}\titemID\tItemModifier\t{A_SPEED}\t{A_FACTOR}\t4\t\t\n\
+modifier\t{E_HULL}\tcharID\tItemModifier\t352\t{A_ASSIGN}\t7\t\t\n\
+modifier\t{E_RIG}\tcharID\tItemModifier\t458\t{A_RANGE}\t6\t\t\n"
     );
-    let text = format!("{}{ROWS}{rows}", typedata::FIXTURE);
+    let text = format!("{}{}{rows}", typedata::FIXTURE, super::tests::rows());
     let table = typedata::Table::parse(&text).expect("the test rows parse");
     let mut c = crate::content::Content::fixture();
     c.insert("typedata", typedata::Installed::build(table));
@@ -62,6 +76,31 @@ fn fit(reg: &mut Registry, type_id: i64, flag: i64) -> i64 {
         .expect("fitted");
     let _ = reg.take_pending();
     made[0].item_id()
+}
+
+/// F4 / P4: the Drones skill's level is the count without a hull role
+/// bonus; a hull's PostAssign on 352 replaces it, as the client's dogma
+/// shows.
+#[test]
+fn the_active_drone_count_comes_off_the_sheets_character_node() {
+    let plain = world(BIG_BAY);
+    assert_eq!(drone_skills::max_active(&plain, ALICE), 5);
+    let assigned = world(HULL);
+    assert_eq!(drone_skills::max_active(&assigned, ALICE), 2);
+}
+
+/// F4 / P4: a rig's percent penalty on 458 shortens the control range.
+#[test]
+fn the_control_range_comes_off_the_sheets_character_node() {
+    let mut reg = world(BIG_BAY);
+    assert_eq!(
+        drone_skills::control_range(&reg, ALICE, ALICE_SHIP),
+        CONTROL_RANGE
+    );
+    fit(&mut reg, RIG, 11);
+    let want = CONTROL_RANGE * 0.4;
+    let got = drone_skills::control_range(&reg, ALICE, ALICE_SHIP);
+    assert!((got - want).abs() < 1e-6, "{got} vs {want}");
 }
 
 fn speed_pushes(reg: &mut Registry) -> Vec<f64> {

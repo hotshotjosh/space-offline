@@ -576,8 +576,9 @@ const MODULE_READS: &[i64] = &[
 ];
 
 /// The pilot's attributes a consumer reads (K-MSKILL): 212
-/// `missileDamageMultiplier`.
-const CHARACTER_READS: &[i64] = &[212];
+/// `missileDamageMultiplier`; 352 `maxActiveDrones` and 458
+/// `droneControlDistance` (`drone_skills::max_active`, `control_range`).
+const CHARACTER_READS: &[i64] = &[212, 352, 458];
 
 // ---------------------------------------------------------------------------
 // The evaluator

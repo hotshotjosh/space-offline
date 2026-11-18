@@ -5,7 +5,7 @@
 //! (`mutator_data::value`), never from `dynamic_item::attributes` itself.
 
 use super::tests::{
-    ALICE, ALICE_SHIP, BIG_BAY, DRONE, ONE_BAY, ROWS, SK_DRONES, SK_IFACE, SYSTEM, undock, world_in,
+    ALICE, ALICE_SHIP, BIG_BAY, DRONE, ONE_BAY,  SK_DRONES, SK_IFACE, SYSTEM, undock, world_in,
 };
 use super::*;
 
@@ -83,7 +83,7 @@ effect\t{EFFECT_AMP}\t0\t0\t0\t0\t0\t0\t0\tinventedAmplifierEffect\t\n\
 modifier\t{EFFECT_AMP}\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t\n",
         SRC_ARMOR_RES[0], SRC_ARMOR_RES[1], SRC_ARMOR_RES[2], SRC_ARMOR_RES[3]
     );
-    let text = format!("{}{ROWS}{rows}", typedata::FIXTURE);
+    let text = format!("{}{}{rows}", typedata::FIXTURE, super::tests::rows());
     let table = typedata::Table::parse(&text).expect("the test rows parse");
     let mut c = crate::content::Content::fixture();
     c.insert("typedata", typedata::Installed::build(table));

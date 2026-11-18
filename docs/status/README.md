@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (232 of 351) · **93% built** (328 of 351) · 3 parked, not counted.
+**66% proved** (232 of 352) · **93% built** (329 of 352) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -24,6 +24,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bot corps anchor and live in an Upwell structure (BOT-UPWELL-HOME): *built-unproved*, eve-bot upwell_home.rs (planner, gate, unit tests); tests/bots/upwell_home.rs (socket: board a hauler, warp to a planet, anchor, wait, dock, control; refusal words); brain gate test; soak later
 - [ ] Admin web page: status, pilots, systems, map; bot, broadcast, save and kick actions (token, off by default): *built-unproved*, admin_web.rs tests; deployed on the test server 11-03; no scenario or human check yet; kick (admin_actions.rs tests, evicts like a second login); tools/test_admin_web.py live check (EVE_ADMIN_WEB_LIVE=1): page, every API path and action, 401 without the token; tick p50/p95/max per minute, per-system loads, slowest calls, /api/metrics (admin_web.rs, live_status.rs prof tests)
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots
+- [ ] Drone limits follow the sheet: the active drone count and the control range: *built-unproved*, drone_skills.rs max_active and control_range read attributes 352 and 458 off the sheet's character node (dogma.rs CHARACTER_READS), so a hull's assigned drone count and a rig's range penalty count and the augmentor is no longer added by hand; drones/restat_tests.rs the_active_drone_count_comes_off_the_sheets_character_node, the_control_range_comes_off_the_sheets_character_node; the drones test fixture gains the Drones skill and Drone Avionics effects on 352 and 458; no client scenario yet
 - [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules.rs reanchor_capacitor stores the capacitor before activate, a cycle boundary, stop and set_online change the sheet; drones.rs restat works a launched drone's stats out again and sends SetMaxSpeed when a navigation computer (group 644) starts, ends, goes on or offline; modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed, the_capacitor_is_anchored_before_a_recharge_change, a_full_capacitor_gets_no_anchor; drones/restat_tests.rs a_launched_drone_follows_a_navigation_computers_burst; [A] only navigation computers change a launched drone; no client scenario yet
 
 ### 3.2 The 11-09 port
@@ -174,7 +175,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 |---|--:|--:|--:|--:|--:|
 | Login and sessions | 9 | 1 | 0 | 0 | 0 |
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
-| Combat | 31 | 8 | 0 | 0 | 0 |
+| Combat | 31 | 9 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 2 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
@@ -268,7 +269,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Combat</b>: 31 of 39 proved, 8 open</summary>
+<details><summary><b>Combat</b>: 31 of 40 proved, 9 open</summary>
 
 - [x] Turrets hit and miss by the client's formula: *client-proved*, fci_doc_0 W10
 - [x] A gun stops when its target is gone: *client-proved*, fci_engine_fix W10
@@ -309,6 +310,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
+- [ ] Drone limits follow the sheet: the active drone count and the control range: *built-unproved*, drone_skills.rs max_active and control_range read attributes 352 and 458 off the sheet's character node (dogma.rs CHARACTER_READS), so a hull's assigned drone count and a rig's range penalty count and the augmentor is no longer added by hand; drones/restat_tests.rs the_active_drone_count_comes_off_the_sheets_character_node, the_control_range_comes_off_the_sheets_character_node; the drones test fixture gains the Drones skill and Drone Avionics effects on 352 and 458; no client scenario yet
 
 </details>
 

@@ -29,7 +29,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="266.8" y="13.5" width="3" height="3" class="built"/>
 <rect x="270.8" y="13.5" width="3" height="3" class="built"/>
 <rect x="274.8" y="13.5" width="3" height="3" class="built"/>
-<text x="282.8" y="18.0" class="s xs">11</text>
+<rect x="278.8" y="13.5" width="3" height="3" class="built"/>
+<text x="286.8" y="18.0" class="s xs">12</text>
 <text x="16.0" y="34.0" class="t">3.2 The 11-09 port</text>
 <rect x="234.8" y="29.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="29.5" width="3" height="3" class="built"/>

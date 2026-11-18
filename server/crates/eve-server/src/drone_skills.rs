@@ -70,6 +70,10 @@ pub const ATTR_FALLOFF: i64 = 158;
 pub const ATTR_TRACKING: i64 = 160;
 /// `optimalSigRadius` (620) [V-data]: the signature a gun is built to hit.
 pub const ATTR_SIG_RESOLUTION: i64 = 620;
+/// `maxActiveDrones` (352): the pilot's own, on the character node.
+pub const ATTR_MAX_ACTIVE: i64 = 352;
+/// `droneControlDistance` (458), the pilot's, on the character node.
+pub const ATTR_CONTROL_RANGE: i64 = 458;
 /// `droneControlDistance` (458) bonus per level / per module (459).
 pub const ATTR_CONTROL_BONUS: i64 = 459;
 /// `damageMultiplierBonus` (292), the bonus effect 1730 reads.
@@ -127,8 +131,19 @@ pub fn missing_skill(w: &Registry, owner: i64, type_id: i64) -> Option<(i64, i64
 
 /// The drones this pilot may have out at once: the Drones skill's level
 /// (`maxActiveDroneBonus` 1 per level, effects 315 and 316 [V-data]).
+///
+/// **From the sheet's character node when the pilot's ship has one**
+/// (`maxActiveDrones` 352): the Drones skill's ModAdd, and any hull's or
+/// rig's assign or add, as the client's dogma shows it [V: spec F4]. Else
+/// the skill's level.
 pub fn max_active(w: &Registry, owner: i64) -> i64 {
-    level_of(w, owner, SKILL_DRONES)
+    let sheet = w
+        .character(owner)
+        .and_then(|c| dogma::sheet(w, c.ship_id));
+    match sheet {
+        Some(s) => (s.character(ATTR_MAX_ACTIVE).round() as i64).max(0),
+        None => level_of(w, owner, SKILL_DRONES),
+    }
 }
 
 /// The hull's drone bay and bandwidth **as fitted**: a rig or a module
@@ -152,7 +167,16 @@ pub fn bay_of(w: &Registry, ship_id: i64) -> Option<crate::drones::Bay> {
 /// Avionics** per level (attribute 459 of the skill, effects 448 and 504)
 /// and each fitted, online **Drone Link Augmentor** (459 of the module,
 /// effect 2000), which add without a stacking penalty [V-data].
+///
+/// **From the sheet's character node when the ship has one** (458).
 pub fn control_range(w: &Registry, owner: i64, ship_id: i64) -> f64 {
+    // The sheet holds every term: the base, Drone Avionics (effects 448 and
+    // 504) and each online Drone Link Augmentor (effect 2000), all
+    // `ItemModifier charID` ModAdds on 458, and a rig's percent penalty.
+    if let Some(sheet) = dogma::sheet(w, ship_id) {
+        return sheet.character(ATTR_CONTROL_RANGE);
+    }
+    // No sheet means no fitted modules: the skills alone.
     let table = typedata::installed_in(w.content()).table();
     let mut range = crate::drones::CONTROL_RANGE;
     if let Some(skills) = w.skills_for(Some(owner)) {
@@ -163,23 +187,6 @@ pub fn control_range(w: &Registry, owner: i64, ship_id: i64) -> f64 {
                 range += row.attribute(ATTR_CONTROL_BONUS).unwrap_or(0.0) * e.level as f64;
             }
         }
-    }
-    if let Some(inputs) = dogma::inputs(w, ship_id)
-        && let Some(sheet) = dogma::sheet(w, ship_id)
-    {
-        // The effect is an addition (`ItemModifier`, operation 2), which
-        // the engine never stacking-penalises.
-        range += inputs
-            .modules
-            .iter()
-            .filter(|m| m.state >= State::Online)
-            .filter(|m| {
-                table
-                    .get(m.type_id)
-                    .is_some_and(|r| r.has_effect(EFFECT_LINK_AUGMENTOR))
-            })
-            .filter_map(|m| sheet.module(m.item_id, ATTR_CONTROL_BONUS))
-            .sum::<f64>();
     }
     range
 }

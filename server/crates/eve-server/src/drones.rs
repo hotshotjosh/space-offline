@@ -3405,6 +3405,13 @@ type\t990580020\t99583\t25\t1\t1\t0.1\t0.0\t0.0\t1.0\t0\t\t\tFixture Ore
 attribute\t64\t1.0\tdamageMultiplier
 attribute\t280\t0.0\tskillLevel
 attribute\t292\t0.0\tdamageMultiplierBonus
+attribute\t352\t0.0\tmaxActiveDrones
+attribute\t353\t0.0\tmaxActiveDroneBonus
+attribute\t459\t0.0\tdroneControlDistanceBonus
+effect\t990581105\t0\t0\t0\t0\t0\t0\t0\tfixtureDronesLevel\t
+effect\t990581106\t0\t0\t0\t0\t0\t0\t0\tfixtureDronesMax\t
+modifier\t990581105\titemID\tItemModifier\t353\t280\t2\t\t
+modifier\t990581106\tcharID\tItemModifier\t352\t353\t2\t\t
 effect\t990581100\t0\t0\t0\t0\t0\t0\t0\tfixtureSkillEffect\t
 effect\t990581101\t0\t0\t0\t0\t0\t0\t0\tfixtureLevelTimesBonus\t
 effect\t990581103\t0\t0\t0\t0\t0\t0\t0\tfixtureHullDroneBonus\t
@@ -3416,11 +3423,23 @@ modifier\t990581104\titemID\tItemModifier\t459\t280\t0\t\t
 modifier\t990581102\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t
 ";
 
+    /// [`ROWS`] and the rows built from constants: the Drones skill under
+    /// [`SKILL_DRONES`]'s id, the character's base control range
+    /// ([`CONTROL_RANGE`]) and the Avionics-like skill's effect on it.
+    pub(super) fn rows() -> String {
+        format!(
+            "{ROWS}type\t{SKILL_DRONES}\t273\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t990581100,990581105,990581106\t\tFixture Drones Skill Id\n\
+attribute\t458\t{CONTROL_RANGE}\tdroneControlDistance\n\
+modifier\t990581104\tcharID\tItemModifier\t458\t459\t2\t\t\n"
+        )
+    }
+
     fn content() -> crate::content::Content {
         let mut c = crate::content::Content::fixture();
         let text = format!(
-            "{}{ROWS}{}",
+            "{}{}{}",
             typedata::FIXTURE,
+            rows(),
             // An Upwell hull for the structure tests (#46).
             crate::structure_combat::tests::astrahus_row(
                 &crate::structure_combat::tests::attr_text("")

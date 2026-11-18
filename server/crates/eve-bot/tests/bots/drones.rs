@@ -31,7 +31,11 @@ type\t2454\t100\t18\t1\t1\t5.0\t0.0\t3000.0\t15.0\t10\t10\t9=100.0;37=2800.0;51=
 ";
 
 fn content() -> Arc<eve_server::content::Content> {
-    let text = format!("{}{ROWS}", eve_server::typedata::FIXTURE);
+    let text = format!(
+        "{}{ROWS}{}",
+        eve_server::typedata::FIXTURE,
+        super::common::drone_skill_rows()
+    );
     let table = eve_server::typedata::Table::parse(&text).expect("the rows parse");
     let mut c = eve_server::content::Content::fixture();
     c.insert("typedata", eve_server::typedata::Installed::build(table));
