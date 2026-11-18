@@ -40,6 +40,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -51,6 +52,8 @@ import unittest
 SLOW = 300
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(HERE)  # last: tools/dis.py must not shadow the stdlib
+import testenv  # noqa: E402
 HELPER = os.path.join(HERE, "eve-offline-jail.in")
 SETUP = os.path.join(HERE, "jail-setup.sh")
 VERIFY = os.path.join(HERE, "jail-verify.sh")
@@ -168,6 +171,11 @@ class StaticHelper(unittest.TestCase):
         self.assertIn("-S $p", function_body(self.h, "mask_sockets"))
         self.assertTrue({"cifs", "nfs", "autofs", "fuse.sshfs"}
                         <= set(re.search(r"(?m)^NETFS='([^']*)'$", self.h).group(1).split()))
+
+    def test_the_parsed_mask_list_finds_the_known_trees(self) -> None:
+        trees = masked_host_trees(self.h)
+        for t in ("/run", "/tmp", "/media", "/mnt", os.path.realpath(os.path.expanduser("~"))):
+            self.assertIn(t, trees)
 
     def test_masks_are_the_five_trees_and_shm_is_fresh(self) -> None:
         body = function_body(self.h, "build_view")
@@ -372,8 +380,22 @@ echo "SHIM-HOSTPID $([[ -e /proc/$HOST_PID_PROBE ]] && echo visible || echo gone
 """
 
 
-# The trees the view masks, as host paths (MASKS; `runtime` is under /run).
-MASKED_HOST_TREES = ("/run", "/var/run", "/tmp", "/home", "/media", "/mnt")
+def masked_host_trees(helper_text=None):
+    """The host trees `build_view` masks, parsed from the jail script: every
+    `mask_tree LABEL PATH` with a literal path, `$HOME_R` as this process's
+    home, and `$RUNTIME_R` skipped (it lies under /run)."""
+    body = function_body(helper_text if helper_text is not None else read(HELPER), "build_view")
+    trees = []
+    for m in re.finditer(r"mask_tree\s+\S+\s+(\"?[^\s\"]+\"?)", body):
+        p = m.group(1).strip('"')
+        if p == "$HOME_R":
+            p = os.path.realpath(os.path.expanduser("~"))
+        if p.startswith("/"):
+            trees.append(p)
+    return tuple(trees)
+
+
+MASKED_HOST_TREES = masked_host_trees()
 
 
 def host_netfs_outside_masks(mountinfo: str = "/proc/self/mountinfo") -> str:
@@ -1485,7 +1507,7 @@ class ClientCiCensusCheck(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def check(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        env = {"PATH": self.bin + ":/usr/bin:/bin", "HOME": self.tmp, "DISPLAY": ":987654",
+        env = {"PATH": testenv.system_path(self.bin), "HOME": self.tmp, "DISPLAY": ":987654",
                "EVE_CI_SCENARIOS": self.scen, "EVE_PREFIX": self.prefix}
         return subprocess.run(["bash", os.path.join(self.repo, "tools", "client-ci.sh"), "run", "census_x",
                                "--check", "--inherit-display", "--no-scenario-flag", *extra],

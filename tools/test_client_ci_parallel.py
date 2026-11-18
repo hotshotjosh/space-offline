@@ -23,6 +23,8 @@ import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(HERE)  # last: tools/dis.py must not shadow the stdlib
+import testenv  # noqa: E402
 CI = os.path.join(HERE, "client-ci")
 SLOW = 120
 
@@ -425,7 +427,7 @@ class ClientCiSlotPreflight(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def check(self, *extra, env=None):
-        e = {"PATH": self.bin + ":/usr/bin:/bin", "HOME": self.home, "DISPLAY": ":987654",
+        e = {"PATH": testenv.system_path(self.bin), "HOME": self.home, "DISPLAY": ":987654",
              "EVE_CI_SCENARIOS": self.scen}
         e.update(env or {})
         return subprocess.run(["bash", os.path.join(self.repo, "tools", "client-ci.sh"), "run", "slot_x",
