@@ -25,11 +25,10 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# O19: the offline prefix copy; until it exists, verify reads the online
-# prefix (verify only reads).
-_eve_off=$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE
-[ -d "$_eve_off/tq-offline" ] || _eve_off=$HOME/.local/share/Steam/steamapps/compatdata/8500/pfx/drive_c/CCP/EVE
-PREFIX=${PREFIX:-$_eve_off}
+# The offline prefix copy. There is no fallback to the online (Steam) prefix:
+# the pin is checked against our own jailed copy only, so a missing copy is an
+# error, never a silent read of the live install (owner decision, 2026-11-18).
+PREFIX=${PREFIX:-$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE}
 client=$PREFIX/tq-offline
 manifest=tools/client-pin.sha256
 mode=verify
@@ -56,7 +55,12 @@ while (($#)); do
     shift
 done
 
-[[ -d $client ]] || { echo "pin-client: no client at $client" >&2; exit 2; }
+[[ -d $client ]] || {
+    echo "pin-client: no offline client copy at $client" >&2
+    echo "pin-client: there is no fallback to the online prefix; make the offline copy" >&2
+    echo "pin-client: (docs/guides/getting-started.md) or name another install with --path DIR" >&2
+    exit 2
+}
 
 build=$(sed -n 's/^build *= *//p' "$client/start.ini" | tr -d '\r')
 echo "pin-client: $client"

@@ -356,6 +356,10 @@ tools/pin-client.sh --quick    # 10 load-bearing files only
 tools/pin-client.sh --write    # re-record, after a deliberate change
 ```
 
+It reads the offline copy only. With no offline copy at
+`$PREFIX/tq-offline` it exits 2 with a message; it never falls back to the
+online (Steam) prefix. Name another install with `--path DIR`.
+
 Falsified both ways when it was written: pointed at `tq` it reports
 `BUILD MOVED -- manifest pins 3619879, install says 3628513` and exits 1 (the
 numbers are those of the day it was written; the manifest pins 3662168 now);
