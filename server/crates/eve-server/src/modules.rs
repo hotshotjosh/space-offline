@@ -803,6 +803,10 @@ pub struct Modules {
     completed: Vec<Cycle>,
     /// Module -> when its reload ends, blue ticks ([`load_ammo`] in space).
     reloading: BTreeMap<i64, i64>,
+    /// Modules whose lost lock has been told to the pilot
+    /// (`OnModulesDeactivating`), so it is sent once per cycle run-out.
+    /// Cleared when the effect ends.
+    winding_down: BTreeSet<i64>,
     /// **Bank slaves that run without telling the pilot** (`crate::weapon_bank`):
     /// a weapon bank is one HUD button and one icon under the target, so only
     /// the master's `OnGodmaShipEffect` goes out; a slave cycles, fires and
@@ -874,6 +878,7 @@ impl Modules {
     /// delay. The one place a [`Running`] leaves the map.
     fn end(&mut self, module_id: i64, at: i64) -> Option<Running> {
         let r = self.running.remove(&module_id);
+        self.winding_down.remove(&module_id);
         if r.is_some() {
             self.last_stop.insert(module_id, at);
         }
@@ -913,6 +918,7 @@ impl Modules {
         self.last_stop.remove(&module_id);
         self.fired.remove(&module_id);
         self.reloading.remove(&module_id);
+        self.winding_down.remove(&module_id);
     }
 
     /// When this module's reload ends, if it is reloading at `now`.
@@ -1558,6 +1564,33 @@ impl Push for ModuleRefit {
     }
 }
 
+/// `OnModulesDeactivating(moduleIDs)` `[V]` (`smb.OnModulesDeactivating` ->
+/// `SetDeactivating`; the new HUD's `ModuleController.ProcessDeactivating`
+/// records the stop time): the button shows it is winding down. Sent when a
+/// lost lock makes a running cycle end at its boundary, since there is no
+/// click to make the client mark it itself. **[A]** TQ sends it in this case
+/// (falsifier: a TQ capture of a lost lock without it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModulesDeactivating {
+    pub to: Vec<i64>,
+    pub module_ids: Vec<i64>,
+}
+
+impl Push for ModulesDeactivating {
+    fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+        (
+            "OnModulesDeactivating",
+            vec![PyValue::List(
+                self.module_ids.iter().map(|m| PyValue::Int(*m)).collect(),
+            )],
+        )
+    }
+
+    fn audience(&self) -> Option<Vec<i64>> {
+        Some(self.to.clone())
+    }
+}
+
 /// Any of these, so one list can carry a whole step's output in order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModulePush {
@@ -1568,6 +1601,7 @@ pub enum ModulePush {
     Quantity(ChargeQuantity),
     Prime(PrimeCharge),
     Loading(ChargeLoading),
+    Deactivating(ModulesDeactivating),
     Refit(ModuleRefit),
     /// A Triglavian beam's start (PV-7), which carries its `graphicInfo`.
     Beam(TriglavianFx),
@@ -1583,6 +1617,7 @@ impl Push for ModulePush {
             ModulePush::Quantity(p) => p.to_push(),
             ModulePush::Prime(p) => p.to_push(),
             ModulePush::Loading(p) => p.to_push(),
+            ModulePush::Deactivating(p) => p.to_push(),
             ModulePush::Refit(p) => p.to_push(),
             ModulePush::Beam(p) => p.to_push(),
         }
@@ -1597,6 +1632,7 @@ impl Push for ModulePush {
             ModulePush::Quantity(p) => p.audience(),
             ModulePush::Prime(p) => p.audience(),
             ModulePush::Loading(p) => p.audience(),
+            ModulePush::Deactivating(p) => p.audience(),
             ModulePush::Refit(p) => p.audience(),
             ModulePush::Beam(p) => p.audience(),
         }
@@ -2274,6 +2310,35 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
     // `EffectAlreadyActive2`, like any activation of a running module.
     // (Ending it now, ENGINE-FIX, let a gun that instakilled its target fire
     // again at once.)
+    // A lost lock is told to the pilot when it is first seen, not at the
+    // boundary where the effect ends: the button blinks "deactivating" for the
+    // rest of the cycle. A player's stop, a lock still held and a module
+    // whose boundary is due now (it ends in the loop below) say nothing.
+    let lost: Vec<Running> = w
+        .modules()
+        .running
+        .values()
+        .filter(|r| {
+            r.stop_at.is_none()
+                && r.next_boundary() > now
+                && !w.modules().winding_down.contains(&r.module_id)
+                && !w.modules().quiet.contains(&r.module_id)
+                && needs_lock(&r.effect, r.target_id)
+                && r.target_id
+                    .is_none_or(|t| !w.locks().targets_of(r.ship_id).contains(&t))
+                && w.roster()
+                    .get(r.character_id)
+                    .is_some_and(|p| p.ship_id == r.ship_id)
+        })
+        .copied()
+        .collect();
+    for r in lost {
+        w.modules_mut().winding_down.insert(r.module_id);
+        out.push(ModulePush::Deactivating(ModulesDeactivating {
+            to: vec![r.character_id],
+            module_ids: vec![r.module_id],
+        }));
+    }
     while steps < MAX_BOUNDARIES_PER_ADVANCE {
         let due = w
             .modules()
@@ -2328,6 +2393,30 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
             if crate::mjd::is_mjd(r.effect.effect_id) {
                 jumps.push(r);
             }
+        }
+        if !target_lost
+            && !ended_by_player
+            && !exhausted
+            && w.modules_mut().winding_down.remove(&r.module_id)
+        {
+            // The lock came back before the boundary (a re-lock): the pilot
+            // was told it was winding down, so tell the old HUD the effect is
+            // active again. **[A]** a repeated start with the first cycle's
+            // anchor clears the button's "deactivating"; falsifier: a button
+            // still blinking after a re-lock.
+            out.push(ModulePush::Effect(ShipEffect {
+                to: vec![r.character_id],
+                module_id: r.module_id,
+                effect_id: r.effect.effect_id,
+                character_id: r.character_id,
+                ship_id: r.ship_id,
+                target_id: r.target_id,
+                t: r.started,
+                start: true,
+                duration_ms: r.period / MSEC,
+                repeat: r.repeat,
+                error: None,
+            }));
         }
         if ended_by_player {
             // Its stop pair was scheduled when the player clicked.
@@ -6090,6 +6179,120 @@ mod tests {
         tick(&mut reg, t0 + period);
         assert!(reg.modules().running(GUN).is_none(), "stopped at the end");
         go(&mut reg, next, t0 + period).expect("free after the cycle");
+    }
+
+    /// A lost lock is told to the pilot once, when it is seen: exactly one
+    /// `OnModulesDeactivating([module])`. A player's stop sends none.
+    #[test]
+    fn a_lost_lock_mid_cycle_tells_the_pilot_the_module_is_winding_down() {
+        let deactivating = |reg: &mut Registry| {
+            // The clock's pushes wait on the schedule.
+            let mut sent = pending(reg);
+            sent.extend(
+                reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(3_600))
+                    .iter()
+                    .map(|p| p.to_push()),
+            );
+            sent.into_iter()
+                .filter(|(e, _)| *e == "OnModulesDeactivating")
+                .collect::<Vec<_>>()
+        };
+        let mut reg = alice_with_a_gun();
+        put_rounds(&mut reg, ALICE_SHIP, HI_SLOT_0, EMP_S, 10);
+        reg.modules_mut().set_online(GUN, true);
+        let target = 100_000_099;
+        reg.locks_mut().add(ALICE_SHIP, target);
+        let t0 = 1_000 * MSEC;
+        activate(
+            &mut reg,
+            Some(ALICE),
+            GUN,
+            "projectileFired",
+            Some(target),
+            1000,
+            t0,
+        )
+        .expect("fires");
+        let period = reg.modules().running(GUN).expect("running").period;
+        assert!(
+            deactivating(&mut reg).is_empty(),
+            "a held lock says nothing"
+        );
+        reg.locks_mut().remove(ALICE_SHIP, target);
+        tick(&mut reg, t0 + period / 4);
+        tick(&mut reg, t0 + period / 2);
+        let sent = deactivating(&mut reg);
+        assert_eq!(sent.len(), 1, "told once: {sent:?}");
+        assert_eq!(sent[0].1, vec![PyValue::List(vec![PyValue::Int(GUN)])]);
+        tick(&mut reg, t0 + period);
+        assert!(reg.modules().running(GUN).is_none(), "stopped at the end");
+        assert!(deactivating(&mut reg).is_empty());
+
+        // A player's stop is the client's own business.
+        let mut reg = alice_with_a_gun();
+        put_rounds(&mut reg, ALICE_SHIP, HI_SLOT_0, EMP_S, 10);
+        reg.modules_mut().set_online(GUN, true);
+        reg.locks_mut().add(ALICE_SHIP, target);
+        activate(
+            &mut reg,
+            Some(ALICE),
+            GUN,
+            "projectileFired",
+            Some(target),
+            1000,
+            t0,
+        )
+        .expect("fires");
+        deactivate(
+            &mut reg,
+            Some(ALICE),
+            GUN,
+            "projectileFired",
+            t0 + period / 4,
+        )
+        .expect("stops");
+        tick(&mut reg, t0 + period / 2);
+        assert!(deactivating(&mut reg).is_empty(), "a click says nothing");
+    }
+
+    /// A lock that returns before the boundary: the pilot was told the module
+    /// is winding down, so the cycle that goes on is announced as a start.
+    #[test]
+    fn a_relock_before_the_boundary_tells_the_pilot_the_module_runs_on() {
+        let mut reg = alice_with_a_gun();
+        put_rounds(&mut reg, ALICE_SHIP, HI_SLOT_0, EMP_S, 10);
+        reg.modules_mut().set_online(GUN, true);
+        let target = 100_000_099;
+        reg.locks_mut().add(ALICE_SHIP, target);
+        let t0 = 1_000 * MSEC;
+        activate(
+            &mut reg,
+            Some(ALICE),
+            GUN,
+            "projectileFired",
+            Some(target),
+            1000,
+            t0,
+        )
+        .expect("fires");
+        let period = reg.modules().running(GUN).expect("running").period;
+        let _ = pending(&mut reg);
+        reg.locks_mut().remove(ALICE_SHIP, target);
+        tick(&mut reg, t0 + period / 4);
+        reg.locks_mut().add(ALICE_SHIP, target);
+        tick(&mut reg, t0 + period);
+        assert!(reg.modules().running(GUN).is_some(), "the gun runs on");
+        let mut sent = pending(&mut reg);
+        sent.extend(
+            reg.take_due(std::time::Instant::now() + std::time::Duration::from_secs(3_600))
+                .iter()
+                .map(|p| p.to_push()),
+        );
+        let starts = sent
+            .iter()
+            .filter(|(e, a)| *e == "OnGodmaShipEffect" && a.get(3) == Some(&PyValue::Int(1)))
+            .count();
+        assert_eq!(starts, 1, "one fresh start: {sent:?}");
     }
 
     /// Fire one cycle at `target`, then unlock it and start re-locking it with
