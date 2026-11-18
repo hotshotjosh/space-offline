@@ -2027,6 +2027,29 @@ pub(crate) fn capacitor_at(w: &Registry, ship_id: i64, ship_type_id: i64, now: i
     (value, h.capacitor_capacity)
 }
 
+/// Store the capacitor at `now` as the new anchor, so a change of the
+/// recharge rate (55) or the capacity (482) that follows -- a module going
+/// on or offline or starting or ending, an Aberrant Cap Recharger's burst --
+/// applies from `now` and never backwards: `capacitor_at` integrates from
+/// the anchor at the **current** sheet. The client's `chargedAttribute`
+/// re-anchors on every attribute change [I: spec F; that code is the
+/// client's C++ dogma, not read]. Call it **before** the
+/// change. A ship with no anchor is full, and stays so; an anchor in the
+/// future is left alone.
+pub(crate) fn reanchor_capacitor(w: &mut Registry, ship_id: i64, now: i64) {
+    let Some(c) = w.modules().charge(ship_id) else {
+        return;
+    };
+    if c.at >= now {
+        return;
+    }
+    let ship_type_id = w.store().get(ship_id).map_or(0, |i| i.type_id);
+    let (value, _) = capacitor_at(w, ship_id, ship_type_id, now);
+    w.modules_mut()
+        .capacitor
+        .insert(ship_id, Charge { value, at: now });
+}
+
 /// Pay one cycle's capacitor, if it can be paid. Returns the push, or `Err`
 /// when the capacitor is short.
 ///
@@ -2260,6 +2283,9 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
         // the hull.
         note_slowed(w, &mut slowed, &r);
         let at = r.next_boundary();
+        // The effect may end at this boundary and take its recharge change
+        // with it: the capacitor up to here is at the rate it ran at.
+        reanchor_capacitor(w, r.ship_id, at);
         let ended_by_player = r.stop_at.is_some_and(|s| at >= s);
         let exhausted = r.cycles >= r.cycles_wanted();
         let in_space = w
@@ -2469,6 +2495,7 @@ pub fn stop(w: &mut Registry, module_id: i64, at: i64, error: Option<PyValue>) -
     }
     let defended = crate::fitstate::live(w, r.ship_id);
     let flew = crate::dogma::hull(w, r.ship_id);
+    reanchor_capacitor(w, r.ship_id, at);
     w.modules_mut().end(module_id, at);
     let mut out = stop_pushes(w, &r, at);
     if let Some(ModulePush::Effect(e)) = out.first_mut() {
@@ -2863,6 +2890,7 @@ pub fn activate(
     let (charge_type_id, count) = (fire.charge_type_id, fire.pushes);
     let defended = crate::fitstate::live(w, f.ship_id);
     let flew = crate::dogma::hull(w, f.ship_id);
+    reanchor_capacitor(w, f.ship_id, now);
     w.modules_mut().running.insert(module_id, running);
     // **Any effect may change the top speed** (a propulsion module, a siege,
     // an Aberrant Overdrive's burst, ...): the hull is compared, never a
@@ -3077,6 +3105,7 @@ fn set_online_inner(
     if before.is_some() {
         w.advance_character(f.character_id);
     }
+    reanchor_capacitor(w, f.ship_id, now);
     if on {
         // A burnt-out module stays offline until it is repaired (K-OVERHEAT).
         crate::overheat::refuse_online(w, f.module_id)?;

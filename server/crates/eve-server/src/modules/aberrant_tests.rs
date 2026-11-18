@@ -1,6 +1,7 @@
-//! The Aberrant modules' tests (3707965, spec F, F1): an active module that
-//! multiplies **its own** attribute, which its online effect carries to the
-//! ship, must refresh the ball's top speed.
+//! The Aberrant modules' tests (3707965, spec F, F1 and F2): an active
+//! module that multiplies **its own** attribute, which its online effect
+//! carries to the ship, must refresh the ball's top speed, and the
+//! capacitor must re-anchor before a change of its recharge rate.
 //! **Every id and number here is invented**: types 990,720,xxx, a 10 s
 //! burst, a bonus of 8 percent tripled while it runs.
 
@@ -167,4 +168,57 @@ fn a_burst_that_leaves_the_speed_alone_sends_no_speed() {
     let mut reg = world();
     go(&mut reg, M_RECHARGER, "inventedBurstCap", T0);
     assert!(speeds(&mut reg).is_empty());
+}
+
+/// P2 / F2: the capacitor is anchored at the moment the recharge time
+/// changes, so the change never applies backwards. Alice's capacitor is at
+/// 100 of 1000 at `T0`; 50 s later the burst starts (the recharge time goes
+/// from 80 s to 40 s): the anchor must be the value at the old rate, at
+/// that moment.
+#[test]
+fn the_capacitor_is_anchored_before_a_recharge_change() {
+    let mut reg = world();
+    reg.modules_mut().set_capacitor(SHIP, 100.0, T0);
+    let t = T0 + 50 * SEC;
+    let (at_old_rate, _) = capacitor_at(&reg, SHIP, HULL, t);
+    assert!(at_old_rate > 100.0 && at_old_rate < 1000.0);
+    go(&mut reg, M_RECHARGER, "inventedBurstCap", t);
+    let c = reg.modules().charge(SHIP).expect("anchored");
+    assert_eq!(c.at, t);
+    assert!((c.value - at_old_rate).abs() < 1e-9, "{c:?} vs {at_old_rate}");
+    // And the burst's own end re-anchors again, at the rate it ran at.
+    let end = t + 10 * SEC;
+    let (at_burst_rate, _) = capacitor_at(&reg, SHIP, HULL, end);
+    assert!(at_burst_rate > at_old_rate);
+    tick(&mut reg, end + SEC);
+    let c = reg.modules().charge(SHIP).expect("anchored");
+    assert!(c.at >= end, "{c:?}");
+    assert!((c.value - at_burst_rate).abs() < 1e-6 * at_burst_rate.max(1.0));
+}
+
+/// A ship that never spent has no anchor (it is full) and gets none.
+#[test]
+fn a_full_capacitor_gets_no_anchor() {
+    let mut reg = world();
+    go(&mut reg, M_RECHARGER, "inventedBurstCap", T0);
+    assert!(reg.modules().charge(SHIP).is_none());
+}
+
+/// F1 on a ship that is flying: the burst starts while Alice moves, the
+/// flight so far is integrated at the old top speed (the run is taken out
+/// for the advance and put back), the burst still runs, and the new top
+/// speed is told once.
+#[test]
+fn a_burst_started_on_a_moving_ship_runs_and_tells_the_new_top_speed() {
+    let mut reg = world();
+    let p = reg.roster_mut().get_mut(ALICE).expect("in space");
+    p.motion = Motion::arrived([0.0; 3], [300.0, 0.0, 0.0]);
+    p.since = crate::space_state::now_seconds() - 5.0;
+    go(&mut reg, M_OVERDRIVE, "inventedBurstSpeed", T0);
+    assert!(reg.modules().running(M_OVERDRIVE).is_some());
+    let at = reg.roster().get(ALICE).expect("in space").motion.position;
+    assert!(at.iter().all(|c| c.is_finite()), "{at:?}");
+    let told = speeds(&mut reg);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!((told[0] - 496.0).abs() < 1e-3);
 }
