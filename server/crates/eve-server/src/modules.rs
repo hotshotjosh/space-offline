@@ -2253,6 +2253,9 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
     // hull each flew with before its first module ended here is kept, so
     // `motion_changed` sends only what moved.
     let mut slowed: BTreeMap<(i64, i64), Option<crate::destiny::hull::Hull>> = BTreeMap::new();
+    // The ships with drones out whose module reached a boundary here: the
+    // effect may end there, and the drones are worked out again after.
+    let mut nav_ships: BTreeSet<i64> = BTreeSet::new();
     // The drives whose cycle ended in this call: each jumps after the loop.
     let mut jumps: Vec<Running> = Vec::new();
     // The resonances of each (pilot, ship) before its first module ended
@@ -2282,6 +2285,7 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
         // the effect; that one is told apart after the loop, by comparing
         // the hull.
         note_slowed(w, &mut slowed, &r);
+        nav_ships.insert(r.ship_id);
         let at = r.next_boundary();
         // The effect may end at this boundary and take its recharge change
         // with it: the capacitor up to here is at the rate it ran at.
@@ -2460,6 +2464,7 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
     for ((character_id, ship_id), before) in defended {
         defense_changed(w, via, character_id, ship_id, &before, now);
     }
+    crate::drones::restat_many(w, &nav_ships);
     for (character_id, ship_id) in slowed.keys().copied().collect::<Vec<_>>() {
         // Told only when the flight numbers moved: a siege ending under a
         // cycling MWD changes the mass and the speed while a propulsion
@@ -2506,6 +2511,7 @@ pub fn stop(w: &mut Registry, module_id: i64, at: i64, error: Option<PyValue>) -
     if hull_moved(flew, crate::dogma::hull(w, r.ship_id)) {
         motion_changed(w, Via::Clock, r.character_id, r.ship_id, flew);
     }
+    crate::drones::restat(w, r.ship_id);
     if crate::cloak::is_cloak_effect(r.effect.effect_id) {
         // A cloak ended by some route of its own: the ship decloaks.
         crate::cloak::on_module_stopped(w, r.ship_id, at);
@@ -2915,6 +2921,7 @@ pub fn activate(
     if moved {
         motion_changed(w, Via::Answer, f.character_id, f.ship_id, flew);
     }
+    crate::drones::restat(w, f.ship_id);
     defense_changed(w, Via::Answer, f.character_id, f.ship_id, &defended, now);
     if crate::cyno::is_cyno(effect.effect_id) {
         // The first cycle's ozone, the field's ball and the fleet's beacon.
@@ -3138,6 +3145,7 @@ fn set_online_inner(
             motion_changed(w, Via::Answer, f.character_id, f.ship_id, before);
         }
     }
+    crate::drones::restat(w, f.ship_id);
     Ok(PyValue::None)
 }
 

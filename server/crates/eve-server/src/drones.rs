@@ -3131,6 +3131,73 @@ pub fn flown_base(w: &Registry, id: i64) -> Option<crate::destiny::hull::Hull> {
     w.modules().drones().get(id).map(|d| d.kind.hull)
 }
 
+/// **Launched drones follow the sheet** (F3): after any module of a ship
+/// changed state (an Aberrant Drone Navigation Computer's burst, a tracking
+/// link, a damage amplifier or a tracking enhancer going on, off, starting
+/// or ending), every drone the ship controls is worked out again as
+/// [`drone_skills::stats`] does at launch, and a drone whose flown speed
+/// moved is told to the system with `SetMaxSpeed`. Health is not touched
+/// (the damage record is apart). Not gated on a module group: several
+/// groups change a launched drone's attributes [I: the lane review of
+/// the data found the drone damage amplifier, omnidirectional tracking link
+/// and enhancer groups doing it beside the navigation computer's], so the test is "this ship has drones out".
+/// **[A]** a drone's stats depend on nothing but its pilot's sheet; falsified
+/// by a client drone window showing a different figure than the drone flies.
+pub fn restat(w: &mut Registry, ship_id: i64) {
+    restat_many(w, &std::collections::BTreeSet::from([ship_id]));
+}
+
+/// [`restat`] for every ship in `ships`, with one scan of the drones.
+pub fn restat_many(w: &mut Registry, ships: &std::collections::BTreeSet<i64>) {
+    let ids: Vec<(i64, i64)> = w
+        .modules()
+        .drones()
+        .iter()
+        .filter(|d| ships.contains(&d.controller_id))
+        .map(|d| (d.id, d.controller_id))
+        .collect();
+    for (id, ship_id) in ids {
+        let Some(item) = w.store().get(id).cloned() else {
+            continue;
+        };
+        let Some((base, rolled)) = kind_of(w, &item) else {
+            continue;
+        };
+        let new = drone_skills::stats(w, ship_id, &base, rolled.as_deref());
+        let Some(old) = w.modules().drones().get(id).map(|d| d.kind) else {
+            continue;
+        };
+        if new == old {
+            continue;
+        }
+        let owner = match w.modules_mut().drones_mut().get_mut(id) {
+            Some(d) => {
+                d.kind = new;
+                d.owner_id
+            }
+            None => continue,
+        };
+        if (f64::from(new.hull.max_velocity) - f64::from(old.hull.max_velocity)).abs() <= 1e-6 {
+            continue;
+        }
+        let Some(here) = w.roster().get(id).copied() else {
+            continue;
+        };
+        // Flown speed: the launch's, with any web on the drone.
+        let max = hull_of(w, id).map_or(f64::from(new.hull.max_velocity), |h| {
+            f64::from(h.max_velocity)
+        });
+        let mut to = vec![owner];
+        to.extend(w.roster().others_in_system(here.solar_system_id, owner));
+        to.retain(|c| w.character(*c).is_some());
+        let stamp = w.next_destiny_stamp();
+        let action = Action::SetMaxSpeed { ball: id, max };
+        if let Some(update) = destiny::ActionUpdate::new(to, stamp, vec![action]) {
+            w.schedule(Duration::ZERO, update);
+        }
+    }
+}
+
 /// A drone's health profile as it flies, for `dogma::profile`'s drone arm:
 /// the type's resonances over the launch's shield, armour and hull points.
 pub fn profile_of(w: &Registry, id: i64) -> Option<crate::damage::Profile> {
@@ -5499,3 +5566,5 @@ modifier\t990581102\tcharID\tOwnerRequiredSkillModifier\t64\t292\t6\t990581003\t
 
 #[cfg(test)]
 mod mutated_tests;
+#[cfg(test)]
+mod restat_tests;
