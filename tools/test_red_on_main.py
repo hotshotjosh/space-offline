@@ -18,8 +18,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SCRIPT = os.path.join(HERE, "red-on-main.py")
 
-ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@test.invalid",
-           GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
+sys.path.append(HERE)  # last: tools/dis.py must not shadow the stdlib
+import testenv  # noqa: E402
+
+# The scratch repo and the tool's own git calls ignore the caller's git config.
+ENV = testenv.hermetic_git_env(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@test.invalid",
+                               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
 
 
 UNITTEST_MAIN = """import unittest
@@ -69,7 +73,7 @@ class RedOnMain(unittest.TestCase):
         return subprocess.run(
             [sys.executable, "-I", SCRIPT, "--repo", self.repo, "--base", "main",
              "--log", os.path.join(self.repo, "gate.log"), *extra],
-            capture_output=True, text=True, timeout=120)
+            capture_output=True, text=True, timeout=120, env=ENV)
 
     def worktree_gone(self) -> None:
         self.assertFalse(os.path.exists(os.path.join(self.repo, "out", "red-on-main-wt")))
@@ -117,7 +121,7 @@ class RedOnMain(unittest.TestCase):
 
     def test_no_log_or_a_missing_base_exits_2(self) -> None:
         r = subprocess.run([sys.executable, "-I", SCRIPT, "--repo", self.repo, "--base", "main"],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=ENV)
         self.assertEqual(r.returncode, 2, r.stdout)
         r = self.run_tool(["gate: tools/test_always_red.py failed"], "--base", "nonexistent-probe")
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
