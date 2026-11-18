@@ -859,7 +859,8 @@ pub const WATCH_HULL_CEILING: f64 = 200_000_000.0;
 /// **What a trader watches** (pure): the trade goods and the minerals of
 /// `content`, plus the dearest [`WATCH_HULLS`] hulls under
 /// [`WATCH_HULL_CEILING`], [`WATCH_MODULES`] modules and [`WATCH_CHARGES`]
-/// charges by `index` price (`(type, price)`); published types only; by
+/// charges by `index` price (`(type, price)`); the minerals, hulls, modules
+/// and charges are filtered on `published`, the trade goods are not; by
 /// type id, each once. Empty without a type table. Deterministic: the dearest
 /// first, ties to the lower id.
 pub fn watch_set(content: &Content, index: &[(i64, f64)]) -> Vec<i64> {
@@ -872,7 +873,9 @@ pub fn watch_set(content: &Content, index: &[(i64, f64)]) -> Vec<i64> {
         .types()
         .filter(|t| {
             (t.category_id == CATEGORY_COMMODITY && TRADE_GOOD_GROUPS.contains(&t.group_id))
-                || (t.category_id == CATEGORY_MATERIAL && t.group_id == GROUP_MINERAL)
+                || (t.category_id == CATEGORY_MATERIAL
+                    && t.group_id == GROUP_MINERAL
+                    && t.published)
         })
         .map(|t| t.type_id)
         .collect();
@@ -2716,6 +2719,21 @@ mod tests {
             sorted.dedup();
             sorted
         });
+    }
+
+    /// 3707965 unpublishes four minerals [V per expac-G-bots-deploy 4]: a
+    /// trader does not probe an unpublished mineral, as the builder does not
+    /// want one. Invented ids.
+    #[test]
+    fn watch_set_skips_an_unpublished_mineral() {
+        let (live, flawed) = (990_600_011, 990_600_012);
+        let content = typed(&[
+            (live, GROUP_MINERAL, CATEGORY_MATERIAL, true),
+            (flawed, GROUP_MINERAL, CATEGORY_MATERIAL, false),
+        ]);
+        let w = watch_set(&content, &[]);
+        assert!(w.contains(&live));
+        assert!(!w.contains(&flawed), "unpublished");
     }
 
     /// #185: a trader never buys its own listed ask, and a wallet at the

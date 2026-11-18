@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**68% proved** (232 of 343) · **93% built** (320 of 343) · 3 parked, not counted.
+**67% proved** (232 of 344) · **93% built** (321 of 344) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -131,6 +131,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] The sales tax and the broker commission are halved at the one station the 3707965 client gives a fee modifier: *built-unproved*, market_fees.rs station_fee_factor, applied in service/market.rs sales_tax_due and broker_rate_at; unit test on an invented station; applies to every client line [A]
 - [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
 - [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
+- [ ] A trader watches only published minerals: *built-unproved*, eve-bot trader.rs watch_set; test watch_set_skips_an_unpublished_mineral (invented rows)
 
 ### 3.8 Remote clients, hosting
 
@@ -170,7 +171,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 43 | 2 | 0 | 2 |
+| Bots | 11 | 44 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 0 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
@@ -367,7 +368,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 58 proved, 47 open</summary>
+<details><summary><b>Bots</b>: 11 of 59 proved, 48 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -427,6 +428,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, plus a human's Local arrival noted as Seen once an hour (SEEN_EVERY [A]), with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests (a_seen_note_keeps_the_last_fight, seen_is_due_once_an_hour, a_book_with_a_seen_row_round_trips); read by chat on a Local arrival (chatter::known_of)
 - [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
 - [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
+- [ ] A trader watches only published minerals: *built-unproved*, eve-bot trader.rs watch_set; test watch_set_skips_an_unpublished_mineral (invented rows)
 
 </details>
 
