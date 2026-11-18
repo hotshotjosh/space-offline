@@ -4032,6 +4032,31 @@ mod tests {
             .sum()
     }
 
+    /// 3707965 (spec F): a heavy fighter gained a third requirement, a
+    /// Fighter Specialization at level 1. `skills_for` reads every one of the
+    /// six `requiredSkill*` slots of a type it is given, so the pilot gets it
+    /// without a hand list. **[I]** for the bots: no bot flies fighters today,
+    /// so no caller passes a squadron's type yet; falsified by a carrier bot
+    /// refused a launch for a missing specialization. **Invented ids.**
+    #[test]
+    fn a_third_required_skill_is_granted_at_its_level() {
+        const FIGHTER: i64 = 970_200_001;
+        const LIGHT: i64 = 970_200_002;
+        const HEAVY: i64 = 970_200_003;
+        const SPECIALIZATION: i64 = 970_200_004;
+        let text = format!(
+            "type\t{LIGHT}\t255\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t\t\tInvented Light Skill\n\
+type\t{HEAVY}\t255\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t\t\tInvented Heavy Skill\n\
+type\t{SPECIALIZATION}\t255\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t\t\tInvented Specialization\n\
+type\t{FIGHTER}\t1310\t87\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t182={LIGHT}.0;277=1.0;183={HEAVY}.0;278=2.0;184={SPECIALIZATION}.0;279=1.0\tInvented Heavy Fighter\n"
+        );
+        let table = Table::parse(&text).expect("the rows parse");
+        let skills = skills_for(&table, &[FIGHTER], 1);
+        assert!(skills.contains(&(SPECIALIZATION, 1)), "{skills:?}");
+        assert!(skills.contains(&(HEAVY, 2)), "{skills:?}");
+        assert!(skills.contains(&(LIGHT, 1)), "{skills:?}");
+    }
+
     #[test]
     fn the_budget_is_the_skilled_cpu_not_the_raw_one() {
         let inst = budget_world();
