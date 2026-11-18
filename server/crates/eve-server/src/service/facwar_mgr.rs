@@ -941,6 +941,14 @@ fn enlistment_mgr(
         "GetMyDirectEnlistmentCooldownTimestamp" => {
             Ok(opt(req.actor.and_then(|ch| cooldown_until(reg, ch, now))))
         }
+        // The FILETIME the direct enlistment began, or `None`
+        // (`fwEnlistmentSvc.py:144`, build 3707965) **[V]**; read by the
+        // Character sheet's Memberships tab. `enlist` stores `now` in the
+        // row's second column.
+        "GetMyDirectEnlistmentDate" => Ok(opt(req.actor.and_then(|ch| {
+            let (faction, since, _) = enlist_row(reg, ch);
+            faction.map(|_| since).filter(|t| *t > 0)
+        }))),
         _ => Err(reg.no_method(req)),
     }
 }
@@ -1389,6 +1397,28 @@ mod tests {
         // R-FW §0 item 3: the name the client calls; `None` is no cooldown.
         assert_eq!(
             e("GetMyDirectEnlistmentCooldownTimestamp", &[]),
+            PyValue::None
+        );
+        assert_eq!(e("GetMyDirectEnlistmentDate", &[]), PyValue::None);
+    }
+
+    /// `GetMyDirectEnlistmentDate` answers the time the direct enlistment
+    /// began, and `None` again after leaving.
+    #[test]
+    fn a_direct_enlistment_answers_the_date_it_began() {
+        let mut reg = world();
+        assert_eq!(
+            call(&mut reg, ME, (EN, "GetMyDirectEnlistmentDate"), &[]),
+            PyValue::None
+        );
+        enlist(&mut reg, ME, F, T0 + 5).expect("enlisted");
+        assert_eq!(
+            call(&mut reg, ME, (EN, "GetMyDirectEnlistmentDate"), &[]),
+            i(T0 + 5)
+        );
+        call(&mut reg, ME, (EN, "RemoveMyDirectEnlistment"), &[]);
+        assert_eq!(
+            call(&mut reg, ME, (EN, "GetMyDirectEnlistmentDate"), &[]),
             PyValue::None
         );
     }

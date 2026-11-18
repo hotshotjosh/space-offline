@@ -1613,6 +1613,27 @@ def eoci_main(EOCI_NAME):
         check('GetStats_FactionInfo answers', ok and fi is not None, shape(fi))
         ok, cs = safe(lambda: fw().GetCorpFactionalWarStatus())
         check('GetCorpFactionalWarStatus answers', ok, shape(cs))
+        # 3b. the Character sheet's Memberships tab (build 3707965, [V] from the
+        # decompiled `charsheet/membership.py`): the new tab reads
+        # `fwCharacterEnlistmentMgr.GetMyDirectEnlistmentDate` only for a direct
+        # enlistment; this pilot is enlisted through the militia corporation, so
+        # the call answers None and the faction card is two strings, empty or
+        # the corporation's dates.  A client older than 3707965 has no such
+        # module: the import fails and the checks below say so.
+        ok, dd = rcall('fwCharacterEnlistmentMgr', 'GetMyDirectEnlistmentDate')
+        check('GetMyDirectEnlistmentDate answers None for a corporation enlistment',
+              ok and dd is None, text(dd)[:200])
+        ok, mod = safe(lambda: __import__(
+            'eve.client.script.ui.shared.neocom.charsheet.membership', fromlist=['x']))
+        check('the Memberships tab module imports', ok, text(mod)[:200])
+        if ok:
+            ok, texts = safe(lambda: mod.FactionMembershipController().get_fw_start_date_and_duration())
+            check('FactionMembershipController.get_fw_start_date_and_duration answers two texts',
+                  ok and isinstance(texts, tuple) and len(texts) == 2, text(texts)[:200])
+            for cname in ('CorpMembershipController', 'AllianceMembershipController'):
+                ok, c = safe(lambda: getattr(mod, cname)())
+                check('%s constructs' % cname, ok, text(c)[:200])
+        no_new_tracebacks('Memberships tab', mark)
         others = [f for f, _m in withmil if f != faction]
         if others:
             v2 = verdict(chk, others[0])
