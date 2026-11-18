@@ -428,4 +428,53 @@ mod tests {
         // A type that names no skill is open to anyone.
         assert!(gate(&reg, ALICE, ft::LIGHT_A).is_ok());
     }
+
+    /// P3 (3707965, spec F): a **running** module's `OwnerRequiredSkillModifier`
+    /// on `charID` (the Integrated Sensor Array's triage effect, 12597) reaches
+    /// the fighter, which is the carrier's phantom charge, through the same
+    /// `phantom` + `evaluate` that `numbers` runs. **Invented ids and numbers**:
+    /// a 0.9 multiplier on the fighter's attribute 2125 for fighters that
+    /// require the invented skill; a fighter that does not is left alone; the
+    /// module offline does nothing.
+    #[test]
+    fn a_running_modules_owner_skill_modifier_reaches_the_phantom_fighter() {
+        const SHIP: i64 = 970_100_001;
+        const SKILL: i64 = 970_100_002;
+        const FIGHTER: i64 = 970_100_003;
+        const OTHER: i64 = 970_100_004;
+        const MODULE: i64 = 970_100_005;
+        const EFFECT: i64 = 970_100_011;
+        const BONUS: i64 = 970_100_501;
+        let text = format!(
+            "attribute\t{BONUS}\t1.0\tinventedBonus\n\
+type\t{SHIP}\t25\t6\t1\t1\t1000.0\t100.0\t1000000.0\t30.0\t0\t\t\tInvented Hull\n\
+type\t{SKILL}\t255\t16\t1\t1\t0.01\t0.0\t0.0\t1.0\t0\t\t\tInvented Skill\n\
+type\t{FIGHTER}\t1310\t87\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t182={SKILL}.0;277=1.0;2125=100.0\tInvented Fighter\n\
+type\t{OTHER}\t1310\t87\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t2125=100.0\tInvented Other Fighter\n\
+type\t{MODULE}\t1534\t7\t1\t1\t1.0\t0.0\t0.0\t1.0\t{EFFECT}\t12,{EFFECT}\t{BONUS}=0.9\tInvented Array\n\
+effect\t{EFFECT}\t1\t0\t73\t0\t0\t0\t0\tinventedTriage\t\n\
+modifier\t{EFFECT}\tcharID\tOwnerRequiredSkillModifier\t2125\t{BONUS}\t0\t{SKILL}\t\n"
+        );
+        let table = typedata::Table::parse(&text).expect("the rows parse");
+        let run = |state: dogma::State, fighter: i64| {
+            let mut inputs = Inputs {
+                ship_type: SHIP,
+                modules: vec![ModuleInput {
+                    item_id: 1,
+                    type_id: MODULE,
+                    state,
+                    charge_type: None,
+                }],
+                ..Inputs::default()
+            };
+            phantom(&mut inputs, fighter);
+            dogma::evaluate(&table, &inputs)
+                .expect("the hull is in the table")
+                .charge(PHANTOM, 2125)
+                .expect("the fighter's attribute is read")
+        };
+        assert!((run(dogma::State::Active, FIGHTER) - 90.0).abs() < 1e-9);
+        assert!((run(dogma::State::Online, FIGHTER) - 100.0).abs() < 1e-9);
+        assert!((run(dogma::State::Active, OTHER) - 100.0).abs() < 1e-9);
+    }
 }
