@@ -16,9 +16,9 @@ sys.path.append(HERE)  # last: tools/dis.py must not shadow the stdlib
 
 import testenv  # noqa: E402
 
-# Test files owned by another lane while this one lands; remove each name when
-# that file uses hermetic_git_env.
-PENDING_HERMETIC = {"test_status_guard.py"}
+# Test files exempt from the hermetic-git check below (none: every committing
+# test sets an empty global config).
+PENDING_HERMETIC: set[str] = set()
 
 
 class Helpers(unittest.TestCase):
