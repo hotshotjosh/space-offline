@@ -193,8 +193,8 @@ pub struct ModuleType {
     /// attribute left off the wire is a zero, and a zero duration is a ramp
     /// that never draws (`smb:1692`, `if durationInMilliseconds <= 0: return`).
     ///
-    /// `nextActivationTime` (2729) is deliberately absent: a future value
-    /// there makes the module unclickable, silently (§6.3, T14).
+    /// `nextActivationTime` (2729) is deliberately absent here: it is pushed
+    /// per reload, never served statically (§6.3, T14).
     pub attributes: &'static [(i64, f64)],
     /// The rack its slot effect puts it in -- `hiPower` 12, `medPower` 13,
     /// `loPower` 11 [V-data] (`docs/lanes/fitting.md` §3.3).
@@ -267,6 +267,10 @@ pub(crate) mod attr {
     /// `godma:2191-2192` rewrites `stacksize` to it).
     pub const QUANTITY: i64 = 805;
     pub const RELOAD_TIME: i64 = 1795;
+    /// `nextActivationTime`: when a reloading module is free again. Served
+    /// only during an in-space reload, never in the type's attributes [V]
+    /// (`godma.GetReloadTimes`).
+    pub const NEXT_ACTIVATION_TIME: i64 = 2729;
     pub const EM_DAMAGE: i64 = 114;
     pub const EXPLOSIVE_DAMAGE: i64 = 116;
     pub const KINETIC_DAMAGE: i64 = 117;
@@ -4534,8 +4538,9 @@ fn charge_home(
 /// rounds are in at once, `OnChargeBeingLoadedToModule` plays the
 /// animation, and the module refuses to activate until `reloadTime` (1795)
 /// has passed (`CantActivateReloadingModule`). `nextActivationTime` (2729)
-/// is still not served -- the trap in `docs/re/modules.md` §6.3 is a
-/// module left unclickable for ever by a time on the wrong clock.
+/// is pushed with the end time ([`start_reload`]), so godma reports the
+/// reload; the trap in `docs/re/modules.md` §6.3 (a module left unclickable
+/// by a time on the wrong clock) is why it rests on the clock check.
 pub fn load_ammo(
     w: &mut Registry,
     actor: Option<i64>,
@@ -4595,6 +4600,24 @@ fn start_reload(
     let until = now + reload_ms * MSEC;
     for m in reloaded {
         w.modules_mut().reloading.insert(*m, until);
+    }
+    // `nextActivationTime` (2729) on each module: godma's `GetReloadTimes`
+    // returns `(until - reloadTime*MSEC, reloadTime)` while it is in the
+    // future, so `IsModuleReloading` is true and a rebuilt HUD resumes the
+    // ring [V]. A past value means "not reloading", so no second push is
+    // needed at the end. **[A]** the client's sim clock is ours (H1's clock
+    // check); falsifier: fci_hud_new step 6, a module that stays unclickable
+    // after the reload.
+    for m in reloaded {
+        w.push(ModulePush::Attribute(AttributeChange {
+            to: vec![character_id],
+            owner_id: character_id,
+            item_id: *m,
+            attribute_id: attr::NEXT_ACTIVATION_TIME,
+            time: now,
+            new_value: until as f64,
+            old_value: 0.0,
+        }));
     }
     w.push(ModulePush::Loading(ChargeLoading {
         to: vec![character_id],
@@ -5894,6 +5917,11 @@ mod tests {
         assert_eq!(rounds_owned(&reg, EMP_S), 500, "no round made or lost");
 
         let sent = pending(&mut reg);
+        assert!(
+            !sent.iter().any(|(e, a)| *e == "OnModuleAttributeChange"
+                && a.get(2) == Some(&PyValue::Int(attr::NEXT_ACTIVATION_TIME))),
+            "a station load is instant: no reload end is pushed"
+        );
         let key = charge_key(MERLIN, HI_SLOT_0, EMP_S);
         let (_, prime) = sent
             .iter()
@@ -6408,6 +6436,31 @@ mod tests {
             sent.iter()
                 .any(|(e, _)| *e == "OnChargeBeingLoadedToModule"),
             "{sent:?}"
+        );
+    }
+
+    /// An in-space reload tells godma when the module is free again
+    /// (`nextActivationTime`, 2729); in a station nothing is pushed.
+    #[test]
+    fn a_reload_in_space_tells_the_client_when_the_module_is_free() {
+        let mut reg = alice_with_a_gun();
+        let stack = cargo_rounds(&mut reg, ALICE_SHIP, EMP_S, 300);
+        let now = 5_000;
+        load_ammo(&mut reg, Some(ALICE), &[GUN], &[stack], ALICE_SHIP, now).expect("reloaded");
+        let reload_ms = reload_ms_of(&reg, GUN, 486);
+        let sent = pending(&mut reg);
+        let (_, args) = sent
+            .iter()
+            .find(|(e, a)| {
+                *e == "OnModuleAttributeChange"
+                    && a.get(2) == Some(&PyValue::Int(attr::NEXT_ACTIVATION_TIME))
+            })
+            .expect("nextActivationTime is pushed");
+        assert_eq!(args[1], PyValue::Int(GUN), "on the module");
+        assert_eq!(
+            args[4],
+            PyValue::Real((now + reload_ms * MSEC) as f64),
+            "the reload's end"
         );
     }
 

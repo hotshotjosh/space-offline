@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**65% proved** (232 of 355) · **94% built** (332 of 355) · 3 parked, not counted.
+**65% proved** (232 of 356) · **94% built** (333 of 356) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -36,6 +36,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 - [ ] Community-track lookups answer no track instance: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
+- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; the HUD scenario step is the falsifier of the clock [A]
 
 ### 3.3 PvP
 
@@ -180,7 +181,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
 | Combat | 31 | 9 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 7 | 0 | 0 | 0 |
-| Modules | 13 | 2 | 0 | 0 | 0 |
+| Modules | 13 | 3 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 44 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
@@ -343,7 +344,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Modules</b>: 13 of 15 proved, 2 open</summary>
+<details><summary><b>Modules</b>: 13 of 16 proved, 3 open</summary>
 
 - [x] Webs, scramblers and points: *client-proved*, fci_tackle 2026-11-03 (regress-w20b); tackle.rs; webs hold drones (#264)
 - [x] ECM, sensor dampeners and target painters: *client-proved*, fci_ewar 2026-11-03 (regress-w21a); ewar.rs
@@ -360,6 +361,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Cyno inhibitors: *client-proved*, fci_cyno_inhibit 11-03 (regress-w14c); unit tests. Covert fields are not affected; 100 km, one minute to activate, one hour to live (all from the bundle); the industrial cyno is refused [A]
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 - [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules.rs reanchor_capacitor stores the capacitor before activate, a cycle boundary, stop and set_online change the sheet; drones.rs restat works a launched drone's stats out again and sends SetMaxSpeed, once to each viewer, whenever a module of a ship that controls drones starts, ends, goes on or offline (no module-group gate); modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed, the_capacitor_is_anchored_before_a_recharge_change, a_full_capacitor_gets_no_anchor; drones/restat_tests.rs a_launched_drone_follows_a_navigation_computers_burst; [A] a drone's stats depend on nothing but its pilot's sheet, falsified by a client drone window showing a different figure than the drone flies; fci_rig_set checks the ball's top speed against the client's dogma during a burst (written, not yet run on 3707965)
+- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; the HUD scenario step is the falsifier of the clock [A]
 
 </details>
 
