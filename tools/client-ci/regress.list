@@ -433,3 +433,5 @@ fci_trig_player -- --dev
 fci_hypernet --with-second -- --character Alice --character Bob
 # dogma (#290, 3707965): a synchronizer rig raises the faction guns beside it, and an Aberrant burst raises the ball's top speed with the client's dogma; the plain server (needs a bundle with the Incursus, the Federation Navy guns, the synchronizer and the overdrive)
 fci_rig_set
+# hud2 (#290, 3707965): the new ship HUD opted in in-client, on a tactical destroyer beside a second pilot: cycle timer and clock, charge counts, consumption gauge, stop window, reload, overload, remote repair, jam, stance; it turns the preview off again
+fci_hud_new --with-second -- --character Alice --character Bob --no-concord

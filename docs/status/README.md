@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**65% proved** (232 of 357) · **94% built** (334 of 357) · 3 parked, not counted.
+**65% proved** (232 of 358) · **94% built** (335 of 358) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -36,8 +36,9 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 - [ ] Community-track lookups answer no track instance: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
-- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; the HUD scenario step is the falsifier of the clock [A]
+- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; fci_hud_new step 6 and step 2 are the falsifiers of the clock [A]
 - [ ] A lost lock tells the old HUD the module is winding down (OnModulesDeactivating): *built-unproved*, modules.rs advance sends OnModulesDeactivating once when a running targeted module loses its lock mid-cycle, so the old button blinks (the new HUD draws nothing from it); a re-lock before the boundary sends a fresh start; none on a player stop; unit tests; [A] TQ sends it
+- [ ] The new ship HUD works on our server when a player opts in (off by default): *built-unproved*, tools/client-ci/scenarios/fci_hud_new.py (two clients, regress.list): turns the preview on in-client and off again in finally; cycle timer and clock, charge counts, consumption gauge, stop window, reload, overload, remote repair, jam, stance; not yet run on a client
 
 ### 3.3 PvP
 
@@ -180,7 +181,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 |---|--:|--:|--:|--:|--:|
 | Login and sessions | 9 | 1 | 0 | 0 | 0 |
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
-| Combat | 31 | 9 | 0 | 0 | 0 |
+| Combat | 31 | 10 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 7 | 0 | 0 | 0 |
 | Modules | 13 | 4 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
@@ -275,7 +276,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Combat</b>: 31 of 40 proved, 9 open</summary>
+<details><summary><b>Combat</b>: 31 of 41 proved, 10 open</summary>
 
 - [x] Turrets hit and miss by the client's formula: *client-proved*, fci_doc_0 W10
 - [x] A gun stops when its target is gone: *client-proved*, fci_engine_fix W10
@@ -317,6 +318,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 - [ ] Drone limits follow the sheet: the active drone count and the control range: *built-unproved*, drone_skills.rs max_active and control_range read attributes 352 and 458 off the sheet's character node (dogma.rs CHARACTER_READS), so a hull's assigned drone count and a rig's range penalty count and the augmentor is no longer added by hand; drones/restat_tests.rs the_active_drone_count_comes_off_the_sheets_character_node, the_control_range_comes_off_the_sheets_character_node; the drones test fixture gains the Drones skill and Drone Avionics effects on 352 and 458; no client scenario yet
+- [ ] The new ship HUD works on our server when a player opts in (off by default): *built-unproved*, tools/client-ci/scenarios/fci_hud_new.py (two clients, regress.list): turns the preview on in-client and off again in finally; cycle timer and clock, charge counts, consumption gauge, stop window, reload, overload, remote repair, jam, stance; not yet run on a client
 
 </details>
 
@@ -362,7 +364,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Cyno inhibitors: *client-proved*, fci_cyno_inhibit 11-03 (regress-w14c); unit tests. Covert fields are not affected; 100 km, one minute to activate, one hour to live (all from the bundle); the industrial cyno is refused [A]
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 - [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules.rs reanchor_capacitor stores the capacitor before activate, a cycle boundary, stop and set_online change the sheet; drones.rs restat works a launched drone's stats out again and sends SetMaxSpeed, once to each viewer, whenever a module of a ship that controls drones starts, ends, goes on or offline (no module-group gate); modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed, the_capacitor_is_anchored_before_a_recharge_change, a_full_capacitor_gets_no_anchor; drones/restat_tests.rs a_launched_drone_follows_a_navigation_computers_burst; [A] a drone's stats depend on nothing but its pilot's sheet, falsified by a client drone window showing a different figure than the drone flies; fci_rig_set checks the ball's top speed against the client's dogma during a burst (written, not yet run on 3707965)
-- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; the HUD scenario step is the falsifier of the clock [A]
+- [ ] An in-space reload tells godma when the module is free (nextActivationTime): *built-unproved*, modules.rs start_reload pushes attribute 2729 = the reload end per reloaded module, so IsModuleReloading and GetReloadTimes report it and a rebuilt HUD resumes the ring; never in the static attributes; unit test; fci_hud_new step 6 and step 2 are the falsifiers of the clock [A]
 - [ ] A lost lock tells the old HUD the module is winding down (OnModulesDeactivating): *built-unproved*, modules.rs advance sends OnModulesDeactivating once when a running targeted module loses its lock mid-cycle, so the old button blinks (the new HUD draws nothing from it); a re-lock before the boundary sends a fresh start; none on a player stop; unit tests; [A] TQ sends it
 
 </details>
