@@ -36,6 +36,7 @@ class EntrypointBundle(unittest.TestCase):
                    EVE_CONTENT_ROOT=self.content)
         r = subprocess.run(["bash", ENTRY, "true"], env=env, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.stderr = r.stderr
         return r.stdout
 
     def manifest(self, *parts):
@@ -55,12 +56,20 @@ class EntrypointBundle(unittest.TestCase):
         self.manifest()
         self.manifest("1234567")  # another build's directory is not ours
         self.assertIn(f"content bundle {self.content} (reference build {REF})", self.run_entry())
+        self.assertIn(f"expected {self.content}/{REF}/MANIFEST.tsv", self.stderr)
+
+    def test_a_flat_bundle_alone_says_nothing_extra(self):
+        self.fake_server(f'[ "$1" = --reference-build ] && echo {REF}')
+        self.manifest()
+        self.run_entry()
+        self.assertEqual(self.stderr, "")
 
     def test_an_empty_per_build_directory_is_not_a_bundle(self):
         self.fake_server(f'[ "$1" = --reference-build ] && echo {REF}')
         self.manifest()
         os.makedirs(os.path.join(self.content, REF))
         self.assertIn(f"content bundle {self.content} ", self.run_entry())
+        self.assertIn("exists without a MANIFEST.tsv", self.stderr)
 
     def test_an_old_server_binary_without_the_flag_falls_back(self):
         self.fake_server("exit 2")

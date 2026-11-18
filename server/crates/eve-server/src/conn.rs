@@ -134,8 +134,9 @@ pub enum ConnEnd {
     /// The peer closed cleanly on a frame boundary.
     PeerClosed,
     /// The peer closed before it sent anything, after we sent the first
-    /// handshake message. A client of another release line does this: it
-    /// reads H1, finds a version it does not speak and hangs up [I].
+    /// handshake message. A port check does this, and so may a client of
+    /// another release line that reads H1 and hangs up [I]; our own readiness
+    /// checks and `--probe` land here too.
     ClosedAfterGreeting,
     /// We closed, because the dispatch asked us to.
     DispatchClosed,
@@ -160,7 +161,11 @@ impl core::fmt::Display for ConnEnd {
         match self {
             ConnEnd::PeerClosed => write!(f, "peer closed"),
             ConnEnd::ClosedAfterGreeting => {
-                write!(f, "peer closed right after our first handshake message")
+                write!(
+                    f,
+                    "peer sent nothing after our first handshake message \
+                     (a port check, or a client of another release line)"
+                )
             }
             ConnEnd::DispatchClosed => write!(f, "closed by us"),
             ConnEnd::Truncated { buffered } => {

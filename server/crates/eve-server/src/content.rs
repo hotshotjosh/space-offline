@@ -337,18 +337,51 @@ fn bundle_accepted(
 }
 
 impl Bundle {
-    /// The directory to read for `build` under `root`: `root/<build>/` when
-    /// it holds a `MANIFEST.tsv` (a host that keeps one bundle per build
-    /// side by side), else `root` itself (the flat layout). `deploy/
-    /// entrypoint.sh` makes the same choice; doing it here too keeps a tool
-    /// or a bot that is given the root working.
-    pub fn resolve_dir(root: &Path, build: u32) -> PathBuf {
-        let sub = root.join(build.to_string());
-        if sub.join(MANIFEST).is_file() {
-            sub
-        } else {
-            root.to_path_buf()
+    /// The directory to read under `root`: `root/<build>/` for the first of
+    /// `builds` (the reference build first, then the accepted ones, so
+    /// `--client-build B` finds `root/B/`) whose directory holds a
+    /// `MANIFEST.tsv`, else `root` itself (the flat layout). The second value
+    /// is a note to print when a per-build directory looks intended but
+    /// unusable: it names the file expected. `deploy/entrypoint.sh` makes the
+    /// same choice for the reference build.
+    pub fn resolve_dir(root: &Path, builds: &[u32]) -> (PathBuf, Option<String>) {
+        for b in builds {
+            let sub = root.join(b.to_string());
+            if sub.join(MANIFEST).is_file() {
+                return (sub, None);
+            }
         }
+        let reference = builds.first().copied().unwrap_or(0);
+        let expected = root.join(reference.to_string()).join(MANIFEST);
+        let numeric_subdir = std::fs::read_dir(root)
+            .map(|rd| {
+                rd.flatten().any(|e| {
+                    e.path().is_dir()
+                        && e.file_name()
+                            .to_str()
+                            .is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
+                })
+            })
+            .unwrap_or(false);
+        let note = if root.join(reference.to_string()).exists() && !expected.is_file() {
+            Some(format!(
+                "content: {} exists without a {MANIFEST}; reading the flat {} instead. \
+                 The per-build bundle is expected at {}",
+                root.join(reference.to_string()).display(),
+                root.display(),
+                expected.display()
+            ))
+        } else if numeric_subdir {
+            Some(format!(
+                "content: reading the flat {} although it holds per-build directories; \
+                 a per-build bundle is expected at {}",
+                root.display(),
+                expected.display()
+            ))
+        } else {
+            None
+        };
+        (root.to_path_buf(), note)
     }
 
     /// [`Bundle::open_accepting`] the registry's default set
@@ -365,7 +398,14 @@ impl Bundle {
     /// missing or has the wrong row count. Every error names `dir`, and a
     /// file error names the file.
     pub fn open_accepting(dir: &Path, accepted: &[u32]) -> Result<(Bundle, Manifest), String> {
-        let dir = &Self::resolve_dir(dir, eve_marshal::build::REFERENCE);
+        let reference = eve_marshal::build::REFERENCE;
+        let mut builds = vec![reference];
+        builds.extend(accepted.iter().copied().filter(|b| *b != reference));
+        let (dir, note) = Self::resolve_dir(dir, &builds);
+        if let Some(note) = note {
+            eprintln!("{note}");
+        }
+        let dir = &dir;
         let at = |e: String| format!("--content {}: {e}", dir.display());
         let mpath = dir.join(MANIFEST);
         let text = std::fs::read_to_string(&mpath).map_err(|e| {
@@ -937,32 +977,46 @@ mod tests {
         }
     }
 
+    const REF: u32 = eve_marshal::build::REFERENCE;
+
     #[test]
     fn a_per_build_subdirectory_is_opened_when_it_exists() {
         let inner = bundle("1.0", build(), 2);
-        let root = root_with(&eve_marshal::build::REFERENCE.to_string(), &inner);
+        let root = root_with(&REF.to_string(), &inner);
         let (b, m) = Bundle::open(&root.0).unwrap();
-        assert_eq!(
-            b.dir,
-            root.0.join(eve_marshal::build::REFERENCE.to_string())
-        );
+        assert_eq!(b.dir, root.0.join(REF.to_string()));
         assert_eq!(m.client_build, build());
     }
 
     #[test]
-    fn a_flat_bundle_still_opens_as_before() {
+    fn a_flat_bundle_still_opens_as_before_and_says_nothing() {
         let t = bundle("1.0", build(), 2);
-        assert_eq!(
-            Bundle::resolve_dir(&t.0, eve_marshal::build::REFERENCE),
-            t.0
-        );
+        assert_eq!(Bundle::resolve_dir(&t.0, &[REF]), (t.0.clone(), None));
         assert_eq!(Bundle::open(&t.0).unwrap().0.dir, t.0);
     }
 
     #[test]
-    fn the_flat_root_is_the_fallback_beside_other_builds_subdirectories() {
-        // A subdirectory for another build, or one without a manifest, is
-        // not this build's bundle.
+    fn a_client_build_flag_finds_that_builds_directory_reference_first() {
+        let inner = bundle("1.0", build(), 2);
+        let root = root_with("1234567", &inner);
+        // Accepted [REF, 1234567]: 1234567/ is found; REF/ would win if it existed.
+        let (dir, note) = Bundle::resolve_dir(&root.0, &[REF, 1234567]);
+        assert_eq!(dir, root.0.join("1234567"));
+        assert_eq!(note, None);
+        copy_tree(&inner.0, &{
+            let d = root.0.join(REF.to_string());
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        });
+        assert_eq!(
+            Bundle::resolve_dir(&root.0, &[REF, 1234567]).0,
+            root.0.join(REF.to_string())
+        );
+    }
+
+    #[test]
+    fn the_flat_root_is_the_fallback_and_a_note_names_the_expected_file() {
+        // A subdirectory for another build: flat fallback, with a note.
         let t = bundle("1.0", build(), 2);
         let other = bundle("1.0", build(), 2);
         copy_tree(&other.0, &{
@@ -970,7 +1024,15 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             d
         });
-        std::fs::create_dir_all(t.0.join(eve_marshal::build::REFERENCE.to_string())).unwrap();
+        let (dir, note) = Bundle::resolve_dir(&t.0, &[REF]);
+        assert_eq!(dir, t.0);
+        let note = note.expect("a numeric subdirectory exists");
+        assert!(note.contains(&format!("{REF}/MANIFEST.tsv")), "{note}");
+        // The reference directory without a manifest: the note says so.
+        std::fs::create_dir_all(t.0.join(REF.to_string())).unwrap();
+        let (dir, note) = Bundle::resolve_dir(&t.0, &[REF]);
+        assert_eq!(dir, t.0);
+        assert!(note.unwrap().contains("exists without a MANIFEST.tsv"));
         assert_eq!(Bundle::open(&t.0).unwrap().0.dir, t.0);
     }
 
