@@ -39,7 +39,15 @@ SK = _load("scan_session_keys")
 UE = _load("scan_user_errors")
 PU = _load("scan_push")
 GW = _load("gw_dump")
-PM = _load("scan_proto_messages")
+# `scan_proto_messages` reads descriptors through `tools/protos.py`, which needs
+# `google.protobuf` (the distro's python3-protobuf on the maintainer's box). A
+# contributor's host may not have it: only that class skips, saying why.
+try:
+    import google.protobuf  # noqa: F401
+except ImportError:
+    PM = None
+else:
+    PM = _load("scan_proto_messages")
 
 OPCODE = {name: num for num, name in pyc27.OPNAME.items()}
 FILE = b"C:\\Agent\\work\\abc\\eve\\release\\V99.00\\pkg\\mod.py"
@@ -381,6 +389,7 @@ class UserErrorTests(unittest.TestCase):
 
 # ------------------------------------------------------------------- push events
 
+@unittest.skipIf(PM is None, "needs google.protobuf (python3-protobuf) for tools/protos.py")
 class ProtoMessagesTests(unittest.TestCase):
     def run_main(self, *argv):
         err = io.StringIO()

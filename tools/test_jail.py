@@ -372,6 +372,67 @@ echo "SHIM-HOSTPID $([[ -e /proc/$HOST_PID_PROBE ]] && echo visible || echo gone
 """
 
 
+# The trees the view masks, as host paths (MASKS; `runtime` is under /run).
+MASKED_HOST_TREES = ("/run", "/var/run", "/tmp", "/home", "/media", "/mnt")
+
+
+def host_netfs_outside_masks(mountinfo: str = "/proc/self/mountinfo") -> str:
+    """A host network filesystem the view does not mask, as ``"<type> at <path>"``,
+    or "" when there is none.
+
+    The launch gate refuses such a mount, and rightly: WSL2 mounts its drivers
+    share at ``/usr/lib/wsl/drivers`` as ``9p``. The launch tests below expect
+    the gate to get past that check, so on such a host they skip, saying why,
+    rather than fail. The helper's own NETFS list decides what counts.
+    """
+    m = re.search(r"(?m)^NETFS='([^']*)'$", read(HELPER))
+    netfs = set(m.group(1).split()) if m else set()
+    try:
+        with open(mountinfo) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        left, sep, right = line.partition(" - ")
+        if not sep:
+            continue
+        fields, rest = left.split(), right.split()
+        if len(fields) < 5 or not rest:
+            continue
+        target = re.sub(r"\\([0-7]{3})", lambda o: chr(int(o.group(1), 8)), fields[4])
+        if rest[0] not in netfs or target.startswith(("/proc", "/sys")):
+            continue
+        if any(target == t or target.startswith(t + "/") for t in MASKED_HOST_TREES):
+            continue
+        return "%s at %s" % (rest[0], target)
+    return ""
+
+
+class HostNetfs(unittest.TestCase):
+    """host_netfs_outside_masks on invented mountinfo lines."""
+
+    def check(self, *lines: str) -> str:
+        with tempfile.NamedTemporaryFile("w", delete=False) as f:
+            f.write("".join(x + "\n" for x in lines))
+        self.addCleanup(os.unlink, f.name)
+        return host_netfs_outside_masks(f.name)
+
+    def test_a_9p_share_outside_the_masks_is_named(self) -> None:
+        self.assertEqual(self.check(
+            "1 0 8:1 / / rw - ext4 /dev/sda1 rw",
+            "2 1 0:9 / /opt/drivers\\040x ro - 9p drv ro"), "9p at /opt/drivers x")
+
+    def test_masked_trees_and_local_filesystems_are_not(self) -> None:
+        self.assertEqual(self.check(
+            "1 0 8:1 / / rw - ext4 /dev/sda1 rw",
+            "2 1 0:9 / /media/nas rw - cifs //nas/x rw",
+            "3 1 0:10 / /mnt rw - nfs4 h:/x rw",
+            "4 1 0:11 / /proc rw - proc proc rw"), "")
+
+    def test_an_unreadable_mountinfo_is_no_hit(self) -> None:
+        self.assertEqual(host_netfs_outside_masks("/nonexistent/probe/mountinfo"), "")
+
+
 class View(unittest.TestCase):
     """build_view in an unprivileged user + mount namespace. Invented paths."""
 
@@ -540,6 +601,11 @@ class View(unittest.TestCase):
     # starts as a child of pid 1, alone in its pid namespace; each fix removed
     # in turn makes the gate refuse, and the shim never runs.
     def test_the_gate_launches_the_client_alone_in_its_pid_namespace(self) -> None:
+        hit = host_netfs_outside_masks()
+        if hit:
+            self.skipTest("the host shows a network filesystem the jail does not mask "
+                          "(%s; WSL2's drivers share is one): the launch gate rightly "
+                          "refuses on this host, so this launch test cannot run" % hit)
         out = self.run_view()
         self.assertEqual(out.get("GATE"), "pass", out["_stdout"])
         self.assertEqual(out.get("SHIM"), "ran")
@@ -551,12 +617,22 @@ class View(unittest.TestCase):
         self.assertEqual(out["late"], "YES", "pid 1 left before the client's last process")
 
     def test_an_uncovered_host_socket_refuses_the_launch(self) -> None:
+        hit = host_netfs_outside_masks()
+        if hit:
+            self.skipTest("the host shows a network filesystem the jail does not mask "
+                          "(%s; WSL2's drivers share is one): the launch gate rightly "
+                          "refuses on this host, so this launch test cannot run" % hit)
         out = self.run_view(variant="nomask")
         self.assertEqual(out.get("GATE"), "fail", out["_stdout"])
         self.assertIn("LEAK  connected to /var/tmp/listener.sock", out["_stdout"])
         self.assertNotIn("SHIM", out)
 
     def test_a_visible_network_share_refuses_the_launch(self) -> None:
+        hit = host_netfs_outside_masks()
+        if hit:
+            self.skipTest("the host shows a network filesystem the jail does not mask "
+                          "(%s; WSL2's drivers share is one): the launch gate rightly "
+                          "refuses on this host, so this launch test cannot run" % hit)
         out = self.run_view(variant="nomedia")
         self.assertEqual(out.get("GATE"), "fail", out["_stdout"])
         self.assertIn("network filesystem ramfs visible at /media/nas", out["_stdout"])
@@ -569,6 +645,11 @@ class View(unittest.TestCase):
         self.assertNotIn("SHIM", out)
 
     def test_without_the_reaper_the_game_dies_with_the_shim(self) -> None:
+        hit = host_netfs_outside_masks()
+        if hit:
+            self.skipTest("the host shows a network filesystem the jail does not mask "
+                          "(%s; WSL2's drivers share is one): the launch gate rightly "
+                          "refuses on this host, so this launch test cannot run" % hit)
         out = self.run_view(variant="noreap")
         self.assertNotIn("VARIANT-NOOP", out)
         self.assertEqual(out.get("SHIM"), "ran", out["_stdout"])
