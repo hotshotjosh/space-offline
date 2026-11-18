@@ -2254,11 +2254,11 @@ fn advance(w: &mut Registry, now: i64, via: Via) -> usize {
             .copied();
         let Some(r) = due else { break };
         steps += 1;
-        if is_propulsion(r.effect.effect_id) {
-            // Every branch below but the one that starts the next cycle
-            // ends the effect; that one is told apart after the loop.
-            note_slowed(w, &mut slowed, &r);
-        }
+        // Any effect may change the top speed (an Aberrant Overdrive does):
+        // every branch below but the one that starts the next cycle ends
+        // the effect; that one is told apart after the loop, by comparing
+        // the hull.
+        note_slowed(w, &mut slowed, &r);
         let at = r.next_boundary();
         let ended_by_player = r.stop_at.is_some_and(|s| at >= s);
         let exhausted = r.cycles >= r.cycles_wanted();
@@ -2476,7 +2476,7 @@ pub fn stop(w: &mut Registry, module_id: i64, at: i64, error: Option<PyValue>) -
     }
     send(w, Via::Clock, out);
     defense_changed(w, Via::Clock, r.character_id, r.ship_id, &defended, at);
-    if is_propulsion(r.effect.effect_id) {
+    if hull_moved(flew, crate::dogma::hull(w, r.ship_id)) {
         motion_changed(w, Via::Clock, r.character_id, r.ship_id, flew);
     }
     if crate::cloak::is_cloak_effect(r.effect.effect_id) {
@@ -2861,15 +2861,20 @@ pub fn activate(
     w.modules_mut().fired.remove(&module_id);
     note_fire(w, module_id, 0, &fire);
     let (charge_type_id, count) = (fire.charge_type_id, fire.pushes);
-    // A propulsion module changes the top speed the moment it runs: the
-    // flight so far is integrated at the old one first.
-    let propulsion = is_propulsion(effect.effect_id);
-    if propulsion {
-        w.advance_character(f.character_id);
-    }
     let defended = crate::fitstate::live(w, f.ship_id);
     let flew = crate::dogma::hull(w, f.ship_id);
     w.modules_mut().running.insert(module_id, running);
+    // **Any effect may change the top speed** (a propulsion module, a siege,
+    // an Aberrant Overdrive's burst, ...): the hull is compared, never a
+    // list of effects [I: the client's dogma shows whatever the sheet
+    // says]. The flight so far is integrated at the old speed first, so the
+    // run is taken out for the integration when the hull moved.
+    let moved = hull_moved(flew, crate::dogma::hull(w, f.ship_id));
+    if moved {
+        w.modules_mut().running.remove(&module_id);
+        w.advance_character(f.character_id);
+        w.modules_mut().running.insert(module_id, running);
+    }
     // A stop pair booked by an earlier run of this module (a click on a
     // module that then ended some other way) is stale: sent now, it would
     // tell the client this run has stopped.
@@ -2879,7 +2884,7 @@ pub fn activate(
             Some(crate::notify::CancelTag::ModuleStop { module }) if module == module_id
         )
     });
-    if propulsion {
+    if moved {
         motion_changed(w, Via::Answer, f.character_id, f.ship_id, flew);
     }
     defense_changed(w, Via::Answer, f.character_id, f.ship_id, &defended, now);
@@ -3270,23 +3275,6 @@ fn stop_for_warp(w: &mut Registry, now: i64) {
         ]);
         stop(w, module_id, now, Some(error));
     }
-}
-
-/// The effects that change the ship's top speed while they run:
-/// `moduleBonusAfterburner` / `moduleBonusMicrowarpdrive` (`crate::dogma`
-/// rule 5), and the cynosural field's, whose `speedFactor` of -100 is a
-/// post-percent on `maxVelocity` **[V-data]** (`crate::cyno`: the ship is
-/// held still while its field is lit).
-fn is_propulsion(effect_id: i64) -> bool {
-    effect_id == crate::dogma::effect::AFTERBURNER
-        || effect_id == crate::dogma::effect::MICROWARPDRIVE
-        || crate::cyno::is_cyno(effect_id)
-        || crate::jump_portal::is_portal(effect_id)
-        // A siege, triage or bastion module and the industrial cores: speed
-        // -100 and a mass multiplier (NW-1).
-        || crate::module_fuel::is_siege_like(effect_id)
-        // The cloak's `maxVelocityModifier` is a PostMul on `maxVelocity`.
-        || crate::cloak::is_cloak_effect(effect_id)
 }
 
 /// Whether the flight numbers of two hulls differ: top speed, mass or
@@ -6516,6 +6504,8 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod aberrant_tests;
 #[cfg(test)]
 mod defense_tests;
 #[cfg(test)]

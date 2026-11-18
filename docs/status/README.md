@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (232 of 350) · **93% built** (327 of 350) · 3 parked, not counted.
+**66% proved** (232 of 351) · **93% built** (328 of 351) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -24,6 +24,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bot corps anchor and live in an Upwell structure (BOT-UPWELL-HOME): *built-unproved*, eve-bot upwell_home.rs (planner, gate, unit tests); tests/bots/upwell_home.rs (socket: board a hauler, warp to a planet, anchor, wait, dock, control; refusal words); brain gate test; soak later
 - [ ] Admin web page: status, pilots, systems, map; bot, broadcast, save and kick actions (token, off by default): *built-unproved*, admin_web.rs tests; deployed on the test server 11-03; no scenario or human check yet; kick (admin_actions.rs tests, evicts like a second login); tools/test_admin_web.py live check (EVE_ADMIN_WEB_LIVE=1): page, every API path and action, 401 without the token; tick p50/p95/max per minute, per-system loads, slowest calls, /api/metrics (admin_web.rs, live_status.rs prof tests)
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots
+- [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed; no client scenario yet
 
 ### 3.2 The 11-09 port
 
@@ -175,7 +176,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
 | Combat | 31 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
-| Modules | 13 | 1 | 0 | 0 | 0 |
+| Modules | 13 | 2 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 44 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
@@ -335,7 +336,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Modules</b>: 13 of 14 proved, 1 open</summary>
+<details><summary><b>Modules</b>: 13 of 15 proved, 2 open</summary>
 
 - [x] Webs, scramblers and points: *client-proved*, fci_tackle 2026-11-03 (regress-w20b); tackle.rs; webs hold drones (#264)
 - [x] ECM, sensor dampeners and target painters: *client-proved*, fci_ewar 2026-11-03 (regress-w21a); ewar.rs
@@ -351,6 +352,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Disruptors work on rats: *client-proved*, fci_rat_point 2026-11-03 (regress-w23a): a warp disruptor, a scrambler and a tracking disruptor run on a belt rat
 - [x] Cyno inhibitors: *client-proved*, fci_cyno_inhibit 11-03 (regress-w14c); unit tests. Covert fields are not affected; 100 km, one minute to activate, one hour to live (all from the bundle); the industrial cyno is refused [A]
 - [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
+- [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed; no client scenario yet
 
 </details>
 
