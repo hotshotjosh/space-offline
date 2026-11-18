@@ -12,26 +12,30 @@ one.  Then:
 
 1. `/tr me <hq system>`; the park holds a ball of group 5254 (an Item Trader):
    the trader ball is global in its system (fails on no ball);
-2. the pilot is enlisted in the trader's faction (the slim's `ownerID`) through
-   the client's own `JoinFactionAsCharacter`, because the trader serves its own
-   militia only (an [A], owner question Q19);
-3. the client's own component for the ball (`ITEM_TRADER`) answers its recipes;
+2. the client's own component for the ball (`ITEM_TRADER`) answers its recipes;
    the first recipe whose group is `CAMPAIGN_TRADES` is the turn-in (fails on
    no component or no such recipe);
-4. a `/createitem` of the recipe's input, warp to the trader, `RequestTrade()`
-   opens the window and `ProcessTrade(recipe, 1)` answers `(True, items)`, the
-   cargo loses the input and gains the output (fails on `False`, on a raise, or
-   on a cargo that did not move);
-5. a second `ProcessTrade` with no input left answers `(False, [])`, which is
+3. a `/createitem` of the recipe's input, a warp to the trader, and a first
+   `ProcessTrade(recipe, 1)` while NOT enlisted answers `(False, [])` (the militia-only
+   rule, an [A], owner question Q19);
+4. `/tr me <the trader faction's anchorage station>` docks the pilot (the server enlists
+   only at a station of the militia's faction), the client's own
+   `JoinFactionAsCharacter` enlists it in the faction of the slim's `ownerID`, it
+   undocks, `/tr me <hq system>` takes it back out beyond 150 km (a warp under 150 km
+   is refused), and it warps to the trader again;
+5. `RequestTrade()` opens the window and `ProcessTrade(recipe, 1)` answers
+   `(True, items)`, the cargo loses the input and gains the output (fails on `False`,
+   on a raise, or on a cargo that did not move);
+6. a further `ProcessTrade` with no input left answers `(False, [])`, which is
    how the client shows `ItemTradeFailed`;
-6. no traceback from `spacecomponents/` or `eve/client/script/ui/inflight/itemTrader/`.
+7. no traceback from `spacecomponents/` or `eve/client/script/ui/inflight/itemTrader/`.
 
 [A]s, each with its falsifier: the park carries the component registry as
 `park.componentRegistry` with `GetComponentForItem(itemID, ITEM_TRADER)` (a
 missing attribute is a PRECONDITION); the turn-in recipe has exactly one input
 type; the cargo holds the input after `/createitem` (the server does not check
 hold volume there); the trader is within its interaction range after a warp
-to it (a warp lands at the ball; falsifier: step 4 answers False for range).
+to it (a warp lands at the ball; falsifier: step 5 answers False for range).
 """
 
 EOCI_SCENARIO = 'fci_item_trader'
@@ -1421,6 +1425,11 @@ def eoci_main(EOCI_NAME):
     TURN_IN_GROUP = 'CAMPAIGN_TRADES'
     # the War HQ systems: content/conquest/season.tsv war_hq_system [V: the client's trader hint text]
     HQ_SYSTEMS = (30002974, 30045324, 30003788, 30002055)
+    # faction -> the Navy anchorage station beside its trader: content/conquest/season.tsv
+    # war_hq_station [I].  The server enlists a pilot only while docked at a station of
+    # the militia's faction (facwar_mgr::check_office, FW-4 #100) [V: run 2026-11-18, the
+    # UserError 'You must be docked at a station of that faction'].
+    HQ_STATIONS = {500003: 60015185, 500001: 60015184, 500004: 60015180, 500002: 60015186}
 
     def warfaction():
         return getattr_safe(builtin('session'), 'warfactionid')
@@ -1462,6 +1471,26 @@ def eoci_main(EOCI_NAME):
                 n += int(getattr_safe(r, 'stacksize', 0) or getattr_safe(r, 'quantity', 0) or 0)
         return n
 
+    def reach(hq, park, ball_id):
+        """Warp to the trader.  A warp under 150 km is refused (space.rs too_short) and an
+        undock lands 63-73 km away, so first `/tr me <hq system>` back to the system's
+        arrival point.  `(ok, detail, park)`."""
+        near = True
+        if park is not None:
+            d = dist_to(park, ball_id)
+            near = d is None or d <= 150000
+        if near:
+            go_to(hq)
+            park, _w = wait_for(lambda: (get_michelle() or None) and get_michelle().GetBallpark(),
+                                timeout_ms=60000)
+            if not park:
+                return False, 'no ballpark after /tr me %d' % hq, None
+            far, _w = wait_for(lambda: (dist_to(park, ball_id) or 0) > 150000, timeout_ms=30000)
+            if not far:
+                return False, 'still %s m from the trader after /tr me' % text(dist_to(park, ball_id)), park
+        ok, detail = warp_to(park, ball_id)
+        return ok, detail, park
+
     def eoci_body():
         mark = log_mark()
         pin = int(params().get('conquest_hq_system') or 0)
@@ -1485,12 +1514,17 @@ def eoci_main(EOCI_NAME):
             return
         ball_id, slim = found[0]
         faction = getattr_safe(slim, 'ownerID')
-        ok, detail = join(faction)
-        check('the pilot enlists in the trader\'s militia', ok, detail)
-        if not ok:
+        station = HQ_STATIONS.get(faction)
+        precondition('the trader\'s faction has a known anchorage station', bool(station),
+                     'faction %s' % text(faction))
+        if not station:
             return
         from spacecomponents.common.componentConst import ITEM_TRADER
-        ok, comp = safe(lambda: park.componentRegistry.GetComponentForItem(ball_id, ITEM_TRADER))
+
+        def component(pk):
+            return safe(lambda: pk.componentRegistry.GetComponentForItem(ball_id, ITEM_TRADER))
+
+        ok, comp = component(park)
         precondition('park.componentRegistry answers the ITEM_TRADER component', ok and comp is not None,
                      text(comp)[:200])
         if not ok or comp is None:
@@ -1522,8 +1556,44 @@ def eoci_main(EOCI_NAME):
                      'cargo %d of %d' % (cargo_units(in_t), in_q))
         if not got:
             return
-        ok, detail = warp_to(park, ball_id)
+        # 1. in range and NOT enlisted: the militia-only rule must refuse.
+        ok, detail, park = reach(hq, park, ball_id)
         check('the pilot warps to the trader', ok, detail)
+        if not ok:
+            return
+        safe(lambda: comp.RequestTrade())
+        ok, v = safe(lambda: comp.ProcessTrade(rid, 1))
+        check('a pilot outside the trader\'s militia is refused: (False, [])',
+              ok and isinstance(v, (tuple, list)) and len(v) == 2 and not v[0] and not v[1],
+              text(v)[:200])
+        # 2. enlistment needs a dock at a station of the trader's faction; the trader's
+        # own anchorage station is one.
+        gm_ok, reply = gm('/tr me %d' % station)
+        docked, _w = wait_for(lambda: getattr_safe(builtin('session'), 'stationid') == station,
+                              timeout_ms=45000, step_ms=500)
+        precondition('/tr me docks the pilot at the trader\'s anchorage station', bool(docked),
+                     'reply %s; stationid %s' % (text(reply)[:200],
+                                                text(getattr_safe(builtin('session'), 'stationid'))))
+        if not docked:
+            return
+        ok, detail = join(faction)
+        check('the pilot enlists in the trader\'s militia', ok, detail)
+        if not ok:
+            return
+        ok, detail = undock()
+        check('the enlisted pilot undocks', ok, detail)
+        if not ok:
+            return
+        # 3. back to the trader, now enlisted.
+        ok, detail, park = reach(hq, None, ball_id)
+        check('the enlisted pilot warps to the trader', ok, detail)
+        if not ok:
+            return
+        ok, comp = component(park)
+        precondition('the component answers again after the undock', ok and comp is not None,
+                     text(comp)[:200])
+        if not ok or comp is None:
+            return
         before_in, before_out = cargo_units(in_t), cargo_units(out_t)
         safe(lambda: comp.RequestTrade())
         ok, v = safe(lambda: comp.ProcessTrade(rid, 1))
