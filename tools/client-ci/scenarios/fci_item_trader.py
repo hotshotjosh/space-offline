@@ -1599,10 +1599,23 @@ def eoci_main(EOCI_NAME):
         in_t, in_q = list(inputs.items())[0]
         out_t, out_q = list(outputs.items())[0]
         in_t, in_q, out_t, out_q = int(in_t), int(in_q), int(out_t), int(out_q)
-        gm('/createitem %d %d' % (in_t, in_q))
+        # In space `/createitem` puts the stack in the ship hold, and a hold create is
+        # capped at 1000 a call (slash.rs create_in_hold: `quantity N is not between 1 and
+        # 1000`; no capacity check in Edit::Create) [V: server source].  The turn-in input
+        # is 45000, so give it in chunks, and keep each reply for the detail.
+        replies = []
+        left = in_q
+        while left > 0:
+            step = min(left, 1000)
+            replies.append(gm('/createitem %d %d' % (in_t, step)))
+            left -= step
         got, _w = wait_for(lambda: cargo_units(in_t) >= in_q, timeout_ms=20000)
+        bad = [r for r in replies if not r[0] or not text(r[1]).startswith('created')]
         precondition('the cargo holds the recipe input after /createitem', bool(got),
-                     'cargo %d of %d' % (cargo_units(in_t), in_q))
+                     'cargo %d of %d; %d calls, %d refused; first reply %s; first refusal %s' % (
+                         cargo_units(in_t), in_q, len(replies), len(bad),
+                         text(replies[0])[:160] if replies else None,
+                         text(bad[0])[:200] if bad else None))
         if not got:
             return
         # 1. in range and NOT enlisted: the militia-only rule must refuse.
