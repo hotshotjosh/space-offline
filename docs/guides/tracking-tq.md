@@ -171,7 +171,7 @@ the time goes into the T1-class must items and the bundle.
 1. Announce on the patch-day issue: "server lags TQ; friends cannot log in until ...", and post an
    estimate after step 2.
 2. A research wave (several read-only lanes): `tools/dis.py` diffs of the changed native, the
-   GPS/machoNet handshake, and `docs/reference/login-path.md`, `framing.md` and
+   GPS/machoNet handshake, and the unpublished login-path note, `framing.md` and
    `object-wrapper.md` against the new build. Each lane delivers an implementation spec.
 3. Patcher relocation by hand (`tools/client-patch-manifest.py`) for any rule `locate` refused.
 4. Wire implementation lanes, then the T2 steps.
@@ -272,7 +272,7 @@ patch-day issue". `refresh` keeps the old `tq-offline` as `tq-<oldbuild>` and ru
 `patch` again; it changes only `tq-offline`, refuses before it writes, and does nothing when the
 install is not a served build. `tools/pin-client.sh` verifies against the committed
 `tools/pins/<build>.sha256` of the install's build (hashes only); add one per served build
-(`pin-client.sh --write`). See `docs/guides/remote-clients.md` for the player's side.
+(`pin-client.sh --write`). See the unpublished remote-clients note for the player's side.
 
 ### 4.6 Retiring the old build, and rollback
 

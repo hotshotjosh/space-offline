@@ -1,6 +1,6 @@
 # Client CI: running the real client against the server, unattended
 
-This is the one-page guide. It replaces `docs/archive/plan-client-ci.md` as the
+This is the one-page guide. It replaces the unpublished plan-client-ci note as the
 starting point (that file is a plan written before the harness existed, and
 stays as history). The detail lives in the lane notes this page points at.
 
@@ -12,7 +12,7 @@ A scenario is one Python 2.7 file that runs **inside the real client**
 jailed client, waits for the verdict and exits with a status that says what
 happened. It is the oracle for what the *client* parses and shows; the bot
 suite (`server/crates/eve-bot`) is the oracle for behaviour and timing. Neither
-replaces the other (`docs/archive/roadmap.md`, "Where the testing layer stands").
+replaces the other (the unpublished roadmap note, "Where the testing layer stands").
 
 ## Run it
 
@@ -80,4 +80,4 @@ whose oracle reads Xvfb) keeps lavapipe.
 | writing a scenario: the prelude and the verdict contract | the canonical prelude is `tools/client-ci/scenarios/_prelude.py` |
 | the guard tests | `tools/test_fci_scenarios.py` |
 | why passwordless root, and what it still grants | `docs/guides/jail.md`, "What the jail helper grants" |
-| the original plan (history) | `docs/archive/plan-client-ci.md` |
+| the original plan (history) | the unpublished plan-client-ci note |

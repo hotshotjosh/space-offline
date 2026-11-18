@@ -33,7 +33,7 @@ has no network and mounts the installs read-only.
    (a launcher run can rewrite a shared inode). Never launch the copy, never
    give it network. A second client of it: `EVE_SECOND_SRC_DIR=tq-<name>
    EVE_SECOND_CLIENT_DIR=tq-<name>-2 tools/client2-setup.sh`. Tests:
-   `tools/test_import_build.py`; the lane note is `docs/lanes/import-tool.md`.
+   `tools/test_import_build.py`; the lane note is the unpublished import-tool lane note.
 2. Hash manifest, read-only: `tools/pin-client.sh --write --path DIR
    --manifest out/new-build/<build>/pin.sha256`. The script does this.
 3. Delta against the **pinned** build (the baseline, not the previous new
@@ -64,7 +64,7 @@ has no network and mounts the installs read-only.
 8. Patches: `tools/patches/<build>.json` comes from `eve_patch_author.py
    locate /client --merge tools/patches/<pinned>.json`, then change `build`,
    `identify.start_ini_build` and the comment, and read the diff
-   (`docs/guides/patcher.md`). Verify with `eve_patch_author.py check` and
+   (the unpublished patcher note). Verify with `eve_patch_author.py check` and
    `tools/test_eve_patch.py`. The script then runs `eve_patch_author.py hosts`
    and stops on a host that is not in the reviewed list. **Make the census
    control copy now**, from the stock files, before any patch (`apply --tier B

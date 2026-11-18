@@ -123,7 +123,7 @@ nothing to unlock here; it has to come from us.
 `cryptoPack`. A stock install says `CryptoAPI`, under which every packet after
 the handshake is encrypted against CCP's public key and `GPS.__Execute` demands
 a signature we cannot produce. `Placebo` makes `EncryptedRead`/`EncryptedWrite`
-the identity (`docs/reference/login-path.md` §3). There is no DNS-style trick for this
+the identity (the unpublished login-path note §3). There is no DNS-style trick for this
 one: the alternative is patching `blue.dll`.
 
 **This sits awkwardly with the section above**, which avoids editing `start.ini`
@@ -187,7 +187,7 @@ signature-checked?** The manifest ends in a ~256-byte trailer that may be an
 RSA signature over the table. If it is not verified, the re-hashed manifest is
 accepted and this is the whole fix. If it is, the client still refuses, and the
 next step is to set `cryptoPack` another way (the Python source-override route,
-`docs/archive/recon-v24.01.md` Round 3, which touches no manifest-covered file) rather than
+The unpublished recon-v24.01 note Round 3, which touches no manifest-covered file) rather than
 to defeat the signature. The tool says this plainly rather than claiming the
 question is closed.
 
@@ -638,7 +638,7 @@ and our own server uses both:
   script we choose (`pycode.rs:77-82`, `:302`).
 - **Handshake H8 `signedFunc`.** The client runs it through `Crypto.Verify`,
   then `marshal.loads`, then `eval` in `GPS.__Execute`
-  (`pycode.rs:1-12`, `docs/reference/login-path.md` §4). Under `cryptoPack = Placebo`
+  (`pycode.rs:1-12`, the unpublished login-path note §4). Under `cryptoPack = Placebo`
   the verify passes for anything.
 
 So **a server, or anyone who can rewrite its traffic, can run arbitrary

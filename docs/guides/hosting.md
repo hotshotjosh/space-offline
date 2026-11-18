@@ -2,7 +2,7 @@
 
 How to run `tools/serve.sh` on a dedicated machine (a 12-core desktop-class box) with remote players
 through the tunnel, you as GM from your own client, and the society bots
-beside them. It is the host half of `docs/guides/remote-clients.md`.
+beside them. It is the host half of the unpublished remote-clients note.
 Status: written from the scripts and their stub tests (`tools/test_serve_host.py`);
 **no real host has run it yet**, so every step is the dry run's first draft.
 

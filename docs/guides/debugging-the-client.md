@@ -6,7 +6,7 @@ read off the client's own bytecode and written into a doc; now the client
 tells us what is wrong, and the job is to *hear* it. The instruments below are
 the difference between that and guessing.
 
-Read `docs/reference/login-path.md` §8 for the call table itself. This file is about method.
+Read the unpublished login-path note §8 for the call table itself. This file is about method.
 
 ---
 
@@ -355,7 +355,7 @@ So once the server log is clean, **read the client log anyway**. The first run
 to reach the character-select screen froze on it with 29 of 29 calls answered,
 because the character row was missing `skillTypeID` and `deletePrepareDateTime`
 — the second thrown from the mouse-over handler, which is why nothing could be
-clicked (see `docs/reference/login-path.md`).
+clicked (see the unpublished login-path note).
 
 Two symptom shapes worth recognising:
 
@@ -1032,7 +1032,7 @@ These appear in the logs on a healthy run. Do not chase them.
 | --- | --- |
 | `ConnectionError: ... api.ipify.org ... getaddrinfo failed` | `monolithsentry/geoip2_tags.py` trying to geotag a Sentry report. The jail blocking it **is the feature working.** |
 | `_GetByMessageID failed: ... 'min_value' ... for property with name ''` (×2) | CCP's own mock data in `freelanceprojects/client/contributionmethods/mock/` failing their own validator at import time. Present on the live client too. |
-| `ValueError: 'proxy::writing' is not in list` | Our `PingRsp` was missing the proxy/server hop chain. **Fixed** — but if it returns, see `docs/reference/login-path.md`: the labels and their order are not a free choice. |
+| `ValueError: 'proxy::writing' is not in list` | Our `PingRsp` was missing the proxy/server hop chain. **Fixed** — but if it returns, see the unpublished login-path note: the labels and their order are not a free choice. |
 | `unable to connect to server` | Usually the jail was torn down under a live client, not a server fault. Check for a stranded client process. |
 | `evecap --calls` printing `HANG ... <- NO ANSWER; the client is still waiting` for `slash.SlashCmd("/")` | **Was a bug in the tool**, now fixed. A raise comes back as an `ErrorResponse` (command 15), not a `CallRsp` (7), and `--calls` only paired the latter — so every deliberately-raised answer read as a hang. Raising is the *only* correct answer to `/`. Such calls now print as `RAISE`. |
 | `Info: TypeError: 'NoneType' object is not subscriptable` under `settingsSvc.UpdateSettingsStatistics` → `placebo.py(22) verify` | `charMgr.GetSettingsInfo` answered `None` **on purpose**. A real answer is a signed, marshalled Python 2.7 **code object** the client installs as a function body and runs; the only consequence of declining is that settings statistics are never logged, which is telemetry we do not want to work. See the comment on `GetSettingsInfo` in `service.rs`. |

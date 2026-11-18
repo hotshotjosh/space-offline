@@ -4,7 +4,7 @@ Packet CEN-1 built the recorders and the report; CEN-2 (helper verbs),
 CEN-3 (shim, rootless, orchestrator, eve-dns log fields) and CEN-4 (client
 scenarios) wire them into a run. The design is the research lane
 R-CENSUS (`out/research/R-CENSUS.md`, gitignored because it names client
-endpoints). The patcher it checks is `docs/guides/patcher.md`; the jail it extends
+endpoints). The patcher it checks is the unpublished patcher note; the jail it extends
 is `docs/guides/jail.md`.
 
 ## Why the jail alone cannot answer the question
@@ -143,7 +143,7 @@ is INCONCLUSIVE.
 ## What a run needs from the other packets
 
 CEN-1 runs nothing by itself. The hooks it expects are listed in
-`docs/lanes/cen1.md` ("Hooks for CEN-2, CEN-3 and CEN-4").
+The unpublished cen1 lane note ("Hooks for CEN-2, CEN-3 and CEN-4").
 
 ## Running it (CEN-2, CEN-3)
 
@@ -235,7 +235,7 @@ which must be in it for N11 and P13 to count as exercised:
 `census-shell.census.invalid` and `census-urlutil.census.invalid` (N11) and
 `census-video.census.invalid` (P13).
 
-### The phone-home scenarios (issue #40, `docs/lanes/phone-home.md`)
+### The phone-home scenarios (issue #40, the unpublished phone-home lane note)
 
 Three scenarios beyond CEN-4's six, for the paths those never reach. All
 refuse outside a census, fire only invented `.invalid` names, and are in
@@ -307,5 +307,5 @@ missing from a run whose host canaries are present). It does not ship
 `nslookup.exe`: that was the wine-dns canary's whole failure in the 2026-10-30
 rootless runs (checked in GE-Proton10-34), so the lookup is now `ping.exe` with a
 name. A clean user+net namespace with the same `ping_group_range` formula sends the
-echo (so wine-icmp's cause is not the sysctl; see `docs/lanes/phone-home.md`), and
+echo (so wine-icmp's cause is not the sysctl; see the unpublished phone-home lane note), and
 each run now leaves `wine-canary.log` and `wine-canary.out` in its run directory.
