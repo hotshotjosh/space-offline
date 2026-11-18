@@ -14,6 +14,8 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(HERE)  # last: tools/dis.py must not shadow the stdlib
+import testenv  # noqa: E402
 _spec = importlib.util.spec_from_file_location('v_audit', os.path.join(HERE, 'v-audit.py'))
 va = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(va)
@@ -57,8 +59,8 @@ class Marks(unittest.TestCase):
 class Cli(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='test-v-audit-')
-        self.g = lambda *a: subprocess.run(['git', '-C', self.tmp, '-c', 'user.name=t', '-c', 'user.email=t@t'] + list(a),
-                                           check=True, capture_output=True)
+        self.g = lambda *a: subprocess.run(['git', '-C', self.tmp] + list(a),
+                                           check=True, capture_output=True, env=testenv.hermetic_git_env())
         self.g('init', '-q')
         self.w('old.md', 'an old claim [V]\n')
         self.w('other.md', 'quiet\n')

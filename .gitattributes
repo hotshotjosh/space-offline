@@ -1,0 +1,4 @@
+# Every text file is LF in every checkout, whatever core.autocrlf says (#292 class).
+* text=auto eol=lf
+*.bin binary
+*.evecap binary

@@ -13,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pr_overlap as po  # noqa: E402
+import testenv  # noqa: E402
 import tracker  # noqa: E402
 
 REPO = "/repos/acme/game"
@@ -145,8 +146,7 @@ class Scratch(unittest.TestCase):
 
     def git(self, *a):
         subprocess.run(["git", "-C", self.d.name, *a], check=True, capture_output=True,
-                       env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@x.invalid",
-                            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@x.invalid"})
+                       env=testenv.hermetic_git_env())
 
     def test_committed_and_working_tree_changes(self):
         self.d = tempfile.TemporaryDirectory()

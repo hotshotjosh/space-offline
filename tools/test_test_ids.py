@@ -23,7 +23,11 @@ Stdlib only; the gate runs every `tools/test_*.py`.
 import os
 import re
 import subprocess
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DENYLIST = os.path.join(ROOT, "out", "test-id-denylist.txt")
@@ -232,8 +236,7 @@ class TestGuardMechanics(unittest.TestCase):
         main = os.path.join(self.root, "main")
         work = os.path.join(self.root, "work")
         os.makedirs(os.path.join(main, "out"))
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
+        env = testenv.hermetic_git_env()
         for cmd in (["git", "init", "-q", main],
                     ["git", "-C", main, "commit", "-q", "--allow-empty", "-m", "x"],
                     ["git", "-C", main, "worktree", "add", "-q", "--detach", work]):
