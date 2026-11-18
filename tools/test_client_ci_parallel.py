@@ -898,6 +898,32 @@ class Runner(unittest.TestCase):
             if "--with-bots" in l:
                 self.assertTrue(l.startswith("[serial]"), l)
 
+    def test_the_cutover_list_is_regress_rows_and_covers_the_login_path(self):
+        def rows(path):
+            out = {}
+            for l in rd(path).splitlines():
+                l = l.split("#")[0].strip()
+                if l:
+                    out[l.split()[0].split("@")[0]] = l
+            return out
+
+        cut, reg = rows(os.path.join(CI, "cutover.list")), rows(os.path.join(CI, "regress.list"))
+        self.assertTrue(cut)
+        for name, row in cut.items():
+            self.assertEqual(reg.get(name), row, f"{name}: not a verbatim regress.list row")
+            self.assertTrue(os.path.isfile(os.path.join(CI, "scenarios", name + ".py")), name)
+        for need in ("ballpark_smoke", "fci_reads", "throttle_and_warp", "fci_dock_range", "fci_market_trade",
+                     "fci_fitfix", "fci_chat_two", "fci_upwell_safety", "fci_fw_enlist", "hud_health"):
+            self.assertIn(need, cut)
+        self.assertTrue(any("--with-bots" in r for r in cut.values()))
+        self.assertEqual(list(cut)[:5], ["ballpark_smoke", "fci_reads", "lobby_guests", "undock_distance", "throttle_and_warp"])
+        p = subprocess.run(["bash", os.path.join(HERE, "client-ci-regress.sh"), "--list", os.path.join(CI, "cutover.list"),
+                            "--out", self.out, "--jobs", "3", "--dry-run"], capture_output=True, text=True,
+                           env={k: v for k, v in self.env.items() if k != "EVE_CI_SCENARIOS"}, timeout=SLOW)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        planned = [re.search(r"client-ci.sh run (\S+)", l).group(1) for l in p.stdout.splitlines() if "client-ci.sh run" in l]
+        self.assertEqual(sorted(planned), sorted(cut))
+
 
 if __name__ == "__main__":
     unittest.main()

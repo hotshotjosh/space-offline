@@ -1,0 +1,40 @@
+# The cut-over proof set: the smallest scenarios that must pass on a patched copy of the new
+# build before a cut-over (docs/guides/tracking-tq.md, "Proof before the cut-over"). Same format
+# as regress.list; every row is copied from it, flags included, so a row means the same thing
+# in both. Run it like this:
+#
+#   EVE_CLIENT_DIR=tq-<N> tools/client-ci-regress.sh --list tools/client-ci/cutover.list --jobs 4
+#   python3 -I tools/regress-compare.py var/regress-<last pinned run> var/regress-<this run>
+#
+# Coverage (tools/test_client_ci_parallel.py keeps every row in step with regress.list):
+#   login and the base six     ballpark_smoke, fci_reads, lobby_guests, hud_health, capacitor
+#   undock, warp               undock_distance, throttle_and_warp, fci_autopilot
+#   dock                       fci_dock_range
+#   market                     fci_market_trade (two clients)
+#   fitting                    fci_fitfix
+#   chat                       fci_chat_two (two clients)
+#   asset safety               fci_upwell_safety
+#   FW enlist                  fci_fw_enlist
+#   ammo and HUD basics        fci_ammo_count, hud_health, capacitor
+#   one bots row               fci_wing_follow
+# The login path is the first five rows (ballpark_smoke, fci_reads, lobby_guests, undock_distance,
+# throttle_and_warp): a must fix on it blocks a `provisional` status.
+# Not covered yet: bookmarks (UpdateBookmark) and the Oris fee have no scenario; the opt-in new
+# HUD has none either. Add their rows here when they exist.
+
+ballpark_smoke
+fci_reads
+lobby_guests --with-second -- --character Alice --character Bob
+undock_distance --serial
+throttle_and_warp --serial
+hud_health
+capacitor
+fci_ammo_count
+fci_dock_range
+fci_autopilot
+fci_fitfix
+fci_market_trade --with-second -- --character Alice --character Bob
+fci_chat_two --with-second -- --character Alice --character Bob
+fci_upwell_safety
+fci_fw_enlist
+fci_wing_follow --with-bots --serial -- --dev
