@@ -519,6 +519,7 @@ rows as optional.
 | `EVE_BOT_CHAT` | `deploy/entrypoint.sh` | `on` | whether bots talk | `EVE_BOT_CHAT=off` |
 | `EVE_BOT_CHAT_HOST` | `deploy/entrypoint.sh` | `127.0.0.1:5222` | where bots dial chat | |
 | `EVE_CONTENT_ROOT` | `deploy/entrypoint.sh` | `/content` | test only: the content root the entrypoint resolves `<root>/<reference build>/` under (`tools/test_entrypoint.py`) | |
+| `EVE_RETIRE_REPO` | `tools/retire-build.sh` | this checkout | test only: the checkout whose `tools/builds.tsv` and `out/` the retire tool reads (`tools/test_retire_build.py`) | |
 | `EVE_BOT_NICE` | `deploy/entrypoint.sh` | `10` | niceness of the bots process | `EVE_BOT_NICE=15` |
 | `EVE_BOT_CPUS` | `deploy/stack.yml` | `6` | CPU limit of the bots container (`cpus`) | `EVE_BOT_CPUS=4` |
 | `EVE_BOT_MAX_ONLINE` | `deploy/entrypoint.sh` | unset (unlimited) | `--max-online`: bots logged on at once | `EVE_BOT_MAX_ONLINE=500` |
