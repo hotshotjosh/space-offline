@@ -98,3 +98,6 @@ tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/up.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/up.sh	tools/client-prepare.sh	M4: owner ruling pending (maintainer-only client patch tooling)
+tools/test_docs.py	docs/guides/remote-clients.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
+tools/test_docs.py	docs/guides/patcher.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
+tools/test_docs.py	docs/lanes/INDEX.md	the doc lint's allowlist: docs/README.md names it until the index edit lands

@@ -134,9 +134,9 @@ CONTRIBUTOR_DOCS = {
 # (citing contributor doc, cited path) -> why it stays. Each entry waits on an owner
 # ruling or a fix; an entry fails once the citation is gone.
 ABSENT_PRIVATE_OK: dict = {
-    ("docs/guides/getting-started.md", "docs/guides/remote-clients.md"): "client path, owner ruling pending (M4)",
-    ("docs/guides/getting-started.md", "docs/guides/patcher.md"): "client path, owner ruling pending (M4)",
-    ("docs/README.md", "docs/lanes/INDEX.md"): "the index names a private path until the L2 edit lands",
+    ("docs/guides/getting-started.md", "docs/guides/remote-clients.md"): "client path, pending a maintainer decision",
+    ("docs/guides/getting-started.md", "docs/guides/patcher.md"): "client path, pending a maintainer decision",
+    ("docs/README.md", "docs/lanes/INDEX.md"): "the index names a private path until its edit lands",
 }
 
 
