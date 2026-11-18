@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (232 of 353) · **93% built** (330 of 353) · 3 parked, not counted.
+**66% proved** (232 of 354) · **94% built** (331 of 354) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -27,6 +27,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots
 - [ ] Drone limits follow the sheet: the active drone count and the control range: *built-unproved*, drone_skills.rs max_active and control_range read attributes 352 and 458 off the sheet's character node (dogma.rs CHARACTER_READS), so a hull's assigned drone count and a rig's range penalty count and the augmentor is no longer added by hand; drones/restat_tests.rs the_active_drone_count_comes_off_the_sheets_character_node, the_control_range_comes_off_the_sheets_character_node; the drones test fixture gains the Drones skill and Drone Avionics effects on 352 and 458; no client scenario yet
 - [ ] Aberrant modules burst: an active module that changes the top speed refreshes the ball: *built-unproved*, modules.rs activate, the clock's cycle end and stop compare the hull and call motion_changed for every effect (the hand list is_propulsion is gone); modules.rs reanchor_capacitor stores the capacitor before activate, a cycle boundary, stop and set_online change the sheet; drones.rs restat works a launched drone's stats out again and sends SetMaxSpeed, once to each viewer, whenever a module of a ship that controls drones starts, ends, goes on or offline (no module-group gate); modules/aberrant_tests.rs an_active_burst_refreshes_the_balls_top_speed_and_so_does_its_end, a_burst_that_leaves_the_speed_alone_sends_no_speed, the_capacitor_is_anchored_before_a_recharge_change, a_full_capacitor_gets_no_anchor; drones/restat_tests.rs a_launched_drone_follows_a_navigation_computers_burst; [A] a drone's stats depend on nothing but its pilot's sheet, falsified by a client drone window showing a different figure than the drone flies; fci_rig_set checks the ball's top speed against the client's dogma during a burst (written, not yet run on 3707965)
+- [ ] Community-track lookups (the Vanguard/Nemesis progress bar) answer "no track instance" as a (None, None) pair, so the client logs and returns instead of raising a TypeError; no community track is run: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
 
 ### 3.2 The 11-09 port
 
@@ -190,6 +191,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 | FW Conquests | 0 | 3 | 0 | 0 | 0 |
+| Live service | 0 | 1 | 0 | 0 | 0 |
 
 </details>
 
@@ -665,6 +667,12 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
 - [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
 - [ ] Item traders trade recipes: *built-unproved*, server item_trader.rs: the four PTC traders stand at the War HQ systems (an [A] placement), ProcessTrade(recipeID=, multiplier=) answers (success, items) and a refusal is (False, []), militia-only by default [A, owner question Q19]; the Beacons beside the traders (97927-97930) are not placed yet; tools/client-ci/scenarios/fci_item_trader.py (not yet run on a client)
+
+</details>
+
+<details><summary><b>Live service</b>: 0 of 1 proved, 1 open</summary>
+
+- [ ] Community-track lookups (the Vanguard/Nemesis progress bar) answer "no track instance" as a (None, None) pair, so the client logs and returns instead of raising a TypeError; no community track is run: *built-unproved*, service/live.rs communityTrackMgr get_instance_attributes_public; unit test a_community_track_instance_lookup_answers_no_instance_as_a_pair; seen in fci_tow_conquest_dormant on 3707965, not yet re-run
 
 </details>
 

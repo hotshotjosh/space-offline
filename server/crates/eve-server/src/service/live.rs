@@ -24,6 +24,7 @@ pub(crate) const SERVICES: &[&str] = &[
     "milestoneMgr",
     "nonDiminishingInjectionMgr",
     "browserLockdownSvc",
+    "communityTrackMgr",
 ];
 
 pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
@@ -188,6 +189,27 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             "GetAvailableNonDiminishingInjections" => Ok(PyValue::Int(0)),
             _ => Err(reg.no_method(req)),
         },
+        // Community tracks (the V24.02 Vanguard/Nemesis progress bar).
+        // `[V]` communitytracks/client/repository.py `get_instance_attributes`:
+        //
+        //     def_id, progress = RemoteSvc('communityTrackMgr')
+        //         .get_instance_attributes_public(instance_id.sequential)
+        //     if def_id is not None and progress is not None: ...
+        //     else: logger.error('could not find instance attributes ...')
+        //
+        // The unpack is unconditional, so a bare `None` raises `TypeError:
+        // 'NoneType' object is not iterable` (seen on 3707965 in
+        // fci_tow_conquest_dormant). `(None, None)` is the author's own "no
+        // such track instance" case: the repository logs and returns None,
+        // `get_track_instance_and_definition` returns `(None, None)` and
+        // `update_async` returns early. We run no community track, so that
+        // is the honest answer. Not a live track: none is invented here.
+        "communityTrackMgr" => match req.method {
+            "get_instance_attributes_public" => {
+                Ok(PyValue::Tuple(vec![PyValue::None, PyValue::None]))
+            }
+            _ => Err(reg.no_method(req)),
+        },
         // Unreachable: `SERVICES` above gates the call. Spelled out rather
         // than `unreachable!()` so a drift between the two is an ordinary
         // error and not a panic in front of a player.
@@ -259,5 +281,27 @@ mod tests {
             PyValue::Bytes(b"d751713988987e9331980363e24189ce".to_vec())
         );
         assert_eq!(call(&mut reg, "GetFlaggedSitesList"), PyValue::List(vec![]));
+    }
+
+    /// An unknown community-track instance is a 2-tuple of None: the client
+    /// unpacks `def_id, progress` unconditionally, so a bare None raised a
+    /// TypeError in its tasklet. Invented instance id.
+    #[test]
+    fn a_community_track_instance_lookup_answers_no_instance_as_a_pair() {
+        let mut reg = Registry::new(SandboxConfig::default());
+        let args = [PyValue::Int(424242)];
+        let got = dispatch(
+            &mut reg,
+            &Request {
+                service: "communityTrackMgr",
+                method: "get_instance_attributes_public",
+                args: &args,
+                kwargs: &[],
+                bind_params: None,
+                actor: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(got, PyValue::Tuple(vec![PyValue::None, PyValue::None]));
     }
 }
