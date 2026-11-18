@@ -43,7 +43,7 @@ pub struct Rules {
     pub char_delete_secs: i64,
     /// How long after an asset safety wrap is made it can be delivered to a
     /// station or structure in its system, in seconds
-    /// (`asset_safety`; the client's `daysUntilCanDeliverConst`). **[A]**
+    /// (`asset_safety`; the client's `daysUntilCanDeliver`). **[A]**
     /// the default is 5 days, the client's own GM menu step.
     pub safety_manual_secs: i64,
     /// How long after the wrap is made it moves itself to the nearest NPC
