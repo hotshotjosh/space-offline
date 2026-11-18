@@ -15,7 +15,7 @@ only: no code was written.
 - `[I]` inferred from `[V]` facts; says from what.
 - `[A]` an assumption we choose to ship; says what falsifies it. An `[A]` value
   never goes into a test.
-- EvEJS (`docs/evejs/`) is a hint source only. Anything taken from it stays
+- EvEJS (the unpublished EvEJS inventory note) is a hint source only. Anything taken from it stays
   `[A]` here until a client line confirms it.
 
 **Line numbers.** `path:line` is a line of the decompiled client source
@@ -513,7 +513,7 @@ then is lost; `last_cycle` advances by whole cycles only. The server stores
    what is at risk: the silo controller variable for it is named
    `RaidablesiloValue` (`orbitalSkyhook/const.py`, `SILO_INSECURE_VALUE`) `[I]`.
    Window length, frequency and link duration are server design `[A]`
-   (EvEJS models these, `docs/evejs/inventory/corp-sov-structures.md` "Sov:
+   (EvEJS models these, the unpublished EvEJS inventory note "Sov:
    skyhooks"; hints only).
 5. **Combat states.** `skyhook_state` / `skyhook_timer` follow the
    shield → armor reinforce → armor → hull reinforce → hull cycle of

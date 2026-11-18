@@ -10,7 +10,7 @@ data. `[I]` inferred — a deduction from `[V]` facts, stated with what would
 falsify it. `[A]` an assumption we choose to ship, with its falsification.
 `[V2]` a third-party decode of a different build. There is no `[V2]` in this
 document: no third-party gate-jump implementation was available, and
-`docs/archive/evejs-261018-reference.md` has nothing on stargates.
+The unpublished evejs-261018-reference note has nothing on stargates.
 
 Nothing here has been run against a client. Everything marked `[V]` is a read;
 everything marked `[I]` is a chain of reads; §12 lists what a relaunch settles.
@@ -238,7 +238,7 @@ So the server must send, as one Destiny action in a batch addressed to
 Fourteen positional arguments, verified from the `argcount`/`varnames` of both
 `Park.OnSpecialFX` (`michelle.py:2087`, argcount 15 incl. `self`) and
 `subwaySvc.OnSpecialFX` (`subwaySvc.py:472`, argcount 15) `[V]`. Note there is
-**no `area` argument** — `docs/archive/destiny-and-the-ballpark.md` §4.2's prose mentions
+**no `area` argument** — the unpublished destiny-and-the-ballpark note §4.2's prose mentions
 one and is wrong.
 
 Values that matter:
@@ -527,7 +527,7 @@ Three `[V]` facts, each of which independently rules out a reset hazard:
    `Park.Release` sets `self.history = []` and `self.latestSetStateTime = 0`
    (`michelle.py:1220-1221`), and `AddBallpark` (`michelle.py:442-463`) builds
    a brand-new native `destiny.Ballpark` and a brand-new `Park` wrapper. So
-   rule 2 of `docs/lanes/movement.md` §4.4 (`S >= latestSetStateTime`) is
+   rule 2 of the unpublished movement lane note §4.4 (`S >= latestSetStateTime`) is
    trivially satisfied by any stamp after a jump, and rule 3's per-client
    monotonicity is enforced against an empty `states` list `[V]`.
 
@@ -537,7 +537,7 @@ Three `[V]` facts, each of which independently rules out a reset hazard:
    `SynchroniseToSimulationTime` `[V]`; and `_parent_ReadFullStateFromStream`
    reads the blob's first four bytes into `Ballpark+0x1c` =
    `self.currentTime` before anything else
-   (`docs/reference/destiny-reference-blob.md` §760, `docs/archive/destiny-and-the-ballpark.md` §4.4) `[V]`.
+   (`docs/reference/destiny-reference-blob.md` §760, the unpublished destiny-and-the-ballpark note §4.4) `[V]`.
    `Bootstrap::new` already enforces `blob header == action stamp`
    (`destiny.rs:710`) `[V]`.
 
@@ -561,7 +561,7 @@ Three `[V]` facts, each of which independently rules out a reset hazard:
    i.e. `if eventStamp > self.currentTime and eventStamp - self.currentTime < 3: break`.
    The drain is deferred **only** when the stamp is 1 or 2 ticks ahead, and
    applied immediately when it is 3 or more ahead. This independently confirms
-   `docs/lanes/movement.md` §4.4 rule 4, which had read the same line, and it is
+   the unpublished movement lane note §4.4 rule 4, which had read the same line, and it is
    why the first `SetState` into a brand-new park works regardless of what the
    native `Ballpark` initialises `currentTime` to.
 
@@ -875,7 +875,7 @@ groupWarpGate        366        groupWormhole        988       groupUpwellJumpGa
 `eveMachoNet._GetNodeFromAddressFromDB` enforces
 `minSolarSystem <= address <= maxSolarSystem` on a `beyonce` resolve, so our
 answer to `MachoResolveObject(30000003)` is the same `1` we already give
-`[V]`, `docs/archive/destiny-and-the-ballpark.md` §3.
+`[V]`, the unpublished destiny-and-the-ballpark note §3.
 
 Gate hull numbers for the ball record, from `types.fsdbinary` `[V]`:
 
@@ -1075,7 +1075,7 @@ reason as well as the right one.
    again; assert the sequence of every stamp this server emitted is
    non-decreasing. Assert monotonicity, never a value: `next_destiny_stamp` is
    wall-clock-derived and clamped, so an equality assertion fails exactly when
-   the clamp is working (`docs/lanes/two-in-space.md` §9).
+   the clamp is working (the unpublished two-in-space lane note §9).
 8. **`the_arrival_blob_header_equals_the_arrival_action_stamp`** — already
    enforced by `Bootstrap::new`; re-assert on the jump's `SetState` so that a
    future jump-specific constructor cannot bypass it.
@@ -1154,7 +1154,7 @@ inflight with a valid ego"* and no second `Adding ballpark`. That single line is
 the whole discriminator for the biggest `[I]` in this document.
 
 The client is already in full logging (`ROLE_QA` is in
-`ROLEMASK_ELEVATEDPLAYER`, `docs/lanes/movement.md` §4.5), so every pushed
+`ROLEMASK_ELEVATEDPLAYER`, the unpublished movement lane note §4.5), so every pushed
 action prints with its stamp and arguments.
 
 ---

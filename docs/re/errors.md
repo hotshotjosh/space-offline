@@ -1,7 +1,7 @@
 # The client's error vocabulary (build V24.01, 3619879)
 
 Lane: `error-vocabulary` (churn Wave 1, cross-cutting). Park note:
-`docs/lanes/error-vocabulary.md`.
+The unpublished error-vocabulary lane note.
 Catalogue: `findings/user-errors.tsv`, 4,280 rows.
 
 Claims are marked **[V]** (read from the client's bytecode, from its own data,
@@ -75,7 +75,7 @@ Four things make this exact and not a choice:
    (`eveexceptions/__init__.py:14`) and `Exception` is new-style in Python
    2.7, so `PyInstance_NewRaw` does not apply. `0x22` reconstructs as
    `header[0](*header[1])` — it *calls* the class. **[V]**
-   (`docs/archive/marshal-tags.md` §0x22.)
+   (the unpublished marshal-tags note §0x22.)
 2. **The class name must be `eveexceptions.UserError`.** It is in the
    client's `globalsWhitelist` (`carbon/common/lib/whitelist.py`,
    `InitWhitelist` at `:359`; mirrored with tests in
@@ -342,7 +342,7 @@ interpolates, and **the authoritative argument list** — 1,226 keys have at
 least one.
 
 **No message text is in the TSV.** The prose is CCP's content and
-`docs/archive/plan-the-churn.md` §6 forbids committing extracted data; the keys, ids,
+The unpublished plan-the-churn note §6 forbids committing extracted data; the keys, ids,
 presentation and argument *names* are the interface and are what we need. Read
 the text with `tools/loctable.py errors <regex>`.
 
@@ -594,7 +594,7 @@ modal at every login.
 ### And five places not to send one
 
 - **`ship.Undock`** (`service/inventory.rs:298`) is `None` **on purpose** and
-  undocking works (`docs/archive/roadmap.md` M3). Raising there aborts it.
+  undocking works (the unpublished roadmap note M3). Raising there aborts it.
 - **`UnMachoDestination`, `GPSTransportClosed`** — clears the client's
   service-to-node map (§1.3).
 - **`WrongMachoNode`** — unbounded re-dial (`ServiceCallGPCS.py:342`).

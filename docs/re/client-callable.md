@@ -1,7 +1,7 @@
 <!-- Provenance: the `client-callable` lane, 2026-10-20. Read-only with
      respect to code: no Rust was written or changed, no cargo was run.
      Three files were written: this one, `findings/client-callable.tsv` and
-     `docs/lanes/client-callable.md`. Every client line number below came
+     the unpublished client-callable lane note. Every client line number below came
      from `co_lnotab` (`tools/pyc27.py`), never from uncompyle6's output --
      and §0.1 records one place where the decompiler printed const-table
      indices where values belong, in exactly the way

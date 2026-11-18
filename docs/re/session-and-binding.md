@@ -1,6 +1,6 @@
 <!-- Provenance: the `session-and-binding` cross-cutting lane of
-     `docs/archive/plan-the-churn.md` Wave 1, 2026-10-20. Read-only: nothing outside
-     this file, `findings/session-keys.tsv` and `docs/lanes/session-and-binding.md`
+     the unpublished plan-the-churn note Wave 1, 2026-10-20. Read-only: nothing outside
+     this file, `findings/session-keys.tsv` and the unpublished session-and-binding lane note
      was written. Every line number below came from `co_lnotab`
      (`tools/pyc27.py` / `tools/call_lines.py`), never from uncompyle6's
      output -- see `docs/guides/debugging-the-client.md` on why that distinction is
@@ -540,7 +540,7 @@ server-side check we do not perform is
 (`ResolveGPCS.py:26`) exempts `MachoBindObject` from. Since we answer as one
 node, `dispatch.rs`'s note that the question cannot arise is correct — and
 the five places `node_id` must agree
-(`docs/archive/architecture-sweep.md`, "The handshake is a constructor argument") are
+(the unpublished architecture-sweep note, "The handshake is a constructor argument") are
 exactly items 1–3 above plus the session packets' source. **[V]**
 
 ---
@@ -575,7 +575,7 @@ Reported, not edited.
    now named: `trademgr` pushes a server object reference *to* the client in
    `OnTradeInitiate` (`pvptradesvc.py:41`), so the notification path carries
    references in both directions.
-5. **`docs/archive/session-flow.md` / `docs/reference/login-path.md`** role-mask
+5. **The unpublished session-flow note / the unpublished login-path note** role-mask
    recommendation: already corrected in `docs/reference/session-roles.md` §7 and still
    uncorrected in those two files. Nothing to add.
 

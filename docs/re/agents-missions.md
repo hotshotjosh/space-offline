@@ -1,6 +1,6 @@
-<!-- Provenance: the `agents-missions` domain lane of `docs/archive/plan-the-churn.md`
+<!-- Provenance: the `agents-missions` domain lane of the unpublished plan-the-churn note
      Wave 1, 2026-10-20. Read-only: nothing outside this file,
-     `findings/shapes-agents-missions.tsv` and `docs/lanes/agents-missions.md`
+     `findings/shapes-agents-missions.tsv` and the unpublished agents-missions lane note
      was written, and no cargo was run. Every client line number below came
      from `co_lnotab` via `tools/call_lines.py` / `tools/pyc27.py`, never from
      uncompyle6's output -- the offsets in this subsystem are large (the
@@ -15,7 +15,7 @@
 
 Client build V24.01 (3619879). Companion files:
 `findings/shapes-agents-missions.tsv` (one row per method, on the
-`docs/archive/plan-the-churn.md` §4 schema), `docs/lanes/agents-missions.md` (the park
+The unpublished plan-the-churn note §4 schema), the unpublished agents-missions lane note (the park
 note). Read alongside `docs/re/localization.md` (the prose corpus),
 `docs/re/static-corpus.md` §6.2 (`missions.fsdbinary`),
 `docs/reference/bound-objects.md` §1 (the bind mechanism, which this subsystem lives

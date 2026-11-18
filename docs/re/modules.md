@@ -182,7 +182,7 @@ check.
 - **Session check** `[V]` `moniker:55-58`: `{'solarsystemid': ...}` or
   `{'stationid': ...}` — client-side only; it re-resolves the moniker if the
   session moved.
-- `docs/lanes/call-surface.md` / `findings/bound-objects.json` already list
+- The unpublished call-surface lane note / `findings/bound-objects.json` already list
   `dogmaIM` among the 29 moniker services, and
   `service/inventory.rs:748` already notes the `(solarsystemID, 5)` bind. So
   **no new transport work**: this is the same path `GetAllInfo` already takes.
@@ -547,7 +547,7 @@ def GetCapacitorCapacityMax(self):  return float(self._GetShipItem().capacitorCa
 
 So the whole capacitor is **two godma attributes on the ship item**:
 `charge` (attributeID **18**, `dogma/const.pyc:229` `attributeCapacitorCharge`)
-and `capacitorCapacity` (**482**). `docs/port-tracker.md` and
+and `capacitorCapacity` (**482**). The unpublished port tracker and
 `service.rs::capsule_dogma_row` already seed both.
 
 ### 4.2 `charge` is a *charged* attribute: the client simulates recharge `[V]`
@@ -643,7 +643,7 @@ beam, the projectile tracer and the turret animation all come from
   (`fx:344`, class body at `fx:332`). A plain `macho.Notification` reaches it.
 - **As a destiny action:** `Park.OnSpecialFX`
   (`out/pyc/eve/client/script/remote/michelle.pyc:2087`) re-scatters to the
-  same event, and `docs/archive/destiny-and-the-ballpark.md` §4.2 lists `OnSpecialFX`
+  same event, and the unpublished destiny-and-the-ballpark note §4.2 lists `OnSpecialFX`
   in `nonDestinyCriticalFunctions` — dispatched **without** time
   synchronisation. `SetState`'s `bag.effectStates` is replayed through it
   (ibid. §4.3).

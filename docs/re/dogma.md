@@ -982,7 +982,7 @@ the owner's standing rule requires.
 
 ## 12. The generated row layout is predictable from the field names
 
-Added 2026-10-21, deriving the five tables `docs/port-tracker.md` §15.6 asked
+Added 2026-10-21, deriving the five tables the unpublished port tracker §15.6 asked
 for: `types`, `typedogma`, `dogmaattributes`, `schematics`, `globaltypes`.
 Three of them produced a result bigger than the table.
 

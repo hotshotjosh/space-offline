@@ -1,6 +1,6 @@
 <!-- Provenance: the `mission-model` lane, 2026-10-20. Read-only on the
      client and on the server: the only files written are this one,
-     `findings/corpus-missions.tsv` and `docs/lanes/mission-model.md`. No
+     `findings/corpus-missions.tsv` and the unpublished mission-model lane note. No
      cargo was run and no Rust was written. `missions.fsdbinary` was decoded
      with a scratch reader driven by `findings/pyd-schemas.tsv`; client line
      numbers come from `tools/pyc27.py`'s `co_firstlineno`, never from
@@ -12,7 +12,7 @@
 
 Client build V24.01 (3619879). Companion files:
 `findings/corpus-missions.tsv` (the table's shape plus six sample rows),
-`docs/lanes/mission-model.md` (the park note).
+The unpublished mission-model lane note (the park note).
 
 Read alongside `docs/re/agents-missions.md` (the call surface and the state
 machine — this document fills in the data behind it),
@@ -466,7 +466,7 @@ ships the content and the server owns the geography.**
 a failure. But it does not have to be wrong, because `cfg.evelocations` is a
 **server-primed** rowset: a miss issues `config.GetMultiLocationsEx(ids)`
 with the columns `locationID:I8, locationName:WSTR, solarSystemID:I8,
-x:R5, y:R5, z:R5, locationNameID:I4` (`docs/reference/login-path.md` §9). **[V]**
+x:R5, y:R5, z:R5, locationNameID:I4` (the unpublished login-path note §9). **[V]**
 
 And the names are in the client's own static data:
 `solarsystemcontent.static` gives each NPC station's `stationName` verbatim —

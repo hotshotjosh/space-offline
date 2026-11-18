@@ -11,7 +11,7 @@ files', header included), its shipped static data (`tools/fsd.py`,
 data, with the place. `[V-data]` a count or a name read from the bundle or a
 static table. `[I]` inferred from `[V]` facts, with what would falsify it.
 `[A]` an assumption we choose to ship, with its falsifier; an `[A]` value
-never goes into a test. EvEJS (`docs/evejs/`) was consulted for hints only;
+never goes into a test. EvEJS (the unpublished EvEJS inventory note) was consulted for hints only;
 nothing here rests on it.
 
 Nothing here has been run against a client. §9 lists what the first client
@@ -371,7 +371,7 @@ server data `[I]`; `universe/system-effects.tsv` has no k-space row
   the station owner's restrictions, then **the restrictions of the system's
   faction** (`evestations/standingsrestriction.py:44-51`).
 - The table (`stationStandingsRestrictions.fsdbinary`, 296 bytes) has one
-  owner key, **500026** `[V-data]`, and seven rules (`docs/re/evejs-data.md`
+  owner key, **500026** `[V-data]`, and seven rules (the unpublished EvEJS data note
   §4 and `corp_standings.rs:42-47` agree) over the seven
   `_restricted_services` (`:24-31`): reprocessing, repair, factory,
   fitting, **docking**, office rental, jump clone `[V]`.

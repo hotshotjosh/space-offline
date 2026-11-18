@@ -1,11 +1,11 @@
 # The ball record, cross-checked against a second implementation
 
-`docs/archive/destiny-and-the-ballpark.md` §4.4 reads the ball record out of
+The unpublished destiny-and-the-ballpark note §4.4 reads the ball record out of
 `_destiny.dll` and marks **eleven fields `[I]`** — sizes and order from the
 disassembly, semantics a best fit against the `destiny.Ball` attribute table.
 That file also says, correctly, that there is "no Python source to port and no
 marshal structure to mirror — this is a C++ serialiser, and it is the hard wall
-`docs/archive/roadmap.md` M3 names."
+The unpublished roadmap note M3 names."
 
 EvEJS has to feed that same C++ serialiser. So it contains an independent
 reading of the same wall. This file puts the two side by side.
@@ -17,7 +17,7 @@ a corrected field list we implement from `_destiny.dll`.
 
 Build difference applies throughout: theirs targets client **3396210**, ours is
 **3619879**. Where the two disagree, the client wins
-(`docs/archive/evejs-261018-reference.md` §0.3).
+(the unpublished evejs-261018-reference note §0.3).
 
 Contents: 1 the common header, 2 what changed in our doc, 3 flags and modes,
 4 the mode tails, 5 the licence line, 6 what is still unknown.
@@ -56,7 +56,7 @@ coincidence.
 
 ---
 
-## 2. Three corrections to `docs/archive/destiny-and-the-ballpark.md` §4.4
+## 2. Three corrections to the unpublished destiny-and-the-ballpark note §4.4
 
 ### 2.1 Row 6c is not `followId`
 
@@ -214,7 +214,7 @@ that README. carbonengine/destiny is MIT © CCP Games, checked against the upstr
    proof of no tenth.
 3. **Flags `0x09` for WARP** — their claim about TQ, untested.
 
-All three are settled by the experiment `docs/archive/destiny-and-the-ballpark.md` §8
+All three are settled by the experiment the unpublished destiny-and-the-ballpark note §8
 already specifies, and this cross-check does not replace it: drop a loose `.py`
 override into the client, build a `destiny.Ballpark`, `AddBall` one ball with
 known field values, `WriteFullStateToStream`, write the bytes to

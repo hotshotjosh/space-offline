@@ -15,7 +15,7 @@ read for shapes and counts only; no ids or values from it appear here.
 (`[V-data]` for the data), with the place. `[I]` inferred from `[V]` facts,
 with what would falsify it. `[A]` an assumption we choose to ship, with its
 falsifier; an `[A]` value never goes into a test. EvEJS was consulted for
-hints only (`docs/evejs/`, AGPL): nothing below rests on it, and where it
+hints only (the unpublished EvEJS inventory note, AGPL): nothing below rests on it, and where it
 agrees it is noted as a hint, never as evidence.
 
 Nothing here has been run against a client.

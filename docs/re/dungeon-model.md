@@ -60,7 +60,7 @@ This is the section the rest of the document exists for. Dungeon 47,
 *Crimson Hand Supply Depot*, is the worked example; the numbers below are
 read out of the client, not invented.
 
-**What the client needs, per `docs/archive/destiny-and-the-ballpark.md` §4.4:** a ball
+**What the client needs, per the unpublished destiny-and-the-ballpark note §4.4:** a ball
 carries `itemID` (int64), `mode`, `radius` (f32) and `position` (3 × f64); a
 `foo.SlimItem` carries `itemID`, `typeID` and `ownerID`, and every SlimItem's
 `itemID` must already be a ball. So one object in space is, at minimum,

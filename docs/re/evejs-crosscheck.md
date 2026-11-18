@@ -1,6 +1,6 @@
 <!-- Provenance: the `evejs-crosscheck` lane, 2026-10-20. Acts on
-     `docs/archive/evejs-261018-reference.md` §9. Read-only: nothing outside this file
-     and `docs/lanes/evejs-crosscheck.md` was written; no Rust was changed.
+     the unpublished evejs-261018-reference note §9. Read-only: nothing outside this file
+     and the unpublished evejs-crosscheck lane note was written; no Rust was changed.
      The EvEJS archive was NOT extracted and nothing was executed from it --
      every verdict below is settled against the client, which is the only
      authority this document recognises. Line numbers for client Python come
@@ -15,7 +15,7 @@
 Client build **V24.01 / 3619879**. EvEJS targets **24.01 / 3396210** — same
 version, *different build*; §6 below says what that does to every verdict.
 
-This lane takes the claims in `docs/archive/evejs-261018-reference.md` as hypotheses
+This lane takes the claims in the unpublished evejs-261018-reference note as hypotheses
 and settles each one against the client's own reader and writer. **EvEJS is
 nowhere the citation.** Where a verdict says *agree*, it means two independent
 readings of the same client arrived at the same answer — a hypothesis that
@@ -25,7 +25,7 @@ survived, not a proof.
 
 ## 1. The verdict table
 
-`claim` is EvEJS's, as reported in `docs/archive/evejs-261018-reference.md`.
+`claim` is EvEJS's, as reported in the unpublished evejs-261018-reference note.
 `client says` is this build, with the address or `file.py:line` that settles
 it.
 
@@ -60,13 +60,13 @@ build's dispatch table, and theirs descends from EVEmu's Crucible-era work.
 | 12 | `UNKNOWN_MASK 0x80` | bit 7 is **discarded** | bit 7 is never tested anywhere in the dispatch | **partly agree** — the name is fair, but the client *ignores* the bit; a codec that *rejects* on it diverges from the client | `0x1802ddaa4`-`0x1802ddad2`, the whole dispatch: `movsx`, `and 0x3f`, `shr 6`, `and 1`, index |
 | 13 | opcodes span `PyNone 0x01` … `PyVarInteger 0x2f` | 42 valid codes in `0x01..0x2F`; `0x00, 0x0C, 0x18, 0x1D, 0x1E, 0x2D` are NULL slots | same range; a NULL slot gives *"Invalid type tag %d in stream."* | **agree** | table `0x180b015f0`; NULL path `0x1802ddafc` → `0x18098…`/`0x18097dd48` |
 | 14 | `PyPackedRow 0x2a` | DBRow is `0x2A`, proven from the writer's immediate | `0x2A` → `0x1802fe410` | **agree** | `docs/reference/dbrow.md`; `mov r8d, 0x2a` at `0x1802df84d` |
-| 15 | `PySubStream 0x2b` | `0x2B` is a length-prefixed nested marshal stream | shape confirmed; the *name* is ours by inference | **agree** | `docs/archive/marshal-tags.md`; tag `0x2B` → `0x1802db760` |
+| 15 | `PySubStream 0x2b` | `0x2B` is a length-prefixed nested marshal stream | shape confirmed; the *name* is ours by inference | **agree** | the unpublished marshal-tags note; tag `0x2B` → `0x1802db760` |
 | 16 | `PyObjectEx1/2 0x22/0x23` | object 2.2 / 2.3 forms | `0x1802de1c0` / `0x1802de430`, both reserve a shared slot before reading any child | **agree** | `docs/reference/object-wrapper.md` |
 | 17 | `cPicked 0x21` | `0x21` is a raw, self-delimiting cPickle payload | cached `cPickle.Unpickler` at `stream+0x70`, no length field | **agree** | handler `0x1802dcf60` |
 | 18 | `PySavedStreamElement 0x1b` | `0x1B` is the shared back-reference, 1-based, `1 <= i <= mapcount` | *"Invalid TY_REFERENCE in stream"* on a bad index | **agree** | handler `0x1802dce60` |
 | 19 | dicts are written **value before key** | same; `pyutil::pydict` exists to encode the inversion once | first `ReadObject` → `r8` (value), second → `rdx` (key), then `PyDict_SetItem(dict, key, value)` | **agree — and independently, which is the point** | `0x1802dd2c6` then `0x1802dd2e1`, then `0x1802dd2ee`-`0x1802dd2f7 call PyDict_SetItem` |
 | 20 | packed row is real bit-packing + RLE | size-class regions largest-first, a NULL bitmap region, nibble RLE | as `docs/reference/dbrow.md`, read off `0x1802fe410` | **agree** | `docs/reference/dbrow.md` |
-| 21 | object sharing is "restricted to `blue.DBRowDescriptor` by identity" | eleven handlers consume a table entry; no type restriction | the client restricts sharing to **no** type: `0x02, 0x0D, 0x13, 0x14, 0x15, 0x16, 0x17, 0x21, 0x22, 0x23, 0x2F` all consume an entry | **disagree** — that is their implementation's scope, not the client's contract | `RegisterShared 0x1802dbdf0`; per-handler, `docs/archive/marshal-tags.md` |
+| 21 | object sharing is "restricted to `blue.DBRowDescriptor` by identity" | eleven handlers consume a table entry; no type restriction | the client restricts sharing to **no** type: `0x02, 0x0D, 0x13, 0x14, 0x15, 0x16, 0x17, 0x21, 0x22, 0x23, 0x2F` all consume an entry | **disagree** — that is their implementation's scope, not the client's contract | `RegisterShared 0x1802dbdf0`; per-handler, the unpublished marshal-tags note |
 | 22 | embedded pickle end is found by walking pickle opcodes | `0x21` is self-delimiting (no length); `0x1A` carries a length the client **discards** | same | **agree** | `0x1802dcf60` (`0x21`), `0x1802dd010` (`0x1A`) |
 | 31 | the rest of their opcode table (beyond the seven codes the handoff doc names) | 42 codes, 26 named from their handlers' C-API fingerprints | — | **unknown** — not compared; archive not extracted, and see the note above | — |
 
@@ -90,7 +90,7 @@ build's dispatch table, and theirs descends from EVEmu's Crucible-era work.
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 26 | "client build 3396210 ← SAME TARGET AS OURS" | our build is **3619879** | — | **disagree** — §6 | `docs/archive/recon-v24.01.md:1` |
+| 26 | "client build 3396210 ← SAME TARGET AS OURS" | our build is **3619879** | — | **disagree** — §6 | the unpublished recon-v24.01 note |
 | 27 | content harvested from *newer* builds `3475087`, `3487903`, `3436472` | — | all three, and 3396210, are **older** than 3619879 | **disagree on direction** — newer than *their* target, older than ours | arithmetic |
 
 ---
@@ -186,8 +186,8 @@ Three things follow.
 
 ## 3. `0x7D` vs `0x7E`: closed. `0x7D` is marshal **version 1**
 
-**Answer to the lane's question 2, and it closes `docs/archive/wire-format.md` gap 4 and
-`docs/archive/marshal-tags.md` gap 10.** Both markers are read off this build's reader
+**Answer to the lane's question 2, and it closes the unpublished wire-format note gap 4 and
+The unpublished marshal-tags note gap 10.** Both markers are read off this build's reader
 *and* writer, and the Python-visible signature names the field.
 
 ### The signature
@@ -282,7 +282,7 @@ writes one — so this is latent, not live.
 - **`useChecksum` is the switch that emits tag `0x1C`.** `0x1802da962`-`:96f`:
   when the flag is set the writer emits tag `0x1C` and then a `u32` placeholder
   before the body. `Load`'s `skipCrcCheck` is the matching read-side gate.
-  This confirms `docs/archive/marshal-tags.md`'s `0x1C` reading **from the writer**, which
+  This confirms the unpublished marshal-tags note's `0x1C` reading **from the writer**, which
   it previously had only from the reader. **[V]**
 - **The header's id table really is at the tail**, re-confirmed here from the
   pointer arithmetic (`0x1802e17d9`: `lea r14,[rcx*4]`;
@@ -346,7 +346,7 @@ So `signedFunc` is a 2-tuple `(blob, flag)` where:
   is a CPython 2.7 marshal blob, which is trivial to emit by hand.
 - `flag` must satisfy `flag == 0`.
 
-### Correction to `docs/archive/evejs-261018-reference.md` §2 GAP 3
+### Correction to the unpublished evejs-261018-reference note §2 GAP 3
 
 The doc says the second element is *"the **verification flag, hardcoded
 `false`** (unsigned)"* and draws the conclusion *"the client accepts … with
@@ -362,7 +362,7 @@ kill the connection. A server author who read "verification is off" and sent
 `True` there — the obvious choice for a flag you think is ignored — would get
 an unexplainable `GPSTransportClosed`.
 
-Our own `docs/reference/login-path.md` §4 H8 note 3 already says to send `0`, and is
+Our own unpublished login-path note §4 H8 note 3 already says to send `0`, and is
 correct.
 
 ### The minimum we can emit
@@ -423,7 +423,7 @@ Small, and worth recording because this lane had the signatures open:
 - `Save`'s `stringMap` and `Load`'s `stringTable` are **per-call** overrides of
   the 195-entry native string table. Nothing on the machoNet path passes one
   (`machobase.py:29`, `:54`, `:33`, `:58`), so the live table is the native one
-  — which `docs/archive/marshal-tags.md` already established and
+  — which the unpublished marshal-tags note already established and
   `tools/extract_string_table.sh` already pins. **[V]**
 - `Load` takes an `offset`, so the client can decode a stream that does not
   start at byte 0 of the buffer. We never need to emit anything for this; it
@@ -441,9 +441,9 @@ Small, and worth recording because this lane had the signatures open:
 
 ## 6. What the build difference does to every verdict above
 
-**Answer to the lane's question 5.** `docs/archive/evejs-261018-reference.md` §1 says
+**Answer to the lane's question 5.** the unpublished evejs-261018-reference note §1 says
 *"target EVE 24.01, client build 3396210 ← SAME TARGET AS OURS"*. **Our build
-is 3619879** (`docs/archive/recon-v24.01.md:1`). Same *version*, different *build*,
+is 3619879** (the unpublished recon-v24.01 note). Same *version*, different *build*,
 223,669 apart.
 
 Two corrections to §1 at once:
@@ -483,14 +483,14 @@ Two corrections to §1 at once:
   **195** native entries at `0x180953b00` with `machoVersion` at index 135,
   while `eve/common/lib/marshalstrings.py` in the *same* build has 210 in a
   *different* order with `machoVersion` at 148
-  (`docs/archive/marshal-tags.md`). If two tables inside one build disagree, a table
+  (the unpublished marshal-tags note). If two tables inside one build disagree, a table
   from a build 223k earlier is worthless to us. **Nothing involving tag `0x11`
   may be taken from EvEJS, at any confidence.** We regenerate from the DLL;
   keep doing exactly that. **[V]**
 - **`boot_build`.** By construction. Note the direction, which is benign:
   the client rejects only a server build **newer** than its own
   (`boot.build < r[4]` → `HANDSHAKE_INCOMPATIBLEBUILD`,
-  `docs/reference/login-path.md` §4), so EvEJS's pinned 3396210 would be *accepted* by
+  the unpublished login-path note §4), so EvEJS's pinned 3396210 would be *accepted* by
   our 3619879 client. The build mismatch is therefore not a reason their
   handshake observations would not transfer. **[V]**
 - **`serviceInfo`, service names, every content-derived claim.** 3396210's
@@ -620,7 +620,7 @@ pre-Crucible-era call. In V24.01 its job is split in two:
 1. The **native** handshake (`rawTransport.Authenticate`) returns the dict from
    which the client reads exactly three things — `session_init['userid']`,
    `proxy_nodeid`, and `config_vals` — which is precisely what
-   `docs/reference/login-path.md` §4 H10 already documents.
+   the unpublished login-path note §4 H10 already documents.
 2. The service map is fetched by a **separate, explicit call**,
    `machoNet.GetServiceInfo`, at `machoNet.py:2028` inside `ConnectToServer`.
    **[V]**, re-verified.
@@ -708,7 +708,7 @@ re-verified in this lane; the rest is **[V]** on that pass's reading.*
 ## 9. Proposals — what should change in our docs and our code
 
 Nothing below was done by this lane. **No Rust was written and no file outside
-this document and `docs/lanes/evejs-crosscheck.md` was touched.**
+this document and the unpublished evejs-crosscheck lane note was touched.**
 
 ### Code (proposals only — this lane writes no Rust)
 
@@ -752,7 +752,7 @@ in someone else's codebase.
 
 ### Docs (proposals — these files are not mine)
 
-**P5 — `docs/archive/wire-format.md`.** Three edits:
+**P5 — the unpublished wire-format note.** Three edits:
 
 - **gap 4 can close.** Replace *"What the `0x7D` `extra` byte means is still
   undetermined"* with: `0x7D` is marshal **version 1**, the no-shared-map
@@ -771,11 +771,11 @@ in someone else's codebase.
   live server, and the two readings share an ancestor in the published PyRep
   folklore even where neither copied it.
 - the **`useChecksum`** flag is the writer-side switch for tag `0x1C`, which
-  gives `docs/archive/marshal-tags.md`'s `0x1C` entry its writer-side half.
+  gives the unpublished marshal-tags note's `0x1C` entry its writer-side half.
 
-**P6 — `docs/archive/marshal-tags.md` gap 10 can close**, same content as P5.
+**P6 — the unpublished marshal-tags note gap 10 can close**, same content as P5.
 
-**P7 — `docs/reference/login-path.md` §4 H8 note 3.** The note is correct but understates
+**P7 — the unpublished login-path note §4 H8 note 3.** The note is correct but understates
 what it knows. Add: (a) the inner blob goes to the **stdlib** `marshal`, not
 `blue.marshal` (`GPS.py:6` vs `:144`), so a hand-built CPython blob is enough
 and no code object is needed; (b) element 2 of the tuple is not a flag that is
@@ -784,7 +784,7 @@ truthy value raises at `GPS.py:1012`, *outside* the try; (c) the recommended
 payload is `("s" + u32le(2) + "{}", 0)` with context `{}`, and the absolute
 minimum is `("N", 0)`. Cite `GPS.py:962`, `:977`, `:1009`-`:1014`, `:1026`.
 
-**P8 — `docs/archive/evejs-261018-reference.md`** (not mine to edit; corrections for
+**P8 — the unpublished evejs-261018-reference note** (not mine to edit; corrections for
 the coordinator to fold in):
 
 | section | correction |
@@ -804,7 +804,7 @@ the coordinator to fold in):
 whoever owns the machoNet service module: `machoNet.py:2028` has no `except`
 around it, so an exception aborts login, but the content is free and a **plain
 empty dict** is both sufficient and preferable to the `util.CachedObject` the
-real server returns. This belongs in `docs/reference/login-path.md` beside H10, because
+real server returns. This belongs in the unpublished login-path note beside H10, because
 it is a second mandatory call on the login path and the one our own census
 does not list. If it is ever populated, values must be strings or `None` —
 never ints — because the client calls `.startswith()` on them.

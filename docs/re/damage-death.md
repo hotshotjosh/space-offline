@@ -1,7 +1,7 @@
 # Taking damage, and dying — an implementation spec
 
 Lane: `damage-death`. Research only. The two files this lane may write are
-this one and `docs/lanes/damage-death.md`; no code was written and no other
+this one and the unpublished damage-death lane note; no code was written and no other
 document was touched.
 
 **The question.** One shot lands on another player's ship, repeatedly, until
@@ -31,9 +31,9 @@ clone · §6 the wreck · §7 who may shoot whom · §8 falsifiable tests · §9
 questions, ranked · §10 what I could not settle, and corrections.
 
 Companion documents, read before this one and **not** restated here:
-`docs/lanes/addballs.md` (`AddBalls2`, `RemoveBall`/`RemoveBalls`, the
+The unpublished addballs lane note (`AddBalls2`, `RemoveBall`/`RemoveBalls`, the
 `exploders` trap, the slim-item key list), `docs/re/targeting.md` (the lock
-handshake and `OnTarget`), `docs/port-tracker.md` §23 (both gauge families and
+handshake and `OnTarget`), the unpublished port tracker §23 (both gauge families and
 the two defects already fixed in them), `docs/reference/bound-objects.md` §3 (`dogmaIM`).
 
 ---
@@ -72,7 +72,7 @@ of a `DoDestinyUpdate` batch; §1.2 has the envelope.
 | 6 | S→A | notification `OnDamageMessage({'damage': 42.0, 'target': bobShipID, 'weapon': gunTypeID, 'hitQuality': 4, 'isBanked': False, 'attackType': 'me'})` | "42 to Bob's Punisher (Gatling Autocannon II) - Hits". §2 |
 | 7 | S→B | notification `OnDamageMessage({'damage': 42.0, 'source': aliceShipID, 'attackerID': aliceShipID, 'hitQuality': 4, 'isBanked': False, 'attackType': 'otherPlayerWeapons'})` | "42 from Alice". Different key set, not a mirror. §2.2 |
 | — | | *repeat 2–7 until the server's own hull number reaches zero* | |
-| 8 | S→A,B,C | destiny entries, **one batch, one stamp**: `('TerminalPlayDestructionEffect', (bobShipID, 3))` **and** `('RemoveBalls', ([bobShipID],))` — or, simpler and trap-free, the single entry `('RemoveBall', (bobShipID, True))` | the explosion and the ball's removal. `docs/lanes/addballs.md` §3 |
+| 8 | S→A,B,C | destiny entries, **one batch, one stamp**: `('TerminalPlayDestructionEffect', (bobShipID, 3))` **and** `('RemoveBalls', ([bobShipID],))` — or, simpler and trap-free, the single entry `('RemoveBall', (bobShipID, True))` | the explosion and the ball's removal. The unpublished addballs lane note §3 |
 | 9 | S→A,B,C | destiny entry `('AddBalls2', ((wreckBlob, {wreckID: ({…slim…, 'launcherID': bobShipID, 'isEmpty': False, 'lootRights': (bobCharID, bobCorpID, None, False)}, None)}),))`, **in the same batch as 8 or before it** | the wreck. Its `launcherID` must still resolve to Bob's ball. §6 |
 | 10 | S→A,B,C | destiny entry `('AddBalls2', ((podBlob, {podItemID: ({'itemID': podItemID, 'typeID': 670, 'ownerID': bobCharID, 'charID': bobCharID, 'corpID': bobCorpID}, ((1.0, 0.0, 0.0), 1.0, 1.0))}),))` | Bob's capsule appears for everybody |
 | 11 | S→B | `OnMultiEvent`/notification: the capsule's godma item and its ten dogma attributes (`Registry::capsule_dogma_row`, port-tracker §23.5) | so Bob's rings are not three empty circles |
@@ -604,7 +604,7 @@ which is also exactly the test to write (§8.5).
 
 ### 4.1 What every client gets
 
-Covered in detail by `docs/lanes/addballs.md` §3; the summary with the
+Covered in detail by the unpublished addballs lane note §3; the summary with the
 decision this lane recommends:
 
 - **One entry, no trap:** `('RemoveBall', (bobShipID, True))`.
@@ -892,7 +892,7 @@ counted with `SecurityClassFromLevel` over all 8490:
 | HighSec | `< 0.95` | 1193 |
 | SafeSec | `>= 0.95` | 54 |
 
-> **Correction.** `docs/lanes/industry.md` says
+> **Correction.** The unpublished industry lane note says
 > "`cfg.mapSystemCache[id].securityStatus` is a *server*-supplied cache, so
 > this can only be settled by deciding it", and the doc comment at
 > `server/crates/eve-server/src/industry.rs:1186` repeats it. Both are wrong
@@ -1160,29 +1160,29 @@ a silent failure with a loud log.
 **Corrections to existing documents** (recorded here only; this lane edits no
 other file):
 
-1. `docs/port-tracker.md` §23.4 says "the cheapest discriminator costs seconds
+1. The unpublished port tracker §23.4 says "the cheapest discriminator costs seconds
    at a running client: hover a gauge". True, and it can be cheaper still:
    §1.1 above shows the bars have exactly five writers and none of them is a
    godma path, so *any* bar/ring disagreement is by construction a
    two-messages problem and never a decode problem. The discriminator is now
    "did we send both messages", answerable from a capture.
-2. `docs/port-tracker.md` §23's standing framing is "two independent gauge
+2. The unpublished port tracker §23's standing framing is "two independent gauge
    families". §1.2 adds the thing that makes them manageable:
    `DoDestinyUpdate(state, waitForBubble, dogmaMessages)` carries **both** in
    one call (`michelle.py:635-637`), so the independence is in the client's
    plumbing, not in ours.
-3. **`docs/lanes/industry.md` and `server/crates/eve-server/src/industry.rs:1186`
+3. **The unpublished industry lane note and `server/crates/eve-server/src/industry.rs:1186`
    are wrong that `cfg.mapSystemCache` is server-supplied.** It is
    `res:/staticdata/systems.static`, shipped, 8490 rows, with `securityStatus`,
    `pseudoSecurity` and `securityClass` columns (`eveCfg.py:795`, `:799`)
    `[V]`. §7.2.1. The industry lane's `safe_sec` can be read rather than
    decided — and the same table says our test system is high sec, which
    §7.2.2 argues is a live defect waiting in the next feature.
-4. Nothing in `docs/lanes/addballs.md` needed correcting; its reading of the
+4. Nothing in the unpublished addballs lane note needed correcting; its reading of the
    `exploders` comprehension at `michelle.py:1537` is right, including the
    value/key order, which CPython 2.7 emits value-first for a dict
    comprehension. This lane re-derived it from the opcodes and agrees.
 
 **What the next person should read first:** §0 of this file, then §7.2
 (because the client will refuse to fire in the system we currently use), then
-`docs/lanes/addballs.md` §3, then `docs/port-tracker.md` §23.5.
+The unpublished addballs lane note §3, then the unpublished port tracker §23.5.

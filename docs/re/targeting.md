@@ -1,7 +1,7 @@
 <!-- Provenance: the `targeting` research lane, 2026-10-22. Read-only with
      respect to code: no Rust was written or changed, no cargo was run, no
      gate was run, nothing was committed. Two files were written: this one
-     and `docs/lanes/targeting.md`.
+     and the unpublished targeting lane note.
 
      Every client line number below came from `tools/dis.py` (`co_lnotab`),
      the numbers the client's own tracebacks print -- never from uncompyle6's
@@ -67,7 +67,7 @@ of the session. That is the ghost.
 
 ## 1. Minimum viable lock — the ordered exchange
 
-Alice is in space, holding Bob's ball (§27 of `docs/port-tracker.md`). She
+Alice is in space, holding Bob's ball (§27 of the unpublished port tracker). She
 ctrl-clicks Bob.
 
 | # | direction | message | shape |
@@ -485,7 +485,7 @@ character who holds the lock; "victim" = the character being locked.
 | **victim goes out of our targeting range** | `OnTarget('lost', victimShip, 'OutOfRange')` | `OnTarget('otherlost', lockerShip, 'OutOfRange')` | **required**: no ball left the park, so nothing self-heals. See §6.3 — this is also the only EVE rule we have to implement ourselves. |
 | **locker docks / jumps** | nothing — `ProcessSessionChange`/`Park.Release` clears their own state | `OnTarget('otherlost', lockerShip, reason)` | **required for the victim**, per Ghost 3 |
 | **locker changes ship in space** | nothing — `ProcessSessionChange` calls `OnTargetClear()` | `OnTarget('otherlost', oldLockerShip, 'DeniedShipChanged')` | the client already expects `DeniedShipChanged` as a lock-abort sentinel (§6.4) |
-| **locker disconnects** | — | `OnTarget('otherlost', lockerShip, reason)` | `Registry::session_closed` already queues pushes; note `docs/lanes/two-in-space.md` §1.3 — a push queued outside a turn waits for *somebody* to send us a payload |
+| **locker disconnects** | — | `OnTarget('otherlost', lockerShip, reason)` | `Registry::session_closed` already queues pushes; note the unpublished two-in-space lane note §1.3 — a push queued outside a turn waits for *somebody* to send us a payload |
 
 ### 5.4 `CancelAddTarget` — an in-progress lock the player aborts
 
@@ -757,7 +757,7 @@ and clears the `ownerToShipIDCache` entry. `reason` is accepted and never read
 `OnTarget('otheradd', …)` must be addressed to the **victim**, and the id in it
 is the **locker's ship id**. Getting the two the wrong way round is invisible
 in a single-client test and obvious with two, which is exactly what
-`docs/lanes/two-in-space.md` built the harness for. The `audience()` contract
+The unpublished two-in-space lane note built the harness for. The `audience()` contract
 is a list of **character** ids (`notify.rs:72`); the payload is a **ship** id.
 
 ### 8.3 Who else in the system is told? **Nobody.**
@@ -865,7 +865,7 @@ same file as the `Roster` rather than in `service.rs`.
 **10.3 A `TargetChange` type implementing `notify::Push`**, in whichever module
 owns the lock table. `to_push()` returns `("OnTarget", vec![bstr(what),
 PyValue::Int(id), reason])`; `audience()` returns the one character who must be
-told. Per `notify.rs`'s own doc comment and `docs/lanes/README.md` rule 2, this
+told. Per `notify.rs`'s own doc comment and the unpublished README lane note rule 2, this
 is **zero edits to the dispatcher**.
 
 **10.4 `service.rs:4040`, `ship_attributes`.** Three ids: `76` maxTargetRange,

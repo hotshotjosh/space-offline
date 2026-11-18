@@ -534,7 +534,7 @@ So `AddBalls2`'s blob is byte-for-byte the same job for a bot as for a human.
 ### 3.2 The slim dict: five keys, and only `ownerID` decides NPC-ness
 
 `AddBalls2` replaces the `SlimItem` instance dict wholesale
-(`michelle.py:1698`), and `docs/lanes/addballs.md` §5.1 already settled the
+(`michelle.py:1698`), and the unpublished addballs lane note §5.1 already settled the
 five keys we send: `itemID`, `typeID`, `ownerID`, `charID`, `corpID`, with
 `groupID`/`categoryID`/`radius` derived client-side from `typeID` and every
 other attribute returning `None` from `SlimItem.__getattr__`.
@@ -812,7 +812,7 @@ involvement at all. 1,543 more are `(11.0, -11.0)` → neutral white.
 | the player's own locks succeeded | `OnTarget('add', tid)`, `('lost', tid, reason)`, `('clear',)` |
 | a module fired | `OnSpecialFX(shipID, moduleID, moduleTypeID, targetID, otherTypeID, guid, isOffensive, start, active, duration=-1, repeat=None, startTime=None, timeFromStart=0, graphicInfo=None)` |
 | damage landed | `OnDamageStateChange(shipID, damageState)`, same 3-sequence `((shield, tau, _), armour, hull)` as `extraBallData` |
-| a ball died | `RemoveBalls` with `isRelease` — `docs/lanes/addballs.md` §3.3 |
+| a ball died | `RemoveBalls` with `isRelease` — the unpublished addballs lane note §3.3 |
 | standings/flags changed mid-flight | `OnSlimItemChange(itemID, newSlim)` |
 
 `OnTargets(targets)` is `for each in targets: self.OnTarget(*each[1:])`
@@ -1042,7 +1042,7 @@ a client.
 `OnSpecialFX`, `OnDamageStateChange` and `OnSlimItemChange` — pushes that two
 humans shooting each other need identically.** The fifth, warp, is a ball-mode
 tail we have decided not to encode on `[V2]` evidence, with a known cheap way
-out (`docs/lanes/round2-spec.md` §8: warp a ball and let the client's own
+out (the unpublished round2-spec lane note §8: warp a ball and let the client's own
 writer tell us).
 
 ### 7.3 The shape to give the driver
@@ -1052,7 +1052,7 @@ Three pieces, and the middle one is the only new concept:
 1. **A tick.** CCP's is `BehaviorTree.Tick(context)` per entity, called by the
    ballpark. Ours wants one thread or one timer stepping every bot in a system,
    because `Registry::pending` is drained only from `Dispatch::on_payload`
-   (`docs/lanes/two-in-space.md`) — **a bot that acts while every human is idle
+   (the unpublished two-in-space lane note) — **a bot that acts while every human is idle
    produces a push that sits in the queue until some connection sends a
    payload.** That asymmetry is the first thing a bot driver will hit, and it
    is already written down.
@@ -1163,7 +1163,7 @@ an NPC's behaviour, which would promote §1.5 from GM tool to requirement.
 **T12 — a bot acting while all humans idle is still seen within 250 ms.**
 Queue a bot action with no inbound payload and assert the frame reaches an idle
 observer. **This one is expected to fail today** —
-`docs/lanes/two-in-space.md` §1.3 — and that is the point: it is the
+The unpublished two-in-space lane note §1.3 — and that is the point: it is the
 pass/fail boundary for "bots exist while nobody is playing", which is the end
 goal's whole premise.
 
@@ -1231,4 +1231,4 @@ data, in the analysis container, read-only. The decompiled copy of the
 `behaviors` package used for reading lives in this session's scratchpad and is
 not in the tree. No Rust was written or compiled, no test was run, nothing was
 committed, and the only files this lane wrote are this one and
-`docs/lanes/npc-behaviors.md`.
+The unpublished npc-behaviors lane note.

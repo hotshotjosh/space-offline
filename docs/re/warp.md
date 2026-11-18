@@ -2,7 +2,7 @@
 
 > **Demoted 2026-10-24** — the align-phase section (around line 153) already carries its own SUPERSEDED banner. Current truth: [port-tracker.md](../port-tracker.md) §§47–56. Kept for history; do not brief a lane from this file.
 
-Lane: `warp-destiny`. Research only — this file and `docs/lanes/warp-destiny.md`
+Lane: `warp-destiny`. Research only — this file and the unpublished warp-destiny lane note
 are the whole output; no code was written and no other file was touched.
 
 **The question this answers:** when the player right-clicks a planet and picks
@@ -38,7 +38,7 @@ and ranges, 7 arrival, 8 the tunnel and the sound, 9 falsifiable tests,
    minimumRange: f64 = 20000.0, warpFactor: i32 = 20)`. Read out of
    `_destiny.dll` at `0x1800acf88` (the format string), with the wrapper at
    `0x18006e6d0` and the implementation at `0x1800425e0` `[V]`. This
-   **supersedes** `docs/lanes/movement.md` §3's "there is no native `WarpTo`
+   **supersedes** the unpublished movement lane note §3's "there is no native `WarpTo`
    entry point to probe" and §8 item 4.
 2. **One message does the whole warp.** The client's native engine runs
    align → activate → accelerate → cruise → decelerate → park, from the single
@@ -96,9 +96,9 @@ position at command time, and the tick at which it will declare arrival.
 
 Step 2 and step 3 may share one stamp: a batch may hold more than one entry
 provided every stamp is equal and no entry is a `SetState`
-(`docs/lanes/movement.md` §2) `[V]`. `OnSpecialFX` is in
+(the unpublished movement lane note §2) `[V]`. `OnSpecialFX` is in
 `nonDestinyCriticalFunctions`, so it is *not* time-synchronised and is safe in
-the same batch (`docs/archive/destiny-and-the-ballpark.md` §4.2) `[V]`.
+the same batch (the unpublished destiny-and-the-ballpark note §4.2) `[V]`.
 
 Step 4 is reconciliation, not animation — the client reaches mode `STOP` by
 itself at its own computed arrival tick (§7). Its job is to make the *server's*
@@ -154,7 +154,7 @@ so for the first implementation:
 
 > **SUPERSEDED, 2026-10-22 — the align phase *is* predictable, and the number
 > was already in our hull table.** The client activates the warp at
-> `speed² > (0.75 * maxVelocity)²` (`docs/port-tracker.md` §34) and a ship
+> `speed² > (0.75 * maxVelocity)²` (the unpublished port tracker §34) and a ship
 > from rest reaches ¾ of its commanded speed at `-ln(0.25) * tau`, which is
 > the definition of the published align time. The gate and the fitting
 > window's figure are the same quantity, asserted over all 19 hulls by
@@ -301,13 +301,13 @@ making the dropout threshold unreachable), not that we forgot a message.
 3. **The implementation's own use of each argument.** `0x1800425e0` NaN-checks
    the three coordinates with three calls to the same validator
    (`0x18004260c`, `0x18004261d`, `0x180042637`) — which is exactly the
-   `NaN in WarpTo. Ignored` string `docs/lanes/movement.md` §3.1 already
+   `NaN in WarpTo. Ignored` string the unpublished movement lane note §3.1 already
    found — then at `0x1800427bc`–`0x18004281a` writes
    `gotoX/Y/Z = (x,y,z)`, `effectStamp = -1`, `followId_slot = max(0.0, arg6)`,
    `ownerId_slot = (int64)max(arg7, 1)`, `followRange = 0`, and calls
    `SetMode(3)`.
 
-`WarpTo` is in `Park.scatterEvents` (`docs/archive/destiny-and-the-ballpark.md` §4.2)
+`WarpTo` is in `Park.scatterEvents` (the unpublished destiny-and-the-ballpark note §4.2)
 `[V]`, so `RealFlushState` calls the native `_parent_WarpTo(*args)` **and** then
 `sm.ScatterEvent('OnBallparkCall', 'WarpTo', args)`. Two consumers read that
 scatter, and they confirm the argument order independently `[V]`:
@@ -410,7 +410,7 @@ isFree        T_BOOL       0xd0     maxVelocity   T_FLOAT     0xe0
 
 and `Ballpark.currentTime` is `T_INT` at `0x1c`, which is where the blob's
 4-byte header lands (`0x180097913`) — an independent confirmation of
-`docs/archive/destiny-and-the-ballpark.md` §4.4's `[I]` on that field.
+The unpublished destiny-and-the-ballpark note §4.4's `[I]` on that field.
 
 Then the two semantic names that no member table could give:
 
@@ -515,7 +515,7 @@ Each tick, for a ball in mode WARP with `effectStamp <= 0`, the engine runs
    **CORRECTION, 2026-10-22.** An earlier revision of this line said "this is
    why a warping ship accelerates to 75% of max speed on its own with no
    `SetSpeedFraction` from us". **That is wrong, and it shipped a defect**
-   (`docs/port-tracker.md` §34): the "ordinary sub-warp goto path" is
+   (the unpublished port tracker §34): the "ordinary sub-warp goto path" is
    throttle-scaled. `0x180038870` opens with `movss xmm3, [r8+0xf4]`
    (`speedFraction`), `movss xmm8, [r8+0xe0]` (`maxVelocity`) and
    `mulsd xmm8, xmm3` **[V]**, so a ball with `speedFraction == 0` is commanded
@@ -839,7 +839,7 @@ whose five defaults are `-1, None, None, 0, None` **[V]** — so **fourteen
 parameters, nine required**. `docs/re/jump-gates.md` §6's "fourteen
 positionals" and this section's "nine" were never in conflict, and the
 implementation withheld the tunnel for a round on the belief that they were.
-`docs/port-tracker.md` §35 has the whole episode. Also checked, because it is
+The unpublished port tracker §35 has the whole episode. Also checked, because it is
 the guard that could have swallowed the event in silence:
 `res:/staticdata/traveleffects.fsdbinary` holds only the jump family, so
 `IsTravelEffect('effects.Warping')` is **false** and
@@ -913,7 +913,7 @@ test on one path.
 **T7 — stamps.** The `WarpTo` batch and the arrival batch carry distinct,
 strictly increasing stamps, and neither is below the last `SetState`'s stamp.
 One distinct stamp per notification or the client calls `OnFatalDesync`
-(`docs/archive/destiny-and-the-ballpark.md` §4.2).
+(the unpublished destiny-and-the-ballpark note §4.2).
 
 **T8 — the arrival point matches the client's formula.** Given a ship at `p`
 and a target `t` with `min_range = r`, the position the server sends in step 4
@@ -944,7 +944,7 @@ the action are both right.
 
 ## 10. Corrections to existing documents
 
-1. **`docs/lanes/movement.md` §3, the `WarpTo` row, and §8 item 4.** "There is
+1. **The unpublished movement lane note §3, the `WarpTo` row, and §8 item 4.** "There is
    no native `WarpTo` entry point to probe — `destiny.Ballpark` exposes none"
    is **wrong**. `WarpTo` is in the Ballpark method table — its name string is
    at `0x1800aa518`, registered at `0x18006beda` with wrapper `0x18006e6d0` —
@@ -967,11 +967,11 @@ the action are both right.
    flags byte is not mode-dependent in the reader, and a ship that is warping
    must have `IS_FREE` set because the physics block carries its velocity. The
    `IS_INTERACTIVE` half of `0x09` is unrelated to warp.
-4. **`docs/archive/destiny-and-the-ballpark.md` §4.4 row 1 of the stream header**, the
+4. **The unpublished destiny-and-the-ballpark note §4.4 row 1 of the stream header**, the
    `[I]` on "it is the simulation tick": `Ballpark.currentTime` is `T_INT` at
    offset `0x1c` in the `PyMemberDef` table, and the header's four bytes are
    written to `ballpark+0x1c`. That `[I]` can be promoted to `[V]`.
-5. **`docs/archive/destiny-and-the-ballpark.md` §4.4 table**, the mode bound: modes 7
+5. **The unpublished destiny-and-the-ballpark note §4.4 table**, the mode bound: modes 7
    (BOID) and 9 (FIELD) share the jump-table slot with `mode > 12`, i.e. they
    have **no reader** in this build. Worth a line, because "mode is 0..12" is
    not the same as "eleven modes have tails".
@@ -1045,7 +1045,7 @@ cheapest possible warp for bots. Its argument list was not read.
 ## 12. What to read first next time
 
 1. §1 of this file, then §4.2, then §4.4's trap.
-2. `docs/lanes/movement.md` §§1–3 for the transport and the action envelope —
+2. The unpublished movement lane note §§1–3 for the transport and the action envelope —
    warp changes none of it, and §10 item 1 of this file is the only correction.
 3. `_destiny.dll` `0x180042863` (`ActivateWarp`, 300 bytes) is the single most
    informative function about warp in the client. `0x180042b20`
@@ -1070,4 +1070,4 @@ cheapest possible warp for bots. Its argument list was not read.
    extensions: find the member-name string's VA, search the image for an
    8-aligned pointer to it, and read `(int type, int64 offset)` at `+8` and
    `+16`. It named nine fields in one pass and it outranks every inference in
-   `docs/archive/destiny-and-the-ballpark.md` §4.4.
+   the unpublished destiny-and-the-ballpark note §4.4.
