@@ -1478,6 +1478,25 @@ def eoci_main(EOCI_NAME):
             return None
         return getattr_safe(park.GetBall(park.ego), 'maxVelocity', None)
 
+    GROUP_SYNC = 5140     # [V] typedata, 3707965: the 27 rig synchronizers
+    GROUP_OVERDRIVE = 764  # [V] typedata, 3707965: the Overdrive Injector System group
+
+    def named_in_group(group, name):
+        """Type ids of `group` whose English name equals `name`, read from the
+        client's `evetypes` itself.  The shared name table is cached in a file
+        across builds and can predate a new build's types (a 3707965 run found
+        none of the new ones), so these two lookups bypass it."""
+        out = []
+        try:
+            evetypes = __import__('evetypes')
+            for tid in evetypes.GetTypeIDsByGroup(group):
+                ok, nm = safe(lambda: evetypes.GetEnglishName(tid))
+                if ok and text(nm).lower() == name:
+                    out.append(int(tid))
+        except Exception:
+            pass
+        return out
+
     def eoci_body():
         mark = log_mark()
         hull = type_ids_named(HULL_NAME, exact=True)
@@ -1485,8 +1504,8 @@ def eoci_main(EOCI_NAME):
             ok, nm = safe(lambda: __import__('evetypes').GetEnglishName(t))
             return (not ok) or ('blueprint' in text(nm).lower())
         guns = [t for t in type_ids_named(GUN_SUB, limit=40) if not is_blueprint(t)]
-        sync = type_ids_named(SYNC_NAME, exact=True)
-        burst = type_ids_named(BURST_NAME, exact=True)
+        sync = named_in_group(GROUP_SYNC, SYNC_NAME) or type_ids_named(SYNC_NAME, exact=True)
+        burst = named_in_group(GROUP_OVERDRIVE, BURST_NAME) or type_ids_named(BURST_NAME, exact=True)
         precondition('the client knows the hull, a faction gun, the synchronizer and the burst module',
                      bool(hull and guns and sync and burst),
                      'hull=%s guns=%s sync=%s burst=%s' % (text(hull), text(guns[:3]), text(sync), text(burst)))
