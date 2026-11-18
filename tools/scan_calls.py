@@ -130,11 +130,23 @@ def line_at(m, off):
         else: break
     return cur
 
-def srcpath(c):
-    f = (c.filename or b'').decode('utf8','replace')
-    i = f.find(PREFIX_MARK)
-    if i >= 0: f = f[i+len(PREFIX_MARK):]
+_RELEASE_PREFIX = _re.compile(r'release[\\/]V\d+\.\d+[\\/]')
+
+def strip_build_prefix(f, mark=None):
+    """Repo-relative path from a code.ccp filename. The start.ini mark is tried
+    first; failing that, any `release\\V<major>.<minor>\\` segment is cut, so a
+    build whose start.ini was not passed still gets clean call_site cells."""
+    mark = PREFIX_MARK if mark is None else mark
+    i = f.find(mark)
+    if i >= 0:
+        f = f[i+len(mark):]
+    else:
+        m = _RELEASE_PREFIX.search(f)
+        if m: f = f[m.end():]
     return f.replace('\\','/')
+
+def srcpath(c):
+    return strip_build_prefix((c.filename or b'').decode('utf8','replace'))
 
 def V(d, svc=None, bm=None, origin=None, indirect=None, site=None, deco=None,
       isfunc=False, natv=False, code=None, via=None):

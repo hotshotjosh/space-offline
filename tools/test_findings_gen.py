@@ -591,5 +591,28 @@ class GwDumpTests(unittest.TestCase):
                                "  message Inner", "    1 int32  v"])
 
 
+class ScanCallsPrefixTests(unittest.TestCase):
+    """call_site cells are repo-relative for any build, with or without start.ini."""
+
+    @classmethod
+    def setUpClass(cls):
+        saved = list(sys.path)
+        try:
+            cls.SC = _load("scan_calls")
+        finally:
+            sys.path[:] = saved
+
+    def test_other_line_prefix_is_stripped_without_start_ini(self):
+        f = "C:\\Agent\\work\\abc\\eve\\release\\V99.01\\pkg\\mod.py"
+        self.assertEqual(self.SC.strip_build_prefix(f, mark="release\\V10.00\\"), "pkg/mod.py")
+
+    def test_start_ini_mark_still_wins(self):
+        f = "C:\\Agent\\release\\V99.01\\pkg\\mod.py"
+        self.assertEqual(self.SC.strip_build_prefix(f, mark="release\\V99.01\\"), "pkg/mod.py")
+
+    def test_no_prefix_is_left_alone(self):
+        self.assertEqual(self.SC.strip_build_prefix("pkg\\mod.py", mark="release\\V10.00\\"), "pkg/mod.py")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -151,8 +151,8 @@ scan_side() {  # LABEL TREE CLIENT DEST
         echo "client=${client:-none}"
         [[ -z $client ]] || echo "client_$(grep -h '^build' "$client/start.ini" 2>/dev/null | head -1 | tr -d ' \r')"
     } > "$dest/meta.txt"
-    # census-calls.sh runs its own containers; it needs no install, only SCAN_START_INI
-    # for the release line, which it does not get, so the V24.01 default holds there.
+    # census-calls.sh runs its own containers; it needs no install. scan_calls strips any
+    # `release\Vnn.nn\` build prefix itself, so no start.ini is needed for repo-relative paths.
     "$REPO/tools/census-calls.sh" --pyc "$tree" --out "$dest/client-calls.tsv" > "$dest/client-calls.log" 2>&1 \
         || { echo "port-surface: $label: census-calls failed:" >&2; tail -5 "$dest/client-calls.log" >&2; return 1; }
     local ok=1
