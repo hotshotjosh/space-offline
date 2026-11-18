@@ -15,11 +15,11 @@ Sizes: S is under a lane-day, M one to three, L more.
 **Which tools exist.** Today: `tools/import-build.sh`, `tools/new-build.sh`, `tools/build-delta.py`,
 `tools/port-surface.sh`, `tools/port-recheck.py`, `tools/bundle-diff.py`, `tools/re-pin.sh`,
 `tools/client-ci-regress.sh`, `tools/regress-compare.py`,
-`tools/content-report.py`, `tools/census.sh`, `tools/tq-lag.py`,
+`tools/content-report.py`, `tools/client-ci/fci-surface.py`, `tools/census.sh`, `tools/tq-lag.py`,
 `tools/client-setup.sh refresh` (with `tools/pins/<build>.sha256` for `tools/pin-client.sh`) and
 `tools/client-ci/cutover.list`. Planned (each is named where it is used, and tracked on #290):
 `tq-watch.py`, `build-triage.py`, `answer-shapes.py`,
-`client-ci/fci-surface.py`, `intake-issues.py`, `retire-build.sh`,
+`intake-issues.py`, `retire-build.sh`,
 `v-audit.py`, and the `recompiled` class of `build-delta.py`. Until a planned tool lands, its
 step is done by hand from the same inputs.
 
@@ -392,7 +392,7 @@ in three passes:
 Limits: keys built at run time, and answers passed more than one hop through generic dicts.
 Exit codes follow port-surface: 0 nothing moved, 3 a row needs a reader, 2 usage, 1 a tool failed.
 
-### 6.3 fci churn: `tools/client-ci/fci-surface.py` (planned, M)
+### 6.3 fci churn: `tools/client-ci/fci-surface.py`
 
 The scenarios run inside the client and reach its internals (`uicore.layer.shipui`,
 `sm.GetService('bookmarkSvc')`, module imports). 3707965 added a whole `hud` package (88
@@ -401,7 +401,7 @@ extracts per scenario and line the imports, service calls, layer chains and `set
 a tokenizer (the scenarios are Python 2.7 source) and checks them against the new pyc tree:
 module and names exist, the service is in `client-services.json`, the layer is registered, and
 referenced functions are not `changed` or `gone`. Output is `fci-surface.md` and `.tsv` (status
-`ok`, `gone`, `changed` or `unresolved`); exit 0, 3 (a row needs a reader), 2, 1. Each `gone` or
+`ok`, `gone`, `changed` or `unresolved`); exit 0, 3 (a `gone` or `changed` row, or a tokenizer stop), 2, 1. An `unresolved` name that neither tree knows cannot have been broken by this build, so it is listed and counted but does not set exit 3 [A: falsifier, a scenario that names a client symbol by typo never fails the tool]. Run it in the analysis container on the old and new pyc trees. Each `gone` or
 `changed` row becomes a scenario fix in T1.3. A scenario that must serve both builds reads
 defensively, for example `row.get('daysUntilCanDeliver', row.get('daysUntilCanDeliverConst'))`.
 
