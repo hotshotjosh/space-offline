@@ -42,7 +42,7 @@ eve_content_select() {
 
     want=out/content
     case $EVE_CSTATUS in
-        pinned | equivalent | legacy) ;;
+        pinned | equivalent | provisional | legacy) ;;
         *) want=out/content-$EVE_CBUILD
            EVE_SERVER_BUILD_ARGS=(--client-build "$EVE_CBUILD")
            EVE_CONTENT_TOOL_ARGS=(--build "$EVE_CBUILD") ;;
@@ -56,7 +56,7 @@ eve_content_select() {
         *) echo "content-lib: EVE_CONTENT=$want must be a directory under $repo/out/" >&2; return 1 ;;
     esac
     want=${want%/}
-    if [[ $want == out/content && $EVE_CSTATUS != pinned && $EVE_CSTATUS != equivalent && $EVE_CSTATUS != legacy ]]; then
+    if [[ $want == out/content && $EVE_CSTATUS != pinned && $EVE_CSTATUS != equivalent && $EVE_CSTATUS != provisional && $EVE_CSTATUS != legacy ]]; then
         echo "content-lib: client build $EVE_CBUILD is '$EVE_CSTATUS'; it must not use out/content (the pinned build's bundle). Use out/content-$EVE_CBUILD" >&2
         return 1
     fi

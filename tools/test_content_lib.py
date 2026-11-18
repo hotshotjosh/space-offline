@@ -27,7 +27,8 @@ LIB = os.path.join(HERE, "content-lib.sh")
 REG = ("#hdr\n"
        "100\tL1\tpinned\t-\tx\n"
        "200\tL1\tequivalent\t-\ty\n"
-       "300\tL1\tunverified\t-\tz\n")
+       "300\tL1\tunverified\t-\tz\n"
+       "400\tL1\tprovisional\t-\tw\n")
 
 
 class Select(unittest.TestCase):
@@ -71,6 +72,10 @@ class Select(unittest.TestCase):
         got = self.select(self.client("a", 200, crlf=True))
         self.assertEqual(got[:3], ["200", "equivalent", "out/content"])
         self.assertEqual(got[4:], ["", ""])
+
+    def test_a_provisional_build_uses_the_pinned_bundle_and_keeps_the_served_set(self):
+        got = self.select(self.client("p", 400))
+        self.assertEqual(got, ["400", "provisional", "out/content", self.repo + "/out/content", "", ""])
 
     def test_an_unverified_build_gets_its_own_directory_and_both_opt_ins(self):
         got = self.select(self.client("a", 300))
