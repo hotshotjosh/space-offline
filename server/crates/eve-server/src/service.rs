@@ -366,6 +366,13 @@ pub(crate) fn emergency_warp(reg: &mut Registry, actor: i64, now: crate::damage:
     space::emergency_warp(reg, actor, now);
 }
 
+/// A warp the pilot did not ask for, to a point (the AIR tutorial's `Warp
+/// Character To Position`, `crate::air_npe`): `space` keeps the warp
+/// `pub(super)`, so it leaves through here, like [`emergency_warp`].
+pub(crate) fn warp_character_to(reg: &mut Registry, actor: i64, aim: [f64; 3]) {
+    space::warp_character_to(reg, actor, aim);
+}
+
 /// Every subsystem module, paired with the services it answers for.
 ///
 /// `service.rs` was 7374 lines in one file, and that -- not anything about

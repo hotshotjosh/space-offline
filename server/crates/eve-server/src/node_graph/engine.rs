@@ -41,8 +41,9 @@ pub enum Effect {
     /// A checkpoint moved (`Set Checkpoint`); persist it.
     Checkpoint { graph_id: i64, checkpoint: i64 },
     /// A server action this runtime does not perform itself, with its
-    /// resolved parameters.
-    Action { atom: String, args: Kw },
+    /// resolved parameters. Its node waits for [`Runtime::resolve`] with
+    /// this `ticket`.
+    Action { atom: String, args: Kw, ticket: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +123,13 @@ pub struct Runtime {
     pub checkpoints: BTreeMap<i64, i64>,
     pub effects: Vec<Effect>,
     pub log: Vec<String>,
+    /// Actions waiting for the server: ticket -> (node, its epoch, flow).
+    parked: BTreeMap<u64, (Sub, u64, Kw)>,
+    next_ticket: u64,
+    /// What `Get Item Id For Dungeon Object` answers: `(spawn id, dungeon
+    /// object id) -> item id`, kept by the server for the dungeons it
+    /// spawned for this run.
+    pub dungeon_objects: HashMap<(i64, i64), i64>,
 }
 
 impl Runtime {
@@ -156,6 +164,9 @@ impl Runtime {
             checkpoints,
             effects: Vec::new(),
             log: Vec::new(),
+            parked: BTreeMap::new(),
+            next_ticket: 1,
+            dungeon_objects: HashMap::new(),
         };
         let root = rt.new_inst(graph, None, None, None);
         rt.root = root;
@@ -1068,6 +1079,14 @@ impl Runtime {
             "None" => {
                 out.insert("value".into(), Value::None);
             }
+            "Get Item Id For Dungeon Object" => {
+                let spawn = vars.get("dungeon_spawn_id").and_then(Value::as_int);
+                let object = vars.get("dungeon_object_id").and_then(Value::as_int);
+                let id = spawn
+                    .zip(object)
+                    .and_then(|k| self.dungeon_objects.get(&k).copied());
+                out.insert("item_id".into(), id.map_or(Value::None, Value::Int));
+            }
             _ => {}
         }
         out
@@ -1092,18 +1111,46 @@ impl Runtime {
                     });
                 }
             }
+            // A server atom: the flow waits here until the server has done
+            // it ([`Runtime::resolve`]), so its outputs (`spawn_id`, ...)
+            // are there for the nodes wired to it, as the client's atom job
+            // returns them before the node's output fires.
             _ => {
                 let mut args = vars;
                 args.retain(|k, _| k != "track_action");
+                kw.remove("from_node_id");
+                let ticket = self.next_ticket;
+                self.next_ticket += 1;
+                let epoch = self.state(at).epoch;
+                self.parked.insert(ticket, (at, epoch, kw));
                 self.effects.push(Effect::Action {
                     atom: atom.to_string(),
                     args,
+                    ticket,
                 });
+                return;
             }
         }
         kw.remove("from_node_id");
         self.state(at).cached = kw.clone();
         self.out(at, "output", kw, false);
+    }
+
+    /// The server did the action of `ticket` (an [`Effect::Action`]): its
+    /// `outputs` join what the node offers, and the flow goes on. A ticket
+    /// whose node was stopped since, or that is unknown, does nothing.
+    pub fn resolve(&mut self, ticket: u64, outputs: Kw) {
+        let Some((at, epoch, kw)) = self.parked.remove(&ticket) else {
+            return;
+        };
+        if !self.insts.contains_key(&at.inst) || self.state(at).epoch != epoch {
+            return;
+        }
+        let mut cached = kw.clone();
+        cached.extend(outputs);
+        self.state(at).cached = cached;
+        self.out(at, "output", kw, false);
+        self.run();
     }
 }
 
@@ -1186,7 +1233,8 @@ mod tests {
         2\tv2\tBlackboard Value\t-\tblackboard_key=s:last;blackboard_value=s:t2\t\ton_success:stop|on_failure:t1\n\
         2\tt1\tSend Message To Client Graph\t-\tmessage_key=s:start_task;message_value=s:t1\t\t\n\
         2\tcp\tActionNode\tSet Checkpoint\t\tcheckpoint_id=i:5;node_graph_id=i:1\toutput:grant\n\
-        2\tgrant\tActionNode\tGrant Thing\t\twho=c:who.blackboard_value\toutput:t2\n\
+        2\tgrant\tActionNode\tGrant Thing\t\twho=c:who.blackboard_value\toutput:t2,gw\n\
+        2\tgw\tBlackboard Write\t-\tblackboard_key=s:gift;blackboard_value=c:grant.gift\t\t\n\
         2\twho\tGet Blackboard Value\t-\tblackboard_key=s:character_id\t\t\n\
         2\tt2\tDelay\t-\tdelay=f:2.0\t\toutput:t2m\n\
         2\tt2m\tSend Message To Client Graph\t-\tmessage_key=s:start_task;message_value=s:t2\t\t\n\
@@ -1241,10 +1289,25 @@ mod tests {
             }),
             "{fx:?}"
         );
-        assert!(
-            fx.iter().any(|e| matches!(e, Effect::Action { atom, args } if atom == "Grant Thing" && args.get("who") == Some(&Value::Int(77)))),
-            "{fx:?}"
+        let ticket = fx
+            .iter()
+            .find_map(|e| match e {
+                Effect::Action { atom, args, ticket }
+                    if atom == "Grant Thing" && args.get("who") == Some(&Value::Int(77)) =>
+                {
+                    Some(*ticket)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{fx:?}"));
+        assert_eq!(rt.next_due(), None, "the flow waits for the server");
+        rt.resolve(ticket, Kw::from([("gift".to_string(), Value::Int(7))]));
+        assert_eq!(
+            rt.blackboard("gift"),
+            Value::Int(7),
+            "an output reaches a wired node"
         );
+        rt.resolve(ticket, Kw::new());
         assert!(
             client_messages(&mut rt).is_empty(),
             "t2 waits for the delay"
@@ -1260,6 +1323,22 @@ mod tests {
         assert!(rt.is_running());
         rt.message("done", Value::str("t2"));
         assert!(!rt.is_running(), "the scene stopped, so the master stopped");
+    }
+
+    #[test]
+    fn a_dungeon_objects_item_id_is_what_the_server_recorded() {
+        let mut rt = Runtime::start(lib(), 1, 77, Kw::new(), BTreeMap::new(), 0.0, 3).unwrap();
+        rt.dungeon_objects.insert((5, 990_001), 42);
+        let ask = |spawn: i64| {
+            Kw::from([
+                ("dungeon_spawn_id".to_string(), Value::Int(spawn)),
+                ("dungeon_object_id".to_string(), Value::Int(990_001)),
+            ])
+        };
+        let got = rt.getter("Get Item Id For Dungeon Object", &ask(5));
+        assert_eq!(got.get("item_id"), Some(&Value::Int(42)));
+        let none = rt.getter("Get Item Id For Dungeon Object", &ask(6));
+        assert_eq!(none.get("item_id"), Some(&Value::None));
     }
 
     #[test]
