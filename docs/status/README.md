@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**67% proved** (232 of 347) · **93% built** (324 of 347) · 3 parked, not counted.
+**66% proved** (232 of 349) · **93% built** (326 of 349) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -89,6 +89,8 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bot den runners keep mercenary dens, sell the infomorphs and run the den activities: *built-unproved*, eve-bot sov_bot/extras/den.rs: a den beside an own workforce skyhook (skill in the sov skill plan), infomorph extraction and listing (no NPC buyer), Start when capacity allows, the activity's site run as a guard post; BT sov_den.rs
 - [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
 - [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
+- [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
+- [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
 
 ### 3.7 Society, economy and bots
 
@@ -183,6 +185,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
+| FW Conquests | 0 | 2 | 0 | 0 | 0 |
 
 </details>
 
@@ -647,6 +650,13 @@ Closed by default; each line says how much of the system is proved.
 - [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a connection that sends nothing after our first handshake message is logged as such, by address; a note names the expected /content/<build>/MANIFEST.tsv when a per-build directory is unusable: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, tools/test_entrypoint.py; no deploy on a host yet
 - [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh swaps only tq-offline in both prefixes (old one kept as tq-<oldbuild>, own prefix settings kept, every refusal before the first write), pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
 - [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; test editing_a_bookmarks_expiry_sets_the_new_date (eight arguments only, clean cut); no client step yet
+
+</details>
+
+<details><summary><b>FW Conquests</b>: 0 of 2 proved, 2 open</summary>
+
+- [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
+- [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
 
 </details>
 

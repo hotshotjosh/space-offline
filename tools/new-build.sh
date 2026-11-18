@@ -12,13 +12,17 @@
 #   --pinned   the pinned install's dir name beside DIR (default tq-offline)
 #   --go-on    continue past a `differs` verdict (it is still reported)
 #   --data-done  step 7 (static data) has been done by hand; do not stop there
-#   --report   after the steps, run tools/port-surface.sh, bundle-diff.py and
-#              port-recheck.py (those present) and print their exit codes
+#   --report   after the steps, run tools/port-surface.sh, bundle-diff.py,
+#              port-recheck.py, client-ci/fci-surface.py and content-report.py
+#              (those present; the answer shapes come from port-surface's G7), then
+#              eve_patch_author.py locate and build-triage.py, and print
+#              their exit codes and the tier (T0-T3)
 #   --dry-run  print what each step would run, run nothing
 #
 # Steps (docs/guides/build-compat.md): 1 the dir is an install; 2 hash manifest
 # (tools/pin-client.sh, into out/); 3 delta against the PINNED build;
-# 4 `differs` reading; 5 loader layout (fsd.CFSD_BUILD_LAYOUTS) and expected
+# 4 `differs` reading, preceded by the triage of the delta alone (4a: the tier,
+# tools/build-triage.py exit 20-23 = T0-T3); 5 loader layout (fsd.CFSD_BUILD_LAYOUTS) and expected
 # counts; 6 registry row; 7 data; 8 patch manifest and the hosts check;
 # 9 gate. Layout and registry come before the data: content.py refuses a
 # build that has neither.
@@ -140,6 +144,26 @@ if ((dry)); then
 else
     EVE_CLIENT_DIR=$name EVE_CLIENT=$dir "$analysis" python3 -I tools/build-delta.py \
         "/client-root/$pinned_name" "/client-root/$name" --out "/work/$delta" || rc=$?
+fi
+# triage OUTDIR [ARGS...]: run tools/build-triage.py in the analysis container, writing to OUTDIR,
+# and print the tier. Exit 20-23 = T0-T3; anything else is a failure, never a pass. An absent tool
+# is named. Its inputs (surface, recheck, shapes, bundle-diff) are looked for under OUTDIR only, so
+# a delta-only OUTDIR can never pick up an older run's results.
+triage() {
+    local tool=tools/build-triage.py trc=0 od=$1 tout nskip
+    shift
+    if [[ ! -f $tool ]]; then echo "   triage: $tool not present"; return 0; fi
+    tout=$("$analysis" python3 -I "$tool" "$build" --pinned "$pin" --delta "$delta" --out "$od" "$@" 2>&1) || trc=$?
+    nskip=$(grep -c '^build-triage: skipped' <<<"$tout" || true)
+    if ((trc >= 20 && trc <= 23)); then
+        echo "   triage: T$((trc - 20)) (exit $trc) ($nskip inputs skipped), see $od/triage.md"
+    else
+        echo "   triage: FAILED (exit $trc): is $delta a format-2 delta?"
+    fi
+}
+if ((!dry)) && [[ -f $delta ]] && ((rc == 0 || rc == 3)); then
+    echo "== step 4a: triage of the delta alone, into out/new-build/$build/triage-delta (the full one follows --report)"
+    triage "out/new-build/$build/triage-delta"
 fi
 case $rc in
     0) echo "   equivalent: $delta written; commit it" ;;
@@ -269,22 +293,43 @@ if ((report)); then
     oldb=${EVE_REPORT_OLD_BUNDLE:-out/content}; newb=${EVE_REPORT_NEW_BUNDLE:-out/content-$build}
     rep() {  # NAME TOOL ARGS...
         local label=$1 tool=$2 rc=0; shift 2
-        if [[ ! -x $tool ]]; then echo "   $label: $tool not present"; return; fi
+        # A .py tool is run through the container, so it need not be executable (most are mode 644).
+        if [[ $tool == *.py ]]; then [[ -f $tool ]] || { echo "   $label: $tool not present"; return; }
+        elif [[ ! -x $tool ]]; then echo "   $label: $tool not present"; return; fi
         # A Python tool runs in the analysis container, like every other one here.
         if [[ $tool == *.py ]]; then "$analysis" python3 -I "$tool" "$@" >/dev/null 2>&1 || rc=$?
         else "$tool" "$@" >/dev/null 2>&1 || rc=$?; fi
         echo "   $label: exit $rc ($tool $*)"
     }
-    if ((dry)); then echo "   (dry-run) surface, bundle and recheck are not run"
+    if ((dry)); then echo "   (dry-run) surface, bundle, recheck, shapes, fci-surface, content-report and triage are not run"
     else
         if [[ -d $oldpyc && -d $newpyc ]]; then rep surface tools/port-surface.sh "$oldpyc" "$newpyc"
         else echo "   surface: $oldpyc or $newpyc missing"; fi
-        if [[ -d $oldb && -d $newb ]]; then rep bundle tools/bundle-diff.py "$oldb" "$newb"
+        if [[ -d $oldb && -d $newb ]]; then rep bundle tools/bundle-diff.py "$oldb" "$newb" --uses --out "out/new-build/$build/bundle-diff.txt"
         else echo "   bundle: $oldb or $newb missing"; fi
         recheck=("$oldpyc" "$newpyc")
         [[ -d $oldb && -d $newb ]] && recheck+=(--old-bundle "$oldb" --new-bundle "$newb")
-        if [[ -x tools/port-recheck.py && ! ( -d $oldpyc && -d $newpyc ) ]]; then echo "   recheck: $oldpyc or $newpyc missing"
+        if [[ -f tools/port-recheck.py && ! ( -d $oldpyc && -d $newpyc ) ]]; then echo "   recheck: $oldpyc or $newpyc missing"
         else rep recheck tools/port-recheck.py "${recheck[@]}"; fi
+        # N1. The answer shapes were run once, as port-surface's step G7 (surface/shapes/): read, do not rerun.
+        shp=out/new-build/$build/surface/shapes/shapes.tsv
+        if [[ -f $shp ]]; then echo "   shapes: from G7, $(awk -F'\t' '$2 ~ /^SERVED/ {n++} END {print n+0}' "$shp") SERVED row(s) ($shp)"
+        else echo "   shapes: no $shp (port-surface did not run or G7 failed)"; fi
+        if [[ -d $oldpyc && -d $newpyc ]]; then rep fci-surface tools/client-ci/fci-surface.py "$oldpyc" "$newpyc"
+        else echo "   fci-surface: $oldpyc or $newpyc missing"; fi
+        if [[ -d $oldb && -d $newb ]]; then rep content-report tools/content-report.py "$oldb" "$newb" --uses
+        else echo "   content-report: $oldb or $newb missing"; fi
+        # The patch rule check: locate refuses with eve_patch_author.EXIT_REFUSED (4); triage reads it as T3.
+        targs=()
+        if [[ -f tools/eve_patch_author.py && -f tools/patches/$pin.json ]]; then
+            lrc=0
+            EVE_CLIENT_DIR=$name EVE_CLIENT=$dir "$analysis" python3 -I tools/eve_patch_author.py locate /client \
+                --merge "tools/patches/$pin.json" > "out/new-build/$build/locate.json" 2>/dev/null || lrc=$?
+            echo "   locate: exit $lrc (tools/eve_patch_author.py locate; 4 = a rule refused)"
+            targs+=(--locate-exit "$lrc")
+        else echo "   locate: tools/eve_patch_author.py or tools/patches/$pin.json not present"; fi
+        echo "   tier (all inputs present are used; the others are named skipped in triage.md):"
+        triage "out/new-build/$build" ${targs[@]+"${targs[@]}"}
     fi
 fi
 

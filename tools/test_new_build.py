@@ -362,7 +362,6 @@ class Arguments(unittest.TestCase):
         open(os.path.join(t.root, "tools", "patches", "300.json"), "w").close()
         tool = os.path.join(t.root, "tools", "port-recheck.py")
         open(tool, "w").close()
-        os.chmod(tool, 0o755)
         for d in ("old-pyc", "new-pyc", "old-b", "new-b"):
             os.makedirs(os.path.join(t.root, d))
         os.environ.update(EVE_REPORT_OLD_PYC="old-pyc", EVE_REPORT_NEW_PYC="new-pyc",
@@ -374,6 +373,112 @@ class Arguments(unittest.TestCase):
         self.assertIn("recheck: exit 0", out)
         self.assertIn("python3 -I tools/port-recheck.py old-pyc new-pyc --old-bundle old-b --new-bundle new-b",
                       t.calls())
+
+    def report_tree(self, tier_rc, tools=("bundle-diff.py", "build-triage.py", "content-report.py",
+                                        "client-ci/fci-surface.py", "eve_patch_author.py"), locate_rc=0):
+        """A tree ready for --report whose analysis stub answers build-triage with tier_rc and
+        eve_patch_author locate with locate_rc. Tools get the real mode of a .py file, 0644."""
+        t = self.tree(installs=[("tq-offline", 100), ("new", 300)])
+        self.stub_pin(t)
+        os.makedirs(os.path.join(t.root, "tools", "patches"))
+        open(os.path.join(t.root, "tools", "patches", "300.json"), "w").close()
+        open(os.path.join(t.root, "tools", "patches", "100.json"), "w").close()
+        os.makedirs(os.path.join(t.root, "out", "new-build", "300"), exist_ok=True)
+        open(os.path.join(t.root, "findings", "build-delta-100-300.tsv"), "w").close()
+        for tool in tools:
+            p = os.path.join(t.root, "tools", tool)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "w").close()
+            os.chmod(p, 0o644)
+        for d in ("old-pyc", "new-pyc", "old-b", "new-b"):
+            os.makedirs(os.path.join(t.root, d))
+        with open(t.fake, "w") as f:
+            f.write('#!/bin/sh\necho "$*" >> "%s"\n'
+                    'case "$*" in\n'
+                    '  *build-triage.py*) echo "build-triage: skipped a: x"; echo "build-triage: skipped b: y"; exit %d;;\n'
+                    '  *" locate "*) exit %d;;\n'
+                    'esac\nexit 0\n' % (t.log, tier_rc, locate_rc))
+        env = dict(EVE_REPORT_OLD_PYC="old-pyc", EVE_REPORT_NEW_PYC="new-pyc",
+                   EVE_REPORT_OLD_BUNDLE="old-b", EVE_REPORT_NEW_BUNDLE="new-b")
+        os.environ.update(env)
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in env])
+        return t
+
+    def test_report_runs_fci_content_and_triage_and_prints_the_tier(self):
+        t = self.report_tree(22)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("triage: T2 (exit 22) (2 inputs skipped), see out/new-build/300/triage.md", out)
+        for line in ("fci-surface: exit 0", "content-report: exit 0 (tools/content-report.py old-b new-b --uses)",
+                     "bundle: exit 0 (tools/bundle-diff.py old-b new-b --uses --out out/new-build/300/bundle-diff.txt)"):
+            self.assertIn(line, out)
+        calls = t.calls()
+        self.assertIn("python3 -I tools/build-triage.py 300 --pinned 100 --delta findings/build-delta-100-300.tsv "
+                      "--out out/new-build/300 --locate-exit 0", calls)
+        self.assertLess(out.index("recheck:"), out.rindex("triage: T2"), "the tier prints last")
+
+    def test_answer_shapes_is_not_run_again_by_the_report(self):
+        t = self.report_tree(22)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertNotIn("answer-shapes", t.calls())
+        self.assertIn("shapes: no out/new-build/300/surface/shapes/shapes.tsv", out)
+        sh = os.path.join(t.root, "out", "new-build", "300", "surface", "shapes")
+        os.makedirs(sh)
+        with open(os.path.join(sh, "shapes.tsv"), "w") as f:
+            f.write("pass\tstatus\tkey\nB\tSERVED gone\tk\n")
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertIn("shapes: from G7, 1 SERVED row(s)", out)
+
+    def test_step_4a_triages_the_delta_alone_into_its_own_dir(self):
+        t = self.report_tree(21)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertIn("== step 4a: triage of the delta alone, into out/new-build/300/triage-delta", out)
+        self.assertIn("triage: T1 (exit 21) (2 inputs skipped), see out/new-build/300/triage-delta/triage.md", out)
+        first = [l for l in t.calls().splitlines() if "build-triage.py" in l][0]
+        self.assertEqual(first, "python3 -I tools/build-triage.py 300 --pinned 100 --delta findings/build-delta-100-300.tsv "
+                                "--out out/new-build/300/triage-delta")
+        self.assertNotIn("--surface", first)
+        self.assertNotIn("--shapes", first)
+
+    def test_a_locate_refusal_is_passed_to_the_triage(self):
+        t = self.report_tree(23, locate_rc=4)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertIn("locate: exit 4", out)
+        self.assertIn("--out out/new-build/300 --locate-exit 4", t.calls())
+
+    def test_a_triage_that_fails_is_named_never_a_tier(self):
+        t = self.report_tree(1)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("triage: FAILED (exit 1)", out)
+        self.assertNotIn("triage: T", out)
+
+    def test_every_tier_exit_maps_to_its_tier(self):
+        for rc_in, tier in ((20, "T0"), (21, "T1"), (23, "T3")):
+            t = self.report_tree(rc_in)
+            rc, out = t.run("new", "--prefix", t.prefix, "--report")
+            self.assertIn("triage: %s (exit %d)" % (tier, rc_in), out)
+
+    def test_python_tools_need_no_exec_bit_but_must_exist(self):
+        t = self.report_tree(22)  # every tool is mode 0644 here, as bundle-diff.py really is
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertNotIn("bundle-diff.py not present", out)
+        self.assertEqual(os.stat(os.path.join(t.root, "tools", "bundle-diff.py")).st_mode & 0o111, 0)
+
+    def test_absent_report_tools_are_named_not_faked(self):
+        t = self.report_tree(22, tools=())
+        rc, out = t.run("new", "--prefix", t.prefix, "--report")
+        self.assertEqual(rc, 0, out)
+        for line in ("fci-surface: tools/client-ci/fci-surface.py not present",
+                     "content-report: tools/content-report.py not present", "triage: tools/build-triage.py not present",
+                     "locate: tools/eve_patch_author.py or tools/patches/100.json not present"):
+            self.assertIn(line, out)
+
+    def test_dry_run_runs_no_report_tool(self):
+        t = self.report_tree(22)
+        rc, out = t.run("new", "--prefix", t.prefix, "--report", "--dry-run")
+        self.assertNotIn("build-triage.py 300", t.calls())
+        self.assertNotIn("== step 4a", out)
 
     def test_a_bare_name_never_falls_back_to_the_online_prefix(self):
         t = self.tree()

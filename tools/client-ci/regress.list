@@ -180,6 +180,8 @@ fci_pi_colony
 fci_fw_enlist
 # w27-fwrefuse (#7): enlisting at another militia's station, or with standing below the bar, is refused and changes nothing; then the same enlistment succeeds
 fci_fw_refuse
+# cq0 (#291): Theaters of War opens with the dormant Conquest pages absent; the post-enlistment route falls back to the landing page
+fci_tow_conquest_dormant
 fci_upwell_profiles
 fci_upwell_anchor --with-second -- --character Alice --character Bob
 # w27-timers (#40): anchor with a 60 s timer, onlining, unanchor and cancel: the client's own timers and upkeep; one client

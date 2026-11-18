@@ -74,7 +74,7 @@ class Centers(unittest.TestCase):
         self.assertEqual(content.encode(9.46e15), "9460000000000000.0")
         self.assertEqual(content.CENTERS_HEADER, ("kind", "id", "x", "y", "z"))
         self.assertEqual(content.SYSTEM_EFFECTS_HEADER[:2], ("system_id", "beacon_type_id"))
-        self.assertEqual(content.FORMAT, "1.8")
+        self.assertEqual(content.FORMAT, "1.9")
 
 
 class SystemEffects(unittest.TestCase):

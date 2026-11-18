@@ -89,7 +89,7 @@ source	res:/staticdata/systems.static	<md5 hex from resfileindex.txt>
 
 | kind | fields | rule |
 |---|---|---|
-| `format` | `MAJOR.MINOR` | `Bundle::open` refuses a `MAJOR` other than 1. A header change or a new file bumps `MINOR` (**1.8**: `npc/factions.tsv` gains its last column `missile_groups`, a pre-1.8 server refuses a 1.8 bundle; a 1.8 server reads a 1.7 bundle's 19-column factions file; **1.7**: `mutators/ranges.tsv` and `mutators/mappings.tsv`; **1.6**: `econ/prices.tsv` gains its last column `build_min`; **1.5**: `universe/system-effects.tsv`; **1.4**: `dbuffs/collections.tsv` and `dbuffs/modifiers.tsv`; **1.3**: `fighters/abilities.tsv` and `fighters/slots.tsv`; **1.2**: `universe/centers.tsv`; an older reader ignores it, and a bundle without it still loads, except **1.6**: a pre-1.6 server refuses a 1.6 bundle, because it checks the prices header exactly, while a 1.6 server reads a 1.5 bundle's eight-column prices file with no `build_min`, so the markup and the cap take effect only after a re-extract); a change to this grammar or to §1.1's encoding bumps `MAJOR`. Exactly one line |
+| `format` | `MAJOR.MINOR` | `Bundle::open` refuses a `MAJOR` other than 1. A header change or a new file bumps `MINOR` (**1.9**: the six `conquest/` files (#291), new files only, so a 1.8 server ignores them and a bundle without them still loads; **1.8**: `npc/factions.tsv` gains its last column `missile_groups`, a pre-1.8 server refuses a 1.8 bundle; a 1.8 server reads a 1.7 bundle's 19-column factions file; **1.7**: `mutators/ranges.tsv` and `mutators/mappings.tsv`; **1.6**: `econ/prices.tsv` gains its last column `build_min`; **1.5**: `universe/system-effects.tsv`; **1.4**: `dbuffs/collections.tsv` and `dbuffs/modifiers.tsv`; **1.3**: `fighters/abilities.tsv` and `fighters/slots.tsv`; **1.2**: `universe/centers.tsv`; an older reader ignores it, and a bundle without it still loads, except **1.6**: a pre-1.6 server refuses a 1.6 bundle, because it checks the prices header exactly, while a 1.6 server reads a 1.5 bundle's eight-column prices file with no `build_min`, so the markup and the cap take effect only after a re-extract); a change to this grammar or to §1.1's encoding bumps `MAJOR`. Exactly one line |
 | `client_build` | build number | the build of the install it was read from (any build `tools/builds.tsv` accepts). `Bundle::open` accepts it when it is in the server's accepted set (`--client-build`, default every `pinned`/`equivalent` build of `eve_marshal::build::BUILDS`), or when `data_hash` equals one the registry proved for a build in that set. Exactly one line |
 | `extractor` | sha256 hex | plan §1.1: over `tools/content*.py` and every reader they import (`fsd dogma pyd_schema loctable celestials asteroids pi_statics typedata skills`), in sorted path order, each file's bytes. C1's "git sha" is superseded. Exactly one line |
 | `systems` | `all`, or a comma list of system ids | the `--systems` restriction. Exactly one line |
@@ -204,6 +204,12 @@ comment exactly as shown.
 | `wallet/entry-types.tsv` | wallet-l1 (`content_wallet.py`, the `wallet` section) | `ledger` (`ledger::EntryTypes`: the journal's Type-column message id per entry type) |
 | `moon/beacons.tsv` | #52 MOON-DATA (`content_moon.py`, the `moon` section) | `moon_beacon` (`moon_beacon::Beacons`: the deployment exemption, the mining point warp) |
 | `moon/metenox.tsv` | #52 MOON-DATA (`content_moon.py`) | the Metenox lane (#55); the server does not read it yet |
+| `conquest/emitters.tsv` | #291 CQ-1 (`content_conquest.py`, the `conquest` section) | the FW Conquests lanes (CQ-5, CQ-9, CQ-11); the server does not read it yet |
+| `conquest/traders.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2); not read yet |
+| `conquest/recipes.tsv` | #291 CQ-1 (`content_conquest.py`) | `item_trader` (CQ-2) and `item_trader_hooks` (CQ-4); not read yet |
+| `conquest/texts.tsv` | #291 CQ-1 (`content_conquest.py`) | `campaign_gw` (CQ-3a); not read yet |
+| `conquest/textures.tsv` | #291 CQ-1 (`content_conquest.py`) | `campaign_gw` (CQ-3a); not read yet |
+| `conquest/npcs.tsv` | #291 CQ-1 (`content_conquest.py`) | `siege_npcs` (CQ-11); not read yet |
 
 Every reader and writer above is a §6 packet of plan v2. "At extract time" means a later `content_<x>.py` section reads an earlier one's output through `DEPENDS`. The full reader list is in each section.
 
@@ -1971,6 +1977,64 @@ Invented example row:
 | `mining_efficiency` | `f64` | `miningEfficiency` |
 | `fields` | `k=v;k=v` | every other key of the component, empty when there is none |
 
+### `conquest/*.tsv` (#291, CQ-1)
+
+- **Writer:** `tools/content_conquest.py`, the `conquest` section of `content.py` (`DEPENDS` `dungeons`: it reads the bundle's `dungeons/dungeons.tsv` and `objects.tsv` for the trader positions). Input: `spacecomponentsbytype`, `itemtraderrecipes`, `types`, `groups`, the en-us messages, the label index of the main localisation pickle, the resource index, and the authored `content/conquest/season.tsv` (read through `ctx.input`, validated, not copied). Specification: `specs/conquests.md` §3 and §8. Format **1.9**.
+- **Readers:** none yet. The FW Conquests lanes CQ-2 to CQ-11 read them.
+- **A thing the client does not carry** (a missing label, a recipe a trader names but the table lacks, a trader in no dungeon, an emitter whose name and filter name different factions) writes no row and one note on stderr; `--check` repeats the notes and fails only when a file differs from a fresh derive.
+- **Stable client ids and delta keys (ruling 4):** `type_id`, `dungeon_id`, `recipe_id`, `collection_id` and `message_id` are client ids; `faction_id` is a `factions` id (500001 Caldari, 500002 Minmatar, 500003 Amarr, 500004 Gallente). No delta keys.
+
+```
+#type_id	kind	faction_id	step	filter	interval	duration	collection_id	value
+```
+
+`conquest/emitters.tsv`: one row per (collection, value) of a type's dbuff data; an emitter whose dict is empty writes none. Sorted by type id, then collection id.
+
+| column | type | meaning |
+|---|---|---|
+| `type_id` | `i64` | the emitter type |
+| `kind` | `enum` | `sfw`: an SFW "Conquest Track System Dbuff Emitter N" (group 227), read from its `systemDbuffEmitter`; `engine_hp`: the same type's `systemWideEffects.globalDebuffs` (the Conquest Engine Hitpoints step); `ptc`: a "PTC - <Faction> <Career> System Wide Effect" type's `globalDebuffs`; `general`: an FW general's own `systemDbuffEmitter` (groups 5186-5189) **[V]** |
+| `faction_id` | `i64` | from the type name, checked against the filter for `sfw` |
+| `step` | `i32` | `sfw` and `engine_hp`: the track step 1-20 from the name; `ptc`: the career number 1 Explorer, 2 Industrialist, 3 Enforcer, 4 Soldier of Fortune (the client's career numbers) **[I]**; `general`: 0 |
+| `filter` | `str` | `sfw` and `general`: the client's `FW_<FACTION>_ENLISTED`; `engine_hp` and `ptc`: `typelist=<eligibleTypeListID>` |
+| `interval` `duration` | seconds | the emitter's own `interval` and `duration`; 0 on `engine_hp` and `ptc` |
+| `collection_id` | `i64` | a `dbuffs/collections.tsv` row |
+| `value` | `f64` | the collection's value |
+
+```
+7002	sfw	990003	3	FW_TEST_ENLISTED	30	120	9001	2.5
+```
+
+```
+#type_id	faction_id	dungeon_id	interaction_range	x	y	z
+```
+
+`conquest/traders.tsv`: one row per (trader type of group 5254 with an `itemTrader` component, dungeon that holds it). The faction is the faction of the dungeons that hold the type; a dungeon with no faction takes it from the others. `interaction_range` is the component's `interactionRange` (metres); `x y z` is the trader object's position in the dungeon room (metres, `f64`). Sorted by type id, then dungeon id.
+
+```
+#recipe_id	trader_type_id	group	side	type_id	qty	input_isk
+```
+
+`conquest/recipes.tsv`: for every type with an `itemTrader` component (any group, so the file covers every trader of `itemtraderrecipes`), each recipe it lists once, an `in` row per input item and an `out` row per output item. `group` is the recipe's `groupID` (`CAMPAIGN_TRADES` for the Path to Conquest turn-ins; empty for none); `input_isk` is the recipe's ISK cost, repeated on every row of the recipe. Sorted by trader type, then recipe id, `in` before `out`, then item id.
+
+```
+#faction_id	key	message_id
+```
+
+`conquest/texts.tsv`: the campaign texts resolved from the label index. A campaign label `Campaigns/2026_ptc/CampaignData/<Faction>/<Label>` becomes the keys the client reads (`title`, `subtitle`, `goal_description`, `success_description`, `failure_description` as attributes; `briefing_*_message_id`, `map_*_message_id`, `info_label_*_message_id` as annotations; `Description` fills `goal_description` and `briefing_goal_description_message_id` **[I]**); an objective label `.../ObjectiveData/{Titles,Descriptions}/<Faction>/ptc_<faction>_<kind>` becomes `objective_<kind>_title` or `objective_<kind>_description`, kind one of `pve pvp industry hacking`. A missing label writes no row.
+
+```
+#faction_id	key	res_path
+```
+
+`conquest/textures.tsv`: every file of the resource index under `res:/ui/texture/classes/campaigns/2026_q4/` and `.../2026_q2/`. A file whose name carries a faction word as one `_` token belongs to that faction (the token is dropped from the key), the rest have `faction_id` 0. `key` is `<season folder>/<folder>/<name>`; `res_path` is the index's own spelling (lower case). The season-2 art is in `2026_q4` only for the two background files; the faction art is in `2026_q2` **[V resfileindex]**.
+
+```
+#type_id	group_id	role	faction_id
+```
+
+`conquest/npcs.tsv`: every type of the 17 groups 3707965 adds (5186-5198, 5265-5268). `role` from the group name: `general`, `besieger` (the dreadnoughts), `titan` (no types today), `engine` (group 5198), `shuttle`. `faction_id` from the faction word in the group or type name.
+
 ### `salvage/wrecks.tsv`
 
 - **Writer:** X-SALV (`content_salvage.py`), from `types/market.tsv` at extract time.
@@ -2308,6 +2372,7 @@ Rules: §1.1's authored form. Every row that carries an `[A]` value states its f
 | `content/sov/star_power.tsv` | #78 SOV-RES | `sov_resources::STARS` |
 | `content/sov/planet_resources.tsv` | #78 SOV-RES | `sov_resources::PLANETS` |
 | `content/dailygoals/goals.tsv` | #202 DG-1 | `tools/content_dailygoals.py` (no server reader yet) |
+| `content/conquest/season.tsv` | #291 CQ-1 | `tools/content_conquest.py` (validates it; the server readers are CQ-3a and later) |
 | `content/econ/geode-picks.tsv` | L6A | `content_geodes.py` |
 | `content/econ/geode-loot.tsv` | L6A | L6A (`eve-mod-econ` `geode::TABLE`) |
 | `content/pve/filament-drops.tsv` | #61 FIL-DROP | `filament_drops::TABLE` (the roll is called from NPC and site loot by #121) |
@@ -2860,6 +2925,34 @@ Invented example row:
 
 ```
 example	daily	kill_npc	10	enforcer	Invented/Names/A	Invented/Descriptions/A	Invented/Help/A	1	1000	[A] invented example row
+```
+
+
+### `content/conquest/season.tsv`
+
+- **Owner (writer):** #291 CQ-1.
+- **Readers:** `tools/content_conquest.py` (the `conquest` section of `content.py`) validates it through `ctx.input`, so the manifest lists it as an `input` and `up.sh` re-extracts when it changes; it is not copied into the bundle. The server readers are the campaign gateway (CQ-3a) and the later FW Conquests lanes. At this commit no server code reads it.
+- **Key:** `(key, faction_id, kind)`; a repeated one is refused.
+- **Stable ids and delta keys (ruling 4):** none; `war_hq_system` and `war_hq_station` carry client ids.
+
+```
+key	faction_id	kind	value	why
+```
+
+| column | type | meaning |
+|---|---|---|
+| `key` | `str` | one of the keys in `content_conquest.KEYS`; an unknown key is refused |
+| `faction_id` | `i64` | a faction id on `war_hq_system` and `war_hq_station` (one row per faction), else `0` |
+| `kind` | `enum` | an objective kind (`pve pvp industry hacking`) on `target_multiplier` (one row per kind), else `-` |
+| `value` | `int` or `enum` | a whole number, or one of the key's allowed words (`content_conquest.KEYS` lists the alternatives of each owner-choice key, so another ruling is a TSV edit: `siege_selection` `most_wp` or `losing_side_frontline`; `ptc_scope` `ptc_only` or `ptc_and_conquest`; `client_patch` `none` or `show_conquest_pages`; `trader_access` `militia` or `anyone`; `engine_shooters` `anyone` or `enemy_militia`) |
+| `why` | `str` | the falsifier, never empty |
+
+Keys: the season clock (whole-day offsets from the season epoch, day 0 = season start; the siege opens `siege_start_day` days after the season starts: `season_mode`, `season_days`, `ptc_days`, `siege_start_day`, `siege_hours`), the owner choices (`siege_selection`, `ptc_scope`, `client_patch`, `trader_access`, `engine_shooters`, `tokens_count_as_earned`), the Path to Conquest numbers (`target_multiplier`, `per_pilot_cap_pct`, `commit_limit`, `trader_multiplier_cap`), the war-point numbers (`wp_step`, `wp_complex_vp_divisor`, `wp_kill`, `wp_objective`, `wp_flip`) and the War HQ (`war_hq_system`, `war_hq_station`). The choices follow the recommended option of each open owner decision and are marked **[A]**; the numbers are **[A]** except the War HQ systems (**[V]**, from the client's trader hint text) and stations (**[I]**).
+
+Invented example row:
+
+```
+wp_kill	0	-	2	[A] invented example row
 ```
 
 ### `content/econ/geode-loot.tsv`

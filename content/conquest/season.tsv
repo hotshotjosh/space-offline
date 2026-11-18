@@ -1,0 +1,36 @@
+# FW Conquests season design numbers (#291, CQ-1). Every value is [A] unless its why says [V] or [I].
+# The owner decisions Q17-Q21 are open: each choice below is the recommended option, marked [A].
+# Season keys ending in _day or _days are whole-day offsets from the season epoch (day 0 = season start).
+# Columns and rules: tools/content_conquest.py, docs/content/schema.md. No client data here beyond a few ids.
+key	faction_id	kind	value	why
+season_mode	0	-	rolling	Rolling seasons, one after the other [A]; falsified by the owner choosing fixed calendar seasons or by TQ dates. Owner decisions on the FW Conquests build are open; this is the recommended option, [A].
+season_days	0	-	28	A season lasts 4 weeks and the next starts at its end [A]; falsified by TQ season dates or an owner ruling.
+ptc_days	0	-	21	Path to Conquest runs 21 days of the season [A] (spec 4.1); falsified by TQ dates or an owner ruling.
+siege_start_day	0	-	27	The siege opens 27 days after the season starts (a whole-day offset from the season epoch, day 0 = season start), so it ends inside the 28-day season before the next one starts [A]; the spec's day 28 would overlap the rollover; falsified by TQ dates or an owner ruling.
+siege_hours	0	-	3	The siege window is 3 hours [A] (spec 4.1); falsified by TQ footage or an owner ruling.
+siege_selection	0	-	most_wp	The siege system is the one with the most war points [A] (recommended owner option; the spec's alternative was the frontline system of the losing side); falsified by TQ choosing otherwise or an owner ruling.
+ptc_scope	0	-	ptc_only	Only Path to Conquest is served; the Conquest pages stay dormant [A] (recommended owner option); falsified by the owner asking for the Conquest pages.
+client_patch	0	-	none	No client patch to show the dormant Conquest pages [A] (recommended owner option; the pages carry hard-coded numbers and a NameError, spec 1.2); falsified by the owner choosing to patch or by a build that enables the pages.
+trader_access	0	-	militia	The item traders serve pilots enlisted in the trader's own militia only [A] (recommended owner option); falsified by TQ traders serving anyone.
+engine_shooters	0	-	anyone	Any pilot may shoot a Conquest Engine [A] (recommended owner option; the spec assumed enemy militia only); falsified by TQ refusing neutrals.
+tokens_count_as_earned	0	-	1	A token bought or earned at a trader counts as earned for the nothing-from-nowhere rule [A] (recommended owner option); falsified by an owner ruling that bots may not spend tokens.
+target_multiplier	0	pve	20	An objective's target is 20 times its turn-in recipe's input [A] (spec 4.2, before the econ scale); falsified by TQ card numbers or testers finding it trivial or impossible.
+target_multiplier	0	pvp	20	An objective's target is 20 times its turn-in recipe's input [A] (spec 4.2, before the econ scale); falsified by TQ card numbers or testers finding it trivial or impossible.
+target_multiplier	0	industry	20	An objective's target is 20 times its turn-in recipe's input [A] (spec 4.2, before the econ scale); falsified by TQ card numbers or testers finding it trivial or impossible.
+target_multiplier	0	hacking	20	An objective's target is 20 times its turn-in recipe's input [A] (spec 4.2, before the econ scale); falsified by TQ card numbers or testers finding it trivial or impossible.
+per_pilot_cap_pct	0	-	40	One pilot may supply at most 40 percent of an objective's target [A] (spec 4.2); falsified by TQ card numbers.
+commit_limit	0	-	4	A pilot may commit to 4 objectives at once [A] (spec 4.2 GetLimits); falsified by a TQ GetLimits answer.
+trader_multiplier_cap	0	-	1000	A trade multiplier is at most 1000 [A] (spec 2.2 step 3); falsified by the client's own multiplier bound.
+wp_step	0	-	500	Conquest Track step N opens at N times 500 war points [A] (spec 4.4); falsified by TQ or an owner balance ruling.
+wp_complex_vp_divisor	0	-	1000	A completed complex gives its victory points divided by 1000 as war points [A] (spec 4.4); falsified by an owner balance ruling.
+wp_kill	0	-	1	A kill of an enemy-militia pilot gives 1 war point [A] (spec 4.4); falsified by an owner balance ruling.
+wp_objective	0	-	50	A completed Path to Conquest objective gives 50 war points [A] (spec 4.4); falsified by an owner balance ruling.
+wp_flip	0	-	100	A system flip gives 100 war points [A] (spec 4.4); falsified by an owner balance ruling.
+war_hq_system	500003	-	30002974	The faction's War HQ system, from the client's trader hint text (Mehatoor) [V]; falsified by a TQ bookmark.
+war_hq_system	500001	-	30045324	The faction's War HQ system, from the client's trader hint text (Onnamon) [V]; falsified by a TQ bookmark.
+war_hq_system	500004	-	30003788	The faction's War HQ system, from the client's trader hint text (Intaki) [V]; falsified by a TQ bookmark.
+war_hq_system	500002	-	30002055	The faction's War HQ system, from the client's trader hint text (Amo) [V]; falsified by a TQ bookmark.
+war_hq_station	500003	-	60015185	The Navy anchorage station beside the trader [I]: the operation-118 station whose owner is the faction's Navy; falsified by a TQ bookmark distance.
+war_hq_station	500001	-	60015184	The Navy anchorage station beside the trader [I]: the operation-118 station whose owner is the faction's Navy; falsified by a TQ bookmark distance.
+war_hq_station	500004	-	60015180	The Navy anchorage station beside the trader [I]: the operation-118 station whose owner is the faction's Navy; falsified by a TQ bookmark distance.
+war_hq_station	500002	-	60015186	The Navy anchorage station beside the trader [I]: the operation-118 station whose owner is the faction's Navy; falsified by a TQ bookmark distance.
