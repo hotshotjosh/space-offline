@@ -146,7 +146,7 @@ commit that introduces sharing, or the next reader will trust it.
 
 ## 1. Two stores, not one
 
-The recon settled that static data is entirely client-side (`docs/archive/recon-v24.01.md`),
+The recon settled that static data is entirely client-side (the unpublished recon-v24.01 note),
 and the station-id bug recorded in `service.rs` is what happens when we
 disagree with it: a station lives in a different system than the one the code assumed, and
 *the client holds its own copy of that table*.
@@ -166,7 +166,7 @@ two different lifetimes**:
 | `world.db` | everything in §2 | **irreplaceable.** Nothing in it may be derivable from `static.db`. |
 
 Reading `*.fsdbinary` server-side is a known open question
-(`docs/archive/recon-v24.01.md`). **Do not let it block the store.** The stopgap is what
+(the unpublished recon-v24.01 note). **Do not let it block the store.** The stopgap is what
 the code already does — a curated table of the dozen types a sandbox grants —
 and the only rule that matters is that the curated table lives on the
 `static.db` side.
@@ -476,7 +476,7 @@ is written on disconnect; the first server-initiated `Notification` goes out.
 **And the first half of this is much cheaper than it looks, because the
 station lobby pulls rather than listens.** `station.GetGuests` answers a
 hardcoded empty list today, and the Guests tab calls it *when the player
-opens it* — see `docs/archive/entering-the-game.md`. So a live session table alone,
+opens it* — see the unpublished entering-the-game note. So a live session table alone,
 with no push path, no `TcpStream::try_clone`, no notification id allocator
 and no store, is enough for client A to open the lobby and **see client B**.
 `multiLoginBlocker.Login` and `onlineStatus.GetOnlineStatus`, both currently

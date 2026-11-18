@@ -353,7 +353,7 @@ the corresponding server state exists:
 `DoBallsRemove`, `OnFleetStateChange`, `OnDroneStateChange`,
 `OnDroneActivityChange`, `DoSimClockRebase`. Every one of them is
 `do-sync-blocktrap` *and* most are `native-payload` or `native-touch`; see §6.
-`docs/archive/destiny-and-the-ballpark.md` owns this group.
+The unpublished destiny-and-the-ballpark note owns this group.
 
 ### 5.5 What not to push
 
@@ -385,7 +385,7 @@ they are the whole list:
 These are the rows where a Python-invisible mistake is visible: a native method
 type-checks like C, which is exactly how
 `michelle.py(453) LoadFormations(formations)` produced
-`TypeError: must be tuple, not list` (`docs/archive/destiny-and-the-ballpark.md` §1).
+`TypeError: must be tuple, not list` (the unpublished destiny-and-the-ballpark note §1).
 
 **`OnItemChange`'s `item` must be a real `blue.DBRow`, and the descriptor is
 pinned too.** Two independent places construct from it —

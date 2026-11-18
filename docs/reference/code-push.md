@@ -5,7 +5,7 @@ reads but *instructions* the client runs. There are exactly two such answers
 in the server today, and this document is about what makes them different
 from every other arm in `service/`.
 
-Read `docs/archive/marshal-tags.md` first and then put it down: **none of it applies
+Read the unpublished marshal-tags note first and then put it down: **none of it applies
 here.** The format in this document is CPython's own `marshal`, and it shares
 nothing with `blue.marshal` — not a type byte, not a length convention, not
 the dict pair order. The two meet at exactly one point: a code object

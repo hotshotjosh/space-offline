@@ -3,7 +3,7 @@
 Client build **V24.01 (3619879)**. This is the complete server-side spec for
 skills: what the client asks, what each answer must look like, what it does
 with it, and in what order to build it. It is the fifth and last step of
-round 2 in [`docs/archive/plan-docked-subsystems.md`](../archive/plan-docked-subsystems.md), and it is
+round 2 in [the unpublished plan-docked-subsystems note](../archive/plan-docked-subsystems.md), and it is
 what that step gets implemented from.
 
 Written because the owner's test said **"nothing bought"**, and earlier
@@ -322,7 +322,7 @@ The client *also* computes rank itself, from FSD, in
 (`skillsvc.py:860`). So the value we send is compared against FSD's in
 practice, and a mismatch shows up as two different training times for the same
 skill in two panels. Reading `*.fsdbinary` server side is still the open
-question in `docs/archive/recon-v24.01.md`; until then a **curated rank table for the
+question in the unpublished recon-v24.01 note; until then a **curated rank table for the
 skills the sandbox grants, defaulting to 1**, is the honest stopgap and the
 inconsistency is cosmetic. **[I]** on "cosmetic".
 
@@ -706,7 +706,7 @@ queue to survive a second client.
 
 ### The FILETIME trap: every time field in this subsystem
 
-`docs/archive/architecture-sweep.md` ("A `PyValue::Long` that forces tag `0x2F`"): our
+The unpublished architecture-sweep note ("A `PyValue::Long` that forces tag `0x2F`"): our
 encoder picks the integer tag by magnitude, so anything under 2³¹ arrives as a
 Python `int`, and `FormatDateTime`/`FmtDate` open with `isinstance(value, long)`
 and return `None` on the else branch — a blank field with nothing in our log.
@@ -1040,7 +1040,7 @@ visible (the notification centre).
   is passed as the third argument. What the real server does with it:
   **unknown**, and it is a reason to leave extraction alone.
 - **`skillRank` from FSD, server side.** Blocked on the `.fsdbinary` reader
-  (`docs/archive/recon-v24.01.md`). A curated table is the stopgap; the rank must be ≥ 1 or
+  (the unpublished recon-v24.01 note). A curated table is the stopgap; the rank must be ≥ 1 or
   the queue panel raises `ZeroDivisionError` (§3).
 - **`basePrice` from FSD, server side.** Same blocker. The client computes the
   price and pre-checks the balance, so we can charge something else and the

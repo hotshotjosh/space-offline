@@ -1,13 +1,13 @@
 # `blue.DBRow` packed-row layout (client build V24.01, 3619879)
 
 Recovered by disassembling `/client/bin64/blue.dll`. Supersedes the "DBRow
-packed-byte layout" gap in `docs/archive/wire-format.md`. Confidence markers: **[V]**
+packed-byte layout" gap in the unpublished wire-format note. Confidence markers: **[V]**
 verified from instructions, **[I]** inferred, **[?]** open.
 
 Two findings here **correct earlier documents in this repo**, and both were
 re-verified independently before any code changed:
 
-1. **The marshal tag for DBRow is `0x2A`, not `0x2B`.** `docs/archive/marshal-tags.md`
+1. **The marshal tag for DBRow is `0x2A`, not `0x2B`.** the unpublished marshal-tags note
    previously recorded `0x2B` as "the likeliest DBRow". Wrong.
 2. **`DBTYPE_BYTES` is 128, not 508.** `const.py` says 508, which the client
    *rejects*. Our `DbType::Bytes` was 508 — a real bug, now fixed.
@@ -82,7 +82,7 @@ blue.DBRowDescriptor((('ownerID', const.DBTYPE_I4), ('ownerName', const.DBTYPE_W
 > that order and pre-sets the header to match. `_Prime` then replaces the
 > header with the one *we* send while leaving those pre-filled rows in place.
 > So a server using the wrong order does not merely mislabel its own rows: it
-> corrupts the client's own NPC data. `docs/reference/login-path.md` §8 had it right.
+> corrupts the client's own NPC data. The unpublished login-path note §8 had it right.
 
 ## 3. DBTYPEs and size classes
 

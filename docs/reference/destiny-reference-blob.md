@@ -1,6 +1,6 @@
 # Getting a reference Destiny blob out of the client
 
-`docs/archive/destiny-and-the-ballpark.md` §4.4 names the longest-lead item in the project:
+The unpublished destiny-and-the-ballpark note §4.4 names the longest-lead item in the project:
 the Destiny state blob is a C++ serialisation in `_destiny.dll` with no Python
 source to port, and most of its field layout is `[I]` — read off the
 disassembly and matched to attribute names by eye.
@@ -452,7 +452,7 @@ Two sections are worth reading before the hex:
 ### Reading a blob back, outside the client
 
 `03-base-one-ball.bin` is byte-for-byte what belongs in `bag.state` for a
-one-ball `SetState` (`docs/archive/destiny-and-the-ballpark.md` §4.3). It is a plain file:
+one-ball `SetState` (the unpublished destiny-and-the-ballpark note §4.3). It is a plain file:
 
 ```sh
 xxd "$PREFIX/eve-logs/destiny-ref/03-base-one-ball.bin"
@@ -470,7 +470,7 @@ built from it needs the matching `foo.SlimItem` to carry that same `itemID`, or
 ## 5. Why not a loose `.py` import override
 
 Because for this job it buys nothing and risks a lot, and because the route
-`docs/archive/roadmap.md` M0 records as "resolved in principle" has an unresolved step in
+The unpublished roadmap note M0 records as "resolved in principle" has an unresolved step in
 the middle of it.
 
 What is verified: CCP extended zipimport's search-order table (`python27.dll`
@@ -478,7 +478,7 @@ What is verified: CCP extended zipimport's search-order table (`python27.dll`
 `.pyc`/`.pyo`/`.py` entries, so source import is live; `autoexec`'s only import
 guard is behind `/jessica` and imports two modules that do not ship; and
 `blue.dll` sets `Py_NoSiteFlag` and `Py_IgnoreEnvironmentFlag`, which kills
-both `sitecustomize` and `PYTHONPATH`. All of that is `docs/archive/recon-v24.01.md` Rounds
+both `sitecustomize` and `PYTHONPATH`. All of that is the unpublished recon-v24.01 note Rounds
 2 and 3 and it still holds.
 
 What that leaves unsaid is the part that bites. Modules in this client are
@@ -505,7 +505,7 @@ hand-written `__init__.py` files whose only job is to undo the damage of the
 first one, and any of them getting it wrong is a client that boots into a
 different failure every time.
 
-(The same caveat applies to `docs/archive/session-flow.md`'s plan of a loose
+(The same caveat applies to the unpublished session-flow note's plan of a loose
 `evecrypto/settings.py`: `evecrypto` is an archive package too, so a loose
 `evecrypto/` directory shadows the whole package, not one module in it. Worth
 knowing before that path is taken for `cryptoPack`; it is not this document's
@@ -526,7 +526,7 @@ MyResult = sys.path
 ```
 
 and press Execute. The output pane prints it. That is worth doing while the
-console is open, because the answer belongs in `docs/archive/recon-v24.01.md` and settles
+console is open, because the answer belongs in the unpublished recon-v24.01 note and settles
 M0's last owed item for the price of one keystroke.
 
 For completeness, the two mechanical questions that were asked and do have
@@ -557,7 +557,7 @@ object needs no import shadowing at all.
 reference.** `01-empty-park.bin` will be one type byte followed by the tick as
 a `u32` LE — `00 44 33 22 11` if `Ballpark.currentTime` turns out to be
 writable, and whatever the park already held if it is not — and the undocked client we have today, which reaches `AddBallpark` with
-an empty formations tuple and no ego ball (`docs/archive/destiny-and-the-ballpark.md` §3),
+an empty formations tuple and no ego ball (the unpublished destiny-and-the-ballpark note §3),
 has exactly that in it. Dumping the live park and calling it a reference would
 produce a file with no ball record in it at all, and the mistake would not
 announce itself: there is no error, just a very short file.
@@ -584,7 +584,7 @@ blob of eight bytes or fewer means an empty park.
 
 ---
 
-## 7. Corrections to `docs/archive/destiny-and-the-ballpark.md` §4.4
+## 7. Corrections to the unpublished destiny-and-the-ballpark note §4.4
 
 Settled while building this, and not yet folded into that document:
 
@@ -675,7 +675,7 @@ would otherwise cost 30 seconds in `WaitForBallpark`.
 
 ## See also
 
-- [`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) — §4.4 for the
+- [the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) — §4.4 for the
   layout this measures, §8 step 2 for where it sits in the order of work, and
   §7 for the mode table the `NN-call-*.bin` dumps exercise.
 - [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) — the `[V]`/`[I]`
@@ -685,7 +685,7 @@ would otherwise cost 30 seconds in `WaitForBallpark`.
 - [`docs/reference/session-roles.md`](session-roles.md) §5 and `eve-server/src/roles.rs` — the
   three role bits this depends on, and the one (`ROLE_PROGRAMMER`) that has a
   measured cost of its own.
-- [`docs/archive/recon-v24.01.md`](../archive/recon-v24.01.md) Rounds 2 and 3 — the import-override
+- [the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Rounds 2 and 3 — the import-override
   work that §5 narrows rather than replaces.
 
 ---
@@ -778,7 +778,7 @@ record-relative.
 `AddBall` argument and once by assigning the `destiny.Ball` attribute. Two
 routes to the same byte is the strongest form this table comes in.
 
-And the headline for `docs/archive/destiny-and-the-ballpark.md` §4.4: **every row of its
+And the headline for the unpublished destiny-and-the-ballpark note §4.4: **every row of its
 table is confirmed**, including the three corrections the cross-check made to
 it. Rows 1–7d all land where it says, with the types it says. One naming
 correction remains: row **7c**, which §4.4 calls `inertia` with init 1.0, is
@@ -999,7 +999,7 @@ this list says. Do not re-open it.
 
 ### 9.8 The trailing `0xff` is written with `isFree` clear as well
 
-§3.4 of `docs/lanes/round2-spec.md` asserts this because it decides where the
+§3.4 of the unpublished round2-spec lane note asserts this because it decides where the
 tail goes; it is confirmed, and twice.
 
 `10-arg-a5_i.bin` is the baseline with `AddBall`'s `isFree` argument set to

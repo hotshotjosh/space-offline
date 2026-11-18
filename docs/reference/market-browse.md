@@ -113,7 +113,7 @@ owner's own profile:
 ```
 
 That file is `blue.marshal`, and in EVE marshal a dict entry is written
-**value first, then key** (`docs/archive/marshal-tags.md`, tag `0x16`), with `0x1F` =
+**value first, then key** (the unpublished marshal-tags note, tag `0x16`), with `0x1F` =
 `True` and `0x20` = `False`. The byte immediately before each key string is
 therefore the stored value, and it reads:
 

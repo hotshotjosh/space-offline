@@ -1,7 +1,7 @@
 # The wallet ledger
 
 Issue #1: *"isk: works, but shows no transaction history."* Step 3 of round 2
-in [`docs/archive/plan-docked-subsystems.md`](../archive/plan-docked-subsystems.md). This document is
+in [the unpublished plan-docked-subsystems note](../archive/plan-docked-subsystems.md). This document is
 the specification the implementation is built from; it contains no Rust and
 changes no code.
 
@@ -307,7 +307,7 @@ Our encoder picks the integer tag by magnitude —
 `eve-marshal/src/value.rs:631` emits `INT8`/`INT16`/`INT32` for anything that
 fits `i32`, `INT64` only above it — so a loose `PyValue::Int` under 2^31
 arrives as a Python `int` and takes that `else` branch
-(`docs/archive/architecture-sweep.md`, "A `PyValue::Long`").
+(the unpublished architecture-sweep note, "A `PyValue::Long`").
 
 **Inside a packed `DBRow` this cannot happen. [V]** `docs/reference/dbrow.md`'s type table
 has `FILETIME` (64) at size class 4, 8 bytes, read "as UI8", i.e. through
@@ -963,4 +963,4 @@ most likely to meet:
 Earlier rows (corp wallet tax 92 to 94, alliance fee 48, war fees 49, 113 and
 114, kill right fee 116, planetary taxes 96 to 98, LP store 26) are in their own
 lane notes. Bots read their own journals the same way a human does, which is
-how `docs/guides/human-checks.md` verifies the insurance and reaction cards.
+how the unpublished human-checks note verifies the insurance and reaction cards.

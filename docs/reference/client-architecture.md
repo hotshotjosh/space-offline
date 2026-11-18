@@ -7,7 +7,7 @@ recording and is marked so; it is never allowed to stand in for this one.
 > **Re-pinned 2026-10-31 (issue #19): the reference build is now 3662168.**
 > The `[V build 3619879]` marks below were measured on the former reference.
 > The 2026-10-30 delta (`findings/build-delta-3619879-3662168.tsv`, read in
-> `docs/port-tracker.md` for this re-pin) found `blue.dll`, `_destiny.dll`,
+> The unpublished port tracker for this re-pin) found `blue.dll`, `_destiny.dll`,
 > `python27.dll` and `exefile.exe` signature-only and the line unchanged
 > (V24.01), so the native and wire claims hold for 3662168 too. In Python, 68
 > modules changed and 7 were removed (camera hardening, bug reports, one QA-only
@@ -93,7 +93,7 @@ and [§8](#8-the-symptom-index) is all of them in one place.
 | `[V]` | verified against **our** client, build 3619879 |
 | `[I]` | inferred — read the reasoning before you depend on it |
 | `[V2]` | a third-party decode of a **different** build; re-verify before use |
-| `[A]` | a shipped assumption; `docs/lanes/README.md` explains why we ship them |
+| `[A]` | a shipped assumption; the unpublished README lane note explains why we ship them |
 
 **Two rules this file obeys, both bought with real debugging time.**
 
@@ -108,8 +108,8 @@ and [§8](#8-the-symptom-index) is all of them in one place.
    code moved. A function name survives a refactor; `michelle.py:1133` does not.
 
 **Companions.** This file is the map; those are the territory.
-[`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) and
-[`re/warp.md`](../re/warp.md) for space, [`docs/reference/login-path.md`](login-path.md) for the
+[the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) and
+[`re/warp.md`](../re/warp.md) for space, [the unpublished login-path note](login-path.md) for the
 handshake payload by payload, [`docs/reference/bound-objects.md`](bound-objects.md) for the
 bind protocol, [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) for the
 instruments, [`docs/reference/threads-and-locks.md`](threads-and-locks.md) for **our** side of
@@ -433,7 +433,7 @@ namespace** and the client looks factory-reset.
 > before `autoexec_common` installs the file-log handler, so it is in no
 > `client-*.log`** `[V]`. To capture it you need `/verbose` or `/stdout=`.
 
-> **A finding that inverts an assumption in `docs/archive/recon-v24.01.md`.** `autoexec`
+> **A finding that inverts an assumption in the unpublished recon-v24.01 note.** `autoexec`
 > does `[V]`:
 >
 > ```python
@@ -481,7 +481,7 @@ Three things that fall out and matter `[V]`:
    file logging is installed by `autoexec_common`, which never runs.
 3. **`sys.path` really is set by writing a `wchar_t*` into `Py_GetPathWData`**,
    a *data* export of CCP's `python27.dll` fork. That closes
-   `docs/archive/recon-v24.01.md` Round 3's open question about the path mechanism.
+   the unpublished recon-v24.01 note Round 3's open question about the path mechanism.
 
 The version check is equality, not a floor: `cmp edx, 4 ; je` `[V]`, matching
 the recorded `version = 4, 220 entries, 19,089 bytes`. The signature is RSA
@@ -501,7 +501,7 @@ key"*) `[V]`.
 > `iniformat.IniIniFile('start', blue.paths.ResolvePath(u'app:/'), 1)` `[V]`.
 > That is why neither binary contains the string.
 
-> **Also a correction to [`docs/archive/recon-v24.01.md`](../archive/recon-v24.01.md) Round 3**, which
+> **Also a correction to [the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3**, which
 > lists the CPython flag writes as unconditional. **They are gated on `/py`
 > being absent** `[V]`:
 >
@@ -704,7 +704,7 @@ should do, **read the server branch of the client's own code.**
 
 Everything below the Python is native (`blue.dll`, `carbonio`): the socket, the
 length framing, `sendpacket`/`recvpacketoob`. The framing width/endianness is
-still a **gap** in [`docs/archive/wire-format.md`](../archive/wire-format.md) and this file adds
+still a **gap** in [the unpublished wire-format note](../archive/wire-format.md) and this file adds
 nothing to it.
 
 ### 2.1a `AwaitVersion` is **our** name, and the client has no state enum at all
@@ -787,7 +787,7 @@ sequenceDiagram
   Note over C: gameui.OnSessionChanged: session.charid is None<br/>-> character selection
 ```
 
-Payload-by-payload detail is [`docs/reference/login-path.md`](login-path.md) §4 and is not
+Payload-by-payload detail is [the unpublished login-path note](login-path.md) §4 and is not
 duplicated. The three things to carry out of it:
 
 1. **The handshake does not populate the session.** `_AssociateWithSession`
@@ -834,7 +834,7 @@ duplicated. The three things to carry out of it:
 
 `machoNetPacket` defines eleven `MachoPacket` subclasses. Command ids are
 `MACHONETMSG_TYPE_*`; `params` are the per-subclass `body` field names `[V]`
-([`docs/archive/wire-format.md`](../archive/wire-format.md)):
+([the unpublished wire-format note](../archive/wire-format.md)):
 
 | class | guid on the wire | cmd | body params |
 |---|---|---|---|
@@ -967,7 +967,7 @@ Practical rules, from live runs `[V]`:
   wrong, empty or absent `nodesOfInterest` has **no client-side effect
   whatsoever** `[V]`;
 - a `PingReq` must carry the proxy/server hop chain or the client rejects it
-  `[V]` ([`docs/reference/login-path.md`](login-path.md)).
+  `[V]` ([the unpublished login-path note](login-path.md)).
 
 ### 2.5 The session-change dance
 
@@ -985,7 +985,7 @@ distributed** `[V]`. `__nonpersistvars__` is **11** (`sid`, `c2ooid`,
 `connectedObjects`, `connectedServices`, `clientID`, `localSID`,
 `contextOnly`, `receivedVersion`, `irrelevanceTime`, plus `locationid` and
 `corprole`); `locationid` and `corprole` are injected by the client itself
-`[V]`. The full list is in [`docs/reference/login-path.md`](login-path.md) §7.
+`[V]`. The full list is in [the unpublished login-path note](login-path.md) §7.
 
 > **The "session critical" table, which is what actually makes a session change
 > dangerous.** `CoreSession.__dependant_attributes__` merged with
@@ -1155,7 +1155,7 @@ its own, which should be asked against a world where the change has happened
 | wrong crypto hash at H9 | dialog | `Server response signature incorrect, the server's crypto hash wasn't correct` `[V]` |
 | no H10 ack | dialog | `Server didn't Acknowledge our Challenge-Response` `[V]` |
 | "Local Session Corrupt" dialog | login refused before TCP | `UserError('DirtySession')` — `ConnectToServer` step 2 found a `__persistvars__` not at its default `[V]` |
-| a keepalive/ping without the hop chain | disconnect | `[V]`, see [`docs/reference/login-path.md`](login-path.md) |
+| a keepalive/ping without the hop chain | disconnect | `[V]`, see [the unpublished login-path note](login-path.md) |
 
 ## 3. The service layer
 
@@ -1687,7 +1687,7 @@ objects and the distinction is load-bearing.
 | **`spaceMgr`** | the **scene**: the camera, the loaded solar system, the view. Separate from the ballpark and it does not wait for it | `eve/client/script/parklife/spaceMgr.pyc` |
 
 > **The space view opens before the ballpark is even attempted.** In the
-> capture behind `docs/archive/destiny-and-the-ballpark.md` §1, `SpaceView` had been drawn
+> capture behind the unpublished destiny-and-the-ballpark note §1, `SpaceView` had been drawn
 > for ~90 ms when `AddBallpark` started `[V]`. "The screen is in space" is
 > therefore *not* evidence that Destiny is up.
 
@@ -1707,7 +1707,7 @@ object. When you read `RealFlushState` below, `_parent_` means *straight into
 `_destiny.dll`*.
 
 Full line-by-line of `AddBallpark` is in
-[`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) §2 and is not
+[the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §2 and is not
 repeated here. The two facts worth carrying:
 
 - **after `beyonce.GetFormations()` returns, `AddBallpark` makes no further
@@ -1917,7 +1917,7 @@ service.** `self.remoteBallpark` is set by `Park.InitializeRemoteBallpark`,
 which is `eveMoniker.GetBallPark(solarsystemID)` then `.Bind()`, started as a
 tasklet from `Park.__init__` with ten retries a second apart, and **whose
 return value is discarded** `[V]`
-([`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) §2).
+([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §2).
 
 So: if we never served that bind, `remoteBallpark` stays `None`, and
 `RequestReset` is a **silent no-op**. A desynced client then has no way back
@@ -2094,7 +2094,7 @@ and therefore safe to omit: `isEmpty`, `dunRotation`, `dunDirection`,
 > `foo.SlimItem` itself is forgiving — `__getattr__` returns `None` for any
 > name not starting with `__` — so "unguarded" here means *the consumer* will
 > choke on the `None`, not that the attribute access raises
-> ([`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) §4.3).
+> ([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §4.3).
 
 **Cadences, which decide whether a value we push is even looked at** `[V]`:
 
@@ -3120,7 +3120,7 @@ an implementation detail of a path we do not own.
 
 Not a lever we pull, but the one the player pulls through us, so it belongs on
 this list. Two distinct surfaces, and confusing them is a classic `[V]`
-([`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) §6):
+([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §6):
 
 | surface | reached how | example |
 |---|---|---|
@@ -3329,7 +3329,7 @@ because an `[I]` with no experiment beside it is just a shrug.
 
 6. **Can a loose file shadow a `res:/` asset on a packaged client?** `autoexec`
    registers the Remote filesystem **before** local when packaged `[V]`, which
-   inverts `docs/archive/recon-v24.01.md` Round 3's premise. `[I]` on the resolution
+   inverts the unpublished recon-v24.01 note Round 3's premise. `[I]` on the resolution
    semantics inside `BlueResFileSystemRemote`. **Experiment:**
    `blue.paths.ResolvePath` a path that exists both loose and in the index; or
    `UnregisterFileSystem('Remote')` and re-register after local.
@@ -3340,7 +3340,7 @@ because an `[I]` with no experiment beside it is just a shrug.
    client boots at all under it. **Experiment:** one launch.
 8. **What does `/path:` do?** `exefile.exe` contains the wide literal
    `/path:` in its argument-keyword table between `/lib=` and `/verbose`
-   `[V]`, which **reopens** `docs/archive/recon-v24.01.md` Round 3's conclusion that
+   `[V]`, which **reopens** the unpublished recon-v24.01 note Round 3's conclusion that
    `/path` has no consumer anywhere. Given its position it is almost certainly
    another search-path form. **Experiment:** trace its handler, or pass it and
    read `BlueOS search paths:` under `/stdout=`.
@@ -3414,7 +3414,7 @@ them again.
    `eveprefs.Init()` → `iniformat.IniIniFile('start',
    blue.paths.ResolvePath(u'app:/'), 1)` — which is exactly why neither binary
    contains the string. `[V]` ([§1.5](#15-manifestdat--it-gates-python-startup-before-py_initialize))
-2. **[`docs/archive/recon-v24.01.md`](../archive/recon-v24.01.md) Round 3** lists the CPython flag
+2. **[the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3** lists the CPython flag
    writes as unconditional; they are gated on `/py` being absent, and
    `Py_OptimizeFlag` is `+=` the `/pyoptimize=` value rather than a fixed
    increment. It also concludes `/path` has no consumer anywhere, and
@@ -3436,11 +3436,11 @@ build's `code.ccp`, `resfileindex.txt` and `manifest.dat`. Having
 
 | file | what it has that this one does not |
 |---|---|
-| [`docs/archive/destiny-and-the-ballpark.md`](../archive/destiny-and-the-ballpark.md) | `AddBallpark` line by line, the `SetState` bag's minimum contents, the blob's binary layout, the `beyonce` surface |
+| [the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) | `AddBallpark` line by line, the `SetState` bag's minimum contents, the blob's binary layout, the `beyonce` surface |
 | [`re/warp.md`](../re/warp.md), [`port-tracker.md`](../port-tracker.md) §34–§36 | the align gate, the 180-tick watchdog, the warp tunnel, the stamp policy |
-| [`docs/reference/login-path.md`](login-path.md) | the handshake payload by payload, H1–H10, the session field list, the role mask |
+| [the unpublished login-path note](login-path.md) | the handshake payload by payload, H1–H10, the session field list, the role mask |
 | [`docs/reference/bound-objects.md`](bound-objects.md) | the bind protocol in full, and the per-service method inventory |
 | [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) | the **instruments**: `evidence.sh`, `evecap --calls/--alerts/--triage`, `client-log.sh`, and how to tell our protocol's tracebacks from the gateway's |
 | [`docs/reference/threads-and-locks.md`](threads-and-locks.md) | **our** side of §6 — one world, one lock, two clocks, and the lock order |
-| [`docs/archive/plan-client-ci.md`](../archive/plan-client-ci.md), `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
+| [the unpublished plan-client-ci note](../archive/plan-client-ci.md), `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
 

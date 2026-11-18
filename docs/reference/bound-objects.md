@@ -6,7 +6,7 @@ calls**. The client's second call style — *bound objects* — never appears as
 such a call site, and that is where inventory, dogma and ship/space control
 live.
 
-Conventions used below, same as `docs/archive/wire-format.md`: **confirmed** = read out
+Conventions used below, same as the unpublished wire-format note: **confirmed** = read out
 of a decompiled `.pyc` in `out/pyc/` of this build, with the module named;
 **gap** = lives in native code or on the server and could not be established
 from the client tree. Nothing here is guessed. Every module path is relative to
@@ -170,7 +170,7 @@ return blue.marshal.Save((objectID, pa, refID), self.GetObjectID) if pa \
   and 3-tuple forms, and builds a `MachoObjectConnection` for it.
 - **Gap:** which numeric marshal tag the save/load callback mechanism uses is
   native (`blue.dll`), exactly like the rest of the opcode table — see
-  `docs/archive/wire-format.md` §"Marshal blob". The *contents* of the callback payload
+  the unpublished wire-format note §"Marshal blob". The *contents* of the callback payload
   are confirmed; the tag byte is not.
 
 Bookkeeping that travels in `oob` (confirmed, `ObjectCallGPCS.pyc`):
@@ -195,7 +195,7 @@ fixes the destination **once**:
 - `'C=<clientID>:<oid>'` → `destination = MachoAddress(clientID=long(clientID))`, `blocking = 0`
 
 Note what is **absent**: no `service` and no `callID` are attached. Per
-`docs/archive/wire-format.md`, `MachoAddress.__getstate__` for NODE is
+The unpublished wire-format note, `MachoAddress.__getstate__` for NODE is
 `(1, nodeID, service, callID)`, so a bound-object CallReq carries
 `(1, nodeID, None, None)` — the *service* field that a plain service call uses
 is empty, and the object is identified only by the `objectID` string inside the
@@ -517,13 +517,13 @@ The `?` arities for the critical ones are pinned by reading the call sites:
 read the **local** ballpark and are *not* wire calls. Only `remoteBallpark`
 crosses the wire.
 
-`CmdDock` and `CmdTurboDock` had `(?)` here until `docs/lanes/dock-up.md` §1
+`CmdDock` and `CmdTurboDock` had `(?)` here until the unpublished dock-up lane note §1
 read them out of `movementFunctions.RealDock`: `CmdDock(stationID, shipID)`
 and `CmdTurboDock(stationID)`. Neither has a row in
 `findings/client-calls.tsv` and that is a **census blind spot**, not an
 absence -- both are passed to `sessionMgr.PerformSessionChange` as unbound
 methods, so no `CALL_FUNCTION` follows the `LOAD_ATTR` and the scanner sees
-nothing. `docs/lanes/census-blindspots.md` has the pattern.
+nothing. The unpublished census-blindspots lane note has the pattern.
 
 Movement / commands: `CmdStop`(0) · `CmdFollowBall`(2) · `CmdOrbit`(2) ·
 `CmdAlignTo`(+2kw) · `CmdGotoDirection`(3) · `CmdGotoBookmark`(1) ·
@@ -747,7 +747,7 @@ dict; on confirmation the client retries with `ignoreContraband=True`).
 ## 3a. Implemented — the first bound object **[V]**
 
 `populationCap`, bound when a character is clicked, is the first of these the
-server actually answers. See `docs/reference/login-path.md` §8 for the call sequence and the
+server actually answers. See the unpublished login-path note §8 for the call sequence and the
 three constraints `ParseObjectID` puts on an object id. The pieces:
 
 | piece | where |
@@ -797,7 +797,7 @@ mistaken for the protocol:
    the reference (`(objectID, refID)` / `(objectID, pa, refID)`, §1.5) are
    confirmed from `ObjectCallGPCS.GetObjectID` / `ParseObjectID`, and the tag
    is **`0x19`**, whose mechanism is settled from `blue.dll`
-   (`docs/archive/marshal-tags.md` Gap 9: the Save callback is consulted only in the `0x17`
+   (the unpublished marshal-tags note Gap 9: the Save callback is consulted only in the `0x17`
    branch, and a non-`None` return emits `0x19` followed by the returned
    object). Implemented on that basis — see §3a.
    **The client's reader is now confirmed [V]**, and better than by
@@ -823,14 +823,14 @@ mistaken for the protocol:
    no longer true of us.** `eve-probe` is a client of ours, and the
    `evejs-probe` lane pointed it at a third-party server: a server wrote the
    `0x19` reference form and our own reader took it, with the bound object's
-   methods then called on it (`docs/lanes/evejs-probe.md`).
+   methods then called on it (the unpublished evejs-probe lane note).
    
    So the unknown has narrowed from "is this what a server writes" to "is
    this what *CCP's* server writes", which is a much smaller question and one
    the reader makes academic. The general lesson is worth more than the
    promotion: **owning a client turns every server→client claim from
    unobservable into testable**, and there is a drawer of them in this
-   document and in `docs/archive/marshal-tags.md`.
+   document and in the unpublished marshal-tags note.
 2. **`MachoResolveObject` bodies.** Not in the client tree; only the
    `__machoresolve__` session-gating helper (`service.pyc`
    `_MachoResolveAdditional`) is. For one node, return our own node id —

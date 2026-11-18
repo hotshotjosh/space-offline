@@ -4,17 +4,17 @@
 has the same paths except where a row says otherwise (P9's host differs, for
 one; the P-rows were not re-read in 3619879 beyond that). Source: lane
 `r-phone-home` (issue #40), `findings/outbound-endpoints.txt`, and the patcher
-(`docs/guides/patcher.md`). Hostnames are listed here on purpose; no client
+(the unpublished patcher note). Hostnames are listed here on purpose; no client
 bytes or extracted data are.
 
 **Marks.** [V] read in this build's code or bytes. [I] inferred. [A]
-assumption, with its falsifier in the row or in `docs/lanes/phone-home.md`.
+assumption, with its falsifier in the row or in the unpublished phone-home lane note.
 
 **"Closed by"** names the patcher tier (`A` launch env and args, `P` prefs,
 `B` byte edits, `C` constants in `code.ccp`) or "open". **Open** means only the
 jail (`docs/guides/jail.md`) stops it today. **Status:** tier C and B3 are
 written, reviewed once and fixed (#40). Tier C is in the default tiers since the
-re-pin to 3662168 (`docs/guides/patcher.md`, "Tier C").
+re-pin to 3662168 (the unpublished patcher note, "Tier C").
 
 **Re-derive it for a new build:**
 `tools/analysis.sh python3 -I tools/eve_patch_author.py hosts /client` lists
@@ -112,4 +112,4 @@ IP).
 N6, N11, N13, W1-W3 and everything delivered as data (P7, P8, P8b incl.
 `ftp://`, P8c, P13, P13b, P19). Until the jail is dropped that is the jail's
 job; after it, each needs its own recipe or a decision (the `r-no-jail`
-research). `docs/lanes/phone-home.md` lists the open [A] and [I] marks.
+research). The unpublished phone-home lane note lists the open [A] and [I] marks.

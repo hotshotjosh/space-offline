@@ -1012,7 +1012,7 @@ live on `GpsSession` — reach only its outbox, through `Writers::post`. Until
 `conn::serve`'s `stream.read` (`conn.rs:196`) blocks up to `IDLE_TIMEOUT` =
 600 s once the player is logged in. That is correct and not a tunable to
 shorten casually: machoNet's keepalive is 240 s and the client legitimately
-sends **nothing** between pings (`docs/archive/destiny-and-the-ballpark.md` §5.3), so a
+sends **nothing** between pings (the unpublished destiny-and-the-ballpark note §5.3), so a
 timeout anywhere near that would disconnect a healthy player sitting in a
 station. What the 600 s catches is a peer that has gone away without closing — a
 killed client, a jail torn down under it — whose thread *and whose write half*

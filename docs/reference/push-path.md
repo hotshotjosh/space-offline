@@ -47,7 +47,7 @@ UI paths (§3.2).
 `conn::serve` (`server/crates/eve-server/src/conn.rs:65`) owns the `TcpStream` by value and
 borrows `Option<&mut Capture>`; `send` at `conn.rs:148` frames one payload, records it, and
 `write_all`s it. The read loop blocks in `stream.read` at `conn.rs:131` for up to four
-minutes at a time (`docs/archive/destiny-and-the-ballpark.md` §5.3), so **any design where the reader and
+minutes at a time (the unpublished destiny-and-the-ballpark note §5.3), so **any design where the reader and
 the writer share one handle is a design where nothing can ever be pushed.** That decides
 `try_clone`.
 
@@ -58,12 +58,12 @@ the writer share one handle is a design where nothing can ever be pushed.** That
 //!
 //! `conn::serve` writes only in response to a read, and that cannot stay true.
 //! Nothing on the client fetches Destiny state and the client falls silent for
-//! minutes at a time (`docs/archive/destiny-and-the-ballpark.md` §5); and every
+//! minutes at a time (the unpublished destiny-and-the-ballpark note §5); and every
 //! inventory, fitting, market and industry *mutator* discards its return value,
 //! so the client learns what happened from `OnItemChange`, `OnGodmaItemChange`,
 //! `OnOwnOrdersChanged` and friends -- or not at all. This is the gate on a
 //! visible ship *and* on every act of doing something the player can watch work
-//! (`docs/archive/roadmap.md`, the spine, step D).
+//! (the unpublished roadmap note, the spine, step D).
 //!
 //! Three types, and keeping them apart is most of the design:
 //!
@@ -350,7 +350,7 @@ order of weight:
 
 1. **The simulation clock is world state, not connection state.** A Destiny update carries a
    simulation time the client *rebases its own ballpark onto*
-   (`docs/archive/destiny-and-the-ballpark.md` §8 step 4: `State history rebased at <t>`). Two tickers are
+   (the unpublished destiny-and-the-ballpark note §8 step 4: `State history rebased at <t>`). Two tickers are
    two clocks; two clocks in one solar system is a desync generator, and the recovery
    machinery for it (`OnRecoverableDesync`, `RequestReset`) is step 6 of that document —
    i.e. we would be building the alarm for a fire we lit ourselves.
@@ -419,7 +419,7 @@ impl Writers {
 ```rust
 /// How often the clock wakes.
 ///
-/// Destiny runs at 1 Hz (`docs/archive/destiny-and-the-ballpark.md` §4.2). A clock that
+/// Destiny runs at 1 Hz (the unpublished destiny-and-the-ballpark note §4.2). A clock that
 /// wakes at the rate it must emit at has no slack, so this is a divisor: a frame
 /// due at *t* goes out within 250 ms of *t* rather than within a full second of
 /// it.
@@ -535,7 +535,7 @@ elif state[0] == const.ADDRESS_TYPE_BROADCAST:
 ```
 
 So `(4, broadcastID, narrowcast, idtype)`, `narrowcast` a list. That is exactly
-`eve-proto/src/address.rs:33-38` and exactly `docs/archive/wire-format.md:273`. **Nothing to change.**
+`eve-proto/src/address.rs:33-38` and exactly the unpublished wire-format note. **Nothing to change.**
 
 Two facts not in the roadmap, both load-bearing:
 
@@ -566,7 +566,7 @@ Two facts not in the roadmap, both load-bearing:
 
 Command **12** `macho.Notification`, `params = ['payload?']` **[V]**
 (`machoNetPacket.py`; `cluster/__init__.py:86` gives the 12). So `body` is a 1-tuple.
-`docs/archive/wire-format.md:259` already records both. **Nothing to change.**
+The unpublished wire-format note already records both. **Nothing to change.**
 
 The nesting was verified by walking the client's own chain rather than by reading the
 roadmap. The chain order is **confirmed from the builder**, which matters because the list in
@@ -1019,7 +1019,7 @@ dependency**), and a clean working tree.
 /// because the call that caused it does not return it.
 ///
 /// Five subsystems' worth of mutators discard their return value entirely
-/// (`docs/archive/roadmap.md`), so this enum is where almost every future one lands:
+/// (the unpublished roadmap note), so this enum is where almost every future one lands:
 /// `OnItemChange`, `OnGodmaItemChange`, `OnOwnOrdersChanged`, `OnIndustryJob`,
 /// `OnAgentMissionChange`. It names the event in **world** terms; turning it
 /// into a `Notification` packet is `dispatch.rs`'s job, because `Registry`
@@ -1168,7 +1168,7 @@ true by construction rather than by comment.
    the write handle is per-connection. The spine's own step A (one shared world) is the
    argument, and the stranded-process lesson in `tools/up.sh` is the second one. §1.4.
 2. **"Prove the plumbing does not corrupt a reply" by sending *something*, not nothing**
-   (`docs/archive/destiny-and-the-ballpark.md` §8 step 3 says "send nothing"). A handler-less `On*`
+   (the unpublished destiny-and-the-ballpark note §8 step 3 says "send nothing"). A handler-less `On*`
    broadcastID is provably inert on the client and exercises the entire path — frame, mutex,
    capture, client decode, four GPCS layers, dispatch. A ticker that sends nothing tests the
    sleep.

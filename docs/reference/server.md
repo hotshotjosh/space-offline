@@ -1,6 +1,6 @@
 # The server
 
-> **Status note, 2026-10-28.** §§1-7 describe the server as of 2026-10-19 to 22, a handshake plus a first service layer; read them as history of how it was built. Verified stale: §2's "what is missing is the station view" (`map.GetStationInfo` and `stationSvc.GetStationItemBits` are answered in `server/crates/eve-server/src/service/world.rs`). What exists now: §8 here, the `DOMAINS` table in `server/crates/eve-server/src/service.rs` (each module's `SERVICES` feeds `Registry::services()`, which is the authoritative list of what is answered; §2's sentence naming `Registry::SERVICES` is out of date), and `docs/port-tracker.md`.
+> **Status note, 2026-10-28.** §§1-7 describe the server as of 2026-10-19 to 22, a handshake plus a first service layer; read them as history of how it was built. Verified stale: §2's "what is missing is the station view" (`map.GetStationInfo` and `stationSvc.GetStationItemBits` are answered in `server/crates/eve-server/src/service/world.rs`). What exists now: §8 here, the `DOMAINS` table in `server/crates/eve-server/src/service.rs` (each module's `SERVICES` feeds `Registry::services()`, which is the authoritative list of what is answered; §2's sentence naming `Registry::SERVICES` is out of date), and the unpublished port tracker.
 
 What `server/crates/eve-server` does today, what it deliberately does not do,
 and the one step in it most likely to be wrong.
@@ -15,7 +15,7 @@ Contents: 1 What works, 2 What does not, 3 The handshake, 4 `signedFunc`,
 
 A `std`-only TCP listener that accepts a connection from the real EVE client
 and runs the **complete GPS low-level version check and authentication
-handshake** — the ten payloads H1..H10 of `docs/reference/login-path.md` §4 — then logs
+handshake** — the ten payloads H1..H10 of the unpublished login-path note §4 — then logs
 everything that follows.
 
 No external crates — including the DEFLATE decompressor. The client compresses
@@ -40,9 +40,9 @@ The layers, bottom up, each already covered by its own document:
 |---|---|---|
 | TCP framing | `eve-proto::frame` | disassembly — `docs/reference/framing.md` |
 | payload decompression | `eve-inflate` | RFC 1950/1951, pinned to a real client frame |
-| marshal codec | `eve-marshal` | disassembly — `docs/archive/marshal-tags.md` |
+| marshal codec | `eve-marshal` | disassembly — the unpublished marshal-tags note |
 | one GPS payload | `eve-server::wire` | `blue.marshal.Save` = header + one object |
-| handshake H1..H10 | `eve-server::handshake` | `docs/reference/login-path.md` §4 |
+| handshake H1..H10 | `eve-server::handshake` | the unpublished login-path note §4 |
 | connection loop | `eve-server::conn` | — |
 | capture | `eve-server::capture` | — |
 
@@ -66,12 +66,12 @@ That tolerance has a sharp edge, found the hard way: `get_active_campaign`
 unpacks its result into four names *before* testing any of them, so "empty"
 there is `(None, None, None, None)` and a plain `None` is a `TypeError`. Empty
 is usually right; which empty is a question for the caller's bytecode. See
-`docs/reference/login-path.md` §8.
+The unpublished login-path note §8.
 
 **Selecting a character works too**, which is a different kind of thing from
 answering a call: the point of `charUnboundMgr.SelectCharacterID` is not its
 return value — that is discarded — but the `SessionChangeNotification` sent
-with it. See `docs/archive/entering-the-game.md` for the field list, which comes from the
+with it. See the unpublished entering-the-game note for the field list, which comes from the
 real server's own session-building code, and for the four ways to get that
 notification wrong that all fail *silently*.
 
@@ -88,7 +88,7 @@ What is missing is the station **view**: `map.GetStationInfo`,
 `stationSvc.GetStationItemBits`, and the hangar inventory's contents. Those
 do not run in the blocking session-change wave, so the symptom is a loading
 screen rather than a black one — a distinction worth knowing, because it
-tells you which half of `docs/archive/entering-the-game.md` to read.
+tells you which half of the unpublished entering-the-game note to read.
 
 An unanswered call does not disconnect us — but **it is fatal to the client**,
 and an earlier version of this paragraph said otherwise. The correction is
@@ -140,7 +140,7 @@ including selecting a character — raises.
 
 Ten payloads, each its own frame. `E` marks the ones the client sends through
 `EncryptedWrite`/`EncryptedRead`, which under the Placebo crypto pack
-(`docs/reference/login-path.md` §3) are the identity — so everything here is plaintext.
+(the unpublished login-path note §3) are the identity — so everything here is plaintext.
 
 | # | dir | what |
 |---|---|---|
@@ -207,7 +207,7 @@ recovered. The golden bytes are pinned in a test.
 
 **Not confirmed, and not confirmable from here:** that CPython 2.7's real
 `marshal.loads` accepts them; that `eval` of the result succeeds; and that
-`Crypto.Verify` under Placebo is the identity `docs/reference/login-path.md` infers.
+`Crypto.Verify` under Placebo is the identity the unpublished login-path note infers.
 There is no Python 2.7 on this machine and no live client yet. **Expect H8 to
 be the first thing that breaks**, and note that a failure there will look like
 a disconnect after H7, not like an error message.
@@ -341,7 +341,7 @@ actually applied to the source before the suite ran:
 
 What the loopback test does **not** prove is that any of this agrees with CCP's
 code. It proves the pieces agree with each other. The payloads are built to
-match `docs/reference/login-path.md` §4, and where that document is wrong, the test is
+match the unpublished login-path note §4, and where that document is wrong, the test is
 wrong in the same direction.
 
 ## 7. What a first client connection would tell us
@@ -376,7 +376,7 @@ mount.
 ## 8. Services, flags and GM commands added by the 2026-10-27 lanes (Q-DOCS)
 
 Sections 1 to 7 describe the first connection. Since then the server grew
-the subsystems below. Each row names the lane note (`docs/lanes/<lane>.md`),
+the subsystems below. Each row names the lane note (the unpublished lane notes<lane>.md`),
 which holds the client citations, the `[A]`s and the human check; this table
 only says where to look.
 

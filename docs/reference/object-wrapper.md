@@ -2,7 +2,7 @@
 
 Client build V24.01, 3619879. Recovered by disassembling
 `/client/bin64/blue.dll` (ImageBase `0x180000000`) and cross-checked against
-the client's own unobfuscated Python. Closes gap 1 of `docs/archive/marshal-tags.md`
+the client's own unobfuscated Python. Closes gap 1 of the unpublished marshal-tags note
 ("`0x17`/`0x22`/`0x23` payload field order").
 
 Confidence markers, as in `docs/reference/dbrow.md`: **[V]** verified from this build's
@@ -57,7 +57,7 @@ Four consequences a Rust encoder must honour:
    carry **exactly two** `0x2D` bytes, always, even when both streams are
    empty.
 2. **The dict-setitem stream is `key, value`** — the *opposite* order from
-   the dict tag `0x16`, which is `value, key` (`docs/archive/marshal-tags.md`, re-verified
+   the dict tag `0x16`, which is `value, key` (the unpublished marshal-tags note, re-verified
    there at `0x1802dd2f7`). Getting these the same way round is a bug.
 3. **The two state carriers are different.** `0x22`/`0x23` put the state
    *inside the header tuple*; `0x17` puts it in a *second top-level object*.
@@ -72,7 +72,7 @@ Four consequences a Rust encoder must honour:
 ## 2. `0x22` — handler `0x1802de1c0` **[V]**
 
 Function bounds `0x1802de1c0-0x1802de424` (from `.pdata`; 612 bytes, so the
-leaf-function caveat in `docs/archive/marshal-tags.md` does not apply).
+leaf-function caveat in the unpublished marshal-tags note does not apply).
 
 ```text
 0x1802de1e4  movzx r15d, r8b          ; r15 = shared flag, r12 = stream, r13 = ctx
@@ -99,7 +99,7 @@ leaf-function caveat in `docs/archive/marshal-tags.md` does not apply).
 ob_item 0x18`, so `[rsi+0x10]` is the length and `[rsi+0x28]` is
 `ob_item[2]`. **[V]**
 
-- The "reads 2" recorded for `0x22` in `docs/archive/wire-format.md` is **not two stream
+- The "reads 2" recorded for `0x22` in the unpublished wire-format note is **not two stream
   bytes**. It is the two `PyTuple_GetItem` index constants, `0` and `1`.
   **[V]** — worth correcting there.
 - The header is required to be a tuple: `PyTuple_GetItem` raises on anything
@@ -140,7 +140,7 @@ The key difference from `0x22`, and the thing easiest to get wrong:
   **[V]**
 - Minimum header: a 1-tuple whose single element is a tuple of at least 1
   element. **[V]**
-- The "reads 1" recorded in `docs/archive/wire-format.md` is likewise the single
+- The "reads 1" recorded in the unpublished wire-format note is likewise the single
   `PyTuple_GetItem` index constant `0`, not a stream byte. **[V]**
 
 `ctx[0x88]` is `"__new__"`: the MarshalStream constructor at `0x1802d9b60`
@@ -151,7 +151,7 @@ interns it there —
 ### The constructor's string slots, in full **[V]**
 
 Read off `0x1802d9b60`; these extend the `rcx` member table in
-`docs/archive/marshal-tags.md`.
+The unpublished marshal-tags note.
 
 | off | string | used by |
 |---|---|---|
@@ -205,7 +205,7 @@ Function bounds `0x1802dde40-0x1802de1be` (894 bytes).
 
 ## 5. The `0x2D` terminator and the two append streams **[V]**
 
-`0x2D` is **not a type code**. `docs/archive/wire-format.md` already records its dispatch
+`0x2D` is **not a type code**. The unpublished wire-format note already records its dispatch
 slot as NULL ("Invalid type tag %d in stream."). It is read, and written, only
 by two dedicated helpers.
 
@@ -284,7 +284,7 @@ dict items still end in `2D 2D`. **[V]**
 ## 6. The `0x17` class name: what it is, and the whitelist **[V]**
 
 The resolver is `0x1802deb60` — the same helper tag `0x02` uses
-(`docs/archive/marshal-tags.md`). It:
+(the unpublished marshal-tags note). It:
 
 1. `PyDict_GetItem(ctx[0x30], nameObj)` — a resolution cache, keyed by the
    name object. (`0x1802deb84`)
@@ -436,7 +436,7 @@ Two things fall out:
 - The save callback (`stream[0x70]`) is consulted **only here** — no other
   branch of `WriteObject` reads it. So tag `0x19` is reachable only for
   old-style instances, which supports (but does not prove the full scope of)
-  gap 9 in `docs/archive/marshal-tags.md`. **[V]** for the mechanism, **[I]** for "`0x19`
+  gap 9 in the unpublished marshal-tags note. **[V]** for the mechanism, **[I]** for "`0x19`
   is the bound-object carrier".
 
 ### 7.4 The `0x22`/`0x23` writer — `0x1802e02a0` **[V]**
@@ -554,7 +554,7 @@ Worked example, a `MachoPacket` subclass. `class MachoPacket():` in
 `carbon/common/script/net/machoNetPacket.py` has no bases, so it is an
 **old-style** class in Python 2.7 and every packet goes down the `0x17` path,
 **not** `0x22`. It defines `__getstate__`/`__setstate__`, so the state is the
-14-tuple `docs/archive/wire-format.md` already documents. **[V]**
+14-tuple the unpublished wire-format note already documents. **[V]**
 
 ```text
 17                                              ; tag 0x17
@@ -573,7 +573,7 @@ Worked example, a `MachoPacket` subclass. `class MachoPacket():` in
 The string tag: the writer's string branch picks `0x0E` (empty), `0x0F` (one
 char), `0x11` (string-table hit, `0x1802df4dd`) or `0x13`
 (`0x1802df54b`, `0x1802df806`). A 47-byte class name takes **`0x13`** with
-the escaped-length encoding of `docs/archive/marshal-tags.md`. **[V]**
+the escaped-length encoding of the unpublished marshal-tags note. **[V]**
 
 **Trap: `__module__` is whatever the class body says, not the file path.**
 `eve/common/script/sys/strangeStrings.py` sets `__module__ = 'sys'` in the
@@ -650,7 +650,7 @@ read_dict_stream: loop { if peek()==0x2D { pos+=1; return }
 
 All three call `RegisterShared(stream, 0)` (`0x1802dbdf0`) **before** reading
 any child, and commit with `0x1802dbf30` only after the object exists
-(`0x1802de2b1`, `0x1802de51e`, `0x1802ddfd0`). `docs/archive/marshal-tags.md` already
+(`0x1802de2b1`, `0x1802de51e`, `0x1802ddfd0`). The unpublished marshal-tags note already
 records this; it is re-confirmed here. A decoder must claim the ID at the tag
 byte, not after the payload, or the numbering drifts.
 
@@ -704,36 +704,36 @@ wrong, and both are read off this build rather than imported:
 
 Reported, not edited — these files are other tracks' lanes.
 
-1. **`docs/archive/wire-format.md`**, "Packet envelope — confirmed": *"These are old-style
+1. **The unpublished wire-format note**, "Packet envelope — confirmed": *"These are old-style
    classes serialized as `(guid-object, state)` via the native OBJECT tag."*
    The class is identified by **`__module__ + "." + __name__`**, not by
    `__guid__` (`0x1802e00de`/`0x1802e0136`/`0x1802e0142`). For `CallReq` that
    is `carbon.common.script.net.machoNetPacket.CallReq`, not
    `macho.CallReq`. The whitelist in `carbon/common/lib/whitelist.py` lists
    the dotted paths, confirming it independently. **[V]**
-2. **`docs/archive/wire-format.md`**, type table: `0x22` "reads 2" and `0x23` "reads 1" are
+2. **The unpublished wire-format note**, type table: `0x22` "reads 2" and `0x23` "reads 1" are
    not stream reads. They are `PyTuple_GetItem` index constants. Neither code
    reads any raw bytes beyond its tag. **[V]**
-3. **`docs/archive/marshal-tags.md`**, "Dispatch": *"Per-tag statistics at `ctx+0x108`
+3. **The unpublished marshal-tags note**, "Dispatch": *"Per-tag statistics at `ctx+0x108`
    (64 × u32)"*. `ctx+0x108` is a **pointer to** that array, dereferenced
    first: `0x1802ddab6 mov rax, [r14+0x108]; 0x1802ddabd inc dword
    [rax+rcx*4]`. The save-side equivalent is `ctx+0xf0`
    (`0x1802e231a`). **[V]**
-4. **`docs/archive/marshal-tags.md`**, stream member table: it lists `stream+0x70` as the
+4. **The unpublished marshal-tags note**, stream member table: it lists `stream+0x70` as the
    cached `cPickle.Unpickler` for `0x21`. In the **save** direction
    `stream+0x70` is the **Save callback** (`0x1802dffce`, `0x1802e0023`) and
    `stream+0x68` is the cached `cPickle.Pickler` (`0x1802dfa79`,
    `0x1802dfad3`, `0x1802dfaf0`). Either the field is reused per direction or
    one of the two offsets is off by one slot; worth a look. **[V]** for what
    the writer does.
-5. **`docs/archive/marshal-tags.md` gap 6** ("`0x0D` vs `0x13` — what makes the encoder
+5. **The unpublished marshal-tags note gap 6** ("`0x0D` vs `0x13` — what makes the encoder
    pick one is unknown"): the writer's string branch emits **`0x0E`, `0x0F`,
    `0x11` or `0x13`** and there is no `mov r8d, 0xd` anywhere in
    `Marshal::WriteObject`. On this evidence **the client never emits `0x0D`**
    — `0x13` is the general string tag on the wire. **[I]**, because only the
    immediate tag constants in `WriteObject` were enumerated; a sub-writer
    could in principle carry it.
-6. **`docs/archive/marshal-tags.md` gap 9** ("`0x19` as the bound-object carrier"): the
+6. **The unpublished marshal-tags note gap 9** ("`0x19` as the bound-object carrier"): the
    save callback is consulted at exactly one place in the whole writer — the
    `0x17` branch — and a non-`None` return makes the object a tag `0x19`
    instead. So `0x19` is produced only for old-style instances offered to

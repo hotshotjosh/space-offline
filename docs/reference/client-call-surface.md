@@ -40,7 +40,7 @@ Served, measured against the dispatcher rather than assumed (§4):
 
 Those were 383 / 772 / 656 sites when this file was first written. The move is
 two different things, and they are worth separating because only one of them is
-progress: round 1 of `docs/archive/plan-docked-subsystems.md` added real arms, and **19
+progress: round 1 of the unpublished plan-docked-subsystems note added real arms, and **19
 `(service, method)` pairs were already answered and being reported as
 `partial`** by a bug in the scanner — rustfmt wraps a long `"a" | "b" => …`
 across lines, and the matcher was anchored per line on a leading quote, so

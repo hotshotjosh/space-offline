@@ -53,7 +53,7 @@ role = 7018860371459182592          # 0x6168005200E41000
 
 ### 1.2 Do **not** use `ROLE_ANY`
 
-`docs/archive/session-flow.md` and `docs/reference/login-path.md` both recommend
+The unpublished session-flow note and the unpublished login-path note both recommend
 `ROLE_ANY & ~ROLE_SERVICE`. **That mask does not contain `ROLE_GML` or
 `ROLE_GMH`** — the two roles the client tests most often. See §7; this is the
 single most important correction in this document.
@@ -268,7 +268,7 @@ Every constant from bit 31 upward is a **Python long** in the source
 (`ROLE_IGB = 2147483648L`). On Win64 a CPython 2.7 `int` is **32-bit**, so any
 mask above `2**31 - 1` is a `long` on this client regardless.
 
-The relevant marshal tags (`docs/archive/marshal-tags.md`):
+The relevant marshal tags (the unpublished marshal-tags note):
 
 | tag | meaning | note |
 |---|---|---|
@@ -734,9 +734,9 @@ alter it — which is exactly why the server is the only lever. **[V]**
 
 Reported, not edited — those files are other tracks' lanes.
 
-1. **`docs/archive/session-flow.md`, "Session establishment" → "Role mask":**
+1. **The unpublished session-flow note, "Session establishment" → "Role mask":**
    *"`ROLE_ANY & ~ROLE_SERVICE` is the recommended mask"*, and
-   **`docs/reference/login-path.md` §7**, *"Practical choice: `role = ROLE_ANY & ~ROLE_SERVICE`
+   **the unpublished login-path note §7**, *"Practical choice: `role = ROLE_ANY & ~ROLE_SERVICE`
    gives login + player + every elevated bit."*
 
    **Wrong in the way that matters.** `ROLE_ANY` is defined as
@@ -747,7 +747,7 @@ Reported, not edited — those files are other tracks' lanes.
    the "GM / WM Extras" submenu and six of the nine Insider menus. It is "every
    elevated bit *except the GM bits*". **[V]**
 
-2. **`docs/archive/session-flow.md`:** *"The dev/sandbox UI gates on
+2. **The unpublished session-flow note:** *"The dev/sandbox UI gates on
    `ROLEMASK_ELEVATEDPLAYER` and `ROLE_QA`."*
 
    Half right, and incomplete. `ROLEMASK_ELEVATEDPLAYER` gates whether the
@@ -756,7 +756,7 @@ Reported, not edited — those files are other tracks' lanes.
    `ROLE_ANY`'s exclusions, so `ROLE_GML` alone does **not** satisfy it — the
    two must be set together. **[V]**
 
-3. **`docs/reference/login-path.md` §7:** *"Setting `ROLE_VIPLOGIN` also skips the proxy's
+3. **The unpublished login-path note §7:** *"Setting `ROLE_VIPLOGIN` also skips the proxy's
    login-slot check."*
 
    True of CCP's proxy, irrelevant to us: `ROLE_VIPLOGIN` has **zero client
@@ -764,7 +764,7 @@ Reported, not edited — those files are other tracks' lanes.
    `carbon/common/script/net/machoNet.pyc` (a `zuser.Users_SelectByRole` query
    and a VIP-mode check). It does nothing in the client. **[V]**
 
-4. **`docs/reference/login-path.md` §7** lists `ROLE_GML = 18014398509481984` and
+4. **The unpublished login-path note §7** lists `ROLE_GML = 18014398509481984` and
    `ROLE_GMH = 9007199254740992` correctly, then recommends a mask that
    excludes both. Internally inconsistent rather than wrong.
 
@@ -799,7 +799,7 @@ sets nothing), and the `sessionVersion` / `LockSession` trap.
    inspects it.
 
 3. **[?] What the real `session_init` dict contains**, and therefore whether a
-   real Singularity session set bits we would not think to set. `docs/reference/login-path.md`
+   real Singularity session set bits we would not think to set. The unpublished login-path note
    already flags this; the role mask is the field it matters most for, since
    `machoNet.HandleAccept` does
    `llvresponse['session_init']['role'] |= s.role` — an **or** with the

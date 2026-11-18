@@ -40,7 +40,7 @@ variable.
 
 | Flag (variable) | Scales | Default | Range | What it leaves alone | Source |
 |---|---|---|---|---|---|
-| `--time-scale N` (`EVE_TIME_SCALE`) | the slow game timers: industry jobs, PI cycles, the daily rollover (and so asteroid regrowth and site expiry), anomaly respawn, market order life, contract and courier deadlines, insurance life, skill training | 1 | whole number 1..=60 | physics, warp, module cycles, mining cycles, NPC brains, belt rat respawn, wormhole lifetimes, market history, timers under a minute. The full list is in `docs/lanes/clock.md` | `srv/game_clock.rs:51,62` |
+| `--time-scale N` (`EVE_TIME_SCALE`) | the slow game timers: industry jobs, PI cycles, the daily rollover (and so asteroid regrowth and site expiry), anomaly respawn, market order life, contract and courier deadlines, insurance life, skill training | 1 | whole number 1..=60 | physics, warp, module cycles, mining cycles, NPC brains, belt rat respawn, wormhole lifetimes, market history, timers under a minute. The full list is in the unpublished clock lane note | `srv/game_clock.rs:51,62` |
 | `--training-scale N` (`EVE_TRAINING_SCALE`) | skill training only, on top of `--time-scale` | 1 | whole number 1..=10000 | everything else | `srv/game_clock.rs:54,58` |
 | `--bounty-scale X` (`EVE_BOUNTY_SCALE`) | NPC bounties, live and settled offline | 1 | 0..=1000 (0 switches the faucet off) | the system's bounty pool drains by the unscaled amount; the client shows the unscaled bounty; the ESS cut comes out of the scaled amount | `srv/econ_scale.rs:46,50` |
 | `--mission-scale X` (`EVE_MISSION_SCALE`) | agent mission ISK | 1 | 0..=1000 | the offer window shows the unscaled ISK; LP and standing gains | `srv/econ_scale.rs:51` |
@@ -307,7 +307,7 @@ What bots assume or pay. They change how bots play, not what the server charges.
 - **No live command for the seven scales.** Changing one means a restart.
 - **`--time-scale` and `--training-scale` are not stored in the world file.** A
   restart at another scale re-derives some timers (see
-  `docs/lanes/clock.md`).
+  the unpublished clock lane note).
 - **`/fwcapture` and `/dock-capitals` are not kept** across a restart.
 - **Several tables are compiled in only**: `content/npc/abyss-waves.tsv`,
   `content/pve/abyss-weather.tsv`, and the bot name, chat and start-hour

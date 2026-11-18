@@ -1,6 +1,6 @@
 # machoNet TCP framing (client build V24.01, 3619879)
 
-How a payload is delimited on the wire. Closes gap 3 of `docs/archive/wire-format.md`.
+How a payload is delimited on the wire. Closes gap 3 of the unpublished wire-format note.
 Established by disassembly of `/client/bin64/blue.dll` (ImageBase
 `0x180000000`), not by capture; every claim names an address.
 
@@ -52,7 +52,7 @@ P    plen-(P-4)   where P = 4 + (bit28 ? 4 + oobLen : 0)
   the *compressed* payload, so **framing is unaffected by compression**.
   *Still unimplemented, and still never observed:* the first real client sent
   compressed payloads with this bit **clear**, compressing the marshal stream
-  itself instead (`docs/reference/login-path.md` §8). `eve-inflate` now exists, so closing
+  itself instead (the unpublished login-path note §8). `eve-inflate` now exists, so closing
   this is only an API change — `try_split_frame` hands out borrowed slices and
   an inflated frame needs an owned buffer. `FrameError::Compressed` until then,
   rather than a silent misread.
@@ -131,7 +131,7 @@ stream. Carbonio **send** oversize raises; legacy **receive** oversize raises
 `machoNetTransport.py` enables the native path only when
 `iocp.UsingCompression()`, which needs `/iocpCompress` or a pref. **This
 install has neither**, so the Python zlib path (level 1, `}`/`~` first-byte
-discriminator) is the live one, exactly as `docs/archive/wire-format.md` says. The native
+discriminator) is the live one, exactly as the unpublished wire-format note says. The native
 path is documented because the receiver honours bit 29 regardless of what the
 sender does.
 
@@ -139,7 +139,7 @@ Compressed payload = `u32 rawLen` (LE) + a zlib stream (`deflateInit2_` with
 the default wrapper, not raw deflate). The header rewrite at `0x1803898d5`
 preserves the flags and rewrites only `plen`.
 
-**This resolves a loose end in `docs/archive/wire-format.md`:** the 6.5 KB function at
+**This resolves a loose end in the unpublished wire-format note:** the 6.5 KB function at
 `0x180579a50` that owns the `header crc mismatch` string, previously noted only
 as "far outside the marshal cluster", **is zlib's `inflate`** — it also
 references `incorrect header check` and `unknown compression method`
@@ -197,7 +197,7 @@ def EncryptedWrite(self, packet, header=None):
 
 Framing is unaffected — the prefix measures whatever bytes reach `sendpacket` —
 but the `}`/`~` discriminator applies to the **decrypted** payload. Under the
-Placebo pack (see `docs/archive/session-flow.md`) `SymmetricEncryption`/`Decryption` are
+Placebo pack (see the unpublished session-flow note) `SymmetricEncryption`/`Decryption` are
 identity functions, so for us frame payload *is* the marshal blob. Under
 CryptoAPI it is not.
 
