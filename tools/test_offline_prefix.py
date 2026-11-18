@@ -324,7 +324,8 @@ class ClientSetup(unittest.TestCase):
         self.put("tq-offline/start.ini", "[main]\nbuild = 100\n")
         r = self.check()
         self.assertIn("not the pinned", r.stdout)
-        self.assertIn("rm -rf", r.stdout)
+        self.assertIn("mv '", r.stdout)       # the old copy is kept, not removed
+        self.assertNotIn("rm -rf", r.stdout)
         self.assertIn("offline-prefix.sh --force", r.stdout)
 
     def test_missing_resfiles_are_counted(self) -> None:
@@ -416,7 +417,8 @@ class ClientSetup(unittest.TestCase):
         self.put("tq-offline/start.ini", "[main]\nbuild = 100\n")
         r = self.run_step("copy")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("rm -rf", r.stdout)
+        self.assertIn("mv '", r.stdout)
+        self.assertNotIn("rm -rf", r.stdout)
 
     def test_copy_rerun_with_a_broken_own_prefix_explains_and_changes_nothing(self) -> None:
         self.good_install()

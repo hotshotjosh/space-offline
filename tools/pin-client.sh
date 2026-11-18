@@ -20,6 +20,12 @@
 #   tools/pin-client.sh --quick     # verify only the load-bearing files
 #   tools/pin-client.sh --path DIR  # another install (e.g. tq-offline-2)
 #
+# Verify reads `tools/pins/<build>.sha256` for the build in the install's
+# start.ini when that file exists, so each served build has its own manifest;
+# otherwise `tools/client-pin.sha256` (the pinned build's). `--manifest FILE`
+# overrides both. `--write` writes `tools/client-pin.sha256` unless `--manifest`
+# names a file (for a served build: `--manifest tools/pins/<build>.sha256`).
+#
 # The manifest is hashes, not client data, so it belongs in the repository --
 # the no-client-data rule is about CCP's content, and a sha256 is not content.
 set -euo pipefail
@@ -30,7 +36,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # error, never a silent read of the live install (owner decision, 2026-11-18).
 PREFIX=${PREFIX:-$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE}
 client=$PREFIX/tq-offline
-manifest=tools/client-pin.sha256
+manifest=
 mode=verify
 quick=0
 
@@ -63,6 +69,12 @@ done
 }
 
 build=$(sed -n 's/^build *= *//p' "$client/start.ini" | tr -d '\r')
+if [[ -z $manifest ]]; then
+    manifest=tools/client-pin.sha256
+    if [[ $mode == verify && $build =~ ^[0-9]+$ && -f tools/pins/$build.sha256 ]]; then
+        manifest=tools/pins/$build.sha256
+    fi
+fi
 echo "pin-client: $client"
 echo "pin-client: start.ini says build = ${build:-<unreadable>}"
 
