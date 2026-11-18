@@ -5,7 +5,9 @@
 its delta from 3662168 was data only. 3619879, 3628513 and 3662168 are still
 registered, as `unverified`: seen, kept, refused unless `--client-build` names
 them. A newer launcher build repeats this re-pin: see "Re-pinning" below. The server supports the pinned build and
-any registered build whose status is `pinned` or `equivalent`. This is the
+any registered build whose status is `pinned`, `equivalent` or `provisional`. The
+standing policy (follow the TQ build, one clean cut-over per move, no dual-line serving) is
+`docs/guides/tracking-tq.md`; this page is the procedure it calls. This is the
 repeatable procedure for a newer build. One command does the read-only part:
 
 ```sh
@@ -94,6 +96,22 @@ build.
 Beside the row: `tools/patches/<build>.json` and
 `findings/build-delta-<pinned>-<build>.tsv`.
 
+## Provisional builds
+
+`provisional` is for a build of the **served line** (the line of `REFERENCE_LINE`) that has been
+triaged as T0 or T1 with no must on the login path, and not yet measured further. The server
+serves it by default, on the bundle of a `pinned` or `equivalent` build of the same line, and logs
+`serving provisional build B on the bundle of build M` at start. It is a two-hour step that
+keeps a friend whose launcher took a hotfix from being refused. Rules:
+
+- same line only: the registry test refuses a `provisional` row on another line, and requires
+  every accepted build to be on `REFERENCE_LINE` and exactly one row to be `pinned`;
+- it is a stopgap: measure it (steps 3 to 7 of the procedure, then the `cutover.list` proof) and
+  move the row to `equivalent`, or back to `unverified` when a must is found on the login path;
+- if its own bundle breaks something, setting the row back to `provisional` reopens the line's
+  previous bundle (T0 and T1 only; at a new line the previous bundle is on another line);
+- a new line is never `provisional`: it is a re-pin.
+
 ## Release lines
 
 A new **line** (new codename, e.g. V24.02) is more than a row: it needs a new
@@ -114,6 +132,13 @@ still verified. With either install absent it prints a note and skips.
 
 ## Retiring a build
 
+`tools/retire-build.sh <old> [--dry-run]` (planned: `docs/guides/tracking-tq.md` section 4.6)
+prints steps 1 to 3 below as edits and deletes the local copies (`tq-<old>`, `tq-<old>-control`,
+`out/pyc-<old>`, `out/content-<old>`, `out/new-build/<old>`); it lands nothing and refuses the
+`pinned` build, a build in the last green `cutover.list` run, and anything under the online
+prefix. Until it exists, do the steps by hand. Retire a build only after the **next** cut-over
+has passed its proof: until then the previous build is the rollback window.
+
 1. Delete its row in `tools/builds.tsv` and its entry in
    `eve_marshal::build::BUILDS` together (the table test checks both).
 2. Delete `tools/patches/<build>.json`.
@@ -126,8 +151,18 @@ still verified. With either install absent it prints a note and skips.
 
 ## Re-pinning
 
+**When.** A new line (T2, T3): always, at the cut-over, because the pinned build must be on the
+served line. A same-line build: within 7 days of its cut-over when port-recheck has a `changed`
+or `gone` row on a cited function or table row, or the surface touches served code (T1), once
+its must items are in; not for a T0 build (port-recheck between the pinned and the served build
+must stay exit 0); and once routinely when 30 days have passed since the last re-pin and the
+served build differs from the pinned one. Re-pins at a new line, and the routine 30-day re-pin within a line, are standing-approved
+(maintainer decision of 2026-11-18). Any other same-line re-pin stays a maintainer decision.
+
 Done for 3662168 (issue #19) and 3670638 (issue #131); `tools/re-pin.sh`
-runs these steps. The coordinator's steps, in this order:
+runs these steps. It refuses (exit 2), before it changes anything, when the registry's pinned
+row is not on the line that `REFERENCE_LINE` in `build.rs` names, so land the line change with
+the re-pin. The coordinator's steps, in this order:
 
 1. Apply the lane's diff (`tools/builds.tsv`, `build.rs`, the regenerated
    `findings/`). The gate stays red until step 4 lands `tools/client-pin.sha256`

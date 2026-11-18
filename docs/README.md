@@ -18,6 +18,7 @@ which, or the row does), `historical` (a finished piece of work, kept as history
 | share the tree with other people's agents | `docs/guides/working-together.md` |
 | know what is built and proved | `docs/status/progress.tsv`, the feature index (page: `docs/status/README.md`) |
 | know what comes next, and who has what | the issue tracker: `prio/*` labels, the milestone; open PRs (`tools/next-task.sh` `prs` column) |
+| keep up with a new Tranquility client build | `docs/guides/tracking-tq.md`, then `docs/guides/build-compat.md` |
 | run the server, the client, bots | `docs/guides/getting-started.md` (zero to playing), `docs/reference/launch-and-env.md` (every flag and variable), `README.md`, `docs/guides/dev-mode.md`, `docs/guides/jail.md`, `docs/guides/contributing.md` |
 | test what only the client can show | `docs/guides/client-ci.md` |
 | debug the client against the server | `docs/guides/debugging-the-client.md` |
@@ -60,7 +61,8 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | `docs/guides/gm-commands.md` | GUIDE | current | The GM slash commands and the server flags. |
 | `docs/guides/hosting.md` | GUIDE | current | Hosting on a dedicated box: frozen bundle, the owner listener, host bots, backups, wipe. |
 | `docs/guides/census.md` | GUIDE | current | The census: proving the patched client phones nobody. |
-| `docs/guides/build-compat.md` | GUIDE | current | Adding, checking and retiring a client build (`tools/new-build.sh`). |
+| `docs/guides/build-compat.md` | GUIDE | current | Adding, checking and retiring a client build (`tools/new-build.sh`); the provisional status and the re-pin cadence. |
+| `docs/guides/tracking-tq.md` | GUIDE | current | Tracking Tranquility: detect a new build, triage it (T0 to T3), cut over, take in its content and code changes, and measure the lag (`tools/tq-lag.py`). Some tools it names are planned and marked so. |
 | `docs/guides/debugging-the-client.md` | GUIDE | current | The method for debugging the real client against our server: instruments, traps, tooling. |
 
 ## Reference: how the protocol and the server work (current truth about this client build)
