@@ -67,17 +67,17 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 | item | what the client expects | what is in the client | what we do today | kind | mark | issue |
 |---|---|---|---|---|---|---|
 | Systems, celestials, stations, gates, security | ids and balls (`AddBalls`); it resolves the rest itself | `solarsystemcontent.static`, `systems.static`, `regions`, `constellations` | the bundle's `universe/*.tsv` (`tools/content.py`) | derivable | [V] C1 §2.1, `docs/content/schema.md` §2 | |
-| Dock and undock geometry | the undock position in the ball updates | per station type in `graphiclocations`; the station's own position and rotation | `universe/dock-locators.tsv` | derivable | [V] schema.md `universe/dock-locators.tsv`; [I] the join, `docs/re/evejs-data.md` §4.4 | |
+| Dock and undock geometry | the undock position in the ball updates | per station type in `graphiclocations`; the station's own position and rotation | `universe/dock-locators.tsv` | derivable | [V] schema.md `universe/dock-locators.tsv`; [I] the join, the unpublished EvEJS data note §4.4 | |
 | What ore each belt holds | rock balls of the right ore | the rock count per ore for every belt | `belts/rocks.tsv`, `src/asteroid.rs` | derivable | [V] C3 §0 item 5, §1 | |
 | Where each rock sits in a belt | rock positions in `AddBalls` | nothing | seeded positions, `src/asteroid.rs:24` | design | [A] `asteroid.rs:24`; falsified by a client that refuses a rock off some locator | |
 | Belt depletion and regrowth | rock counts (the client grades depletion at 0.9, 0.3 and 0) | the grading thresholds only | full reset at downtime | design | [V] C3 §0 item 5, §7.3 | #15 |
 | Wormhole type physics (mass, lifetime, jump mass) | slim fields and the jump's refusals | dogma attributes per wormhole type | `src/wormhole.rs`, `src/wormhole_jump.rs` | derivable | [V] R-WH §1 | |
-| Wormhole statics per system | the hole ball and its slim item | nothing; the dungeon blocks give a class-level pattern only | a class-level rule (`content/wormholes/statics.tsv`) and a seeded draw per system (`src/wormhole.rs:9-21`) | capture-only | [V] R-WH §0, `docs/re/evejs-data.md` §4.3 | |
+| Wormhole statics per system | the hole ball and its slim item | nothing; the dungeon blocks give a class-level pattern only | a class-level rule (`content/wormholes/statics.tsv`) and a seeded draw per system (`src/wormhole.rs:9-21`) | capture-only | [V] R-WH §0, the unpublished EvEJS data note §4.3 | |
 | K162 rules, wormhole collapse, mass regeneration | the slim's size and age enums; collapse pushes | the enums; the regeneration attribute without its cycle | R-WH §4 rules | design | [A] R-WH §4.2; [V] that the regeneration cycle is unknown, R-WH §8 item 3 | |
 | Wormhole system effects | the effect beacon's dogma on the ship | the system's effect beacon and its effects | `universe/system-effects.tsv`, `src/system_effect.rs` | derivable | [V] `system_effect.rs:1-8` | |
-| Moon composition | survey results (an ore fraction per moon) | the moon-ore groups and rarity attributes; no per-moon table | seeded draw from the world seed, `src/moon.rs:23-28` | capture-only | [V] `moon.rs:23-28`; `docs/re/evejs-data.md` §4.5 | #52, #55 |
+| Moon composition | survey results (an ore fraction per moon) | the moon-ore groups and rarity attributes; no per-moon table | seeded draw from the world seed, `src/moon.rs:23-28` | capture-only | [V] `moon.rs:23-28`; the unpublished EvEJS data note §4.5 | #52, #55 |
 | Planetary resource maps | `planetMgr.GetResourceData`: a coefficient blob that native client code evaluates | the evaluator only (native code) | `data: None` (`src/service/planet.rs:940-944`); extraction yields use one assumed field value (`src/planet.rs:60`) | capture-only | [V] `planet.rs:3221-3237` | |
-| Landmarks, observatory and odd-system lists | beacons in space | a small landmarks table; no observatory list | nothing | design | [V] `docs/re/evejs-data.md` §4.8 | |
+| Landmarks, observatory and odd-system lists | beacons in space | a small landmarks table; no observatory list | nothing | design | [V] the unpublished EvEJS data note §4.8 | |
 | Time dilation | a factor in the destiny stream | the client's handling of the factor | not built | design | [V] `docs/status/progress.tsv` "Time dilation: missing" | |
 
 ### NPCs and spawns
@@ -121,7 +121,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 | Standing gain on completion, the cost of declining | standings changes | the client's standing gates and caps; no gain values | our per-level gains, `agent_gain` and `corp_gain` in `content/agents/rewards.tsv` | capture-only | [A] the rewards table (ruling 9: our numbers); C4 §4 records EvEJS's figures, one of them from a single TQ capture | |
 | Storyline trigger (every Nth mission) | a storyline offer | the storyline missions and agents | every Nth Basic mission, `src/storyline.rs` | design | [A] C4 §6 (the count is EvEJS's) | |
 | Epic arcs | arc status and journal messages | `epicarcs`: the graph, agents and messages | `agents/epic-arcs.tsv`, `src/epic_arc.rs` | derivable | [V] C4 §7 | #28 |
-| LP store offers | `LPStoreMgr.GetAvailableOffersFromCorp`: a list of offers | which offer tables each corporation has (ids only); no offers | offers by rule per table class, with prices from `P_ref`, plus `content/agents/lp-overrides.tsv` | capture-only | [V] C4 §5.2; `docs/re/evejs-data.md` §4.2(c) (also on a public CCP API) | |
+| LP store offers | `LPStoreMgr.GetAvailableOffersFromCorp`: a list of offers | which offer tables each corporation has (ids only); no offers | offers by rule per table class, with prices from `P_ref`, plus `content/agents/lp-overrides.tsv` | capture-only | [V] C4 §5.2; the unpublished EvEJS data note §4.2(c) (also on a public CCP API) | |
 | Agents in space | agent rows with no station, a ball, a warp | placement for every one (`agentsinspace`) | nothing | derivable | [V] C2 §9 (the slim field that binds the ball to the agent is unknown) | |
 
 ### Sites and dungeons
@@ -147,7 +147,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 | What NPC corporations buy and sell, and where | NPC orders in the book | `npccorporations.corporationTrades` | `npc/trades.tsv`, `src/econ_exchange.rs` | derivable | [V] C5 §0 item 2 | |
 | NPC order prices and stock | order rows | base prices | asks and bids on base price; stock [A] | derivable | [I] the price rule was checked against public TQ order data (`econ_exchange.rs:184-193`); stock [A] `:197-200` | |
 | Insurance formula and packages | quotes | the constants and the premium formula | `src/service/insurance.rs` | derivable | [V] C5 §5.5 | |
-| Insurance price per hull (`GetInsurancePrice`) | one number per hull | nothing | `0.8 × P_ref` | capture-only | [A] `service/insurance.rs:14-16, 62-65`; also on a public CCP API (`docs/re/evejs-data.md` §4.6) | #26 |
+| Insurance price per hull (`GetInsurancePrice`) | one number per hull | nothing | `0.8 × P_ref` | capture-only | [A] `service/insurance.rs:14-16, 62-65`; also on a public CCP API (the unpublished EvEJS data note §4.6) | #26 |
 | Bounty paid per NPC | wallet journal rows | the bounty on the type | paid in full, times the system multiplier | derivable | [V] C5 §5.3 | |
 | Dynamic bounty multiplier: how ratting drains it and how it recovers | `(output, active)` and a push | the call, the push, the 5,400 s cache | `src/econ_dbs.rs`, [A] pool and recovery rate | design | [V] `econ_dbs.rs` header; [A] C5 §5.3 | |
 | ESS and DBS settings (`GetDynamicResourceSettings`: cut, pay ratio, intervals, output bounds) | one dict of constants | the keys only | every value [A] (`src/service/live_misc.rs:39`, `src/ess.rs:64-70`) | capture-only | [V] C2 §6; `ess.rs:64-67` names "a reference server's settings payload" as the falsifier | #20, #60 |
@@ -199,8 +199,8 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 |---|---|---|---|---|---|---|
 | NPC corporations, their factions, taxes and relations | standings, corp info | `npccorporations`, `factions` | `npc/corporations.tsv`, `npc/factions.tsv` | derivable | [V] C1 §2.6 | |
 | Player corporation and alliance costs and rules | wallet charges, refusals | some constants (the corporation founding cost) | `src/service/corp.rs:618`; others [A] (`src/alliance.rs`) | design | [V] `service/corp.rs:618`; [A] `alliance.rs:209` | |
-| Static chat channel names | channel ids | localisation message ids | derivable by the localisation reader | derivable | [I] `docs/re/evejs-data.md` §4.10 | |
-| Agent and NPC portraits | images from CCP's online image service, not the game server | a few portrait resources | none: a blank portrait must not hang the window | design | [I] `docs/re/evejs-data.md` §4.9 | |
+| Static chat channel names | channel ids | localisation message ids | derivable by the localisation reader | derivable | [I] the unpublished EvEJS data note §4.10 | |
+| Agent and NPC portraits | images from CCP's online image service, not the game server | a few portrait resources | none: a blank portrait must not hang the window | design | [I] the unpublished EvEJS data note §4.9 | |
 | Player bounty payout share | Bounty Office rows | nothing | [A] share (`src/bounty_pool.rs:51-57`) | design | [A] `bounty_pool.rs:51` | |
 | Recruitment adverts, voting | player-made content | nothing | empty answers | design | [V] progress.tsv | #102, #103 |
 
@@ -259,7 +259,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 
 | people might assume | what settles it | mark |
 |---|---|---|
-| NPC aggression, threat range, respawn timing and warp-in range are server AI data | per type in `spacecomponentsbytype`, and the spawn record on each dungeon object | [V] `docs/re/evejs-data.md` §4.1 ("the correction"), `npc-behaviors.md` §6.1 |
+| NPC aggression, threat range, respawn timing and warp-in range are server AI data | per type in `spacecomponentsbytype`, and the spawn record on each dungeon object | [V] the unpublished EvEJS data note §4.1 ("the correction"), `npc-behaviors.md` §6.1 |
 | NPC behaviour has to be captured | the engine and role vocabulary ship; chase, attack delay, target switching, ewar and repair numbers are dogma on the type | [V] C6 §0 item 4, §2.5 |
 | The agent-to-mission pool is lost TQ data | it can be derived from the client's mission, dungeon and agent tables | [V] C4 summary |
 | Mission text needs a capture | every briefing resolves from the client's own message ids, with generic lines where a mission has none | [V] `docs/re/mission-model.md` §1.3, C4 §2.6 |
