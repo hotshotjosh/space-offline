@@ -214,6 +214,10 @@ EXPECT_BY_BUILD = {
     3662168: {"types/market.tsv": 53299, "types/typelists.tsv": 472},
     # 3670638 [V] by bundle-diff against 3662168: market +7, typelists equal.
     3670638: {"types/market.tsv": 53306, "types/typelists.tsv": 472},
+    # 3707965 [V] by bundle-diff against 3670638 (same extractor): market +619,
+    # marketgroups +11, typelists +5, compress +8.
+    3707965: {"types/market.tsv": 53925, "types/marketgroups.tsv": 2125,
+              "types/typelists.tsv": 477, "types/compress.tsv": 220},
 }
 #: Builds whose counts are verified: `EXPECT` is 3619879's, 3628513 shares it,
 #: and `EXPECT_BY_BUILD` holds the rest. Any other build (the next client, before

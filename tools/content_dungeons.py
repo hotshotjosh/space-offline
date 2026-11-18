@@ -351,7 +351,14 @@ EXPECT_ORE_ANOMALY_BANDS = {"high": 7, "low": 16, "null": 16, SPECIAL: 83}
 #: After the first extraction of a new build add its row here.
 #: 3670638 [V] by bundle-diff against 3662168: dungeon 13157 gained four
 #: objects and one spawn.
-EXPECT_BY_BUILD = {3670638: ({"objects.tsv": 260246, "spawns.tsv": 30611}, None)}
+EXPECT_BY_BUILD = {
+    3670638: ({"objects.tsv": 260246, "spawns.tsv": 30611}, None),
+    # 3707965 [V] by bundle-diff against 3670638: +137 dungeons (80 FW war-point
+    # threshold sites, archetypes 82/83 new), FW complexes (33-36) lose their spawns.
+    3707965: ({"dungeons.tsv": 5653, "objects.tsv": 262371, "spawns.tsv": 30229,
+               "archetypes.tsv": 73, "resources.tsv": 1227, "room-rocks.tsv": 3058},
+              {"high": 7, "low": 16, "null": 16, SPECIAL: 89}),
+}
 VERIFIED_BASE_BUILDS = (3619879, 3628513, 3662168)
 
 
