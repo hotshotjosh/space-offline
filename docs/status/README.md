@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**67% proved** (232 of 344) · **93% built** (321 of 344) · 3 parked, not counted.
+**67% proved** (232 of 345) · **93% built** (322 of 345) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -132,6 +132,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
 - [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
 - [ ] A trader watches only published minerals: *built-unproved*, eve-bot trader.rs watch_set; test watch_set_skips_an_unpublished_mineral (invented rows)
+- [ ] The Amarr militia headquarters is a system the 3707965 map still holds for Amarr: *built-unproved*, content/facwar/warzones.tsv hq_a; chosen by rule (nearest warzone-1 system still Amarr-held), not named by the client [A]. falsifier: the FW dashboard or Agency naming another Amarr HQ
 
 ### 3.8 Remote clients, hosting
 
@@ -177,7 +178,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
-| Factional warfare | 3 | 3 | 1 | 2 | 0 |
+| Factional warfare | 3 | 4 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 
@@ -542,7 +543,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Factional warfare</b>: 3 of 9 proved, 6 open</summary>
+<details><summary><b>Factional warfare</b>: 3 of 10 proved, 7 open</summary>
 
 - [x] Enlist, read state, retire, cooldown: *client-proved*, fci_fw_enlist W10; GetMyDirectEnlistmentDate (service/facwar_mgr.rs, unit test a_direct_enlistment_answers_the_date_it_began) and the Memberships-tab checks in fci_fw_enlist are built-unproved until a 3707965 run
 - [x] Kills pay LP: *client-proved*, fci_fw_kill_lp (regress-w27d, two clients): A kills B in a warzone, A is paid LP with his militia (LPSvc and the wallet service agree), the stats kill count rises, B earns nothing; ratio and split [A]
@@ -553,6 +554,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
 - [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
+- [ ] The Amarr militia headquarters is a system the 3707965 map still holds for Amarr: *built-unproved*, content/facwar/warzones.tsv hq_a; chosen by rule (nearest warzone-1 system still Amarr-held), not named by the client [A]. falsifier: the FW dashboard or Agency naming another Amarr HQ
 
 </details>
 

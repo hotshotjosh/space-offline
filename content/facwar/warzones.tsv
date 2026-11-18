@@ -21,5 +21,5 @@
 # GetAllWarzones may never be empty (a client IndexError), and GetHQSystemIDs
 # must name a real system for every warzone faction.
 warzone_id	faction_a	faction_b	hq_a	hq_b	why
-1	500003	500002	30002960	30002537	pairing [V-data] R-FW §2; HQs [A]: falsified by the FW dashboard or the Agency naming another HQ
+1	500003	500002	30002959	30002537	pairing [V-data] R-FW §2; HQs [A]: falsified by the FW dashboard or the Agency naming another HQ; build 3707965 made the old Amarr HQ (30002960) Minmatar, so hq_a is the nearest warzone-1 system still Amarr-held there [A]: falsified by the client naming another Amarr HQ
 2	500001	500004	30045346	30005297	pairing [V-data] R-FW §2; HQs [A]: falsified by the FW dashboard or the Agency naming another HQ
