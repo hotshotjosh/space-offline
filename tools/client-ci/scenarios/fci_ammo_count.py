@@ -1485,6 +1485,26 @@ def eoci_main(EOCI_NAME):
         check('undocked into space', _undocked, _detail)
         if not _undocked:
             return
+        # H6: this scenario reads old-HUD internals (ShipUI); a CI account left
+        # on the new-HUD preview would fail it for a reason that is not the
+        # server's.  Turn the preview off and name a stray one as a check.
+        try:
+            from hud.client import rollout as _r
+            _was_on = bool(_r.new_hud_setting.is_enabled())
+            if _was_on:
+                _r.new_hud_setting.disable()
+            _swapped, _w = wait_for(
+                lambda: _r._CurrentOverlay().__class__.__name__ == 'ShipUI',
+                timeout_ms=10000)
+            check('the old ShipUI is the overlay', bool(_swapped),
+                  'overlay %s after %s ms (preview was %s)' % (
+                      text(_r._CurrentOverlay().__class__.__name__), text(_w),
+                      'on, turned off' if _was_on else 'off'))
+        except ImportError:
+            pass  # 3670638: no hud package
+        except Exception:
+            check('the old ShipUI is the overlay', False,
+                  ' | '.join(traceback.format_exc().strip().split('\n')[-3:]))
 
         # 1. the descriptor godma works from
         g = get_svc('godma')
