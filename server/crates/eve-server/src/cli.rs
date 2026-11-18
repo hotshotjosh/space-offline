@@ -258,6 +258,9 @@ usage: eve-server [options]
   --push-probe N     dev only: post N inert probe notifications, 1/s, to each
                      connection. Off by default. Nothing is visible on screen
                      by design -- only a capture can tell you it worked.
+  --reference-build  print the reference client build this server is built for
+                     and exit 0. deploy/entrypoint.sh reads it to pick
+                     /content/<build>/ when that bundle directory exists.
   -h, --help         this text
 ";
 
@@ -374,6 +377,7 @@ fn probe(addr: &str) -> bool {
 pub const CORE_FLAGS: &[&str] = &[
     "-h",
     "--help",
+    "--reference-build",
     "--bind",
     "--capture",
     "--world",
@@ -645,6 +649,10 @@ fn build(plan: &Assembled, args: Vec<String>) -> Result<Built, String> {
         match arg.as_str() {
             "-h" | "--help" => {
                 print!("{}", usage(plan));
+                return Ok(Built::Done);
+            }
+            "--reference-build" => {
+                println!("{}", eve_marshal::build::REFERENCE);
                 return Ok(Built::Done);
             }
             "--bind" => {
@@ -1416,6 +1424,15 @@ mod tests {
     }
 
     /// Module flags are listed after the core usage, and only then.
+    /// `--reference-build` does its whole job: nothing is bound or loaded.
+    #[test]
+    fn reference_build_flag_ends_the_command_line() {
+        let none = module::build(&[]).unwrap();
+        let built = super::build(&none, vec!["--reference-build".to_owned()]);
+        assert!(matches!(built, Ok(super::Built::Done)));
+        assert!(super::usage(&none).contains("--reference-build"));
+    }
+
     #[test]
     fn usage_lists_module_flags() {
         fn nop(_: &mut crate::rules::Rules, _: Option<&str>) -> Result<(), String> {

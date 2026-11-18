@@ -337,6 +337,20 @@ fn bundle_accepted(
 }
 
 impl Bundle {
+    /// The directory to read for `build` under `root`: `root/<build>/` when
+    /// it holds a `MANIFEST.tsv` (a host that keeps one bundle per build
+    /// side by side), else `root` itself (the flat layout). `deploy/
+    /// entrypoint.sh` makes the same choice; doing it here too keeps a tool
+    /// or a bot that is given the root working.
+    pub fn resolve_dir(root: &Path, build: u32) -> PathBuf {
+        let sub = root.join(build.to_string());
+        if sub.join(MANIFEST).is_file() {
+            sub
+        } else {
+            root.to_path_buf()
+        }
+    }
+
     /// [`Bundle::open_accepting`] the registry's default set
     /// (`eve_marshal::build::accepted`: every `pinned` or `equivalent`
     /// build). For the tools and bots, which have no `--client-build`.
@@ -351,6 +365,7 @@ impl Bundle {
     /// missing or has the wrong row count. Every error names `dir`, and a
     /// file error names the file.
     pub fn open_accepting(dir: &Path, accepted: &[u32]) -> Result<(Bundle, Manifest), String> {
+        let dir = &Self::resolve_dir(dir, eve_marshal::build::REFERENCE);
         let at = |e: String| format!("--content {}: {e}", dir.display());
         let mpath = dir.join(MANIFEST);
         let text = std::fs::read_to_string(&mpath).map_err(|e| {
@@ -499,7 +514,7 @@ fn load_with(
         });
     };
     let (bundle, m) = Bundle::open_accepting(dir, accepted)?;
-    let mut lines = vec![m.startup_line(dir)];
+    let mut lines = vec![m.startup_line(&bundle.dir)];
     let sha8 = |s: &str| s.chars().take(8).collect::<String>();
     for rec in &m.files {
         // C1 §5.4's per-file line.
@@ -898,6 +913,65 @@ mod tests {
         ] {
             assert!(line.contains(want), "{line} lacks {want}");
         }
+    }
+
+    /// A root holding a copy of a bundle at `root/<name>/`.
+    fn root_with(name: &str, inner: &Tmp) -> Tmp {
+        let root = tmp();
+        let sub = root.0.join(name);
+        std::fs::create_dir_all(&sub).unwrap();
+        copy_tree(&inner.0, &sub);
+        root
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        for e in std::fs::read_dir(from).unwrap() {
+            let e = e.unwrap();
+            let dst = to.join(e.file_name());
+            if e.file_type().unwrap().is_dir() {
+                std::fs::create_dir_all(&dst).unwrap();
+                copy_tree(&e.path(), &dst);
+            } else {
+                std::fs::copy(e.path(), dst).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn a_per_build_subdirectory_is_opened_when_it_exists() {
+        let inner = bundle("1.0", build(), 2);
+        let root = root_with(&eve_marshal::build::REFERENCE.to_string(), &inner);
+        let (b, m) = Bundle::open(&root.0).unwrap();
+        assert_eq!(
+            b.dir,
+            root.0.join(eve_marshal::build::REFERENCE.to_string())
+        );
+        assert_eq!(m.client_build, build());
+    }
+
+    #[test]
+    fn a_flat_bundle_still_opens_as_before() {
+        let t = bundle("1.0", build(), 2);
+        assert_eq!(
+            Bundle::resolve_dir(&t.0, eve_marshal::build::REFERENCE),
+            t.0
+        );
+        assert_eq!(Bundle::open(&t.0).unwrap().0.dir, t.0);
+    }
+
+    #[test]
+    fn the_flat_root_is_the_fallback_beside_other_builds_subdirectories() {
+        // A subdirectory for another build, or one without a manifest, is
+        // not this build's bundle.
+        let t = bundle("1.0", build(), 2);
+        let other = bundle("1.0", build(), 2);
+        copy_tree(&other.0, &{
+            let d = t.0.join("1234567");
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        });
+        std::fs::create_dir_all(t.0.join(eve_marshal::build::REFERENCE.to_string())).unwrap();
+        assert_eq!(Bundle::open(&t.0).unwrap().0.dir, t.0);
     }
 
     #[test]
