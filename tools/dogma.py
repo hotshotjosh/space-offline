@@ -952,7 +952,12 @@ EXPECT_COUNTS = {
 
 
 def expected_counts(build):
-    """``{name: count}`` for a client build (int or str), or None if unread."""
+    """``{name: count}`` for a client build (int or str), or None if unlisted.
+
+    No build (an install without ``start.ini``) means the pinned build, so a
+    root with no ``start.ini`` keeps its hard count checks."""
+    if build is None:
+        build = pinned_build()
     try:
         return EXPECT_COUNTS.get(int(build))
     except (TypeError, ValueError):

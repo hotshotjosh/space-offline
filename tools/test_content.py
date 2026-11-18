@@ -444,7 +444,7 @@ class Builds(unittest.TestCase):
         self.assertEqual(len(keys), 1)
         self.assertEqual(dg.expected_counts(str(pinned)), dg.EXPECT_COUNTS[pinned])
         self.assertIsNone(dg.expected_counts(1))
-        self.assertIsNone(dg.expected_counts(None))
+        self.assertEqual(dg.expected_counts(None), dg.EXPECT_COUNTS[pinned])
 
 
 class Encoding(unittest.TestCase):
