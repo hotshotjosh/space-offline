@@ -1664,6 +1664,18 @@ def eoci_main(EOCI_NAME):
               'corpid %s' % text(getattr_safe(builtin('session'), 'corpid')))
         ok, direct = safe(lambda: es.IsEnlistedDirectly())
         check('IsEnlistedDirectly is False', ok and direct is False, text(direct))
+        # The scenario's own button checks (the pre-enlist one and the v2 "disables Enlist for
+        # another faction" one, :1640) read the timestamp and cache it as None while the pilot
+        # is in the militia. fwEnlistmentSvc drops that cache only on `OnEnlistmentStateUpdated`
+        # or `OnSessionChanged` ('warfactionid'). On 3707965 the Memberships-tab block added in
+        # 696cf393 (about 1.5 s) pushed the v2 read past the enlist push's dispatch, so the
+        # cached None survived the retire; on 3670638 the push cleared it in time. A session
+        # poll is no barrier: `session.warfactionid` reads empty when the packet arrives,
+        # before ProcessSessionChange scatters OnSessionChanged. So wait for the refresh.
+        def cooldown_ts():
+            ok_, v_ = safe(lambda: es.GetEnlistmentCooldownTimestamp())
+            return v_ if ok_ and v_ is not None else None
+        wait_for(cooldown_ts, timeout_ms=SESSION_WAIT_MS, step_ms=500)
         ok, ts = safe(lambda: es.GetEnlistmentCooldownTimestamp())
         now = safe(lambda: __import__('gametime').GetWallclockTime())
         check('the cooldown timestamp is in the future', ok and now[0] and ts > now[1],

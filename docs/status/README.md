@@ -567,7 +567,7 @@ Closed by default; each line says how much of the system is proved.
 
 <details><summary><b>Factional warfare</b>: 3 of 10 proved, 7 open</summary>
 
-- [x] Enlist, read state, retire, cooldown: *client-proved*, fci_fw_enlist W10; GetMyDirectEnlistmentDate (service/facwar_mgr.rs, unit test a_direct_enlistment_answers_the_date_it_began) and the Memberships-tab checks in fci_fw_enlist are built-unproved until a 3707965 run
+- [x] Enlist, read state, retire, cooldown: *client-proved*, fci_fw_enlist W10; GetMyDirectEnlistmentDate (service/facwar_mgr.rs, unit test a_direct_enlistment_answers_the_date_it_began) and the Memberships-tab checks in fci_fw_enlist are built-unproved until a 3707965 run; the post-retire cooldown-timestamp check waits for the client's cache refresh (unit test a_retired_pilot_reads_the_cooldown_timestamp_and_gets_the_state_push), unproved until a 3707965 rerun
 - [x] Kills pay LP: *client-proved*, fci_fw_kill_lp (regress-w27d, two clients): A kills B in a warzone, A is paid LP with his militia (LPSvc and the wallet service agree), the stats kill count rises, B earns nothing; ratio and split [A]
 - [x] Stats and the enlistment rules (player refusals): *client-proved*, fci_fw_refuse (regress-w27d): enlisting at another militia's station or below the standing bar is refused and changes nothing, then the same enlistment succeeds
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client

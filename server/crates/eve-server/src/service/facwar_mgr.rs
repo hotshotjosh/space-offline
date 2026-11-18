@@ -1915,6 +1915,31 @@ mod tests {
         assert!(cooldown_until(&reg, ME, now).is_some());
     }
 
+    /// Pins the corp-retire (`KickOutMember`) path's wire output: the state
+    /// push (`None` x3) that makes `fwEnlistmentSvc` drop its cached
+    /// timestamp **[V]** (`OnEnlistmentStateUpdated`), and a cooldown
+    /// timestamp that is then a FILETIME in the future, never `None`.
+    /// The `None` read before the retire is the correct answer while enlisted.
+    #[test]
+    fn a_retired_pilot_reads_the_cooldown_timestamp_and_gets_the_state_push() {
+        let mut reg = world();
+        let now = crate::pyutil::filetime_now();
+        at(&mut reg, ME, (FW, "JoinFactionAsCharacter"), &[i(F)], now);
+        // The early read the new client makes while enlisted: no cooldown.
+        let ask = |reg: &mut Registry| {
+            at(reg, ME, (EN, "GetMyDirectEnlistmentCooldownTimestamp"), &[], now)
+        };
+        assert_eq!(ask(&mut reg), PyValue::None);
+        pushes(&mut reg, "OnEnlistmentStateUpdated");
+        whole(&mut reg, ME, ("corpRegistry", "KickOutMember"), &[i(ME)]);
+        let state = pushes(&mut reg, "OnEnlistmentStateUpdated");
+        assert_eq!(state, vec![(vec![PyValue::None; 3], Some(vec![ME]))]);
+        match ask(&mut reg) {
+            PyValue::Int(t) => assert!(t > now, "{t} is not after {now}"),
+            other => panic!("expected a FILETIME, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_militia_corp_pilot_is_can_be_kicked_out_true() {
         let mut reg = world();
