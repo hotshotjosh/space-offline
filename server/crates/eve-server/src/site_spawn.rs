@@ -539,7 +539,16 @@ fn step(w: &mut Registry, site_id: i64, ft: BlueTime) {
         let base = (is_complete(&p.groups, p.kills, p.rocks.len(), left)
             || harvested_out(w, &p, left))
             && crate::combat_site::rooms_unopened(w, site_id) == 0;
-        if site::complete_with_cans(base, other_goals, cans, cans_left) {
+        // An empty pocket (no squad, no rock, no can) has nothing to clear:
+        // it never counts as cleared and never pays LP. In build 3707965 the
+        // FW complexes (archetypes 33-36) carry no static spawns **[V per
+        // expac-D-data 2 and 3]**, so most of them open empty; where their
+        // rats come from is **[A]** (node graphs or reactive spawns; falsifier:
+        // a complex in a 3707965 client run that has rats this server never
+        // spawns). `is_complete` already says false for it; this keeps the
+        // rule explicit and out of reach of a later change to that test.
+        let empty = !other_goals && cans == 0;
+        if !empty && site::complete_with_cans(base, other_goals, cans, cans_left) {
             p.completed = Some(ft);
             // CP36: the pilots inside hear `OnDungeonCompleted` now, while
             // the instance is still there (it must precede `site::vacate`).
@@ -771,6 +780,15 @@ fn forget(w: &mut Registry, site_id: i64) -> Vec<i64> {
         .collect();
     s.by_npc.retain(|_, s| *s != site_id);
     ids
+}
+
+/// Whether the open pocket of `site_id` holds nothing to clear: no squad and
+/// no rock. A pocket not opened yet is not known to be empty.
+pub fn is_empty_pocket(w: &Registry, site_id: i64) -> bool {
+    w.ext::<SiteSpawns>()
+        .pockets
+        .get(&site_id)
+        .is_some_and(|p| p.groups.is_empty() && p.rocks.is_empty())
 }
 
 /// Whether the pocket of `site_id` has been cleared (its completion already
@@ -1051,6 +1069,42 @@ mod tests {
             assert!((lo * BLUE_PER_SECOND..=hi * BLUE_PER_SECOND).contains(&at));
         }
         assert_eq!(respawn_at((lo, hi), 5, 0.0), 5 + lo * BLUE_PER_SECOND);
+    }
+
+    /// An FW complex with no static spawns (3707965) opens as an empty
+    /// pocket: it never counts as cleared, however long it is left, and it
+    /// pays nobody. Invented ids and rows.
+    #[test]
+    fn an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp() {
+        let mut d = dungeon();
+        d.archetype = 33;
+        d.spawns.clear();
+        let mut table = dungeon_data::Table::fixture();
+        table.dungeons.insert(DUNGEON, d);
+        let mut c = Content::fixture();
+        c.insert("dungeon_data", table);
+        c.insert("npc_data", npc_table());
+        let mut reg = Registry::new(SandboxConfig::default()).with_content(Arc::new(c));
+        reg.roster_mut().arrive(Presence::arriving(
+            ALICE,
+            ALICE_SHIP,
+            SYSTEM,
+            Motion::arrived(ANCHOR, [0.0; 3]),
+        ));
+        drain(&mut reg);
+        let mut inst = site();
+        inst.archetype = 33;
+        assert!(site::instantiate(&mut reg, &inst));
+        let before = reg.character(ALICE).map(|c| c.balance);
+        let t0 = 1_000 * BLUE_PER_SECOND;
+        for k in 0..6 {
+            tick(&mut reg, Instant::now(), t0 + k * 10 * CHECK_EVERY);
+        }
+        let p = pocket(&reg);
+        assert!(p.groups.is_empty() && p.rocks.is_empty(), "an empty pocket");
+        assert_eq!(p.completed, None);
+        assert!(!is_completed(&reg, SITE_ID));
+        assert_eq!(reg.character(ALICE).map(|c| c.balance), before);
     }
 
     /// PV-8: the one squad a spawnless Triglavian dungeon gets is placed at

@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**68% proved** (232 of 342) · **93% built** (319 of 342) · 3 parked, not counted.
+**68% proved** (232 of 343) · **93% built** (320 of 343) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -130,6 +130,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 - [ ] The sales tax and the broker commission are halved at the one station the 3707965 client gives a fee modifier: *built-unproved*, market_fees.rs station_fee_factor, applied in service/market.rs sales_tax_due and broker_rate_at; unit test on an invented station; applies to every client line [A]
 - [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
+- [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
 
 ### 3.8 Remote clients, hosting
 
@@ -175,7 +176,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
-| Factional warfare | 3 | 2 | 1 | 2 | 0 |
+| Factional warfare | 3 | 3 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 
@@ -539,7 +540,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Factional warfare</b>: 3 of 8 proved, 5 open</summary>
+<details><summary><b>Factional warfare</b>: 3 of 9 proved, 6 open</summary>
 
 - [x] Enlist, read state, retire, cooldown: *client-proved*, fci_fw_enlist W10; GetMyDirectEnlistmentDate (service/facwar_mgr.rs, unit test a_direct_enlistment_answers_the_date_it_began) and the Memberships-tab checks in fci_fw_enlist are built-unproved until a 3707965 run
 - [x] Kills pay LP: *client-proved*, fci_fw_kill_lp (regress-w27d, two clients): A kills B in a warzone, A is paid LP with his militia (LPSvc and the wallet service agree), the stats kill count rises, B earns nothing; ratio and split [A]
@@ -549,6 +550,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Capture points: *partial*, fci_fw_capture (regress-w30a): an FW complex found by the Agency, the victory-point score rises while held and stops after leaving; fw_capture.rs; params [A] until extracted; the point slim only where the complex has a capture point; bots hold the point (#76), built-unproved
 - [ ] Scoreboard: *missing*, card fw-7
 - [ ] Battlefields: *missing*, server spawns none; owner put these after the port
+- [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
 
 </details>
 

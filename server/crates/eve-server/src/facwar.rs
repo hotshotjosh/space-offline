@@ -1138,6 +1138,9 @@ mod tests {
     const ME: i64 = 90_000_201;
     const YOU: i64 = 90_000_202;
     const FW: i64 = FW_ARCHETYPES[0];
+    /// The militia corporations of A and B (invented).
+    const CORP_A: i64 = 1_999_201;
+    const CORP_B: i64 = 1_999_202;
 
     fn universe() -> Universe {
         let row = |id: i64, faction: Option<i64>, sec: &str| {
@@ -1211,6 +1214,19 @@ mod tests {
         c.insert("universe", universe());
         c.insert("dungeon_data", dungeons());
         c.insert("population", population_table());
+        let mut npc = crate::npc_data::Table::default();
+        for (f, corp) in [(A, CORP_A), (B, CORP_B)] {
+            npc.factions.insert(
+                f,
+                crate::npc_data::Faction {
+                    faction_id: f,
+                    corporation_id: corp + 10,
+                    militia_corporation_id: Some(corp),
+                    ..crate::npc_data::Faction::default()
+                },
+            );
+        }
+        c.insert("npc_data", npc);
         let mut text = String::new();
         for (n, s) in [S1, S2, LOW, HIGH].iter().enumerate() {
             let x = 1.0e11 * (n as f64 + 1.0);
@@ -1387,6 +1403,48 @@ mod tests {
         tick(&mut reg, Instant::now(), now + 2 * SCAN_EVERY);
         assert_eq!(occupation(&reg, sys).map(|o| o.score), Some(points), "once");
         assert!(pushes(&mut reg, "OnVictoryPointStateUpdated").is_empty());
+    }
+
+    /// **Interim rule [A]** (3707965 FW complexes carry no static spawns): a
+    /// complex with no squad and no capture-point object is taken when its
+    /// capture cycle ends, so the slot completes and the attacker's enlisted
+    /// pilot on the grid is paid militia LP. Invented rows.
+    #[test]
+    fn an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp() {
+        let mut reg = world();
+        let now = reg.world().birth;
+        let site = fw_sites(&reg, S1)
+            .into_iter()
+            .find(|s| dungeons().dungeons[&s.dungeon_id].faction == Some(A))
+            .expect("a complex of S1's occupier");
+        assert!(crate::site::instantiate(&mut reg, &site));
+        // B attacks S1; ME is B's enlisted pilot, on the complex's grid.
+        crate::service::facwar_mgr::enlist(&mut reg, ME, B, now).expect("enlists");
+        reg.roster_mut()
+            .arrive(crate::space_state::Presence::arriving(
+                ME,
+                ME + 100,
+                S1,
+                crate::space_state::Motion::arrived(site.anchor, [0.0; 3]),
+            ));
+        crate::site_spawn::tick(&mut reg, Instant::now(), now);
+        assert!(crate::site_spawn::is_empty_pocket(&reg, site.site_id));
+        assert_eq!(crate::loyalty::balance(&reg, ME, CORP_B), 0);
+        let cycle = crate::fw_capture::assumed().seconds * 10_000_000;
+        let step = crate::fw_capture::CHECK_EVERY;
+        let mut t = now;
+        while t < now + 2 * cycle {
+            crate::fw_capture::tick(&mut reg, t);
+            t += step;
+        }
+        assert!(crate::fw_capture::is_captured(&reg, site.site_id));
+        assert!(
+            crate::loyalty::balance(&reg, ME, CORP_B) > 0,
+            "the capture paid LP"
+        );
+        let paid = crate::loyalty::balance(&reg, ME, CORP_B);
+        crate::fw_capture::tick(&mut reg, t + cycle);
+        assert_eq!(crate::loyalty::balance(&reg, ME, CORP_B), paid, "once");
     }
 
     /// The attacker's own complex lowers the score, floored at 0; an

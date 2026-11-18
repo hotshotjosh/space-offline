@@ -320,6 +320,21 @@ fn near(
 // attributes are extracted). Falsified by a capture point type whose real
 // blocking list holds an NPC hull.
 
+/// **Interim rule for an empty complex [A].** 3707965's FW complexes carry no
+/// static spawns [V per expac-D-data 2], so one with no squad and no capture
+/// point object has nothing to clear and no point to take, and the pocket
+/// rule never completes it (`site_spawn`). Until the Conquests lane authors
+/// the defenders, such a complex is taken by holding its anchor for one
+/// cycle: its point is judged as a non-looping one, so [`Award::Taken`]
+/// completes the population slot and pays LP. Falsified by the Conquests
+/// defender spawns landing (the rule is then dead and goes).
+pub fn interim_params(params: &Params, empty: bool) -> Params {
+    Params {
+        looping: params.looping && !empty,
+        ..params.clone()
+    }
+}
+
 /// What the client's bracket shows of a point: phase, holder, cycles paid, taken.
 type Seen = (Phase, Option<i64>, u32, bool);
 
@@ -408,7 +423,7 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
     reg.ext_mut::<crate::facwar::Facwar>()
         .capture_mut()
         .next_check = ft + CHECK_EVERY;
-    let params = reg.ext::<crate::facwar::Facwar>().capture().params();
+    let base_params = reg.ext::<crate::facwar::Facwar>().capture().params();
     // The live complexes: (site, system, dungeon, anchor, point object).
     let sites: Vec<Live> = {
         let npc = reg.content().try_get::<crate::npc_data::Table>();
@@ -459,6 +474,8 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
             continue;
         }
         let position = obj.map_or(anchor, |x| x.1);
+        let empty = obj.is_none() && crate::site_spawn::is_empty_pocket(reg, site_id);
+        let params = interim_params(&base_params, empty);
         let (capturing, blocking) = near(reg, system, position, &params, ft);
         let (phase, holder) = judge(o.attacker, o.occupier, &capturing, &blocking);
         let (awards, before, after) = {
@@ -612,6 +629,26 @@ mod tests {
         assert_eq!(p.progress, secs(20));
         advance(&mut p, &par, secs(45), Phase::Uncontested, Some(A));
         assert_eq!(p.progress, 0);
+    }
+
+    #[test]
+    fn an_empty_complex_is_judged_as_a_non_looping_point() {
+        let looping = params(true);
+        assert!(interim_params(&looping, false).looping);
+        assert!(!interim_params(&looping, true).looping);
+        let mut p = point();
+        let held = |p: &mut Point, at: i64| {
+            advance(
+                p,
+                &interim_params(&looping, true),
+                secs(at),
+                Phase::Uncontested,
+                Some(A),
+            )
+        };
+        held(&mut p, 0);
+        let got = held(&mut p, looping.seconds + 1);
+        assert_eq!(got, vec![Award::Taken { holder: A }]);
     }
 
     #[test]
