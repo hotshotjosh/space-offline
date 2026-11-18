@@ -1,0 +1,14 @@
+# A contributor's global git config at its most hostile for tests (#292 class).
+[user]
+    name = Contributor
+    email = contributor@example.invalid
+[commit]
+    gpgsign = true
+[tag]
+    gpgsign = true
+[gpg]
+    program = /nonexistent/gpg-probe
+[core]
+    hooksPath = /nonexistent/hooks
+[init]
+    defaultBranch = trunk

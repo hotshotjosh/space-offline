@@ -362,6 +362,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | Name | Read by | Default | Meaning | Example |
 |---|---|---|---|---|
 | `EVE_MAX_JOBS` | `tools/dev.sh` | all cores | cargo jobs and container CPUs | `EVE_MAX_JOBS=6 tools/dev.sh cargo test` |
+| `EVE_PARITY_DIR` | `tools/export-parity.sh` | `out/parity` | scratch directory (on disk, never /tmp) for the export of HEAD that the export-parity stage runs in | `EVE_PARITY_DIR=$HOME/scratch tools/export-parity.sh` |
 | `EVE_MIN_FREE_GB` | `tools/dev.sh` | 12 | wait until this much RAM is free; 0 = no wait | `EVE_MIN_FREE_GB=0` |
 | `EVE_MEMINFO` | `tools/dev.sh`, `tools/host-check.sh` | `/proc/meminfo` | file read for MemTotal and MemAvailable; tests point it at a fake | `EVE_MEMINFO=/path/to/fake` |
 | `EVE_DEV_MEMORY` | `tools/dev.sh`, `tools/arena.sh` | `10g` (arena `8g`) | container memory limit | `EVE_DEV_MEMORY=16g` |
@@ -519,7 +520,7 @@ rows as optional.
 | `EVE_BOT_ARGS` | `deploy/entrypoint.sh` | `--brawl` | extra bot flags | |
 | `EVE_BOT_CHAT` | `deploy/entrypoint.sh` | `on` | whether bots talk | `EVE_BOT_CHAT=off` |
 | `EVE_BOT_CHAT_HOST` | `deploy/entrypoint.sh` | `127.0.0.1:5222` | where bots dial chat | |
-| `EVE_CONTENT_ROOT` | `deploy/entrypoint.sh` | `/content` | test only: the content root the entrypoint resolves `<root>/<reference build>/` under (`tools/test_entrypoint.py`) | |
+| `EVE_CONTENT_ROOT` | `deploy/entrypoint.sh` | `/content` | test only: the content root the entrypoint resolves `<root>/<reference build>/` under (the deploy entrypoint test, maintainer side only) | |
 | `EVE_RETIRE_REPO` | `tools/retire-build.sh` | this checkout | test only: the checkout whose `tools/builds.tsv` and `out/` the retire tool reads (`tools/test_retire_build.py`) | |
 | `EVE_BOT_NICE` | `deploy/entrypoint.sh` | `10` | niceness of the bots process | `EVE_BOT_NICE=15` |
 | `EVE_BOT_CPUS` | `deploy/stack.yml` | `6` | CPU limit of the bots container (`cpus`) | `EVE_BOT_CPUS=4` |

@@ -27,6 +27,7 @@ tools/doc_lane_index.py	docs/port-tracker.md	maintainer-side lane index tool; na
 tools/doc_lane_index.py	docs/review/plan.md	maintainer-side lane index tool; names docs it indexes, absent on the export
 tools/dogma.py	docs/archive/plan-subsystems.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/env-ref.py	private/export-private-paths.txt	[[ exists ]]-guarded: the reference check reads the private list only where it exists
+tools/export-parity.sh	private/export-private-paths.txt	[[ -f ]]-guarded: the stage skips where the private list is absent
 tools/export_refs.py	private/export-private-paths.txt	guarded: the check says it is a no-op on the export
 tools/fsd.py	docs/lanes/fsd-generic.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/gate.sh	tools/test_client_kit.py	guarded by [[ -e ]]: the test list skips files the export lacks
@@ -82,6 +83,7 @@ tools/test_docs.py	private/export-private-paths.txt	fixture or skip text in a te
 tools/test_docs.py	tools/test_plan_owners.py	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_env_ref.py	deploy/entrypoint.sh	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_env_ref.py	private/export-private-paths.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
+tools/test_export_parity.py	private/export-private-paths.txt	fixture: an invented tree's private list
 tools/test_export_refs.py	private/export-private-paths.txt	fixture: an invented tree's private list
 tools/test_fci_scenarios.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_new_build.py	tools/eve_patch_author.py	fixture or assertion text in a test: a fake/expected string, nothing is run
