@@ -22,6 +22,20 @@ ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@test.invalid",
            GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
 
 
+UNITTEST_MAIN = """import unittest
+class T(unittest.TestCase):
+    def test_red_everywhere(self):
+        self.fail("invented")
+if __name__ == "__main__":
+    unittest.main()
+"""
+UNITTEST_BRANCH_EXTRA = """
+class U(unittest.TestCase):
+    def test_red_only_here(self):
+        self.fail("invented")
+"""
+
+
 class RedOnMain(unittest.TestCase):
     def setUp(self) -> None:
         # on disk under var/ (gitignored), never /tmp
@@ -32,10 +46,12 @@ class RedOnMain(unittest.TestCase):
         self.git("init", "-q", "-b", "main")
         self.write("tools/test_always_red.py", "raise SystemExit(1)\n")
         self.write("tools/test_branch_red.py", "raise SystemExit(0)\n")
+        self.write("tools/test_ids.py", UNITTEST_MAIN)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "main")
         self.git("checkout", "-q", "-b", "work")
         self.write("tools/test_branch_red.py", "raise SystemExit(1)\n")
+        self.write("tools/test_ids.py", UNITTEST_MAIN.replace("if __name__", UNITTEST_BRANCH_EXTRA + "if __name__"))
         self.git("commit", "-q", "-am", "branch")
 
     def git(self, *a: str) -> str:
@@ -75,6 +91,21 @@ class RedOnMain(unittest.TestCase):
             "red: tools/test_branch_red.py: branch exit 1, main exit 0",
         ])
         self.worktree_gone()
+
+    def test_a_file_red_on_main_with_a_new_failing_test_is_this_changes_fault(self) -> None:
+        r = self.run_tool(["gate: tools/test_ids.py failed"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.splitlines()[0], "Gate: red-caused-by-this-change")
+        self.assertIn("fails only on the branch: test_red_only_here", r.stdout)
+        self.assertNotIn("test_red_everywhere", r.stdout)
+
+    def test_a_name_that_is_not_one_of_our_test_files_is_listed_and_never_run(self) -> None:
+        r = self.run_tool(["gate: /nonexistent/probe/x.py failed", "gate: ../nonexistent/probe/x.py failed",
+                           "gate: tools/test_always_red.py failed"])
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.splitlines()[0], "Gate: red-unproven")
+        self.assertIn("red: /nonexistent/probe/x.py (not rerun)", r.stdout)
+        self.assertIn("red: ../nonexistent/probe/x.py (not rerun)", r.stdout)
 
     def test_a_cargo_red_is_listed_but_not_proven(self) -> None:
         r = self.run_tool(["test invented::case ... FAILED", "gate: tools/test_always_red.py failed"])

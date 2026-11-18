@@ -7,7 +7,10 @@ Reads the failed gate log (`--log`, else the log of the last red row in
 `var/gate-reds.tsv`, the file `tools/land.sh` writes). It collects every failed Python
 test (`gate: tools/test_X.py failed`), checks out `--base` (default: the remote's main,
 as `tools/status-guard.py` finds it) into a throwaway worktree under `out/`, and runs
-each failed test there and on your branch with `python3 -I`. Cargo failures are not
+each failed test there and on your branch with `python3 -I`. Only `tools/test_*.py` and
+`private/test_*.py` are run; any other name is listed `(not rerun)` and leaves the verdict
+unproven. A test file counts as red on main too only when the failing unittest ids on the
+branch are a subset of main's. Cargo failures are not
 rerun: they are printed as `red: <test> (cargo; rerun by hand on main)` and the verdict
 stays unproven. The worktree is removed on every path.
 
@@ -31,6 +34,7 @@ _sys.path.append(_sys.path.pop(0))
 import argparse
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,11 +87,18 @@ def failures(reds, text: str) -> tuple[list[str], list[str]]:
     return py, other
 
 
-def run_test(cwd: str, rel: str) -> int:
+RERUNNABLE = re.compile(r"^(tools|private)/test_[A-Za-z0-9_]+\.py$")
+FAIL_ID = re.compile(r"^(?:FAIL|ERROR): (.+)$", re.M)
+
+
+def run_test(cwd: str, rel: str) -> tuple[int, set[str]]:
+    """(exit status, the failing test ids unittest printed; {'*'} when it printed none)."""
     try:
-        return subprocess.run([sys.executable, "-I", rel], cwd=cwd, capture_output=True, timeout=TEST_TIMEOUT).returncode
+        r = subprocess.run([sys.executable, "-I", rel], cwd=cwd, capture_output=True, timeout=TEST_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return 124
+        return 124, {"*"}
+    ids = set(FAIL_ID.findall(r.stderr.decode("utf-8", "replace") + r.stdout.decode("utf-8", "replace")))
+    return r.returncode, (ids or {"*"}) if r.returncode else set()
 
 
 def main(argv: list[str]) -> int:
@@ -108,7 +119,11 @@ def main(argv: list[str]) -> int:
     except OSError as e:
         print(f"red-on-main: cannot read {log}: {e}", file=sys.stderr)
         return 2
-    py, other = failures(reds, text)
+    py_all, other = failures(reds, text)
+    # Only a test file of ours is run; any other name a log holds is listed, never executed.
+    py = [x for x in py_all if RERUNNABLE.match(x)]
+    other += [f"{x} (not rerun)" for x in py_all if not RERUNNABLE.match(x)]
+    not_run = [x for x in py_all if not RERUNNABLE.match(x)]
     if not py and not other:
         print("red-on-main: the log holds no failure", file=sys.stderr)
         return 2
@@ -126,10 +141,9 @@ def main(argv: list[str]) -> int:
                 shutil.rmtree(wt, ignore_errors=True)
             git(repo, "worktree", "add", "--detach", "-q", wt, base)
             for rel in py:
-                if os.path.isfile(os.path.join(wt, rel)):
-                    results.append((rel, run_test(repo, rel), run_test(wt, rel)))
-                else:
-                    results.append((rel, run_test(repo, rel), None))  # new in this branch: not on main
+                b = run_test(repo, rel)
+                m = run_test(wt, rel) if os.path.isfile(os.path.join(wt, rel)) else None  # None: new in this branch
+                results.append((rel, b, m))
     except subprocess.CalledProcessError as e:
         print(f"red-on-main: git failed: {(e.stderr or '').strip()}", file=sys.stderr)
         return 2
@@ -140,23 +154,31 @@ def main(argv: list[str]) -> int:
             subprocess.run(["git", "-C", repo, "worktree", "prune"], capture_output=True)
     lines = []
     caused = unproven = False
-    for rel, b, m in results:
+    for rel, (b, b_ids), m in results:
         if m is None:
             lines.append(f"red: {rel}: branch exit {b}, absent on main (this change adds it)")
             caused = True
-        elif m == 0 and b == 0:
-            lines.append(f"red: {rel}: passes on the branch and on main now (flaky or environment; rerun the gate)")
+            continue
+        m_code, m_ids = m
+        head = f"red: {rel}: branch exit {b}, main exit {m_code}"
+        if b == 0:
+            lines.append(f"{head} (it passes on the branch now: flaky or environment; rerun the gate)")
             unproven = True
-        elif m == 0:
-            lines.append(f"red: {rel}: branch exit {b}, main exit 0")
+        elif m_code == 0:
+            lines.append(head)
             caused = True
+        elif b_ids <= m_ids or "*" in m_ids and "*" in b_ids:
+            lines.append(head)
         else:
-            lines.append(f"red: {rel}: branch exit {b}, main exit {m}")
+            lines.append(f"{head}; fails only on the branch: {', '.join(sorted(b_ids - m_ids))}")
+            caused = True
     for name in other:
-        lines.append(f"red: {name} (cargo; rerun by hand on main)")
+        lines.append(name if name.endswith("(not rerun)") else f"red: {name} (cargo; rerun by hand on main)")
+        if name.endswith("(not rerun)"):
+            lines[-1] = f"red: {name}"
     if caused:
         verdict, code = "red-caused-by-this-change", 1
-    elif other or unproven:
+    elif other or unproven or not_run:
         verdict, code = "red-unproven", 1
     else:
         verdict, code = "red-on-main-too", 0
