@@ -65,12 +65,29 @@ fi
 # the gate, benches and the owner's client together ran it out of RAM
 # (2026-10-29) and the kernel killed whatever it picked. A build only starts
 # while MemAvailable is at least EVE_MIN_FREE_GB (default 12); otherwise it
-# waits, saying so once a minute. EVE_MIN_FREE_GB=0 turns the wait off.
+# waits, saying so once a minute (on the terminal as well as in a log).
+# EVE_MIN_FREE_GB=0 turns the wait off.
 min_free_kb=$(( ${EVE_MIN_FREE_GB:-12} * 1024 * 1024 ))
+# EVE_MEMINFO replaces /proc/meminfo (for tests).
+meminfo=${EVE_MEMINFO:-/proc/meminfo}
+
+# A wait that cannot end is a hang: a laptop with 16 GB (WSL2 gets half of it)
+# never has 12 GB free. Cap the wait at half of what the machine has in all.
+total_kb=$(awk '/^MemTotal:/ {print $2}' "$meminfo")
+# say MESSAGE: to stderr, and to the terminal too when stderr goes to a log
+# (tools/land.sh writes the gate's output to a file), so the wait is seen.
+say() {
+    echo "$1" >&2
+    if [[ ! -t 2 ]] && { : >/dev/tty; } 2>/dev/null; then echo "$1" >/dev/tty; fi
+}
+if [[ -n $total_kb ]] && ((min_free_kb > total_kb / 2)); then
+    say "dev.sh: this machine has $((total_kb / 1048576)) GB of RAM in all, so EVE_MIN_FREE_GB=${EVE_MIN_FREE_GB:-12} can never be free; waiting for half of it instead (a full build wants about 12 GB; on WSL2 raise memory= in .wslconfig)"
+    min_free_kb=$((total_kb / 2))
+fi
 waited=0
-while avail=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) && ((avail < min_free_kb)); do
+while avail=$(awk '/^MemAvailable:/ {print $2}' "$meminfo") && ((avail < min_free_kb)); do
     if ((waited % 60 == 0)); then
-        echo "dev.sh: waiting for memory: $((avail / 1048576)) GB available, want ${EVE_MIN_FREE_GB:-12} GB" >&2
+        say "dev.sh: waiting for memory: $((avail / 1048576)) GB available, want $((min_free_kb / 1048576)) GB"
     fi
     sleep 5
     waited=$((waited + 5))

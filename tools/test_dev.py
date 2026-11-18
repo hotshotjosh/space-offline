@@ -7,7 +7,11 @@ Nothing here starts a container: the fake docker prints its arguments.
 import os
 import subprocess
 import tempfile
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # last: tools/dis.py must not shadow the stdlib
+import testenv  # noqa: E402
 
 DEV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dev.sh")
 
@@ -19,7 +23,7 @@ def run_dev(max_jobs, host_cpus):
             with open(p, "w", encoding="utf-8") as f:
                 f.write("#!/bin/sh\n" + body)
             os.chmod(p, 0o755)
-        env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"],
+        env = testenv.clean_env(PATH=d + os.pathsep + os.environ["PATH"],
                    EVE_MAX_JOBS=str(max_jobs), EVE_MIN_FREE_GB="0",
                    EVE_TARGET_DIR=os.path.join(d, "target"))
         p = subprocess.run(["bash", DEV, "true"], env=env, capture_output=True, text=True,
@@ -44,6 +48,36 @@ class CpuCap(unittest.TestCase):
         self.assertNotIn("using", err)
 
 
+def run_dev_meminfo(total_kb, avail_kb, min_free_gb="12"):
+    with tempfile.TemporaryDirectory() as d:
+        for name, body in (("docker", 'echo "$@"\n'), ("nproc", "echo 4\n")):
+            p = os.path.join(d, name)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("#!/bin/sh\n" + body)
+            os.chmod(p, 0o755)
+        mi = os.path.join(d, "meminfo")
+        with open(mi, "w", encoding="utf-8") as f:
+            f.write("MemTotal: %d kB\nMemAvailable: %d kB\n" % (total_kb, avail_kb))
+        env = testenv.clean_env(PATH=d + os.pathsep + os.environ["PATH"], EVE_MEMINFO=mi,
+                                EVE_MIN_FREE_GB=min_free_gb, EVE_TARGET_DIR=os.path.join(d, "target"))
+        p = subprocess.run(["bash", DEV, "true"], env=env, capture_output=True, text=True,
+                           timeout=30, stdin=subprocess.DEVNULL)
+    return p.returncode, p.stdout, p.stderr
+
+
+class MemoryWait(unittest.TestCase):
+    def test_a_small_machine_waits_for_half_not_forever(self):
+        code, out, err = run_dev_meminfo(8388608, 6291456)
+        self.assertEqual(code, 0, err)
+        self.assertIn("can never be free", err)
+        self.assertIn("--cpus", out)
+
+    def test_a_big_machine_is_unchanged(self):
+        code, out, err = run_dev_meminfo(67108864, 62914560)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("can never be free", err)
+
+
 class FreshClone(unittest.TestCase):
     def test_the_mount_point_is_made_when_the_target_is_elsewhere(self):
         # A copy of dev.sh in a tree with no server/target, EVE_TARGET_DIR outside it.
@@ -57,7 +91,7 @@ class FreshClone(unittest.TestCase):
                 with open(p, "w", encoding="utf-8") as f:
                     f.write("#!/bin/sh\n" + body)
                 os.chmod(p, 0o755)
-            env = dict(os.environ, PATH=bin_ + os.pathsep + os.environ["PATH"],
+            env = testenv.clean_env(PATH=bin_ + os.pathsep + os.environ["PATH"],
                        EVE_MAX_JOBS="2", EVE_MIN_FREE_GB="0",
                        EVE_TARGET_DIR=os.path.join(bin_, "target"))
             p = subprocess.run(["bash", os.path.join(repo, "tools", "dev.sh"), "true"],
