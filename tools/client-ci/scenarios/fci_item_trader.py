@@ -1531,8 +1531,42 @@ def eoci_main(EOCI_NAME):
         ok, detail = warp_to(park, ball_id)
         return ok, detail, park
 
+    def docked_ui_ready(timeout_ms=90000):
+        """Wait until the login station's docked UI has finished loading, `(ok, detail)`.
+
+        The first `/tr me` leaves the station within about a second of login, while the
+        lobby window and the hangar view are still loading; the client then raised
+        AttributeError in `dockedUI.ReloadLobbyWnd` (windowsvc OnSessionChanged) and
+        CharacterNotAtStation in `viewStateSvc.ChangePrimaryView`.  Ready means: not
+        docked (nothing to wait for), or the primary view is 'hangar' with no view change
+        in flight, and `LobbyWnd.GetIfOpen()` returns the window.
+        [V: viewStateSvc.IsPrimaryViewActive / .isOpeningView, dockedUI.OpenLobbyWnd,
+        `Window.GetIfOpen`, decompile of 3707965 / V24.02]"""
+        def ready():
+            s = builtin('session')
+            if s is None or not (getattr_safe(s, 'stationid') or getattr_safe(s, 'structureid')):
+                return True
+            vs = get_svc('viewState')
+            if vs is None:
+                return False
+            ok, hangar = safe(lambda: vs.IsPrimaryViewActive('hangar'))
+            if not (ok and hangar) or getattr_safe(vs, 'isOpeningView'):
+                return False
+            from eve.client.script.ui.shared.dockedUI.lobbyWnd import LobbyWnd
+            ok, wnd = safe(lambda: LobbyWnd.GetIfOpen())
+            return bool(ok and wnd)
+        got, waited = wait_for(ready, timeout_ms=timeout_ms, step_ms=500)
+        if got:
+            sleep_ms(2000)  # let the lobby's own first paint settle
+        return bool(got), 'after %s ms' % text(waited)
+
     def eoci_body():
         mark = log_mark()
+        ui_ok, ui_detail = docked_ui_ready()
+        precondition('the login station\'s docked UI (hangar view, lobby window) has loaded',
+                     ui_ok, ui_detail)
+        if not ui_ok:
+            return
         pin = int(params().get('conquest_hq_system') or 0)
         found = None
         park = None
