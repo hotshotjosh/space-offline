@@ -21,8 +21,8 @@ one.  Then:
 4. `/tr me <the trader faction's anchorage station>` docks the pilot (the server enlists
    only at a station of the militia's faction), the client's own
    `JoinFactionAsCharacter` enlists it in the faction of the slim's `ownerID`, it
-   undocks, `/tr me <hq system>` takes it back out beyond 150 km (a warp under 150 km
-   is refused), and it warps to the trader again;
+   undocks, `/tr me <hq system>` takes it out beyond 150 km (a warp under 150 km is
+   refused; the park is read only once it is the HQ system's own, `park_in`), and it warps to the trader again;
 5. `RequestTrade()` opens the window and `ProcessTrade(recipe, 1)` answers
    `(True, items)`, the cargo loses the input and gains the output (fails on `False`,
    on a raise, or on a cargo that did not move);
@@ -1429,6 +1429,8 @@ def eoci_main(EOCI_NAME):
     # war_hq_station [I].  The server enlists a pilot only while docked at a station of
     # the militia's faction (facwar_mgr::check_office, FW-4 #100) [V: run 2026-11-18, the
     # UserError 'You must be docked at a station of that faction'].
+    # faction -> its War HQ system: season.tsv war_hq_system [V: the client's trader hint text]
+    HQ_OF_FACTION = {500003: 30002974, 500001: 30045324, 500004: 30003788, 500002: 30002055}
     HQ_STATIONS = {500003: 60015185, 500001: 60015184, 500004: 60015180, 500002: 60015186}
 
     def warfaction():
@@ -1452,6 +1454,18 @@ def eoci_main(EOCI_NAME):
             detail = 'attempt %d: warfactionid still %s' % (attempt, text(warfaction()))
         return False, detail
 
+    def park_in(system):
+        """The ballpark of `system` with an ego ball, or None.  michelle returns the
+        PREVIOUS system's park until `UpdateBallpark` runs after the session change
+        (michelle.py:129-131, 311-353 [V], as fci_skyhook_raid)."""
+        mich = get_michelle()
+        p = mich.GetBallpark() if mich is not None else None
+        if p is None or getattr_safe(p, 'solarsystemID') != system or not getattr_safe(p, 'ego'):
+            return None
+        if getattr_safe(p, 'GetBall') is None or p.GetBall(p.ego) is None:
+            return None
+        return p
+
     def go_to(system):
         for attempt in (1, 2):
             gm('/tr me %d' % system)
@@ -1459,7 +1473,9 @@ def eoci_main(EOCI_NAME):
                 lambda: getattr_safe(builtin('session'), 'solarsystemid2') == system,
                 timeout_ms=45000, step_ms=500)
             if got:
-                return True
+                parked, _w = wait_for(lambda: park_in(system), timeout_ms=45000, step_ms=500)
+                if parked:
+                    return True
             sleep_ms(10000)
         return False
 
@@ -1474,20 +1490,31 @@ def eoci_main(EOCI_NAME):
     def reach(hq, park, ball_id):
         """Warp to the trader.  A warp under 150 km is refused (space.rs too_short) and an
         undock lands 63-73 km away, so first `/tr me <hq system>` back to the system's
-        arrival point.  `(ok, detail, park)`."""
+        arrival point and wait for the park OF THAT SYSTEM.  `(ok, detail, park)`."""
         near = True
         if park is not None:
             d = dist_to(park, ball_id)
             near = d is None or d <= 150000
         if near:
-            go_to(hq)
-            park, _w = wait_for(lambda: (get_michelle() or None) and get_michelle().GetBallpark(),
-                                timeout_ms=60000)
-            if not park:
-                return False, 'no ballpark after /tr me %d' % hq, None
-            far, _w = wait_for(lambda: (dist_to(park, ball_id) or 0) > 150000, timeout_ms=30000)
+            if not go_to(hq):
+                return False, 'no park of system %d after /tr me' % hq, park
+            park = park_in(hq)
+            far, _w = wait_for(lambda: (dist_to(park_in(hq), ball_id) or 0) > 150000,
+                               timeout_ms=30000)
+            park = park_in(hq) or park
             if not far:
-                return False, 'still %s m from the trader after /tr me' % text(dist_to(park, ball_id)), park
+                bp = getattr_safe(park, 'balls') if park is not None else None
+                try:
+                    held = ball_id in bp
+                except Exception:
+                    held = 'unknown'
+                return False, ('%s m from ball %s; park.solarsystemID %s, session.solarsystemid2 %s, '
+                               'ball in park.balls: %s' % (
+                                   text(dist_to(park, ball_id) if park is not None else None),
+                                   text(ball_id),
+                                   text(getattr_safe(park, 'solarsystemID')),
+                                   text(getattr_safe(builtin('session'), 'solarsystemid2')),
+                                   text(held))), park
         ok, detail = warp_to(park, ball_id)
         return ok, detail, park
 
@@ -1499,10 +1526,12 @@ def eoci_main(EOCI_NAME):
         for hq in ([pin] if pin > 0 else list(HQ_SYSTEMS)):
             check('/tr me puts the pilot in the War HQ system %d' % hq, go_to(hq),
                   'solarsystemid2 %s' % text(getattr_safe(builtin('session'), 'solarsystemid2')))
-            park, _w = wait_for(lambda: (get_michelle() or None) and get_michelle().GetBallpark(),
-                                timeout_ms=60000)
+            park, _w = wait_for(lambda: park_in(hq), timeout_ms=60000)
             if not park:
-                check('a ballpark', False, 'no ballpark after the move')
+                check('a ballpark of system %d' % hq, False,
+                      'park.solarsystemID %s, session.solarsystemid2 %s' % (
+                          text(getattr_safe(get_michelle().GetBallpark(), 'solarsystemID')),
+                          text(getattr_safe(builtin('session'), 'solarsystemid2'))))
                 return
             found, _w = wait_for(lambda: slims_where(park, lambda s: getattr_safe(s, 'groupID')
                                                      == GROUP_TRADER), timeout_ms=30000)
@@ -1514,6 +1543,13 @@ def eoci_main(EOCI_NAME):
             return
         ball_id, slim = found[0]
         faction = getattr_safe(slim, 'ownerID')
+        hq = getattr_safe(park, 'solarsystemID')
+        precondition('the trader\'s faction has its War HQ in the park\'s system',
+                     HQ_OF_FACTION.get(faction) == hq,
+                     'ownerID %s, park.solarsystemID %s, season war_hq_system %s' % (
+                         text(faction), text(hq), text(HQ_OF_FACTION.get(faction))))
+        if HQ_OF_FACTION.get(faction) != hq:
+            return
         station = HQ_STATIONS.get(faction)
         precondition('the trader\'s faction has a known anchorage station', bool(station),
                      'faction %s' % text(faction))
@@ -1560,6 +1596,11 @@ def eoci_main(EOCI_NAME):
         ok, detail, park = reach(hq, park, ball_id)
         check('the pilot warps to the trader', ok, detail)
         if not ok:
+            return
+        ok, comp = component(park)
+        precondition('the component answers after the warp', ok and comp is not None,
+                     text(comp)[:200])
+        if not ok or comp is None:
             return
         safe(lambda: comp.RequestTrade())
         ok, v = safe(lambda: comp.ProcessTrade(rid, 1))
