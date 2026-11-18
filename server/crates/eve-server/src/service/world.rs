@@ -1414,9 +1414,12 @@ fn bookmark_mgr(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
             create_mark(reg, req, actor, place)
         }
         // `UpdateBookmark(bookmarkID, folderID, name, note, subfolderID,
-        // newFolderID, expiryCancel)`, value discarded; the client then
-        // writes the same five fields onto its cached row (`:629-635`)
-        // **[V]**, so ours must end up identical or a reopen disagrees.
+        // newFolderID, editExpiry, expiryMode)`, value discarded
+        // (`bookmarkSvc.py:630`, build 3707965) **[V]**; the client then
+        // writes the same fields onto its cached row, and with `editExpiry`
+        // sets `expiry = GetExpiryDate(expiryMode)`, so ours must end up
+        // identical or a reopen disagrees. The client always sends eight
+        // (a clean cut to 3707965); the old seventh, `expiryCancel`, is gone.
         "UpdateBookmark" => {
             let bookmark_id = Args::new(req).id_named(0, "bookmarkID")?;
             let folder_id = Args::new(req).id_named(1, "folderID")?;
@@ -1442,7 +1445,7 @@ fn bookmark_mgr(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
             m.subfolder_id = subfolder_id;
             m.folder_id = new_folder_id;
             if Args::new(req).flag_lax(6) {
-                m.expiry = None;
+                m.expiry = expiry_date(Args::new(req).get(7), crate::pyutil::filetime_now());
             }
             reg.dirty = true;
             Ok(PyValue::None)
@@ -2460,9 +2463,70 @@ mod tests {
         );
     }
 
+    /// One `UpdateBookmark` call with `rest` as its seventh and eighth arguments.
+    fn update_expiry(reg: &mut Registry, me: i64, id: i64, folder: i64, rest: &[PyValue]) {
+        let mut args = vec![
+            PyValue::Int(id),
+            PyValue::Int(folder),
+            u("x"),
+            u("y"),
+            PyValue::None,
+            PyValue::Int(folder),
+        ];
+        args.extend_from_slice(rest);
+        call_as(
+            reg,
+            me,
+            "accessGroupBookmarkMgr",
+            "UpdateBookmark",
+            &args,
+            &[],
+        )
+        .unwrap();
+    }
+
+    /// The 8-argument `UpdateBookmark` (`bookmarkSvc.py:630`, build 3707965)
+    /// **[V]**: `editExpiry` with mode 1 sets now + 4 h, without it nothing
+    /// changes.
+    #[test]
+    fn editing_a_bookmarks_expiry_sets_the_new_date() {
+        let mut reg = Registry::new(SandboxConfig::default());
+        let me = me(&reg);
+        let folder = add_folder(&mut reg, me, "Personal Locations");
+        let id = created_id(&bookmark_station(&mut reg, me, folder, "Home"));
+        assert_eq!(reg.bookmarks.marks[0].expiry, None);
+        let before = crate::pyutil::filetime_now();
+        update_expiry(
+            &mut reg,
+            me,
+            id,
+            folder,
+            &[PyValue::Bool(true), PyValue::Int(1)],
+        );
+        let got = reg.bookmarks.marks[0].expiry.expect("an expiry is set");
+        let want = before + 4 * HOUR;
+        assert!((got - want).abs() < 60 * 10_000_000, "{got} vs {want}");
+        update_expiry(
+            &mut reg,
+            me,
+            id,
+            folder,
+            &[PyValue::Bool(false), PyValue::None],
+        );
+        assert_eq!(reg.bookmarks.marks[0].expiry, Some(got), "unchanged");
+        update_expiry(
+            &mut reg,
+            me,
+            id,
+            folder,
+            &[PyValue::Bool(true), PyValue::None],
+        );
+        assert_eq!(reg.bookmarks.marks[0].expiry, None, "mode None clears it");
+    }
+
     /// Rename, then delete: the two edits the Places tab offers on a row.
     ///
-    /// `UpdateBookmark`'s seven positionals are `bookmarkSvc.py:629`, and
+    /// `UpdateBookmark`'s positionals are `bookmarkSvc.py:629-630`, and
     /// `DeleteBookmarks` gets a `set` (`:640-647`) and must answer the ids it
     /// removed, because an empty answer is `CouldNotDeleteBookmark` (`:650`).
     #[test]
@@ -2485,6 +2549,7 @@ mod tests {
                 PyValue::None,
                 PyValue::Int(folder),
                 PyValue::Bool(false),
+                PyValue::None,
             ],
             &[],
         )

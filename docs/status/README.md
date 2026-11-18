@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**68% proved** (232 of 341) · **93% built** (318 of 341) · 3 parked, not counted.
+**68% proved** (232 of 342) · **93% built** (319 of 342) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -129,6 +129,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, plus a human's Local arrival noted as Seen once an hour (SEEN_EVERY [A]), with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests (a_seen_note_keeps_the_last_fight, seen_is_due_once_an_hour, a_book_with_a_seen_row_round_trips); read by chat on a Local arrival (chatter::known_of)
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 - [ ] The sales tax and the broker commission are halved at the one station the 3707965 client gives a fee modifier: *built-unproved*, market_fees.rs station_fee_factor, applied in service/market.rs sales_tax_due and broker_rate_at; unit test on an invented station; applies to every client line [A]
+- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
 
 ### 3.8 Remote clients, hosting
 
@@ -176,7 +177,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 2 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
-| Tools and remote clients | 11 | 6 | 2 | 2 | 0 |
+| Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 
 </details>
 
@@ -598,7 +599,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Tools and remote clients</b>: 11 of 21 proved, 10 open</summary>
+<details><summary><b>Tools and remote clients</b>: 11 of 22 proved, 11 open</summary>
 
 - [x] The gate: lint, tests, clippy, push only on pass: *done*, tools/land.sh, tools/gate.sh
 - [x] The client regression runner, three clients at once: *done*, tools/client-ci-regress.sh
@@ -621,6 +622,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Fleet clean-room rewrite: *done*, b4150be (fleet.rs), aea9611 (service/fleet.rs); fleet and wing scenarios green (regress-fleet 2026-11-03)
 - [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a connection that sends nothing after our first handshake message is logged as such, by address; a note names the expected /content/<build>/MANIFEST.tsv when a per-build directory is unusable: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, tools/test_entrypoint.py; no deploy on a host yet
 - [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh swaps only tq-offline in both prefixes (old one kept as tq-<oldbuild>, own prefix settings kept, every refusal before the first write), pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
+- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
 
 </details>
 
