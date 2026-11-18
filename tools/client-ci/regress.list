@@ -431,3 +431,5 @@ fci_gm_missioncomplete --serial -- --dev
 fci_trig_player -- --dev
 # hn1-203 + hn-pilot2 (#203): HyperNet through the real raffle client: availability, create with HyperCores, buy, the TicketUnavailableError class, expire and refund, notifications 243 and 244; a second pilot sells out an offer, both hear the draw, the seller is paid, the winner claims and the loser is refused, the compacted rows still answer, notification 245
 fci_hypernet --with-second -- --character Alice --character Bob
+# dogma (#290, 3707965): a synchronizer rig raises the faction guns beside it, and an Aberrant burst raises the ball's top speed with the client's dogma; the plain server (needs a bundle with the Incursus, the Federation Navy guns, the synchronizer and the overdrive)
+fci_rig_set
