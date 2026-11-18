@@ -182,6 +182,8 @@ fci_fw_enlist
 fci_fw_refuse
 # cq0 (#291): Theaters of War opens with the dormant Conquest pages absent; the post-enlistment route falls back to the landing page
 fci_tow_conquest_dormant
+# cq2 (#291): a Path to Conquest item trader stands at its War HQ and trades a recipe; one client, GM; conquest_hq_system in fci.params is an optional pin
+fci_item_trader
 fci_upwell_profiles
 fci_upwell_anchor --with-second -- --character Alice --character Bob
 # w27-timers (#40): anchor with a 60 s timer, onlining, unanchor and cancel: the client's own timers and upkeep; one client

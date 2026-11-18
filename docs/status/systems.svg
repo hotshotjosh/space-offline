@@ -397,7 +397,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <text x="16.0" y="274.0" class="t">FW Conquests</text>
 <rect x="198.8" y="269.5" width="3" height="3" class="built"/>
 <rect x="202.8" y="269.5" width="3" height="3" class="built"/>
-<text x="210.8" y="274.0" class="s xs">0/2</text>
+<rect x="206.8" y="269.5" width="3" height="3" class="built"/>
+<text x="214.8" y="274.0" class="s xs">0/3</text>
 <rect x="16.0" y="286.0" width="9" height="9" class="proved"/>
 <text x="30.0" y="294.0" class="s xs">Proved</text>
 <rect x="78.3" y="286.0" width="9" height="9" class="built"/>

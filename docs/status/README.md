@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**66% proved** (232 of 349) · **93% built** (326 of 349) · 3 parked, not counted.
+**66% proved** (232 of 350) · **93% built** (327 of 350) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -91,6 +91,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
 - [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
 - [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
+- [ ] Item traders trade recipes: *built-unproved*, server item_trader.rs: the four PTC traders stand at the War HQ systems (an [A] placement), ProcessTrade(recipeID=, multiplier=) answers (success, items) and a refusal is (False, []), militia-only by default [A, owner question Q19]; the Beacons beside the traders (97927-97930) are not placed yet; tools/client-ci/scenarios/fci_item_trader.py (not yet run on a client)
 
 ### 3.7 Society, economy and bots
 
@@ -185,7 +186,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 5 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
-| FW Conquests | 0 | 2 | 0 | 0 | 0 |
+| FW Conquests | 0 | 3 | 0 | 0 | 0 |
 
 </details>
 
@@ -653,10 +654,11 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>FW Conquests</b>: 0 of 2 proved, 2 open</summary>
+<details><summary><b>FW Conquests</b>: 0 of 3 proved, 3 open</summary>
 
 - [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
 - [ ] Conquest client data in the bundle: *built-unproved*, tools/content_conquest.py: conquest/ emitters, traders, recipes, texts, textures and npcs written from the 3707965 client data, check() re-derives them; content/conquest/season.tsv holds the design numbers, each [A]; tools/test_content_conquest.py
+- [ ] Item traders trade recipes: *built-unproved*, server item_trader.rs: the four PTC traders stand at the War HQ systems (an [A] placement), ProcessTrade(recipeID=, multiplier=) answers (success, items) and a refusal is (False, []), militia-only by default [A, owner question Q19]; the Beacons beside the traders (97927-97930) are not placed yet; tools/client-ci/scenarios/fci_item_trader.py (not yet run on a client)
 
 </details>
 

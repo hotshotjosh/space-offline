@@ -86,11 +86,12 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="282.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="286.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="290.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="295.3" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="294.8" y="95.0" width="3" height="1.5" class="part-f"/>
+<rect x="294.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="299.3" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="298.8" y="95.0" width="3" height="1.5" class="part-f"/>
-<rect x="303.3" y="94.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="303.3" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="302.8" y="95.0" width="3" height="1.5" class="part-f"/>
 <rect x="307.3" y="94.0" width="2" height="2" fill="none" class="missing"/>
-<text x="314.8" y="98.0" class="s xs">19</text>
+<rect x="311.3" y="94.0" width="2" height="2" fill="none" class="missing"/>
+<text x="318.8" y="98.0" class="s xs">20</text>
 <text x="16.0" y="114.0" class="t">3.7 Society, economy and bots</text>
 <rect x="234.8" y="109.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="109.5" width="3" height="3" class="built"/>
