@@ -277,38 +277,61 @@ fn clock(_reg: &Registry) -> f64 {
         .as_secs_f64()
 }
 
+/// How many rounds of "perform the actions, resume their flows" one delivery
+/// runs before it leaves the rest for the next tick (a runaway guard).
+const MAX_ROUNDS: usize = 64;
+
 /// Apply a run's effects: checkpoints and state now, pushes in order, client
-/// messages held until the client is ready.
+/// messages held until the client is ready. Each server action is performed
+/// and its flow resumed with what it returned ([`Runtime::resolve`]), which
+/// can raise more effects, so this goes round until none is left.
 fn deliver(reg: &mut Registry, c: i64) {
-    let Some(run) = reg.ext_mut::<Runs>().runs.get_mut(&c) else {
-        return;
-    };
-    let effects: Vec<Effect> = run.rt.effects.drain(..).collect();
-    for line in run.rt.log.drain(..) {
-        eprintln!("[airnpe] char {c}: {line}");
-    }
-    let instance = run.rt.instance_id().to_string();
-    let release = run.ready || crate::game_clock::clock::wall_since(run.started) >= HOLD_LIMIT;
-    let out = release_or_hold(&mut run.held, effects, release);
-    let mut told_new = Vec::new();
-    for e in &out {
-        if let Effect::Action { atom, .. } = e
-            && !HANDLED.contains(&atom.as_str())
-            && run.told.insert(atom.clone())
-        {
-            told_new.push(atom.clone());
+    for _ in 0..MAX_ROUNDS {
+        let Some(run) = reg.ext_mut::<Runs>().runs.get_mut(&c) else {
+            return;
+        };
+        let effects: Vec<Effect> = run.rt.effects.drain(..).collect();
+        for line in run.rt.log.drain(..) {
+            eprintln!("[airnpe] char {c}: {line}");
         }
-    }
-    let running = run.rt.is_running();
-    for e in out {
-        apply(reg, c, &instance, e);
-    }
-    for a in told_new {
-        eprintln!("[airnpe] char {c}: action {a} not done");
-    }
-    if !running {
-        eprintln!("[airnpe] char {c}: graph {MASTER_GRAPH} stopped");
-        reg.ext_mut::<Runs>().runs.remove(&c);
+        let instance = run.rt.instance_id().to_string();
+        let release = run.ready || crate::game_clock::clock::wall_since(run.started) >= HOLD_LIMIT;
+        let out = release_or_hold(&mut run.held, effects, release);
+        let mut told_new = Vec::new();
+        for e in &out {
+            if let Effect::Action { atom, .. } = e
+                && !HANDLED.contains(&atom.as_str())
+                && run.told.insert(atom.clone())
+            {
+                told_new.push(atom.clone());
+            }
+        }
+        let running = run.rt.is_running();
+        let mut done = Vec::new();
+        for e in out {
+            if let Some(d) = apply(reg, c, &instance, e) {
+                done.push(d);
+            }
+        }
+        for a in told_new {
+            eprintln!("[airnpe] char {c}: action {a} not done");
+        }
+        if !running {
+            eprintln!("[airnpe] char {c}: graph {MASTER_GRAPH} stopped");
+            reg.ext_mut::<Runs>().runs.remove(&c);
+            return;
+        }
+        if done.is_empty() {
+            return;
+        }
+        let objects = spawned_objects(reg, c);
+        let Some(run) = reg.ext_mut::<Runs>().runs.get_mut(&c) else {
+            return;
+        };
+        run.rt.dungeon_objects = objects;
+        for (ticket, outputs) in done {
+            run.rt.resolve(ticket, outputs);
+        }
     }
 }
 
@@ -329,7 +352,9 @@ fn release_or_hold(held: &mut Vec<Effect>, effects: Vec<Effect>, release: bool) 
     out
 }
 
-fn apply(reg: &mut Registry, c: i64, server_instance: &str, e: Effect) {
+/// Push or record one effect; for a server action, perform it and return
+/// its ticket and outputs (none when it is not performed: the flow goes on).
+fn apply(reg: &mut Registry, c: i64, server_instance: &str, e: Effect) -> Option<(u64, Kw)> {
     match e {
         Effect::StartClientGraph { graph_id, instance } => {
             eprintln!("[airnpe] char {c} -> OnStartClientNodeGraph({graph_id}, {instance})");
@@ -378,7 +403,7 @@ fn apply(reg: &mut Registry, c: i64, server_instance: &str, e: Effect) {
                 );
             }
         }
-        Effect::Action { atom, args } => {
+        Effect::Action { atom, args, ticket } => {
             if atom == "Complete AIR NPE" {
                 eprintln!("[airnpe] char {c}: tutorial complete");
                 let ck = stored(reg, c).and_then(|(_, k)| k);
@@ -389,11 +414,20 @@ fn apply(reg: &mut Registry, c: i64, server_instance: &str, e: Effect) {
                     "OnAirNpeStateChanged",
                     vec![PyValue::Int(c), PyValue::Int(COMPLETED)],
                 );
-            } else if perform(reg, c, &atom, &args) {
-                eprintln!("[airnpe] char {c}: {atom} {}", describe(&args));
+                return Some((ticket, Kw::new()));
             }
+            let outputs = perform(reg, c, &atom, &args);
+            if let Some(o) = &outputs {
+                eprintln!(
+                    "[airnpe] char {c}: {atom} {} -> {}",
+                    describe(&args),
+                    describe(o)
+                );
+            }
+            return Some((ticket, outputs.unwrap_or_default()));
         }
     }
+    None
 }
 
 /// The server atoms [`apply`] performs; any other is logged once per run.
@@ -403,6 +437,9 @@ const HANDLED: &[&str] = &[
     "Give Skill",
     "Give Skill Points",
     "Give ISK",
+    "Spawn Dungeon Near Undock",
+    "Warp Character To Position",
+    "Remove Item from Cargo",
 ];
 
 fn describe(args: &Kw) -> String {
@@ -418,16 +455,17 @@ fn int(args: &Kw, key: &str) -> Option<i64> {
 }
 
 /// The server atoms that reward the pilot, on the server's own systems.
-/// `false` for one this module does not perform (the caller logs it once).
+/// `None` for one this module does not perform (the caller logs it once);
+/// `Some` with the atom's outputs, if it has any, for one it does.
 /// What each takes is the atom's own parameter list **[V-data]** (`atoms`);
 /// what it does is its name, and the client's lessons that read the result.
-fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> bool {
+fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> {
     match atom {
         // `type_id`, `should_only_create_if_missing`: one item in the
         // character's station hangar.
         "Create Item in Hangar" => {
             let Some(type_id) = int(args, "type_id") else {
-                return true;
+                return Some(Kw::new());
             };
             let only_if_missing = args
                 .get("should_only_create_if_missing")
@@ -439,10 +477,10 @@ fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> bool {
                     .iter()
                     .any(|i| i.owner_id == c && i.type_id == type_id)
             {
-                return true;
+                return Some(Kw::new());
             }
             let Some(station) = reg.character(c).and_then(|ch| ch.station_id) else {
-                return true;
+                return Some(Kw::new());
             };
             let to = crate::item::Slot::new(c, station, crate::model::FLAG_HANGAR);
             if let Err(e) = reg.apply_items(&[crate::item::Edit::Create {
@@ -452,14 +490,14 @@ fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> bool {
             }]) {
                 eprintln!("[airnpe] char {c}: Create Item in Hangar {type_id} refused: {e:?}");
             }
-            true
+            Some(Kw::new())
         }
         // `type_id`, `level`: the skill, injected (level 0 is "known").
         // **[A]** a level above 0 is not trained to here; falsified by a
         // graph that gives one.
         "Give Skill" => {
             let Some(type_id) = int(args, "type_id") else {
-                return true;
+                return Some(Kw::new());
             };
             let content = reg.content.clone();
             let known = reg.skills.get(&c).is_some_and(|s| s.get(type_id).is_some());
@@ -473,14 +511,14 @@ fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> bool {
                 }
                 crate::brain::announce(reg, c);
             }
-            true
+            Some(Kw::new())
         }
         // `skill_points`: unallocated points, the pool `free_sp` keeps.
         "Give Skill Points" => {
             if let Some(points) = int(args, "skill_points") {
                 crate::free_sp::grant(reg, c, points);
             }
-            true
+            Some(Kw::new())
         }
         // `isk_amount` from `corporation_id`. **[A]** journalled as an agent
         // mission reward; falsified by a live journal row of another type.
@@ -503,9 +541,9 @@ fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> bool {
                     "",
                 );
             }
-            true
+            Some(Kw::new())
         }
-        _ => false,
+        _ => site_action(reg, c, atom, args),
     }
 }
 
@@ -710,7 +748,8 @@ pub const MODULE: crate::module::Module = crate::module::Module {
 pub const SITE_DUNGEON: i64 = 10461;
 /// The checkpoint the `[AIR] 1.4` server graph runs task 1.4.01 at **[V-data]**.
 pub const SITE_CHECKPOINT: i64 = 45;
-/// Site ids for these sites, one per character: above the sov stand-in hubs
+/// Site ids for these sites, two per character (the scene-1.4 site and a
+/// spawned dungeon): above the sov stand-in hubs
 /// (`8.9e9 + systemID`) and below escrow (9e9);
 /// `site::tests::id_bands_do_not_overlap` checks it. **[A]** a character id
 /// maps to one site by `rem_euclid`; falsified by two tutorial pilots whose
@@ -723,8 +762,215 @@ pub fn is_npe_site(site_id: i64) -> bool {
     (NPE_SITE_BASE..NPE_SITE_END).contains(&site_id)
 }
 
+/// A character's scene-1.4 site: the even id of its pair.
 fn site_id(c: i64) -> i64 {
-    NPE_SITE_BASE + c.rem_euclid(NPE_SITE_END - NPE_SITE_BASE)
+    NPE_SITE_BASE + c.rem_euclid((NPE_SITE_END - NPE_SITE_BASE) / 2) * 2
+}
+
+/// A character's spawned dungeon (scene 2.1's mining site): the odd id.
+fn spawn_site_id(c: i64) -> i64 {
+    site_id(c) + 1
+}
+
+/// The character whose tutorial site this is, if one is running.
+fn owner_of(w: &Registry, site: i64) -> Option<i64> {
+    w.ext::<Runs>()
+        .runs
+        .keys()
+        .copied()
+        .find(|c| site_id(*c) == site || spawn_site_id(*c) == site)
+}
+
+// -- scene 2.1's mining site ---------------------------------------------------
+//
+// The `[AIR] 2.1 - Mining Dungeon Set-up` server graph spawns dungeon 9245
+// near the home station's undock with `Spawn Dungeon Near Undock`, writes the
+// spawn id, entry position and beacon to the blackboard, and reads the item id
+// of one of its objects (a wreck) with `Get Item Id For Dungeon Object`; the
+// scene graph then warps the pilot there with `Warp Character To Position`
+// **[V-data]** (graphs 737 and 711). Each atom's parameters are its own
+// (`atoms`); what it does is its name.
+
+/// The scene-2.1 atoms. `None` for one not performed here (logged once):
+/// the NPC behaviour writes (`Dungeon Behavior Blackboard Write`),
+/// `Targetable`/`Untargetable`, `Cloak`/`Uncloak`, `Destroy Dungeon Object`
+/// and `Despawn Dungeon When Empty` are not done yet.
+fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> {
+    match atom {
+        "Spawn Dungeon Near Undock" => spawn_near_undock(reg, c, args),
+        // `character_id`, `position`, `cheat_warp`: a warp the pilot did not
+        // ask for, to a point.
+        "Warp Character To Position" => {
+            let to = vec3(args.get("position")?)?;
+            crate::service::warp_character_to(reg, c, to);
+            Some(Kw::new())
+        }
+        // `character_id`, `type_id`, `quantity_to_keep`: the cargo hold keeps
+        // at most that many of the type.
+        "Remove Item from Cargo" => {
+            let type_id = int(args, "type_id")?;
+            let keep = int(args, "quantity_to_keep").unwrap_or(0).max(0);
+            remove_from_cargo(reg, c, type_id, keep);
+            Some(Kw::new())
+        }
+        _ => None,
+    }
+}
+
+fn vec3(v: &Value) -> Option<[f64; 3]> {
+    match v {
+        Value::List(items) if items.len() == 3 => {
+            let f = |i: usize| items[i].as_float();
+            Some([f(0)?, f(1)?, f(2)?])
+        }
+        _ => None,
+    }
+}
+
+fn float(args: &Kw, key: &str) -> Option<f64> {
+    args.get(key).and_then(Value::as_float)
+}
+
+/// `dungeon_id`, `solar_system_id`, `station_id`, `min_distance_au`,
+/// `max_distance_au`, `max_angle_degrees` -> `spawn_id`, `entry_position`,
+/// `beacon_id` **[V-data]** (the outputs graph 737 reads). The dungeon goes
+/// straight out of the station's undock, at the middle of the distance
+/// range. **[A]** a fixed point in the cone rather than a random one;
+/// falsified by a lesson that depends on where in the cone it lands.
+/// Spawned once per character; a second call answers the same site.
+fn spawn_near_undock(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
+    let dungeon_id = int(args, "dungeon_id")?;
+    let system = int(args, "solar_system_id")?;
+    let station = int(args, "station_id")?;
+    let id = spawn_site_id(c);
+    if reg.ext::<crate::site::Sites>().get(id).is_none() {
+        let st = *reg.celestials().get(station)?;
+        let ship_type = reg.character(c).map_or(0, |ch| ch.ship_type_id);
+        let content = reg.content();
+        let out = crate::docking::undock_point(
+            content.get::<crate::docking::Table>(),
+            content,
+            st.type_id,
+            st.position,
+            ship_type,
+        )
+        .map(|u| u.direction)
+        .filter(|d| d.iter().any(|x| *x != 0.0))
+        .unwrap_or_else(|| away_from_sun(st.position));
+        let lo = float(args, "min_distance_au").unwrap_or(6.0);
+        let hi = float(args, "max_distance_au").unwrap_or(lo);
+        let d = (lo + hi) / 2.0 * crate::scan::AU;
+        let anchor = [
+            st.position[0] + out[0] * d,
+            st.position[1] + out[1] * d,
+            st.position[2] + out[2] * d,
+        ];
+        let archetype = content
+            .try_get::<crate::dungeon_data::Table>()
+            .and_then(|t| t.dungeons.get(&dungeon_id))
+            .map_or(0, |d| d.archetype);
+        let site = crate::population::Site {
+            system,
+            row: 0,
+            k: 0,
+            slot: 0,
+            generation: 0,
+            site_id: id,
+            dungeon_id,
+            archetype,
+            entry: crate::dungeon_data::Entry::Anomaly,
+            anchor,
+            target_id: "AIR-002".into(),
+            state: crate::population::State::Live,
+            at: 0,
+        };
+        if !crate::site::instantiate(reg, &site) {
+            return None;
+        }
+        eprintln!(
+            "[airnpe] char {c}: dungeon {dungeon_id} spawned near the undock of {station} as site {id}"
+        );
+    }
+    let inst = reg.ext::<crate::site::Sites>().get(id)?.clone();
+    let entry = reg
+        .content()
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.dungeons.get(&inst.dungeon_id))
+        .and_then(|d| d.entry_object);
+    let beacon = inst
+        .objects
+        .iter()
+        .find(|p| Some(p.dun_object_id) == entry)
+        .or(inst.objects.first())
+        .map_or(Value::None, |p| Value::Int(p.item_id));
+    Some(Kw::from([
+        ("spawn_id".to_string(), Value::Int(id)),
+        (
+            "entry_position".to_string(),
+            Value::List(inst.anchor.iter().map(|x| Value::Float(*x)).collect()),
+        ),
+        ("beacon_id".to_string(), beacon),
+    ]))
+}
+
+/// The unit vector from the sun (the origin) through `p`.
+fn away_from_sun(p: [f64; 3]) -> [f64; 3] {
+    let n = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+    if n == 0.0 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [p[0] / n, p[1] / n, p[2] / n]
+    }
+}
+
+/// `(spawn id, dungeon object id) -> item id` for `c`'s spawned dungeon,
+/// what `Get Item Id For Dungeon Object` answers.
+fn spawned_objects(reg: &Registry, c: i64) -> HashMap<(i64, i64), i64> {
+    let id = spawn_site_id(c);
+    reg.ext::<crate::site::Sites>()
+        .get(id)
+        .map(|i| {
+            i.objects
+                .iter()
+                .map(|p| ((id, p.dun_object_id), p.item_id))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Consume `type_id` in `c`'s active ship's cargo hold down to `keep` units.
+fn remove_from_cargo(reg: &mut Registry, c: i64, type_id: i64, keep: i64) {
+    let Some(ship) = reg.character(c).map(|ch| ch.ship_id) else {
+        return;
+    };
+    let stacks: Vec<(i64, i64)> = reg
+        .store()
+        .contents_of(ship)
+        .filter(|i| i.flag_id == crate::fitting::FLAG_CARGO && i.type_id == type_id)
+        .map(|i| (i.item_id, i.quantity))
+        .collect();
+    let mut over = stacks.iter().map(|(_, q)| q).sum::<i64>() - keep;
+    let mut edits = Vec::new();
+    for (item_id, quantity) in stacks {
+        if over <= 0 {
+            break;
+        }
+        let take = quantity.min(over);
+        over -= take;
+        edits.push(if take == quantity {
+            crate::item::Edit::Destroy { item_id }
+        } else {
+            crate::item::Edit::Consume {
+                item_id,
+                quantity: take,
+            }
+        });
+    }
+    if !edits.is_empty()
+        && let Err(e) = reg.apply_items(&edits)
+    {
+        eprintln!("[airnpe] char {c}: Remove Item from Cargo {type_id} refused: {e:?}");
+    }
 }
 
 fn npe_site(
@@ -814,12 +1060,7 @@ pub fn loot_source(w: &Registry, id: i64) -> Option<crate::combat::Wreck> {
     if !TASK_WRECKS.contains(&p.dun_object_id) {
         return None;
     }
-    let owner = w
-        .ext::<Runs>()
-        .runs
-        .keys()
-        .copied()
-        .find(|c| site_id(*c) == inst.site_id)?;
+    let owner = owner_of(w, inst.site_id)?;
     Some(crate::combat::Wreck {
         wreck_id: id,
         type_id: p.type_id,
@@ -925,8 +1166,10 @@ mod tests {
             NPE_SITE_END - NPE_SITE_BASE,
         ] {
             assert!(is_npe_site(site_id(c)), "{c}");
+            assert!(is_npe_site(spawn_site_id(c)), "{c}");
         }
         assert_ne!(site_id(90_000_001), site_id(90_000_002));
+        assert_ne!(spawn_site_id(90_000_001), site_id(90_000_002));
         assert!(!is_npe_site(crate::population::SITE_BASE));
     }
 
