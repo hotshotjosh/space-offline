@@ -139,12 +139,51 @@ fn make(_: &crate::content::Content) -> crate::world_ext::Boxed {
 
 // -- the air_npe service's answers ----------------------------------------------
 
-/// `air_npe.is_air_npe_enabled`.
-pub fn enabled(reg: &Registry, actor: Option<i64>) -> bool {
-    actor
-        .and_then(|c| stored(reg, c))
-        .is_some_and(|(s, _)| s == ACTIVE)
-        && library(reg).is_some()
+/// `air_npe.is_air_npe_enabled`: the server-wide switch, asked once per client
+/// before any character is picked. Character creation reads it to decide
+/// whether to offer the tutorial and play the intro video
+/// (`characterCreationContainer_new`: `skipTutorial = CheckSkipTutorial() if
+/// is_air_npe_enabled() else True`) **[V]**. On whenever the bundle carries the
+/// node graphs; whether a character is *in* the tutorial is `state`.
+pub fn enabled(reg: &Registry, _actor: Option<i64>) -> bool {
+    library(reg).is_some()
+}
+
+/// `charUnboundMgr.SelectCharacterID(charID=, skipTutorial=False)` from
+/// character creation, called before the login's session change is built: a
+/// new character who wants the tutorial starts it at no checkpoint, and the
+/// client's `get_air_npe_state` that follows starts the run ([`state`]). A
+/// login from the select screen carries no `skipTutorial` and changes nothing;
+/// a character with a stored state keeps it.
+///
+/// The login itself lands in the void pocket: on a live server the change
+/// after a new character's `SelectCharacterID` went straight to the void
+/// system, in space **[V-TQ]**, while the intro video played. So the pocket's
+/// spot is written as the character's log-off spot (`crate::logoff_spot`, as
+/// the Abyss writes its origin), which `Registry::character_change` turns into
+/// an in-space login and the ballpark bind seats the ship at. A docked login
+/// moved by `Move Player To Location` a moment later was a second session
+/// change in the middle of the video, which froze it.
+pub fn on_character_selected(reg: &mut Registry, c: i64, skip_tutorial: Option<bool>) {
+    if skip_tutorial != Some(false) || library(reg).is_none() || stored(reg, c).is_some() {
+        return;
+    }
+    put(reg, c, ACTIVE, None);
+    let Some(ship_id) = reg.character(c).map(|ch| ch.ship_id) else {
+        return;
+    };
+    let pocket = void_pocket(c);
+    let position = pocket.get("position").and_then(vec3).unwrap_or([0.0; 3]);
+    crate::logoff_spot::set(
+        reg,
+        c,
+        crate::logoff_spot::Spot {
+            ship_id,
+            system: VOID_SYSTEM,
+            position,
+        },
+    );
+    eprintln!("[airnpe] char {c}: new character, AIR tutorial on, logging in to the void pocket");
 }
 
 /// `air_npe.get_air_npe_state`: the scalar state, and the cue to start the
@@ -236,6 +275,29 @@ fn start_run(reg: &mut Registry, c: i64) {
         "birth_system_id".into(),
         system.map_or(Value::None, Value::Int),
     );
+    // `[AIR] 1.1 - Setup` moves the pilot to the void pocket unless this is
+    // `character_login` (then it only sends `ready_for_player_character`,
+    // which no graph listens for) **[V-data]** (graph 733; the other set-up
+    // graphs read the same key). A run in scene 1.1 (no checkpoint, 12 or 16:
+    // what the master graph routes to 733) always gets the move: a live
+    // server gives each login a new pocket and the pilot in it, while here
+    // the pocket is laid out again (see the vacate below) and a pilot who
+    // logged off elsewhere in the void system would miss it. Other scenes
+    // keep `character_login`, so a later set-up never moves a docked pilot.
+    // **[A]** any value but `character_login` reads as "move"; the spelling of
+    // the creation value is ours.
+    let in_scene_1_1 = matches!(checkpoint, None | Some(12) | Some(16));
+    bb.insert(
+        "airnpe_started_by".into(),
+        Value::Str(
+            if in_scene_1_1 {
+                "character_creation"
+            } else {
+                "character_login"
+            }
+            .into(),
+        ),
+    );
     let checkpoints: BTreeMap<i64, i64> = checkpoint
         .map(|ck| (MASTER_GRAPH, ck))
         .into_iter()
@@ -244,6 +306,25 @@ fn start_run(reg: &mut Registry, c: i64) {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as u64)
         ^ (c as u64);
+    // A fresh void pocket per run, as a live server gives each login a new
+    // instanced system: the scene-1.1 set-up lays its dungeons out again once
+    // the pilot is in space. **[A]** that a pocket kept from the last run is
+    // not wanted; falsified by a lesson that reads an object the pilot moved
+    // before logging off.
+    for id in void_site_ids(c) {
+        crate::site::vacate(reg, id);
+    }
+    // And the pilot starts scene 1.1 in the capsule again. After a relog a
+    // live server had the pilot back in the capsule with a new Astero to
+    // board **[V-TQ]** (`Board(newAstero, capsule)`); here the pilot who
+    // boarded is still in the hull, which is then the closest Astero, the one
+    // the lesson points at. So the hull is left pilotless where it is, and the
+    // pocket's lay-out takes it as its Astero when it is near the spot
+    // (`hulls_for_ship_objects`). Refused, harmlessly, for a pilot already in
+    // the capsule or not yet in space.
+    if in_scene_1_1 && crate::service::eject_character(reg, c) {
+        eprintln!("[airnpe] char {c}: back in the capsule for scene 1.1");
+    }
     let now = clock(reg);
     let Some(rt) = Runtime::start(lib, MASTER_GRAPH, c, bb, checkpoints, now, seed) else {
         eprintln!("[airnpe] char {c}: no graph {MASTER_GRAPH} in the bundle");
@@ -440,6 +521,9 @@ const HANDLED: &[&str] = &[
     "Spawn Dungeon Near Undock",
     "Warp Character To Position",
     "Remove Item from Cargo",
+    "Create Void Space Pocket",
+    "Spawn Dungeon",
+    "Move Player To Location",
 ];
 
 fn describe(args: &Kw) -> String {
@@ -580,6 +664,28 @@ pub fn tick(reg: &mut Registry, _now: Instant, bt: crate::damage::BlueTime) {
             deliver(reg, c);
         }
     }
+}
+
+/// `ship.Board` in space took a hull: the run's `Ship Boarded` event nodes
+/// hear it, with the atom's outputs `type_id` and `group_id` **[V-data]**
+/// (atom 190; scene 1.1's server graph compares `type_id` with the Astero's
+/// to start `ship_hud`, graph 685).
+pub fn on_ship_boarded(reg: &mut Registry, c: i64, type_id: i64, group_id: i64, system: i64) {
+    let Some(run) = reg
+        .try_ext_mut::<Runs>()
+        .and_then(|runs| runs.runs.get_mut(&c))
+    else {
+        return;
+    };
+    let kw = Kw::from([
+        ("character_id".to_string(), Value::Int(c)),
+        ("solar_system_id".to_string(), Value::Int(system)),
+        ("type_id".to_string(), Value::Int(type_id)),
+        ("group_id".to_string(), Value::Int(group_id)),
+    ]);
+    eprintln!("[airnpe] char {c}: Ship Boarded type {type_id}");
+    run.rt.event("Ship Boarded", kw);
+    deliver(reg, c);
 }
 
 /// On logoff the client's graphs go with the session; so does the run.
@@ -762,14 +868,30 @@ pub fn is_npe_site(site_id: i64) -> bool {
     (NPE_SITE_BASE..NPE_SITE_END).contains(&site_id)
 }
 
-/// A character's scene-1.4 site: the even id of its pair.
-fn site_id(c: i64) -> i64 {
-    NPE_SITE_BASE + c.rem_euclid((NPE_SITE_END - NPE_SITE_BASE) / 2) * 2
+/// Site ids per character: the scene-1.4 site, scene 2.1's mining site, and
+/// the two dungeons of scene 1.1's void pocket.
+const SITES_PER_CHARACTER: i64 = 4;
+
+/// A character's `slot`-th site id.
+fn npe_id(c: i64, slot: i64) -> i64 {
+    NPE_SITE_BASE
+        + c.rem_euclid((NPE_SITE_END - NPE_SITE_BASE) / SITES_PER_CHARACTER) * SITES_PER_CHARACTER
+        + slot
 }
 
-/// A character's spawned dungeon (scene 2.1's mining site): the odd id.
+/// A character's scene-1.4 site.
+fn site_id(c: i64) -> i64 {
+    npe_id(c, 0)
+}
+
+/// A character's spawned dungeon near the undock (scene 2.1's mining site).
 fn spawn_site_id(c: i64) -> i64 {
-    site_id(c) + 1
+    npe_id(c, 1)
+}
+
+/// The site ids `Spawn Dungeon` may use for a character (scene 1.1's two).
+fn void_site_ids(c: i64) -> [i64; 2] {
+    [npe_id(c, 2), npe_id(c, 3)]
 }
 
 /// The character whose tutorial site this is, if one is running.
@@ -778,7 +900,7 @@ fn owner_of(w: &Registry, site: i64) -> Option<i64> {
         .runs
         .keys()
         .copied()
-        .find(|c| site_id(*c) == site || spawn_site_id(*c) == site)
+        .find(|c| (0..SITES_PER_CHARACTER).any(|k| npe_id(*c, k) == site))
 }
 
 // -- scene 2.1's mining site ---------------------------------------------------
@@ -798,6 +920,12 @@ fn owner_of(w: &Registry, site: i64) -> Option<i64> {
 fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> {
     match atom {
         "Spawn Dungeon Near Undock" => spawn_near_undock(reg, c, args),
+        "Create Void Space Pocket" => Some(void_pocket(c)),
+        "Spawn Dungeon" => spawn_dungeon(reg, c, args),
+        "Move Player To Location" => {
+            move_player(reg, c, args);
+            Some(Kw::new())
+        }
         // `character_id`, `position`, `cheat_warp`: a warp the pilot did not
         // ask for, to a point.
         "Warp Character To Position" => {
@@ -865,32 +993,291 @@ fn spawn_near_undock(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
             st.position[1] + out[1] * d,
             st.position[2] + out[2] * d,
         ];
-        let archetype = content
-            .try_get::<crate::dungeon_data::Table>()
-            .and_then(|t| t.dungeons.get(&dungeon_id))
-            .map_or(0, |d| d.archetype);
-        let site = crate::population::Site {
-            system,
-            row: 0,
-            k: 0,
-            slot: 0,
-            generation: 0,
-            site_id: id,
-            dungeon_id,
-            archetype,
-            entry: crate::dungeon_data::Entry::Anomaly,
-            anchor,
-            target_id: "AIR-002".into(),
-            state: crate::population::State::Live,
-            at: 0,
-        };
-        if !crate::site::instantiate(reg, &site) {
+        if !lay_out(reg, id, dungeon_id, system, anchor) {
             return None;
         }
         eprintln!(
             "[airnpe] char {c}: dungeon {dungeon_id} spawned near the undock of {station} as site {id}"
         );
     }
+    spawn_outputs(reg, id)
+}
+
+/// Lay dungeon `dungeon_id` out as site `id` in `system` at `anchor`
+/// (`site::instantiate`). `false` when the site could not be built.
+fn lay_out(reg: &mut Registry, id: i64, dungeon_id: i64, system: i64, anchor: [f64; 3]) -> bool {
+    let archetype = reg
+        .content()
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.dungeons.get(&dungeon_id))
+        .map_or(0, |d| d.archetype);
+    let site = crate::population::Site {
+        system,
+        row: 0,
+        k: 0,
+        slot: 0,
+        generation: 0,
+        site_id: id,
+        dungeon_id,
+        archetype,
+        entry: crate::dungeon_data::Entry::Anomaly,
+        anchor,
+        target_id: "AIR-002".into(),
+        state: crate::population::State::Live,
+        at: 0,
+    };
+    crate::site::instantiate(reg, &site)
+}
+
+// -- scene 1.1's void pocket ---------------------------------------------------
+//
+// `[AIR] 1.1 - Setup` asks for a void space pocket for the character, spawns
+// dungeons 9103 and 9105 at its grid position (the second at a grid offset),
+// and moves the pilot to the first dungeon's entry, replacing the ship
+// **[V-data]** (graph 733). On a live server a new character's first ballpark
+// was system 34000193 with dungeon 9103's objects in it **[V-TQ]**.
+
+/// The void system **[V-TQ]** (`solItem` of the new character's first
+/// `SetState`, the system `MachoResolveObject` was asked for).
+pub const VOID_SYSTEM: i64 = 34_000_193;
+
+/// Where a live server put the pocket's dungeon: (-100, -100, -100) AU
+/// **[V-TQ]** (`OnEnteringDungeonRoom(9103, 27688, position)` on arrival).
+pub const VOID_POSITION: f64 = -14_959_788_687_360.0;
+
+/// `character_id` -> `solar_system_id`, `position`. A live server gives each
+/// pilot a system of their own; here the void system is shared, so each
+/// character's pocket is [`VOID_POSITION`] moved along z by its own lane.
+/// **[A]** the lanes (1e9 m apart, far beyond any grid); falsified by a client
+/// that draws a pocket's backdrop from where in the system it is.
+fn void_pocket(c: i64) -> Kw {
+    let lane = c.rem_euclid(1000) as f64;
+    Kw::from([
+        ("solar_system_id".to_string(), Value::Int(VOID_SYSTEM)),
+        (
+            "position".to_string(),
+            Value::List(vec![
+                Value::Float(VOID_POSITION),
+                Value::Float(VOID_POSITION),
+                Value::Float(VOID_POSITION + lane * 1.0e9),
+            ]),
+        ),
+    ])
+}
+
+/// How far one unit of `Spawn Dungeon`'s `grid_offset` is, metres. **[A]**
+/// a megametre, so the graph's (-35, 10, 17) puts the second dungeon ~40 000
+/// km off the first, a warp away; falsified by a lesson that has the pilot fly
+/// (not warp) between them.
+const GRID_OFFSET_UNIT: f64 = 1.0e6;
+
+/// `dungeon_id`, `solar_system_id`, `position`, `grid_offset` -> `spawn_id`,
+/// `spawn_position`, `beacon_id`, `entry_position` **[V-data]** (atom 211's
+/// outputs). Each dungeon gets one of the character's pocket ids; a second
+/// call for the same dungeon answers the site already there.
+fn spawn_dungeon(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
+    let dungeon_id = int(args, "dungeon_id")?;
+    let system = int(args, "solar_system_id")?;
+    let at = args.get("position").and_then(vec3).unwrap_or([0.0; 3]);
+    let off = args.get("grid_offset").and_then(vec3).unwrap_or([0.0; 3]);
+    let sites = reg.ext::<crate::site::Sites>();
+    let ids = void_site_ids(c);
+    let existing = ids
+        .iter()
+        .copied()
+        .find(|id| sites.get(*id).is_some_and(|s| s.dungeon_id == dungeon_id));
+    let id = match existing {
+        Some(id) => id,
+        None => {
+            let id = ids.iter().copied().find(|id| sites.get(*id).is_none())?;
+            let anchor = [
+                at[0] + off[0] * GRID_OFFSET_UNIT,
+                at[1] + off[1] * GRID_OFFSET_UNIT,
+                at[2] + off[2] * GRID_OFFSET_UNIT,
+            ];
+            if !lay_out(reg, id, dungeon_id, system, anchor) {
+                eprintln!("[airnpe] char {c}: dungeon {dungeon_id} could not be laid out");
+                return None;
+            }
+            eprintln!("[airnpe] char {c}: dungeon {dungeon_id} spawned in {system} as site {id}");
+            id
+        }
+    };
+    hulls_for_ship_objects(reg, c, id);
+    spawn_outputs(reg, id)
+}
+
+/// How near a pilotless hull of the same type must be to stand in for a
+/// pocket's ship object, metres: the pocket's own reach, so the hull a pilot
+/// left at the entry when put back in the capsule (38 km from the Astero's
+/// spot) is the one used, and a relog does not add another. **[A]**: no
+/// other pilot's pocket is this close (they are 1e9 m apart).
+const HULL_REUSE_RANGE: f64 = 100_000.0;
+
+/// **A pocket's ship is a real hull nobody flies.** Dungeon 9103 places an
+/// AIR Civilian Astero (a ship type) that scene 1.1 has the pilot board
+/// (`board_ship`); on a live server it was an ordinary ship item with no
+/// dungeon keys on its slim **[V-TQ]**, and `ship.Board` in space takes only an
+/// abandoned hull (`crate::pilotless`). So each ship-type object becomes one:
+/// the hull is created in space and abandoned at the object's spot, and the
+/// object's ball goes. A hull of that type already abandoned near the spot
+/// (the last run's, kept across restarts) stands in instead of a new one.
+/// The client finds it by type (`Get Closest Object`), not by id.
+fn hulls_for_ship_objects(reg: &mut Registry, c: i64, site: i64) {
+    let Some(inst) = reg.ext::<crate::site::Sites>().get(site).cloned() else {
+        return;
+    };
+    let is_ship = |reg: &Registry, type_id: i64| {
+        reg.content()
+            .try_get::<crate::typedata::Installed>()
+            .and_then(|t| t.hull(type_id))
+            .is_some()
+    };
+    let objects: Vec<_> = inst
+        .objects
+        .iter()
+        .filter(|p| p.rock.is_none() && is_ship(reg, p.type_id))
+        .filter(|p| crate::site::object(reg, p.item_id).is_some())
+        .copied()
+        .collect();
+    // The object's ball goes once a hull stands in for it.
+    let drop_object = |reg: &mut Registry, item_id: i64| {
+        crate::site::destroy_object(reg, item_id);
+        let to = crate::dungeon::audience(reg, inst.system);
+        let stamp = reg.next_destiny_stamp();
+        if let Some(rm) = crate::destiny::BallsRemoved::new(to, stamp, vec![item_id]) {
+            reg.schedule(Duration::ZERO, rm);
+        }
+    };
+    for p in objects {
+        let near = reg
+            .ext::<crate::pilotless::State>()
+            .iter()
+            .filter(|a| a.system == inst.system && a.type_id == p.type_id)
+            .map(|a| a.ship_id)
+            .find(|id| {
+                reg.roster().get(*id).is_some_and(|h| {
+                    crate::space_state::distance(h.motion.position, p.position) < HULL_REUSE_RANGE
+                })
+            });
+        if let Some(id) = near {
+            drop_object(reg, p.item_id);
+            eprintln!(
+                "[airnpe] char {c}: ship object {} is hull {id}, already there",
+                p.type_id
+            );
+            continue;
+        }
+        let made = reg.apply_items(&[crate::item::Edit::Create {
+            type_id: p.type_id,
+            quantity: 1,
+            to: crate::item::Slot::new(p.owner_id, inst.system, crate::combat::FLAG_IN_SPACE),
+        }]);
+        let ship_id = match made {
+            Ok(changes) => changes.iter().find_map(|ch| match ch {
+                crate::item::Change::Created { item_id, .. } => Some(*item_id),
+                _ => None,
+            }),
+            Err(e) => {
+                eprintln!(
+                    "[airnpe] char {c}: hull for ship object {} refused: {e:?}",
+                    p.type_id
+                );
+                None
+            }
+        };
+        // A type the item table does not know (a ship-shaped prop) stays the
+        // object it was.
+        let Some(ship_id) = ship_id else {
+            continue;
+        };
+        drop_object(reg, p.item_id);
+        let a = crate::pilotless::Abandoned {
+            ship_id,
+            type_id: p.type_id,
+            owner_id: p.owner_id,
+            corp_id: p.owner_id,
+            alliance_id: None,
+            system: inst.system,
+            abandoned_at: crate::pyutil::filetime_now(),
+        };
+        crate::pilotless::abandon(
+            reg,
+            a,
+            crate::space_state::Motion::arrived(p.position, [0.0; 3]),
+        );
+        eprintln!(
+            "[airnpe] char {c}: ship object {} is now hull {ship_id}, pilotless",
+            p.type_id
+        );
+    }
+    crate::grid::reconcile_in(reg, inst.system);
+}
+
+/// `character_id`, `target_location_id`, `coordinate`, `replace_ship`,
+/// `ship_type_id`, `fitting_id`: put the pilot in space in that system at that
+/// point (`Registry::relocate`, the move `/tr` makes). `replace_ship` with no
+/// ship type (graph 733's getters are empty) is the capsule: on a live server
+/// the new pilot's own ball in the pocket was a capsule, the frigate beside it
+/// a separate hull **[V-TQ]**. Done here as leaving the ship while still
+/// docked, so the hull stays in the birth station's hangar. **[A]** a ship
+/// type, when one comes, is not built here yet.
+fn move_player(reg: &mut Registry, c: i64, args: &Kw) {
+    let Some(system) = int(args, "target_location_id") else {
+        return;
+    };
+    let spot = args.get("coordinate").and_then(vec3).unwrap_or([0.0; 3]);
+    if args.get("replace_ship").is_some_and(Value::truthy) {
+        match args.get("ship_type_id") {
+            None | Some(Value::None) => {
+                let podded = crate::service::into_capsule_docked(reg, c);
+                eprintln!("[airnpe] char {c}: into the capsule for the pocket: {podded}");
+            }
+            Some(t) => eprintln!(
+                "[airnpe] char {c}: Move Player To Location ship_type_id={t} not built (ship kept)"
+            ),
+        }
+    }
+    let dest = crate::service::relocate::Dest::Space { system, spot };
+    match reg.relocate(c, dest) {
+        Ok(line) => {
+            eprintln!("[airnpe] char {c}: moved: {line}");
+            open_throttle(reg, c);
+        }
+        Err(e) => eprintln!("[airnpe] char {c}: Move Player To Location refused: {e}"),
+    }
+}
+
+/// **The pilot's throttle is open in the pocket.** On a live server the new
+/// pilot's `CmdFollowBall` to the Astero (500 m, then 50 m after a relog and
+/// a `CmdStop`) was answered with `FollowBall` alone, and the capsule flew
+/// **[V-TQ]**: it was in the pocket with `speedFraction` already up. Here a
+/// ball that arrives or is moved has it at 0 (`Motion::arrived`, the move's
+/// `Stop`), and a follow at 0 sits still, so the move opens it. The ball is
+/// still told to stop; only the fraction a later command uses changes.
+fn open_throttle(reg: &mut Registry, c: i64) {
+    let Some(here) = reg.roster().get(c).copied() else {
+        return;
+    };
+    let action = crate::destiny::Action::SetSpeedFraction {
+        ball: here.ship_id,
+        fraction: 1.0,
+    };
+    if let Some(p) = reg.roster_mut().get_mut(c) {
+        p.motion.after(action);
+    }
+    let stamp = reg.next_destiny_stamp();
+    let mut to = vec![c];
+    to.extend(reg.roster().others_in_system(here.solar_system_id, c));
+    if let Some(update) = crate::destiny::ActionUpdate::new(to, stamp, vec![action]) {
+        reg.push(update);
+    }
+}
+
+/// What a spawn atom answers for site `id`: `spawn_id`, `spawn_position`,
+/// `entry_position` (the anchor) and `beacon_id` (the entry object, else the
+/// first object).
+fn spawn_outputs(reg: &Registry, id: i64) -> Option<Kw> {
     let inst = reg.ext::<crate::site::Sites>().get(id)?.clone();
     let entry = reg
         .content()
@@ -903,12 +1290,11 @@ fn spawn_near_undock(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
         .find(|p| Some(p.dun_object_id) == entry)
         .or(inst.objects.first())
         .map_or(Value::None, |p| Value::Int(p.item_id));
+    let anchor = Value::List(inst.anchor.iter().map(|x| Value::Float(*x)).collect());
     Some(Kw::from([
         ("spawn_id".to_string(), Value::Int(id)),
-        (
-            "entry_position".to_string(),
-            Value::List(inst.anchor.iter().map(|x| Value::Float(*x)).collect()),
-        ),
+        ("entry_position".to_string(), anchor.clone()),
+        ("spawn_position".to_string(), anchor),
         ("beacon_id".to_string(), beacon),
     ]))
 }
@@ -926,16 +1312,16 @@ fn away_from_sun(p: [f64; 3]) -> [f64; 3] {
 /// `(spawn id, dungeon object id) -> item id` for `c`'s spawned dungeon,
 /// what `Get Item Id For Dungeon Object` answers.
 fn spawned_objects(reg: &Registry, c: i64) -> HashMap<(i64, i64), i64> {
-    let id = spawn_site_id(c);
-    reg.ext::<crate::site::Sites>()
-        .get(id)
-        .map(|i| {
+    let sites = reg.ext::<crate::site::Sites>();
+    std::iter::once(spawn_site_id(c))
+        .chain(void_site_ids(c))
+        .filter_map(|id| sites.get(id).map(|i| (id, i)))
+        .flat_map(|(id, i)| {
             i.objects
                 .iter()
-                .map(|p| ((id, p.dun_object_id), p.item_id))
-                .collect()
+                .map(move |p| ((id, p.dun_object_id), p.item_id))
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// Consume `type_id` in `c`'s active ship's cargo hold down to `keep` units.
@@ -1156,6 +1542,27 @@ mod tests {
         );
     }
 
+    /// The pocket is the live server's void system at its spot, and two
+    /// pilots' pockets are far enough apart not to share a grid.
+    #[test]
+    fn the_void_pocket_is_the_live_system_at_its_spot() {
+        let a = void_pocket(90_000_001);
+        let b = void_pocket(90_000_002);
+        assert_eq!(a.get("solar_system_id"), Some(&Value::Int(VOID_SYSTEM)));
+        let pa = a.get("position").and_then(vec3).expect("a point");
+        let pb = b.get("position").and_then(vec3).expect("a point");
+        assert_eq!((pa[0], pa[1]), (VOID_POSITION, VOID_POSITION));
+        assert!(
+            crate::space_state::distance(pa, pb) > 1.0e8,
+            "{pa:?} {pb:?}"
+        );
+        assert_eq!(
+            void_pocket(90_000_001),
+            a,
+            "the same character, the same pocket"
+        );
+    }
+
     #[test]
     fn every_character_gets_a_site_in_the_band() {
         for c in [
@@ -1167,9 +1574,20 @@ mod tests {
         ] {
             assert!(is_npe_site(site_id(c)), "{c}");
             assert!(is_npe_site(spawn_site_id(c)), "{c}");
+            for id in void_site_ids(c) {
+                assert!(is_npe_site(id), "{c}");
+            }
         }
-        assert_ne!(site_id(90_000_001), site_id(90_000_002));
-        assert_ne!(spawn_site_id(90_000_001), site_id(90_000_002));
+        // Neighbours' four ids do not meet.
+        let a: Vec<i64> = (0..SITES_PER_CHARACTER)
+            .map(|k| npe_id(90_000_001, k))
+            .collect();
+        let b: Vec<i64> = (0..SITES_PER_CHARACTER)
+            .map(|k| npe_id(90_000_002, k))
+            .collect();
+        assert!(a.iter().all(|x| !b.contains(x)), "{a:?} {b:?}");
+        assert_eq!(a.len(), 4);
+        assert!(a.windows(2).all(|w| w[0] != w[1]));
         assert!(!is_npe_site(crate::population::SITE_BASE));
     }
 
