@@ -13,6 +13,24 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+# Hermetic git: no user or system config, no signing, no global hooks, and none of the
+# variables that point git at another repository. Built per call, never set globally.
+_GIT_LEAK = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+             "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR")
+
+
+def hermetic_env(**extra):
+    e = {k: v for k, v in os.environ.items() if k not in _GIT_LEAK}
+    e.update({"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+              "GIT_CONFIG_COUNT": "2",
+              "GIT_CONFIG_KEY_0": "commit.gpgsign", "GIT_CONFIG_VALUE_0": "false",
+              "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": os.devnull,
+              "GIT_TERMINAL_PROMPT": "0"})
+    e.update(extra)
+    return e
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "status-guard.py")
@@ -25,8 +43,11 @@ _spec.loader.exec_module(sg)
 class DefaultBase(unittest.TestCase):
     def test_prefers_origin_head_then_main_then_master(self):
         with tempfile.TemporaryDirectory() as d:
-            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@test.invalid",
-                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
+            env = hermetic_env(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@test.invalid",
+                               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@test.invalid")
+            patcher = mock.patch.dict(os.environ, env, clear=True)  # in-process calls too
+            patcher.start()
+            self.addCleanup(patcher.stop)
             g = lambda *a: subprocess.run(["git", *a], cwd=d, env=env, check=True,
                                           capture_output=True, text=True).stdout.strip()
             g("init", "-q", "-b", "work")
@@ -82,13 +103,18 @@ class Decide(unittest.TestCase):
     def test_empty_reason_fails(self):
         self.assertFalse(sg.decide(["server/a.rs"], ["Status: none ( )"])[0])
 
+    def test_a_placeholder_reason_fails(self):
+        for reason in ("<why>", "<why no feature state changed>", "...", "\u2026"):
+            self.assertFalse(sg.decide(["server/a.rs"], [f"Status: none ({reason})"])[0], reason)
+
     def test_waiver_must_start_a_line(self):
         self.assertFalse(sg.decide(["server/a.rs"], ["see Status: none (x)"])[0])
 
 
 class Cli(unittest.TestCase):
     def run_git(self, d, *args):
-        subprocess.run(["git", "-C", d, *args], check=True, capture_output=True)
+        subprocess.run(["git", "-C", d, *args], check=True, capture_output=True,
+                       env=hermetic_env())
 
     def write(self, d, rel, text):
         os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
@@ -96,7 +122,7 @@ class Cli(unittest.TestCase):
             f.write(text)
 
     def guard(self, d, *args, body=""):
-        env = dict(os.environ, PR_BODY=body)
+        env = hermetic_env(PR_BODY=body)
         return subprocess.run([sys.executable, "-I", SCRIPT, *args], cwd=d, env=env,
                               capture_output=True, text=True).returncode
 
@@ -116,6 +142,32 @@ class Cli(unittest.TestCase):
             self.assertEqual(self.guard(d, "--base", "base"), 1)
             self.assertEqual(self.guard(d, "--base", "base", "--worktree"), 0)
             self.assertEqual(self.guard(d, "--base", "no-such-ref"), 2)
+
+    def commit(self, d, msg):
+        self.run_git(d, "add", "-A")
+        self.run_git(d, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg)
+
+    def test_a_waiver_in_an_earlier_commit_of_the_range_counts(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.run_git(d, "init", "-q")
+            self.write(d, "README.md", "x\n")
+            self.commit(d, "base")
+            self.run_git(d, "tag", "base")
+            self.write(d, "server/a.rs", "fn a() {}\n")
+            self.commit(d, "code\n\nStatus: none (invented reason)")
+            self.write(d, "README.md", "y\n")
+            self.commit(d, "fix-up")
+            self.assertEqual(self.guard(d, "--base", "base"), 0)
+
+    def test_a_waiver_before_the_base_does_not_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.run_git(d, "init", "-q")
+            self.write(d, "README.md", "x\n")
+            self.commit(d, "base\n\nStatus: none (old waiver)")
+            self.run_git(d, "tag", "base")
+            self.write(d, "server/a.rs", "fn a() {}\n")
+            self.commit(d, "code")
+            self.assertEqual(self.guard(d, "--base", "base"), 1)
 
 
 if __name__ == "__main__":

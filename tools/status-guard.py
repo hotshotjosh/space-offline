@@ -2,8 +2,8 @@
 """Fail a change that moves a feature but leaves the progress table alone.
 
 A change that touches `server/`, `content/` or `tools/client-ci/scenarios/`
-must also change `docs/status/progress.tsv`, unless the head commit message or
-the PR body carries a line
+must also change `docs/status/progress.tsv`, unless a commit message in the range
+`base..HEAD` or the PR body carries a line
 
     Status: none (<why no feature state changed>)
 
@@ -37,6 +37,8 @@ import sys
 PROGRESS = "docs/status/progress.tsv"
 WATCHED = ("server/", "content/", "tools/client-ci/scenarios/")
 WAIVER = re.compile(r"^Status: none \((.+)\)\s*$", re.M)
+# the PR template's literal `<why>` (or an ellipsis) is a placeholder, not a reason
+PLACEHOLDER = re.compile(r"<[^>]*>|\.\.\.|\u2026")
 
 
 def decide(paths: list[str], texts: list[str]) -> tuple[bool, str]:
@@ -48,7 +50,7 @@ def decide(paths: list[str], texts: list[str]) -> tuple[bool, str]:
         return True, f"status-guard: {PROGRESS} changed with the code"
     for text in texts:
         for m in WAIVER.finditer(text or ""):
-            if m.group(1).strip():
+            if m.group(1).strip() and not PLACEHOLDER.fullmatch(m.group(1).strip()):
                 return True, f"status-guard: waived: Status: none ({m.group(1).strip()})"
     shown = ", ".join(moved[:5]) + (f" and {len(moved) - 5} more" if len(moved) > 5 else "")
     return False, (
@@ -56,7 +58,7 @@ def decide(paths: list[str], texts: list[str]) -> tuple[bool, str]:
         f"  Update the feature's row (state, evidence, issue, theme), run "
         f"python3 -I tools/status-page.py, and commit both;\n"
         f"  or, if no feature state changed, put a line 'Status: none (<reason>)' "
-        f"in the head commit message or the PR body.")
+        f"in a commit message of the range or the PR body.")
 
 
 def git(*args: str) -> str:
@@ -101,7 +103,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         paths = changed_paths(base, args.worktree)
-        texts = [git("log", "-1", "--format=%B")]
+        try:
+            texts = [git("log", "--format=%B%x00", f"{base}..HEAD")]
+        except subprocess.CalledProcessError:
+            texts = [git("log", "-1", "--format=%B")]
     except (OSError, subprocess.CalledProcessError) as e:
         err = getattr(e, "stderr", "") or str(e)
         print(f"status-guard: git failed: {err.strip()}", file=sys.stderr)
