@@ -1036,8 +1036,8 @@ impl HallState {
     }
 
     /// **Pledged ISK set aside**: the sum of standing pledges to `me`
-    /// (zero unless `me` is the pool's founder). The career's buying does
-    /// not honour it yet (#159).
+    /// (zero unless `me` is the pool's founder). The driver hands it to
+    /// `acquire::hold_back` before each act, so buys and bids leave it (#159).
     pub fn reserved_for(&self, me: i64) -> f64 {
         self.pool
             .pledges
