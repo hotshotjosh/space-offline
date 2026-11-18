@@ -292,8 +292,10 @@ pub(crate) mod killmail;
 mod live;
 mod live_misc;
 mod mail;
+// The AIR tutorial's node-graph service; registered by `air_npe::MODULE`.
 mod market;
 mod mining_ui;
+pub(crate) mod node_graph;
 // NOTIF-1: `notificationMgr` and the corp-side notification producers.
 pub(crate) mod crate_svc;
 pub(crate) mod dynamic_item;

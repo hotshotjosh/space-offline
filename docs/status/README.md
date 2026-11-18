@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (232 of 365) · **94% built** (342 of 365) · 3 parked, not counted.
+**63% proved** (232 of 366) · **94% built** (343 of 366) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -157,6 +157,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 - [ ] The public gateway (h2c) holds up against a slow or hostile peer: *built-unproved*, gateway.rs: frames split at the peer's max frame size, flow-control windows with held-DATA caps, at most 100 streams (#226); writes run against a deadline, a failed write drops the connection from the hub, publish drops the hub lock before writing (#229); in-process tests; publish only enqueues to a bounded per-connection outbox drained by the connection's own writer thread, joined when the connection ends (#233)
 - [ ] The public gateway serves a pilot only while the owning account has that pilot selected in a live session: *built-unproved*, gateway_auth.rs (a pilot is answered only while a live session of the account that may play it exists, and only to the client process that asked first; a pilot-less request only for a live account; else 403; a connection's notice binding ends with its session); in-process tests; no credential or encryption on the gateway, the rule is stated in docs/guides/remote-clients.md
+- [ ] AIR new-player experience run from the client's node graphs: the server master graph, scene subgraphs, client graph messages, checkpoints, rewards (item, skill, SP, ISK) and the 1.4 salvage site: *built-unproved*, node_graph/{data,engine,value}.rs (Runtime: flow, wires, blackboard, listeners, subgraphs, delays, checkpoints; unit tests on invented graphs); air_npe.rs (module: bundle table, run slot, delta kind airnpe, tick stage, node_graph service, /airnpe; tests); tools/content_nodegraphs.py (the nodegraphs section; test_content_nodegraphs.py); played by hand on a V24.02 client through scenes 1.3 to 1.5 (checkpoints 44 to 50), not in a scenario. parked by the owner (11-07); scene 1.1 (the void pocket), 1.2 and act 2 atoms (Spawn Dungeon Near Undock and others) not done
 - [ ] Client kit and hosted server tools: *built-unproved*, tools/client-kit.sh, tools/client-setup.sh; no dry run. Hosting is issue 141
 - [ ] Client kit dry run end to end: *built-unproved*, #180 dry run in --network none containers on a synthetic install: kit built, unpacked, check and copy, remote listener up, probe login and sign-up; fixed the tunnel script mode, the recovery order (never advising rm of the only pinned copy) and the pin-failure output (docs/guides/remote-clients.md "Dry run (#180)"); the real client patch, tunnel, jail relay and a real client connecting are left for the owner
 - [ ] No-jail route for Windows remote players: *missing*, the always-jailed rule stands until a census proves it
@@ -199,7 +200,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
-| Missions and exploration | 37 | 7 | 0 | 0 | 0 |
+| Missions and exploration | 37 | 8 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 | FW Conquests | 0 | 4 | 0 | 0 | 0 |
 | Live service | 0 | 1 | 0 | 0 | 0 |
@@ -607,7 +608,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Missions and exploration</b>: 37 of 44 proved, 7 open</summary>
+<details><summary><b>Missions and exploration</b>: 37 of 45 proved, 8 open</summary>
 
 - [x] Missions and which agents a standing opens: *client-proved*, fci_prog_pve W10, fci_prog_pve2 W10
 - [x] LP store: *client-proved*, fci_lpstore W10
@@ -653,6 +654,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Character energy gauge (Mobile Analysis Beacon tooltip): *client-proved*, service/live_misc.rs character_energy_state: characterEnergyMgr.GetMyEnergyState, a full CharacterEnergyState (unit tests); fci_char_certs; nothing spends energy yet; fci_char_certs green 11-07 (regress-1107s1)
 - [ ] Daily goals: the day's goals, progress from play, the completion bonus: *built-unproved*, daily_goals.rs (gateway arm, generation, kill/mine/jump/salvage/LP progress, the completion bonus); fci_daily_goals; Progressed/Completed/Redeemed notices nest the goal Identifier as a message (unit-tested against the descriptor); fci_daily_goals green 16/16 on 11-15 (var/ci-1115q-c): jump progress, completion, redeem and the bonus goal's progress; kill, mine, salvage and LP progress and the completion-bonus payout are not in the scenario
 - [x] Daily-goal ISK rewards granted by the daily-goals system (ref 174): *client-proved*, daily_goals.rs credit/redeem, econ_ledger REFS 174 and 175; fci_daily_goals (green 16/16 on 11-15, var/ci-1115q-c)
+- [ ] AIR new-player experience run from the client's node graphs: the server master graph, scene subgraphs, client graph messages, checkpoints, rewards (item, skill, SP, ISK) and the 1.4 salvage site: *built-unproved*, node_graph/{data,engine,value}.rs (Runtime: flow, wires, blackboard, listeners, subgraphs, delays, checkpoints; unit tests on invented graphs); air_npe.rs (module: bundle table, run slot, delta kind airnpe, tick stage, node_graph service, /airnpe; tests); tools/content_nodegraphs.py (the nodegraphs section; test_content_nodegraphs.py); played by hand on a V24.02 client through scenes 1.3 to 1.5 (checkpoints 44 to 50), not in a scenario. parked by the owner (11-07); scene 1.1 (the void pocket), 1.2 and act 2 atoms (Spawn Dungeon Near Undock and others) not done
 
 </details>
 

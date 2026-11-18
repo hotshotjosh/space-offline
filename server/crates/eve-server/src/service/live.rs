@@ -90,8 +90,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // tutorial and `ActivateView('charsel')`. False is both the
         // honest answer -- we ship no NPE content -- and the one that
         // leads to character selection.
+        // A character with an active tutorial (`crate::air_npe`, started by
+        // `/airnpe start`) gets True and state 1; everyone else keeps the
+        // answers below.
         "air_npe" => match req.method {
-            "is_air_npe_enabled" => Ok(PyValue::Bool(false)),
+            "is_air_npe_enabled" => Ok(PyValue::Bool(crate::air_npe::enabled(reg, req.actor))),
             // A **scalar state id**, never a container, and cached per
             // character so this is one call per session. The vocabulary
             // is `AirNpeState.ACTIVE = 1 / COMPLETED = 2 / SKIPPED = 3`,
@@ -104,7 +107,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `1` is the one genuinely harmful answer -- it would make
             // `is_air_npe_active()` true, suppress the job-board window
             // and pull in the `node_graph` service.
-            "get_air_npe_state" => Ok(PyValue::None),
+            "get_air_npe_state" => Ok(crate::air_npe::state(reg, req.actor)),
             _ => Err(reg.no_method(req)),
         },
         // The tutorial ("operations"). Used in boolean context only, and
