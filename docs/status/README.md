@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**67% proved** (232 of 346) · **93% built** (323 of 346) · 3 parked, not counted.
+**67% proved** (232 of 347) · **93% built** (324 of 347) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -30,6 +30,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Ship death drop chance by area of space, as the client's rule (wormhole, Pochven, null, low, else): *built-unproved*, combat.rs drop_area/drop_chance; tests the_drop_area_follows_the_clients_branch_order, the_extreme_chances_are_certain; killmail items use the same roll
 - [ ] The 2026-11-09 client port: *missing*, cards P0 to P7; waits on the client. Named by card and docs: the 11-09 port report; the re-pin procedure is docs/guides/build-compat.md
 - [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
+- [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 
 ### 3.3 PvP
 
@@ -171,7 +172,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
 | Combat | 31 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
-| Modules | 13 | 0 | 0 | 0 | 0 |
+| Modules | 13 | 1 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 44 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
@@ -316,7 +317,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Modules</b>: all 13 proved</summary>
+<details><summary><b>Modules</b>: 13 of 14 proved, 1 open</summary>
 
 - [x] Webs, scramblers and points: *client-proved*, fci_tackle 2026-11-03 (regress-w20b); tackle.rs; webs hold drones (#264)
 - [x] ECM, sensor dampeners and target painters: *client-proved*, fci_ewar 2026-11-03 (regress-w21a); ewar.rs
@@ -331,6 +332,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] ECM burst: *client-proved*, fci_ecm_burst green 2026-11-04 (regress-batch1, two clients); unit tests
 - [x] Disruptors work on rats: *client-proved*, fci_rat_point 2026-11-03 (regress-w23a): a warp disruptor, a scrambler and a tracking disruptor run on a belt rat
 - [x] Cyno inhibitors: *client-proved*, fci_cyno_inhibit 11-03 (regress-w14c); unit tests. Covert fields are not affected; 100 km, one minute to activate, one hour to live (all from the bundle); the industrial cyno is refused [A]
+- [ ] Remote repair shows in the combat log and the new HUD's ring: *built-unproved*, remote_rep.rs cycle sends OnRemote{ShieldBoost,ArmorRepair,HullRepair}{Target,Source} combat messages (amount restored, specialObject, type) after a heal that restored HP and the capacitor transmitter pair; the line reaches the target before its ring change; unit tests
 
 </details>
 

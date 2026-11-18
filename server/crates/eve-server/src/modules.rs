@@ -2152,17 +2152,6 @@ pub(crate) fn drain_capacitor_by(
     })
 }
 
-/// [`give_capacitor_by`]'s push (K-LOGI): `None` for an NPC, a full ship or
-/// a ship with no model.
-pub(crate) fn give_capacitor(
-    w: &mut Registry,
-    ship_id: i64,
-    amount: f64,
-    at: i64,
-) -> Option<ModulePush> {
-    give_capacitor_by(w, ship_id, amount, at)?.push
-}
-
 /// [`drain_capacitor_by`]'s push (FT-F): `None` for an NPC, an empty ship or
 /// a ship with no model.
 pub(crate) fn drain_capacitor(

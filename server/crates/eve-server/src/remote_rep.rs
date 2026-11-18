@@ -90,6 +90,7 @@ use crate::modules::Running;
 use crate::service::Registry;
 use crate::tackle::{Data, Live};
 use crate::world_ext::{Boxed, SlotSpec};
+use eve_marshal::PyValue;
 
 /// Local `shieldBoosting`, `structureRepair`, `armorRepair` [V].
 pub const SHIELD_BOOSTING: i64 = 4;
@@ -361,17 +362,87 @@ fn layer_of(kind: Kind) -> Option<Layer> {
     }
 }
 
+/// The combat-log line a remote repair of `layer` (`None`: the capacitor) is,
+/// to the pilot assisted (`target_side`) or to the one assisting. The client
+/// logs these (`uilog.AddCombatMessage`), and the new HUD's health ring reads
+/// the three `*Target` repair names to credit a rise as remote repair
+/// (`hud/client/healthTracker.REMOTE_REPAIR_MESSAGES`) `[V]`. The message
+/// names are the client's `uilog` lists; their texts are loc 526468-526469,
+/// 526550-526551, 526553-526554 and 526556-526557 (the capacitor pair runs
+/// Target first, the repair pairs Source first) `[V, loctable]`.
+fn assistance_message(layer: Option<Layer>, target_side: bool) -> &'static str {
+    match (layer, target_side) {
+        (Some(Layer::Shield), true) => "OnRemoteShieldBoostTarget",
+        (Some(Layer::Shield), false) => "OnRemoteShieldBoostSource",
+        (Some(Layer::Armour), true) => "OnRemoteArmorRepairTarget",
+        (Some(Layer::Armour), false) => "OnRemoteArmorRepairSource",
+        (Some(Layer::Hull), true) => "OnRemoteHullRepairTarget",
+        (Some(Layer::Hull), false) => "OnRemoteHullRepairSource",
+        (None, true) => "OnRemoteCapacitorTransmitterTarget",
+        (None, false) => "OnRemoteCapacitorTransmitterSource",
+    }
+}
+
+/// Tell both pilots of a remote assist what it was: `amount` restored, the
+/// other ship as `specialObject` and the module's type as `type` `[V,
+/// dogma/combatLogMessages.SendCombatLogAmountMessage]`.
+fn tell_assist(
+    w: &mut Registry,
+    r: &Running,
+    target_char: i64,
+    ship: i64,
+    layer: Option<Layer>,
+    amount: f64,
+) {
+    for (to, target_side, other) in [
+        (target_char, true, r.ship_id),
+        (r.character_id, false, ship),
+    ] {
+        if w.character(to).is_some() {
+            w.schedule(
+                Duration::ZERO,
+                crate::ewar::CombatMessage {
+                    to,
+                    name: assistance_message(layer, target_side),
+                    args: vec![
+                        ("amount", PyValue::Real(amount)),
+                        ("specialObject", PyValue::Int(other)),
+                        ("type", PyValue::Int(r.type_id)),
+                    ],
+                },
+            );
+        }
+    }
+}
+
 /// Restore up to `amount` to `layer` of `ship`'s record and tell everyone:
 /// the bars to the park, the ring to the pilot. The hit points restored; `0`
 /// for a ship nothing has hurt (it has no record) or a layer already whole.
 pub fn heal(w: &mut Registry, ship: i64, layer: Layer, amount: f64, now: BlueTime) -> f64 {
+    let (healed, change) = mend_layer(w, ship, layer, amount, now);
+    if let Some(change) = change {
+        announce_layer(w, ship, change, now);
+    }
+    healed
+}
+
+/// [`heal`] without the telling: the hit points restored and the ring change
+/// (`attribute_id`, `old`, `new`) for [`announce_layer`], so a caller can send
+/// a message first (the new HUD credits a rise only after the combat line).
+pub fn mend_layer(
+    w: &mut Registry,
+    ship: i64,
+    layer: Layer,
+    amount: f64,
+    now: BlueTime,
+) -> (f64, Option<(i64, f64, f64)>) {
     let Some(record) = w.combat_mut().ship_mut(ship) else {
-        return 0.0;
+        return (0.0, None);
     };
     let before = record.rings(now);
     let healed = record.mend(layer, amount, now);
     if healed <= 0.0 {
-        return 0.0;
+        return (0.0, None);
     }
     let after = record.rings(now);
     let change = match layer {
@@ -387,8 +458,7 @@ pub fn heal(w: &mut Registry, ship: i64, layer: Layer, amount: f64, now: BlueTim
         ),
         Layer::Hull => (dmg_attr::DAMAGE, before.damage, after.damage),
     };
-    announce_layer(w, ship, change, now);
-    healed
+    (healed, Some(change))
 }
 
 /// Tell the park the ship's bars and the pilot the ring that moved
@@ -463,11 +533,25 @@ fn cycle(w: &mut Registry, r: &Running, spec: Spec, index: i64, now: BlueTime, d
     }
     match layer_of(spec.kind) {
         Some(layer) => {
-            heal(w, ship, layer, amount, now);
+            let (healed, change) = mend_layer(w, ship, layer, amount, now);
+            // The combat line first: the new HUD credits a rise as remote
+            // repair only if the line came within 2 s before it `[V,
+            // hud/client/healthTracker]`.
+            if spec.remote && healed > 0.0 {
+                tell_assist(w, r, target.character_id, ship, Some(layer), healed);
+            }
+            if let Some(change) = change {
+                announce_layer(w, ship, change, now);
+            }
         }
         None => {
-            if let Some(push) = crate::modules::give_capacitor(w, ship, amount, now) {
-                w.schedule(Duration::ZERO, push);
+            if let Some(moved) = crate::modules::give_capacitor_by(w, ship, amount, now) {
+                if spec.remote {
+                    tell_assist(w, r, target.character_id, ship, None, moved.amount);
+                }
+                if let Some(push) = moved.push {
+                    w.schedule(Duration::ZERO, push);
+                }
             }
         }
     }
@@ -895,6 +979,130 @@ mod tests {
             .expect("the bars");
         let to = bars.2.clone().expect("an audience");
         assert!(to.contains(&BOB) && to.contains(&ALICE) && to.contains(&CAROL));
+    }
+
+    /// A remote repair names the HP restored and the other ship to both
+    /// pilots: the target's `*Target` line (the new HUD credits its ring on
+    /// it) and the repairer's `*Source` line.
+    #[test]
+    fn a_remote_repair_names_the_amount_to_both_pilots() {
+        let mut reg = world();
+        alice(&mut reg, RARMOR_T, REMOTE_ARMOR);
+        reconcile(&mut reg, now(), &PLAIN);
+        let sent = pushes(&mut reg);
+        let line = |name: &str| {
+            sent.iter()
+                .find(|(n, a, _)| {
+                    *n == "OnCombatMessage" && a.first() == Some(&crate::pyutil::bstr(name))
+                })
+                .cloned()
+                .unwrap_or_else(|| panic!("no {name}: {sent:?}"))
+        };
+        let args = |other: i64| {
+            crate::pyutil::pydict(vec![
+                ("amount", PyValue::Real(ARMOR_AMOUNT)),
+                ("specialObject", PyValue::Int(other)),
+                ("type", PyValue::Int(RARMOR_T)),
+            ])
+        };
+        let target = line("OnRemoteArmorRepairTarget");
+        assert_eq!(target.2, Some(vec![BOB]));
+        assert_eq!(target.1[1], args(ALICE_SHIP), "Alice's ship repaired Bob");
+        let source = line("OnRemoteArmorRepairSource");
+        assert_eq!(source.2, Some(vec![ALICE]));
+        assert_eq!(source.1[1], args(BOB_SHIP), "Alice repaired Bob's ship");
+    }
+
+    /// The target's combat line comes before its ring change: the new HUD
+    /// credits a rise as remote repair only when the line came first `[V]`.
+    #[test]
+    fn the_combat_line_reaches_the_target_before_its_ring() {
+        let mut reg = world();
+        alice(&mut reg, RARMOR_T, REMOTE_ARMOR);
+        reconcile(&mut reg, now(), &PLAIN);
+        let to_bob: Vec<&'static str> = pushes(&mut reg)
+            .into_iter()
+            .filter(|(_, _, to)| to.as_deref() == Some(&[BOB][..]))
+            .map(|(n, ..)| n)
+            .collect();
+        let at = |name: &str| to_bob.iter().position(|n| *n == name);
+        let line = at("OnCombatMessage").expect("the line");
+        let ring = at("OnModuleAttributeChange").expect("the ring");
+        assert!(line < ring, "{to_bob:?}");
+    }
+
+    /// A remote capacitor transmitter says so to both pilots, with the
+    /// capacitor pair's own names.
+    #[test]
+    fn a_remote_capacitor_transfer_names_the_amount_to_both_pilots() {
+        let mut reg = world();
+        let hull = reg.character(BOB).expect("Bob").ship_type_id;
+        let capacity = crate::modules::capacitor_at(&reg, BOB_SHIP, hull, now()).1;
+        reg.modules_mut()
+            .set_capacitor(BOB_SHIP, capacity - 2.0 * CAP_AMOUNT, now());
+        alice(&mut reg, RCAP_T, REMOTE_CAPACITOR);
+        reconcile(&mut reg, now(), &PLAIN);
+        let sent = pushes(&mut reg);
+        let line = |name: &str| {
+            sent.iter()
+                .find(|(n, a, _)| {
+                    *n == "OnCombatMessage" && a.first() == Some(&crate::pyutil::bstr(name))
+                })
+                .cloned()
+                .unwrap_or_else(|| panic!("no {name}: {sent:?}"))
+        };
+        let args = |other: i64| {
+            crate::pyutil::pydict(vec![
+                ("amount", PyValue::Real(CAP_AMOUNT)),
+                ("specialObject", PyValue::Int(other)),
+                ("type", PyValue::Int(RCAP_T)),
+            ])
+        };
+        let target = line("OnRemoteCapacitorTransmitterTarget");
+        assert_eq!(target.2, Some(vec![BOB]));
+        assert_eq!(target.1[1], args(ALICE_SHIP));
+        let source = line("OnRemoteCapacitorTransmitterSource");
+        assert_eq!(source.2, Some(vec![ALICE]));
+        assert_eq!(source.1[1], args(BOB_SHIP));
+    }
+
+    /// Nothing restored, nothing said: a layer already whole gives no line,
+    /// and a local repairer gives none either (it is not assistance).
+    #[test]
+    fn a_local_repairer_says_nothing_to_anyone() {
+        let mut reg = world();
+        run(
+            &mut reg,
+            (BOB, BOB_SHIP, ALICE_MOD),
+            LARMOR_T,
+            ARMOR_REPAIR,
+            None,
+        );
+        reconcile(&mut reg, now(), &PLAIN);
+        let sent = pushes(&mut reg);
+        assert!(rings(&reg).armor_damage < 300.0, "it healed");
+        assert!(sent.iter().all(|(n, ..)| *n != "OnCombatMessage"));
+    }
+
+    /// Nothing restored, nothing said: a layer already whole gives no line,
+    /// and a local repairer gives none either.
+    #[test]
+    fn a_repair_on_a_whole_layer_says_nothing() {
+        let mut reg = world();
+        alice(&mut reg, RARMOR_T, REMOTE_ARMOR);
+        for _ in 0..8 {
+            another_cycle(&mut reg, ALICE_MOD);
+            reconcile(&mut reg, now(), &PLAIN);
+        }
+        assert_eq!(rings(&reg).armor_damage, 0.0);
+        let _ = pushes(&mut reg);
+        another_cycle(&mut reg, ALICE_MOD);
+        reconcile(&mut reg, now(), &PLAIN);
+        let sent = pushes(&mut reg);
+        assert!(
+            sent.iter().all(|(n, ..)| *n != "OnCombatMessage"),
+            "{sent:?}"
+        );
     }
 
     /// One cycle lands once however often the stage runs, and the next
