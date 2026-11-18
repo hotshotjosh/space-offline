@@ -3024,4 +3024,103 @@ modifier\t99300\tcharID\tOwnerRequiredSkillModifier\t64\t99405\t4\t980000010\t
             400.0
         ));
     }
+
+    // -- rig sets (3707965, spec F) -----------------------------------------
+
+    /// **Invented ids and round numbers**; the modifier shapes are the rig-set
+    /// chain's: a counting effect on each faction module (a passive
+    /// `LocationGroupModifier shipID` ModAdd into the synchronizer's counter),
+    /// the synchronizer's own `ItemModifier itemID` ModAdd and ModSub of its
+    /// bonus attributes by the counter, its self-group PostPercent into a
+    /// hidden multiplier, and the PostMul of that multiplier on the guns.
+    const RIG_SET: &str = "\
+attribute\t64\t1.0\tdamageMultiplier
+attribute\t970000900\t1.0\thiddenMultiplier
+attribute\t970000901\t0.0\tsetCounter
+attribute\t970000902\t0.0\tsetModule
+attribute\t970000903\t0.0\tbonusAdded
+attribute\t970000904\t0.0\tbonusSubtracted
+attribute\t970000905\t1.0\tsinkMultiplier
+attrmeta\t64\t0\t1\t0\t0\t5
+attrmeta\t970000900\t0\t0\t0\t0\t5
+type\t970000001\t25\t6\t1\t1\t1000.0\t100.0\t1000000.0\t30.0\t0\t\t\tRig Set Frigate
+type\t970000020\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t970000950\t970000902=1.0;64=2.0\tRig Set Faction Gun
+type\t970000021\t55\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t\t64=2.0\tRig Set Plain Gun
+type\t970000022\t205\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t970000955\t970000905=1.1\tRig Set Heat Sink
+type\t970000030\t970000140\t7\t1\t1\t5.0\t0.0\t500.0\t25.0\t0\t970000951,970000952,970000953,970000954\t970000901=5.0;970000903=10.0;970000904=20.0\tRig Set Synchronizer
+effect\t970000950\t0\t0\t0\t0\t0\t0\t0\trigSetCounting\t
+effect\t970000951\t4\t0\t0\t0\t0\t0\t0\trigSetBonusAdd\t
+effect\t970000952\t4\t0\t0\t0\t0\t0\t0\trigSetBonusSub\t
+effect\t970000953\t4\t0\t0\t0\t0\t0\t0\trigSetHidden\t
+effect\t970000954\t4\t0\t0\t0\t0\t0\t0\trigSetApply\t
+effect\t970000955\t4\t0\t0\t0\t0\t0\t0\theatSink\t
+modifier\t970000950\tshipID\tLocationGroupModifier\t970000901\t970000902\t2\t\t970000140
+modifier\t970000951\titemID\tItemModifier\t970000903\t970000901\t2\t\t
+modifier\t970000952\titemID\tItemModifier\t970000904\t970000901\t3\t\t
+modifier\t970000953\tshipID\tLocationGroupModifier\t970000900\t970000903\t6\t\t970000140
+modifier\t970000954\tshipID\tLocationGroupModifier\t64\t970000900\t4\t\t55
+modifier\t970000955\tshipID\tLocationGroupModifier\t64\t970000905\t4\t\t55
+";
+
+    fn rig_set(modules: Vec<ModuleInput>) -> Sheet {
+        let table = Table::parse(RIG_SET).expect("the rig-set fixture parses");
+        evaluate(
+            &table,
+            &Inputs {
+                ship_type: 970_000_001,
+                modules,
+                ..Inputs::default()
+            },
+        )
+        .expect("the frigate is in the fixture")
+    }
+
+    const SYNC: i64 = 970_000_030;
+    const FACTION_GUN: i64 = 970_000_020;
+    const PLAIN_GUN: i64 = 970_000_021;
+    const HEAT_SINK: i64 = 970_000_022;
+
+    /// P1: two faction guns, one of them offline, count towards the
+    /// synchronizer (5 + 2); the ModAdd, the ModSub and the self-group
+    /// PostPercent follow; the hidden multiplier reaches every gun and is
+    /// penalised with a heat sink's multiplier in the one chain.
+    #[test]
+    fn a_rig_set_counts_faction_modules_and_scales_the_synchronizer() {
+        let modules = vec![
+            module(1, FACTION_GUN, State::Online),
+            module(2, FACTION_GUN, State::Offline),
+            module(3, PLAIN_GUN, State::Online),
+            module(4, HEAT_SINK, State::Online),
+            module(5, SYNC, State::Online),
+        ];
+        let s = rig_set(modules);
+        // The counter: its own 5, plus one per faction module, offline too.
+        assert!(close(s.module(5, 970_000_901).unwrap(), 7.0));
+        // ModAdd: 10 + 7. ModSub: 20 - 7 (the engine's first real use at scale).
+        assert!(close(s.module(5, 970_000_903).unwrap(), 17.0));
+        assert!(close(s.module(5, 970_000_904).unwrap(), 13.0));
+        // PostPercent on the hidden multiplier: 1 x (1 + 17 / 100).
+        assert!(close(s.module(5, 970_000_900).unwrap(), 1.17));
+        // Both multipliers are on 64 (not stackable) and are penalised: the
+        // stronger first at full strength, the next at exp(-(1/2.67)^2).
+        let want = 2.0 * 1.17 * (1.0 + 0.1 / (1.0f64 / 2.67).powi(2).exp());
+        for gun in [1, 2, 3] {
+            let got = s.module(gun, attr::DAMAGE_MULTIPLIER).unwrap();
+            assert!(close(got, want), "gun {gun}: {got} vs {want}");
+        }
+    }
+
+    /// Without the guns the synchronizer keeps its own counter, and with the
+    /// synchronizer offline its online effects never start (the counting
+    /// effects, passive, still raise the counter).
+    #[test]
+    fn a_rig_set_counter_is_passive_and_its_bonus_needs_the_rig_online() {
+        let s = rig_set(vec![
+            module(1, FACTION_GUN, State::Offline),
+            module(5, SYNC, State::Offline),
+        ]);
+        assert!(close(s.module(5, 970_000_901).unwrap(), 6.0));
+        assert!(close(s.module(5, 970_000_903).unwrap(), 10.0));
+        assert!(close(s.module(1, attr::DAMAGE_MULTIPLIER).unwrap(), 2.0));
+    }
 }
