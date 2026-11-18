@@ -317,13 +317,15 @@ fn start_run(reg: &mut Registry, c: i64) {
     // And the pilot starts scene 1.1 in the capsule again. After a relog a
     // live server had the pilot back in the capsule with a new Astero to
     // board **[V-TQ]** (`Board(newAstero, capsule)`); here the pilot who
-    // boarded is still in the hull, which is then the closest Astero, the one
-    // the lesson points at. So the hull is left pilotless where it is, and the
-    // pocket's lay-out takes it as its Astero when it is near the spot
-    // (`hulls_for_ship_objects`). Refused, harmlessly, for a pilot already in
-    // the capsule or not yet in space.
-    if in_scene_1_1 && crate::service::eject_character(reg, c) {
-        eprintln!("[airnpe] char {c}: back in the capsule for scene 1.1");
+    // boarded is still in the hull. So the pilot is ejected (refused,
+    // harmlessly, for one already in the capsule or not yet in space) and the
+    // pocket's empty hulls go: the lay-out makes a fresh Astero at its spot
+    // (`hulls_for_ship_objects`), and a relog never leaves two.
+    if in_scene_1_1 {
+        if crate::service::eject_character(reg, c) {
+            eprintln!("[airnpe] char {c}: back in the capsule for scene 1.1");
+        }
+        clear_pocket_hulls(reg, c);
     }
     let now = clock(reg);
     let Some(rt) = Runtime::start(lib, MASTER_GRAPH, c, bb, checkpoints, now, seed) else {
@@ -524,6 +526,7 @@ const HANDLED: &[&str] = &[
     "Create Void Space Pocket",
     "Spawn Dungeon",
     "Move Player To Location",
+    "Dungeon Behavior Blackboard Write",
 ];
 
 fn describe(args: &Kw) -> String {
@@ -921,6 +924,7 @@ fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> 
     match atom {
         "Spawn Dungeon Near Undock" => spawn_near_undock(reg, c, args),
         "Create Void Space Pocket" => Some(void_pocket(c)),
+        "Dungeon Behavior Blackboard Write" => behaviour_cue(reg, c, args),
         "Spawn Dungeon" => spawn_dungeon(reg, c, args),
         "Move Player To Location" => {
             move_player(reg, c, args);
@@ -1107,12 +1111,179 @@ fn spawn_dungeon(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
     spawn_outputs(reg, id)
 }
 
-/// How near a pilotless hull of the same type must be to stand in for a
-/// pocket's ship object, metres: the pocket's own reach, so the hull a pilot
-/// left at the entry when put back in the capsule (38 km from the Astero's
-/// spot) is the one used, and a relog does not add another. **[A]**: no
-/// other pilot's pocket is this close (they are 1e9 m apart).
-const HULL_REUSE_RANGE: f64 = 100_000.0;
+// -- Balin, scene 1.1's rescuer ---------------------------------------------------
+//
+// The scene's server graph drives the pocket's NPCs with `Dungeon Behavior
+// Blackboard Write` cues (`BALIN_WARP_TO_SITE_1`, `BALIN_SPAWN`,
+// `BALIN_REPAIR_PLAYER`, `BALIN_WARP_TO_SITE_2`) [V-data] (graph 685); on a
+// live server they reach the dungeon's behaviour trees, which this server
+// does not have. So the cues the client's lessons depend on are scripted
+// here from what a live Balin did [V-TQ]: he warped in to dungeon 9103's
+// object 1109063 (his warp target was that object's spot, exactly), as type
+// 57788 owned by 500021, and when the pilot came within range he cast
+// `effects.RemoteArmourRepair` and `effects.ShieldTransfer` on the pilot's
+// ship. The client finds him by type (`Get Closest Object`, graph 748) and
+// walks the pilot to him.
+
+/// Balin's type and owner **[V-TQ]** (his slim in the pocket).
+pub const BALIN_TYPE: i64 = 57_788;
+const BALIN_OWNER: i64 = 500_021;
+/// The dungeon object he stands at **[V-TQ]** (his warp target) **[V-data]**
+/// (dungeon 9103's spawn row at this object).
+const BALIN_OBJECT: i64 = 1_109_063;
+
+/// `dungeon_spawn_id`, `solar_system_id`, `message_key`, `message_value`: a
+/// cue for the dungeon's NPCs. The Balin cues are scripted (above); any other
+/// is logged and answered, so the graph goes on.
+fn behaviour_cue(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
+    let key = match args.get("message_key") {
+        Some(Value::Str(s)) => s.clone(),
+        _ => return Some(Kw::new()),
+    };
+    let site = int(args, "dungeon_spawn_id");
+    match (key.as_str(), site) {
+        ("BALIN_SPAWN", Some(site)) => balin_spawn(reg, c, site),
+        ("BALIN_REPAIR_PLAYER", Some(site)) => balin_repair(reg, c, site),
+        ("BALIN_WARP_TO_SITE_2", Some(site)) => balin_leave(reg, c, site),
+        _ => eprintln!("[airnpe] char {c}: behaviour cue {key} (not scripted)"),
+    }
+    Some(Kw::new())
+}
+
+/// Balin in site `site`, if he is there.
+fn balin_in(reg: &Registry, site: i64) -> Option<crate::site::Placed> {
+    reg.ext::<crate::site::Sites>()
+        .get(site)?
+        .objects
+        .iter()
+        .find(|p| p.type_id == BALIN_TYPE)
+        .copied()
+        .filter(|p| crate::site::object(reg, p.item_id).is_some())
+}
+
+/// Balin appears at his object's spot in the pocket. **[A]** he appears
+/// there rather than warping in (a live server sent his ball in warp to it);
+/// falsified by a lesson that waits on his arrival.
+fn balin_spawn(reg: &mut Registry, c: i64, site: i64) {
+    if balin_in(reg, site).is_some() {
+        return;
+    }
+    let Some(inst) = reg.ext::<crate::site::Sites>().get(site).cloned() else {
+        return;
+    };
+    let offset = reg
+        .content()
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.dungeons.get(&inst.dungeon_id))
+        .and_then(|d| d.objects.iter().find(|o| o.id == BALIN_OBJECT))
+        .map_or([0.0; 3], |o| o.pos);
+    let at = [
+        inst.anchor[0] + offset[0],
+        inst.anchor[1] + offset[1],
+        inst.anchor[2] + offset[2],
+    ];
+    if let Some(p) = crate::site::add_object(reg, site, BALIN_TYPE, at) {
+        crate::site::set_owner(reg, p.item_id, BALIN_OWNER);
+        eprintln!("[airnpe] char {c}: Balin is {} in site {site}", p.item_id);
+    }
+}
+
+/// Balin repairs the pilot: the two effects a live Balin cast on the pilot's
+/// ship, 8 s cycles **[V-TQ]**. **[A]** the effects only: the hull here was
+/// never damaged (a live pilot's Astero was), so there is nothing to heal;
+/// falsified by a lesson that waits on the repair's amount.
+fn balin_repair(reg: &mut Registry, c: i64, site: i64) {
+    let Some(balin) = balin_in(reg, site) else {
+        return;
+    };
+    let Some(here) = reg.roster().get(c).copied() else {
+        return;
+    };
+    let to = crate::dungeon::audience(reg, here.solar_system_id);
+    for guid in ["effects.RemoteArmourRepair", "effects.ShieldTransfer"] {
+        let fx = crate::modules::SpecialFx {
+            to: to.clone(),
+            ship_id: balin.item_id,
+            module_id: balin.item_id,
+            type_id: BALIN_TYPE,
+            target_id: Some(here.ship_id),
+            guid,
+            is_offensive: false,
+            start: true,
+            duration_ms: 8_000,
+            repeat: 1,
+        };
+        reg.schedule(Duration::ZERO, fx);
+    }
+    eprintln!("[airnpe] char {c}: Balin repairs ship {}", here.ship_id);
+}
+
+/// Balin warps on to the second site: his warp flash, then he is gone from
+/// this grid. **[A]** he leaves rather than flying to dungeon 9105 (scene
+/// 1.2's own set-up is not done yet); falsified by a scene-1.2 lesson that
+/// finds him there.
+fn balin_leave(reg: &mut Registry, c: i64, site: i64) {
+    let Some(balin) = balin_in(reg, site) else {
+        return;
+    };
+    let Some(system) = reg.ext::<crate::site::Sites>().get(site).map(|i| i.system) else {
+        return;
+    };
+    let to = crate::dungeon::audience(reg, system);
+    let stamp = reg.next_destiny_stamp();
+    if let Some(fx) = crate::destiny::SpecialFx::new(
+        to.clone(),
+        stamp,
+        balin.item_id,
+        crate::destiny::FX_WARPING,
+        true,
+    ) {
+        reg.schedule(Duration::ZERO, fx);
+    }
+    crate::site::destroy_object(reg, balin.item_id);
+    let stamp = reg.next_destiny_stamp();
+    if let Some(rm) = crate::destiny::BallsRemoved::new(to, stamp, vec![balin.item_id]) {
+        reg.schedule(Duration::from_secs(3), rm);
+    }
+    eprintln!("[airnpe] char {c}: Balin warps out");
+}
+
+/// How far from a character's pocket an empty hull counts as theirs, metres.
+/// **[A]**: well past the pocket's two grids, and nowhere near another
+/// character's pocket (they are 1e9 m apart along z).
+const POCKET_REACH: f64 = 1.0e8;
+
+/// Take the empty hulls in `c`'s pocket out of the world: the item, its
+/// pilotless record and its ball. They are the tutorial's Asteros, made by
+/// [`hulls_for_ship_objects`] and left by a relog.
+fn clear_pocket_hulls(reg: &mut Registry, c: i64) {
+    let Some(at) = void_pocket(c).get("position").and_then(vec3) else {
+        return;
+    };
+    let hulls: Vec<i64> = reg
+        .ext::<crate::pilotless::State>()
+        .iter()
+        .filter(|a| a.system == VOID_SYSTEM)
+        .map(|a| a.ship_id)
+        .filter(|id| {
+            reg.roster()
+                .get(*id)
+                .is_some_and(|h| crate::space_state::distance(h.motion.position, at) < POCKET_REACH)
+        })
+        .collect();
+    for id in hulls {
+        crate::pilotless::release(reg, id);
+        if let Err(e) = reg.apply_items(&[crate::item::Edit::Destroy { item_id: id }]) {
+            eprintln!("[airnpe] char {c}: empty hull {id} not removed: {e:?}");
+        }
+        let to = crate::dungeon::audience(reg, VOID_SYSTEM);
+        let stamp = reg.next_destiny_stamp();
+        if let Some(rm) = crate::destiny::BallsRemoved::new(to, stamp, vec![id]) {
+            reg.schedule(Duration::ZERO, rm);
+        }
+        eprintln!("[airnpe] char {c}: empty hull {id} cleared from the pocket");
+    }
+}
 
 /// **A pocket's ship is a real hull nobody flies.** Dungeon 9103 places an
 /// AIR Civilian Astero (a ship type) that scene 1.1 has the pilot board
@@ -1120,9 +1291,9 @@ const HULL_REUSE_RANGE: f64 = 100_000.0;
 /// dungeon keys on its slim **[V-TQ]**, and `ship.Board` in space takes only an
 /// abandoned hull (`crate::pilotless`). So each ship-type object becomes one:
 /// the hull is created in space and abandoned at the object's spot, and the
-/// object's ball goes. A hull of that type already abandoned near the spot
-/// (the last run's, kept across restarts) stands in instead of a new one.
-/// The client finds it by type (`Get Closest Object`), not by id.
+/// object's ball goes. A run starting in scene 1.1 first clears the pocket's
+/// old hulls ([`clear_pocket_hulls`]). The client finds the hull by type
+/// (`Get Closest Object`), not by id.
 fn hulls_for_ship_objects(reg: &mut Registry, c: i64, site: i64) {
     let Some(inst) = reg.ext::<crate::site::Sites>().get(site).cloned() else {
         return;
@@ -1150,24 +1321,6 @@ fn hulls_for_ship_objects(reg: &mut Registry, c: i64, site: i64) {
         }
     };
     for p in objects {
-        let near = reg
-            .ext::<crate::pilotless::State>()
-            .iter()
-            .filter(|a| a.system == inst.system && a.type_id == p.type_id)
-            .map(|a| a.ship_id)
-            .find(|id| {
-                reg.roster().get(*id).is_some_and(|h| {
-                    crate::space_state::distance(h.motion.position, p.position) < HULL_REUSE_RANGE
-                })
-            });
-        if let Some(id) = near {
-            drop_object(reg, p.item_id);
-            eprintln!(
-                "[airnpe] char {c}: ship object {} is hull {id}, already there",
-                p.type_id
-            );
-            continue;
-        }
         let made = reg.apply_items(&[crate::item::Edit::Create {
             type_id: p.type_id,
             quantity: 1,
@@ -1240,37 +1393,8 @@ fn move_player(reg: &mut Registry, c: i64, args: &Kw) {
     }
     let dest = crate::service::relocate::Dest::Space { system, spot };
     match reg.relocate(c, dest) {
-        Ok(line) => {
-            eprintln!("[airnpe] char {c}: moved: {line}");
-            open_throttle(reg, c);
-        }
+        Ok(line) => eprintln!("[airnpe] char {c}: moved: {line}"),
         Err(e) => eprintln!("[airnpe] char {c}: Move Player To Location refused: {e}"),
-    }
-}
-
-/// **The pilot's throttle is open in the pocket.** On a live server the new
-/// pilot's `CmdFollowBall` to the Astero (500 m, then 50 m after a relog and
-/// a `CmdStop`) was answered with `FollowBall` alone, and the capsule flew
-/// **[V-TQ]**: it was in the pocket with `speedFraction` already up. Here a
-/// ball that arrives or is moved has it at 0 (`Motion::arrived`, the move's
-/// `Stop`), and a follow at 0 sits still, so the move opens it. The ball is
-/// still told to stop; only the fraction a later command uses changes.
-fn open_throttle(reg: &mut Registry, c: i64) {
-    let Some(here) = reg.roster().get(c).copied() else {
-        return;
-    };
-    let action = crate::destiny::Action::SetSpeedFraction {
-        ball: here.ship_id,
-        fraction: 1.0,
-    };
-    if let Some(p) = reg.roster_mut().get_mut(c) {
-        p.motion.after(action);
-    }
-    let stamp = reg.next_destiny_stamp();
-    let mut to = vec![c];
-    to.extend(reg.roster().others_in_system(here.solar_system_id, c));
-    if let Some(update) = crate::destiny::ActionUpdate::new(to, stamp, vec![action]) {
-        reg.push(update);
     }
 }
 
