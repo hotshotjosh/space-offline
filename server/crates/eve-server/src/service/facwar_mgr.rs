@@ -1927,7 +1927,13 @@ mod tests {
         at(&mut reg, ME, (FW, "JoinFactionAsCharacter"), &[i(F)], now);
         // The early read the new client makes while enlisted: no cooldown.
         let ask = |reg: &mut Registry| {
-            at(reg, ME, (EN, "GetMyDirectEnlistmentCooldownTimestamp"), &[], now)
+            at(
+                reg,
+                ME,
+                (EN, "GetMyDirectEnlistmentCooldownTimestamp"),
+                &[],
+                now,
+            )
         };
         assert_eq!(ask(&mut reg), PyValue::None);
         pushes(&mut reg, "OnEnlistmentStateUpdated");
