@@ -544,7 +544,7 @@ fn emit(w: &mut Registry, via: Via, p: impl Push + 'static) {
     }
 }
 
-fn effect_push(
+pub(crate) fn effect_push(
     pilot: i64,
     ship: i64,
     module_id: i64,

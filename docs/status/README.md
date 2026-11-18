@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**67% proved** (232 of 345) · **93% built** (322 of 345) · 3 parked, not counted.
+**67% proved** (232 of 346) · **93% built** (323 of 346) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -29,6 +29,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 - [ ] Ship death drop chance by area of space, as the client's rule (wormhole, Pochven, null, low, else): *built-unproved*, combat.rs drop_area/drop_chance; tests the_drop_area_follows_the_clients_branch_order, the_extreme_chances_are_certain; killmail items use the same roll
 - [ ] The 2026-11-09 client port: *missing*, cards P0 to P7; waits on the client. Named by card and docs: the 11-09 port report; the re-pin procedure is docs/guides/build-compat.md
+- [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 
 ### 3.3 PvP
 
@@ -129,7 +130,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Each bot keeps an acquaintance book: up to KNOW_KEEP pilots it met as killer, victim or helper, plus a human's Local arrival noted as Seen once an hour (SEEN_EVERY [A]), with first and last time and system, saved beside its mind: *built-unproved*, eve-bot know.rs (note, recall, attach, flush; temp-and-rename, torn file reads empty), observe::fold_row hooks, state load/save; know, observe and state tests (a_seen_note_keeps_the_last_fight, seen_is_due_once_an_hour, a_book_with_a_seen_row_round_trips); read by chat on a Local arrival (chatter::known_of)
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 - [ ] The sales tax and the broker commission are halved at the one station the 3707965 client gives a fee modifier: *built-unproved*, market_fees.rs station_fee_factor, applied in service/market.rs sales_tax_due and broker_rate_at; unit test on an invented station; applies to every client line [A]
-- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
+- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; test editing_a_bookmarks_expiry_sets_the_new_date (eight arguments only, clean cut); no client step yet
 - [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
 - [ ] A trader watches only published minerals: *built-unproved*, eve-bot trader.rs watch_set; test watch_set_skips_an_unpublished_mineral (invented rows)
 - [ ] The Amarr militia headquarters is a system the 3707965 map still holds for Amarr: *built-unproved*, content/facwar/warzones.tsv hq_a; chosen by rule (nearest warzone-1 system still Amarr-held), not named by the client [A]. falsifier: the FW dashboard or Agency naming another Amarr HQ
@@ -168,7 +169,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 |---|--:|--:|--:|--:|--:|
 | Login and sessions | 9 | 1 | 0 | 0 | 0 |
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
-| Combat | 31 | 7 | 0 | 0 | 0 |
+| Combat | 31 | 8 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 6 | 0 | 0 | 0 |
 | Modules | 13 | 0 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
@@ -247,7 +248,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Combat</b>: 31 of 38 proved, 7 open</summary>
+<details><summary><b>Combat</b>: 31 of 39 proved, 8 open</summary>
 
 - [x] Turrets hit and miss by the client's formula: *client-proved*, fci_doc_0 W10
 - [x] A gun stops when its target is gone: *client-proved*, fci_engine_fix W10
@@ -287,6 +288,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] A lock still being acquired is not a lock at a gun's cycle boundary; a jam, a cloak, CONCORD's cap, a clear or leaving space drops a lock in progress with its completion recalled: *client-proved*, targeting.rs: a lock completes when its add is delivered (Completes, Delivered flag); targets_of (completed) and held_of (with pending); modules, ewar, cloak, concord and targeting tests; fci_engine_fix, fci_ess_panel, fci_ecm_burst, fci_cloak, fci_concord, fci_hacking_can and fci_t3_salvage green on 11-08 (ci-1108f)
 - [ ] A gun cannot fire on a lock still being acquired: Activate on a pending lock is refused, a re-lock answers "not yet" (also on a full computer), and bots await the add: *built-unproved*, targeting.rs is_pending and the held branch before the limit; modules.rs activate on targets_of; Conn::lock_and_wait; arena Wait turn; tests a_relock_of_a_pending_pair_answers_not_yet, a_relock_of_a_held_pair_on_a_full_computer_is_not_refused, activate_on_a_pending_lock_is_refused_until_the_add, a_pending_lock_is_a_wait_not_a_fire_and_not_a_close_in, and the socket tests
 - [ ] Target painters and flown signature shorten or lengthen lock time: *built-unproved*, targeting.rs acquisition_delay (signature from dogma::hull, fallback table row * ewar::signature_factor); ewar tests a_painter_shortens_the_lock_on_a_ship, a_drones_lock_uses_its_flown_signature_and_its_paint; the client lock bar uses the type signature [I], so it may finish later than the actual lock; client run on a painted target not done
+- [ ] Module cycle timers on the new HUD (startTime): *built-unproved*, modules.rs ShipEffect::to_push and ship_info_entries send the cycle anchor as startTime on a cycling start; three unit tests; off by default, opt-in via Esc > Feature Previews
 
 </details>
 
@@ -628,7 +630,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Fleet clean-room rewrite: *done*, b4150be (fleet.rs), aea9611 (service/fleet.rs); fleet and wing scenarios green (regress-fleet 2026-11-03)
 - [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a connection that sends nothing after our first handshake message is logged as such, by address; a note names the expected /content/<build>/MANIFEST.tsv when a per-build directory is unusable: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, tools/test_entrypoint.py; no deploy on a host yet
 - [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh swaps only tq-offline in both prefixes (old one kept as tq-<oldbuild>, own prefix settings kept, every refusal before the first write), pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
-- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; tests editing_a_bookmarks_expiry_sets_the_new_date, the_seven_argument_update_still_cancels_the_expiry; no client step yet
+- [ ] The bookmark editor's eight-argument update sets or keeps the expiry as the 3707965 client does: *built-unproved*, service/world.rs UpdateBookmark arm; test editing_a_bookmarks_expiry_sets_the_new_date (eight arguments only, clean cut); no client step yet
 
 </details>
 

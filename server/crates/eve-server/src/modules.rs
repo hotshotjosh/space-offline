@@ -1031,7 +1031,8 @@ pub struct ShipEffect {
     pub character_id: i64,
     pub ship_id: i64,
     pub target_id: Option<i64>,
-    /// Blue ticks. Read only by `TryRecordLastStopTime` (§9 question 6).
+    /// Blue ticks. `TryRecordLastStopTime` reads it (§9 question 6), and a
+    /// cycling start sends it as `startTime` too (the cycle anchor).
     pub t: i64,
     /// `1` to start, `0` to stop: `ModuleButton.Update` switches on it
     /// (`smb:1493-1497`).
@@ -1076,11 +1077,19 @@ impl Push for ShipEffect {
                 flag.clone(),
                 flag,
                 self.environment(),
-                // `startTime`: **None**, so `GetRampStartTime`'s
-                // `getattr(..., now) or now` anchors the ramp on the client's
-                // own clock (`smb:1765`, spec §3.3) and the sim-clock epoch
-                // never matters.
-                PyValue::None,
+                // `startTime` (blue ticks): the new HUD's cycle ring, winding-down
+                // window and charge prediction read it raw
+                // (`hud/client/moduleController.GetEffectTiming`;
+                // `moduleTray/activationIndicator._CycleLoop` hides the ring on
+                // None) [V]; the old button anchors on it within a second
+                // (`smb:1692` startTimeAdjustment) [V]. Only a cycling start
+                // carries one: online, overload and cloak (-1) and every stop
+                // stay None.
+                if self.start && self.duration_ms > 0 {
+                    PyValue::Int(self.t)
+                } else {
+                    PyValue::None
+                },
                 PyValue::Int(self.duration_ms),
                 PyValue::Int(self.repeat),
                 // `error`: a `(key, dict)` here is shown by
@@ -4049,30 +4058,39 @@ pub fn module_info(w: &Registry, c: &crate::model::Character, i: &crate::item::I
             PyValue::Int(ATTR_IS_ONLINE),
         ));
     }
-    let line = |effect_id: i64, target: Option<i64>, duration: i64, repeat: i64| {
-        PyValue::List(vec![
-            PyValue::Int(i.item_id),
-            PyValue::Int(c.character_id),
-            PyValue::Int(c.ship_id),
-            target.map_or(PyValue::None, PyValue::Int),
-            PyValue::None,
-            PyValue::List(Vec::new()),
-            PyValue::Int(effect_id),
-            PyValue::None,
-            PyValue::Int(duration),
-            PyValue::Int(repeat),
-        ])
-    };
+    let line =
+        |effect_id: i64, target: Option<i64>, start: Option<i64>, duration: i64, repeat: i64| {
+            PyValue::List(vec![
+                PyValue::Int(i.item_id),
+                PyValue::Int(c.character_id),
+                PyValue::Int(c.ship_id),
+                target.map_or(PyValue::None, PyValue::Int),
+                PyValue::None,
+                PyValue::List(Vec::new()),
+                PyValue::Int(effect_id),
+                start.map_or(PyValue::None, PyValue::Int),
+                PyValue::Int(duration),
+                PyValue::Int(repeat),
+            ])
+        };
     let mut active: Vec<(PyValue, PyValue)> = Vec::new();
     if online {
         active.push((
-            line(EFFECT_ONLINE, None, -1, -1),
+            line(EFFECT_ONLINE, None, None, -1, -1),
             PyValue::Int(EFFECT_ONLINE),
         ));
     }
     if let Some(r) = m.running(i.item_id).filter(|r| r.stop_at.is_none()) {
+        // A cloak has no cycle: no start, duration -1, as `stop_pushes`.
+        let cloak = crate::cloak::is_cloak_effect(r.effect.effect_id);
         active.push((
-            line(r.effect.effect_id, r.target_id, r.period / MSEC, r.repeat),
+            line(
+                r.effect.effect_id,
+                r.target_id,
+                (!cloak).then_some(r.started),
+                if cloak { -1 } else { r.period / MSEC },
+                r.repeat,
+            ),
             PyValue::Int(r.effect.effect_id),
         ));
     }
@@ -5061,8 +5079,8 @@ mod tests {
         assert_eq!(args[4], PyValue::Int(1), "active");
         assert_eq!(
             args[6],
-            PyValue::None,
-            "startTime None anchors on the client's clock"
+            PyValue::Int(1),
+            "a cycling start carries its anchor"
         );
         assert_eq!(args[7], PyValue::Int(3750), "duration in ms");
         assert_eq!(args[8], PyValue::Int(1000), "repeat echoed");
@@ -5076,6 +5094,26 @@ mod tests {
             "start=0 is what SetIdle switches on"
         );
         assert_eq!(stop[4], PyValue::Int(0));
+    }
+
+    /// Only a cycling start has a `startTime`; a stop, the online effect
+    /// (`duration -1`) and an overload start keep `None` [V] (the old HUD's
+    /// `... or now` fallback and the new HUD's hidden ring both read it).
+    #[test]
+    fn a_stop_an_online_and_an_overload_start_carry_no_start_time() {
+        assert_eq!(effect(false).to_push().1[6], PyValue::None, "a stop");
+        let online = ShipEffect {
+            duration_ms: -1,
+            ..effect(true)
+        };
+        assert_eq!(online.to_push().1[6], PyValue::None, "no duration");
+        assert_eq!(
+            crate::overheat::effect_push(7, 100_000_001, 100_000_010, 34, true, 5)
+                .to_push()
+                .1[6],
+            PyValue::None,
+            "an overload start"
+        );
     }
 
     /// The environment is a seven-element list; index 2 is the ship, which
@@ -6208,6 +6246,69 @@ mod tests {
             Some((EMP_S, 4)),
             "one cycle ran, then it stopped"
         );
+    }
+
+    /// A module cycling when the client primes carries its first cycle's
+    /// start (`started`, not the latest boundary); the online line has none.
+    #[test]
+    fn a_module_cycling_at_prime_carries_its_first_cycles_start() {
+        let mut reg = alice_with_a_gun();
+        put_rounds(&mut reg, ALICE_SHIP, HI_SLOT_0, EMP_S, 100);
+        reg.modules_mut().set_online(GUN, true);
+        let target = 100_000_099;
+        reg.locks_mut().add(ALICE_SHIP, target);
+        let t0 = 1_234 * MSEC;
+        activate(
+            &mut reg,
+            Some(ALICE),
+            GUN,
+            "projectileFired",
+            Some(target),
+            1000,
+            t0,
+        )
+        .expect("fires");
+        let period = reg.modules().running(GUN).expect("running").period;
+        tick(&mut reg, t0 + 2 * period + 1);
+        let c = reg.character(ALICE).expect("Alice").clone();
+        let entries = ship_info_entries(&reg, &c);
+        let (row, _) = entries
+            .iter()
+            .find(|(_, k)| *k == PyValue::Int(GUN))
+            .expect("the gun is primed");
+        let text = format!("{row:?}");
+        let cycling = format!(
+            "{:?}, {:?}, {:?}",
+            PyValue::Int(34),
+            PyValue::Int(t0),
+            PyValue::Int(period / MSEC)
+        );
+        assert!(text.contains(&cycling), "the cycle anchor is sent: {text}");
+        let online = format!(
+            "{:?}, {:?}, {:?}",
+            PyValue::Int(EFFECT_ONLINE),
+            PyValue::None,
+            PyValue::Int(-1)
+        );
+        assert!(text.contains(&online), "online has no start: {text}");
+
+        // A cloak primed on a re-prime has no cycle: no start, duration -1.
+        let mut r = reg.modules().running(GUN).copied().expect("runs");
+        r.effect.effect_id = crate::cloak::EFFECT_CLOAKING;
+        r.period = crate::cloak::CLOAK_PERIOD;
+        reg.modules_mut().insert_running(r);
+        let entries = ship_info_entries(&reg, &c);
+        let (row, _) = entries
+            .iter()
+            .find(|(_, k)| *k == PyValue::Int(GUN))
+            .expect("the module is primed");
+        let cloak = format!(
+            "{:?}, {:?}, {:?}",
+            PyValue::Int(crate::cloak::EFFECT_CLOAKING),
+            PyValue::None,
+            PyValue::Int(-1)
+        );
+        assert!(format!("{row:?}").contains(&cloak), "a cloak has no start");
     }
 
     /// A loaded charge is primed in `shipInfo` as a sublocation, keyed by

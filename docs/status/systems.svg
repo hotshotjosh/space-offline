@@ -85,7 +85,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="338.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="342.8" y="45.5" width="3" height="3" class="built"/>
 <rect x="346.8" y="45.5" width="3" height="3" class="built"/>
-<text x="354.8" y="50.0" class="s xs">31/38</text>
+<rect x="350.8" y="45.5" width="3" height="3" class="built"/>
+<text x="358.8" y="50.0" class="s xs">31/39</text>
 <text x="16.0" y="66.0" class="t">Fitting and ships</text>
 <rect x="198.8" y="61.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="61.5" width="3" height="3" class="proved"/>

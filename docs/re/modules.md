@@ -124,7 +124,7 @@ then `OnGodmaShipEffect(..., start=0, active=0, ...)`.
 | `effectID` | `34` | `dogmaeffects` `[V]` |
 | `duration` (ms) | `3750` | `dogmaeffects[34].durationAttributeID = 51` (`speed`), then `typedogma[486].speed = 3750.0` `[V]` |
 | `repeat` | `1000` | the client sends it (`smb:1565`, `GetRepeatCount` → 1000); echo it back |
-| `startTime` | `None` | §3.3 — `None` makes the client anchor on its own clock |
+| `startTime` | the cycle anchor (`None` for non-cycling effects) | §3.3 — the new HUD's cycle ring needs it |
 | `guid` | `'effects.ProjectileFired'` | `dogmaeffects[34].guid` `[V]` |
 | capacitor drain | `0.0` | `dogmaeffects[34].dischargeAttributeID = 6` (`capacitorNeed`), `typedogma[486].capacitorNeed = 0.0` `[V]` — a projectile gun uses no cap |
 
@@ -279,7 +279,7 @@ Twelve parameters, the last two defaulted. The names and order come from
 | 4 | `start` | 0/1 | **1 to start, 0 to stop** | this is what `ModuleButton.Update` switches on (`smb:1493-1497`): `start` → `SetActive()`, else `SetIdle()` |
 | 5 | `active` | 0/1 | 1 when the effect is now running | `godma:1735` sets `isActive`; `godma:1741-1742` fires `OnModuleActivated` only when truthy |
 | 6 | `environment` | list of 7 | see §2.5 | `godma:1739` reads `[3]`; `godma:1745` reads `[2]` and `[0]`. A short list is an `IndexError` inside the handler |
-| 7 | `startTime` | blue filetime or `None` | **send `None`** (§3.3) | a wrong epoch makes the ramp jump; `None` cannot |
+| 7 | `startTime` | blue filetime or `None` | the cycle anchor on a cycling start; `None` for online, overload, cloak and every stop (§3.3) | the new HUD hides the cycle ring on `None`; a wrong epoch makes the old ramp jump (`smb:1692` discards an adjustment over 1 s) |
 | 8 | `duration` | int, **milliseconds** | the cycle length | `godma:1737`; the ramp's fallback duration (§3.2). `-1` is the client's own sentinel for "no duration" (`godma:3072`) |
 | 9 | `repeat` | int | echo the client's `repeat` | `godma:1738`; drives `GetRepeatCount`/`SetRepeat` display |
 | 10 | `error` | `None`, or `(dialogKey, paramsDict)` | `None` on success | `shipUI.ProcessShipEffect` (`shipUI.pyc`, `ProcessShipEffect`) does `prompt_player_fsd_dialog(error[0], error[1])` — this is the server's channel for "it stopped because X" (§7.3) |
@@ -481,7 +481,7 @@ The same chain on the real server: `bdl:1021` `GetEffectDuration` is
 **That is CCP's own server code, shipped in the client** — this is the most
 load-bearing corroboration in the document.
 
-### 3.3 Send `startTime = None` `[V]`
+### 3.3 Send `startTime` = the cycle anchor on a cycling start `[V]`
 
 `smb:1765` `GetRampStartTime`:
 
@@ -494,10 +494,23 @@ if moduleID not in rampTimers:
 return rampTimers[moduleID]
 ```
 
-`... or now` — a **falsy** `startTime` (so `None`, or `0`) makes the client
-anchor the ramp on its own `GetSimTime()`. This sidesteps the sim-clock epoch
-question entirely and is the single cheapest correctness decision in this
-feature.
+`... or now` — a **falsy** `startTime` (so `None`, or `0`) makes the old
+client anchor the ramp on its own `GetSimTime()`. We used to send `None` for
+that reason. The new HUD (build 3707965) has no such fallback:
+`ModuleController.GetEffectTiming` returns the raw `startTime` and
+`ActivationIndicator._CycleLoop` hides the cycle ring on `None` `[V]` (lane H,
+spec H1). So a cycling start (`start` and `duration > 0`) now sends the cycle
+anchor, both in `OnGodmaShipEffect` and in the primed `activeEffects` (`started`).
+Online, overload, cloak (`duration -1`) and every stop still send `None`.
+
+The old HUD's module tooltip now also shows a cycle countdown row (`godma.GetDurationTimeLeft` needs a truthy `startTime`) `[V]`.
+
+What changes for the old HUD `[I]`: with the clock synced its ramp starts where
+the cycle really is (a small improvement) instead of at the client's receipt
+time. `smb:1692` discards an adjustment over 1 s; only a `startTime` in the
+future would go negative. `[A]` the client's `GetSimTime()` agrees with our
+`now` within one second (falsifier: `GetSimTime() - effect.startTime` outside
+[0, 2 s] right after activation; then fall back to `None`).
 
 If instead you send a real `startTime`, note what the client does with it
 (`smb:1692`): `startTimeAdjustment = now - startTime`, discarded if it exceeds
@@ -1078,7 +1091,12 @@ the charge icon reverts to the module's own icon and the quantity label hides.
 1. **The sim-clock epoch.** `blue.os.GetSimTime()` is a *simulated* clock the
    client maintains and that the server rebases with `DoSimClockRebase`. This
    lane did not establish whether it equals `service::filetime_now()` on
-   session start. **Cost if wrong: zero for the minimum spec**, because
+   session start. **Update (lane H1):** `connectionService.SynchronizeClock`
+   does `ResetClock(machoNet.GetTime())` `[V, docs/reference/client-architecture.md]`
+   and our `GetTime` is the same FILETIME as `now`, so the client sim clock is
+   ours `[I]`; `startTime` is now sent (§3.3, `[A]` within 1 s, falsifier in
+   §3.3). The open part is `actualStopTime`, reload progress and capacitor
+   `time`. Old text: **Cost if wrong: zero for the minimum spec**, because
    `startTime = None` sidesteps it (§3.3) — but it is load-bearing for
    `actualStopTime`, for reload progress (2729), and for any `charge` push
    whose `time` must be comparable to the client's clock. **Settle it before
