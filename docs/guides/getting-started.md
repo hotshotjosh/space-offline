@@ -89,11 +89,15 @@ The copy lands at
 `$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline`. That
 is the default `EVE_CLIENT`, and `ResFiles` sits beside it.
 
-To play on this server the client must be patched. That is not part of this
-repository; the public guides are the
+To play on this server the client must be prepared, and that is not part of
+this repository. The client checks its own files against a signed list of
+hashes, and that list carries the public key it is checked with; a prepared
+client either has that check turned off or can carry a list signed with the
+server owner's own key, and it is pointed at the server with its standard
+server launch argument. The public guides are the
 [new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
 [blue_patcher](https://github.com/stschake/blue_patcher). The server-only and
-content steps below need no patched client.
+content steps below need no prepared client.
 
 ## 4. Build the content bundle
 
