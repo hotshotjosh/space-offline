@@ -5,7 +5,8 @@ through Proton, or on a separate Windows machine. This is a third shape: **one W
 **native Windows client** talking to it over `127.0.0.1`. It is what the
 README's "a similar setup on Windows is wanted" asks for.
 
-What it gives you, verified on build 3707965 (V24.02): sign-up and login, undock,
+What it gives you, verified on build 3707965 (V24.02; the pinned build is now
+3720952, the same line, not yet re-run here): sign-up and login, undock,
 in-game chat, and the AIR new-player experience from character creation through
 scene 2.4. What it does
 **not** give you is the one thing the Linux path does — a network jail. A native
@@ -19,18 +20,40 @@ Every flag and `EVE_*` variable is in
 
 ## 1. Prerequisites
 
-- **WSL2 with the Linux toolchain.** The server, the build and the content
-  extraction all run in WSL exactly as [getting-started.md](getting-started.md)
-  describes — Docker, bash, `python3`. Nothing in the server changes for
-  Windows. Confirm the clone builds there first (getting-started.md §2).
-- **A Windows EVE install, at an accepted build.** Install EVE through the
-  official launcher on Windows, log in once, and let it download every resource
-  file. The build must be the `pinned` row of `tools/builds.tsv`, or one the
-  registry marks `equivalent` ([build-compat.md](build-compat.md)). Check it:
+The client comes from you, as in [getting-started.md](getting-started.md):
+nothing in this repository downloads it. On a stock Windows 11 PC, in order:
+
+- **WSL2 with Ubuntu.** A stock Windows 11 install has no WSL (`wsl --status`
+  says "not installed"). In an administrator PowerShell run `wsl --install`,
+  reboot, and create the Ubuntu user when it asks. Ubuntu 24.04 or newer
+  ([getting-started.md](getting-started.md#supported-platforms)).
+- **The Linux toolchain, inside WSL.** The server, the build and the content
+  extraction run in WSL exactly as [getting-started.md](getting-started.md)
+  describes; nothing in the server changes for Windows. Inside the Ubuntu
+  shell you need `git` (for the clone), `python3`, and Docker. **Docker
+  Engine installed in the distro** (`/usr/bin/docker`, the
+  `docker.io` or Docker CE packages) is what this guide was run with; Docker
+  Desktop's WSL integration is not verified here. Confirm the clone builds
+  first (getting-started.md §2).
+- **A Windows EVE install, at an accepted build.** Get the launcher from
+  `https://www.eveonline.com/download`. Its installer is signed by **Fenris
+  Creations hf.**, not "CCP ehf"; that is expected. Install EVE with it and let it
+  download every resource file. The build must be the `pinned` row of
+  `tools/builds.tsv`, or one the registry marks `equivalent`
+  ([build-compat.md](build-compat.md)). The launcher installs the current
+  Tranquility build, so a fresh install matches once the registry has caught
+  up ([tracking-tq.md](tracking-tq.md)). Check it:
 
   ```
   type "C:\path\to\EVE\tq\start.ini" | findstr /b build
   ```
+- **Log the game into Tranquility once.** Start the game from the launcher
+  with an EVE account (a free Alpha account is enough) and get as far as
+  character selection. Some client data is not in the install at all: the
+  client downloads it from CCP on its first Tranquility login and keeps it in
+  its user cache under `%LOCALAPPDATA%\CCP\EVE\` (for example the Career
+  Program achievement definitions, `cache\Storage\achievements\data.bin`).
+  Without that cache the achievements are empty, offline as well.
 - **WSL2 forwards loopback.** A server that binds `127.0.0.1` inside WSL2 is
   reachable at `127.0.0.1` from Windows, and the reverse — this is what makes
   the same-box setup work with no tunnel. The three ports below all arrive this
@@ -254,9 +277,15 @@ System > Power) keeps the second cause away during long sessions.
 ## What is verified, and what is not
 
 **Verified on build 3707965 (V24.02):** sign-up and login, undock, in-game chat,
-and the AIR new-player experience to the end, with the server in WSL2 and the
-native client over loopback. The `common.ini` Placebo route and the prefs-line
-trap are what this setup actually used.
+and the AIR new-player experience through scene 2.4, with the server in WSL2 and
+the native client over loopback. The rest of act 2 needs the AIR NPE work still
+in progress (#205). The `common.ini` Placebo route and the prefs-line trap are
+what this setup actually used. Not yet re-run on the pinned 3720952.
+
+**A fresh-PC run, partial (19NOV2026):** Windows 11 Home with no WSL, git or
+Docker and no EVE install. It measured the gaps §1 now covers: `wsl --install`,
+the toolchain inside WSL, where the launcher comes from and who signs it. It did
+not go past §1.
 
 **Not covered here:** the Windows firewall rule has been reasoned, not run on a
 fresh machine end to end; treat it as the backstop described, not a proven jail.
