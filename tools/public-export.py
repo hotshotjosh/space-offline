@@ -1,4 +1,4 @@
-"""The public export's path filter and leak scan (docs/guides/public-export.md).
+"""The public export's path filter and leak scan.
 
 Stdlib only. Reads the tracked files of a repo (git ls-files, or a walk when
 there is no .git, as in a lane's `git archive` copy), drops every private
@@ -37,8 +37,7 @@ The licence policy, also a failure (`policy()`):
     inside quotes or backticks (a third party's words, a GitHub topic name) and a
     negated one ("not open source") are fine.
 
-Lines starting with `#` in either file are comments. The full export (squash,
-build, PR) is still lane PR-EXPORT; this is its first gate.
+Lines starting with `#` in either file are comments.
 """
 
 from __future__ import annotations
