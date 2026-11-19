@@ -116,6 +116,12 @@ impl Push for Completes {
         self.change.to_push()
     }
 
+    /// The wrapped change's own wire form: a completion goes in an
+    /// `OnMultiEvent` batch like every other `OnTarget` ([`TargetChange`]).
+    fn to_wire(&self) -> (&'static str, Vec<PyValue>) {
+        self.change.to_wire()
+    }
+
     fn audience(&self) -> Option<Vec<i64>> {
         self.change.audience()
     }
