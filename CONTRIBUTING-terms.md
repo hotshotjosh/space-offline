@@ -57,7 +57,16 @@ For each contribution, you confirm that:
    the project licence; in particular, nothing is copied or closely paraphrased
    from EvEJS or other emulators, which may be read for facts only;
 3. it contains no data, code, art or text extracted from the EVE Online client
-   or other CCP material, and no secrets, keys or personal data;
+   or other CCP material, except code that its copyright holder (CCP or anyone
+   else) has published under a permissive licence that allows distribution under
+   the project licence (such as the MIT or zlib licence), or a translation of such
+   code, when every file that carries it names its source and licence in an SPDX
+   header at its top and `NOTICE` lists the code, its licence and whether it was
+   changed (the pull request proposes the entry; the maintainer adds it). This
+   exception never covers material taken from the client, nor code that item 2 of
+   this section excludes. Code admitted under this exception stays under its own
+   licence; what section 1 grants applies to it only as far as that licence
+   allows. The contribution contains no secrets, keys or personal data;
 4. if you made it as part of a job, or your employer or anyone else may have
    rights in it, they have agreed to this submission under these terms;
 5. if you used a coding assistant or other tool, you checked the result, you are
