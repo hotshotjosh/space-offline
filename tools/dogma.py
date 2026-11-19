@@ -938,9 +938,9 @@ def client_constants(path=None):
 
 #: The row counts `validate` holds a build to, ``{build: {name: count}}``.
 #: [V] by running `validate` on each install in the analysis container
-#: (3670638 on `tq-offline`, 3707965 on `tq-3707965`); the closure checks pass
-#: on both. A build not listed has its counts noted, not failed, until someone
-#: reads them: add its row after the first run.
+#: (3670638 on `tq-offline`, 3707965 on `tq-3707965`, 3720952 on `tq-3720952`);
+#: the closure checks pass on all three. A build not listed has its counts
+#: noted, not failed, until someone reads them: add its row after the first run.
 EXPECT_COUNTS = {
     3670638: {"attributes": 2872, "effects": 3431, "modifiers": 5182,
               "typedogma rows": 27163, "typedogma attrs": 648950,
@@ -948,6 +948,9 @@ EXPECT_COUNTS = {
     3707965: {"attributes": 2929, "effects": 3499, "modifiers": 5306,
               "typedogma rows": 27622, "typedogma attrs": 658459,
               "typedogma effects": 55911, "requiredskills": 9709},
+    3720952: {"attributes": 2929, "effects": 3499, "modifiers": 5306,
+              "typedogma rows": 27624, "typedogma attrs": 658480,
+              "typedogma effects": 55916, "requiredskills": 9710},
 }
 
 
