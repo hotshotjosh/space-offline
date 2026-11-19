@@ -214,6 +214,11 @@ pub struct Sites {
     /// Placed objects destroyed while their instance lives (HK2: a can
     /// failed twice). Out of space, but still counted by [`hackables_left`].
     destroyed: BTreeSet<i64>,
+    /// Placed objects held back from every park ([`cloak`]): live, but no
+    /// pilot has their ball until [`uncloak`].
+    cloaked: BTreeSet<i64>,
+    /// Placed objects and rocks no lock may take ([`set_targetable`]).
+    untargetable: BTreeSet<i64>,
 }
 
 impl Sites {
@@ -715,6 +720,8 @@ pub fn vacate(w: &mut Registry, site_id: i64) -> bool {
     };
     for p in &inst.objects {
         s.by_item.remove(&p.item_id);
+        s.cloaked.remove(&p.item_id);
+        s.untargetable.remove(&p.item_id);
     }
     s.tags.retain(|_, t| t.site_id != site_id);
     let destroyed: BTreeSet<i64> = inst
@@ -773,7 +780,9 @@ pub fn balls_in(w: &Registry, system: i64) -> Vec<(Ball, Slim)> {
         .values()
         .filter(|i| i.system == system)
         .flat_map(|i| i.objects.iter())
-        .filter(|p| p.rock.is_none() && !s.destroyed.contains(&p.item_id))
+        .filter(|p| {
+            p.rock.is_none() && !s.destroyed.contains(&p.item_id) && !s.cloaked.contains(&p.item_id)
+        })
         .map(|p| (ball(p), slim(p)))
         .collect()
 }
@@ -911,6 +920,79 @@ pub fn destroy_object(w: &mut Registry, item_id: i64) -> bool {
         return false;
     }
     s.destroyed.insert(item_id)
+}
+
+/// **Hold a placed object back from every park** (the node graphs' `Cloak`
+/// atom): pilots who have its ball lose it, and the bootstrap and grid leave
+/// it out until [`uncloak`]. A live server did not send the AIR tutorial's
+/// cloaked wreck at all until it uncloaked **[V-TQ]**. `false` for an item
+/// that is not a live placed object, or a rock.
+pub fn cloak(w: &mut Registry, item_id: i64) -> bool {
+    let Some((p, system)) = object(w, item_id) else {
+        return false;
+    };
+    if p.rock.is_some() || !w.ext_mut::<Sites>().cloaked.insert(item_id) {
+        return false;
+    }
+    let to = crate::dungeon::audience(w, system);
+    if !to.is_empty() {
+        let stamp = w.next_destiny_stamp();
+        if let Some(rm) = crate::destiny::BallsRemoved::new(to, stamp, vec![item_id]) {
+            w.schedule(std::time::Duration::ZERO, rm);
+        }
+    }
+    true
+}
+
+/// The client's decloak flash (`OnSpecialFX`'s guid).
+pub const FX_UNCLOAK: &str = "effects.Uncloak";
+
+/// **Put a cloaked object back** (`Uncloak`): its ball to every pilot in the
+/// system, then `OnSpecialFX(ball, None, None, None, None,
+/// 'effects.Uncloak', 0, 1, 0)` -- the order and the arguments a live server
+/// sent for the tutorial's wreck **[V-TQ]** (`AddBalls2`, then the effect
+/// 0.1 s later). `false` for an object that was not cloaked.
+pub fn uncloak(w: &mut Registry, item_id: i64) -> bool {
+    if !w.ext_mut::<Sites>().cloaked.remove(&item_id) {
+        return false;
+    }
+    let Some((p, system)) = object(w, item_id) else {
+        return false;
+    };
+    announce(w, system, &[p]);
+    let to = crate::dungeon::audience(w, system);
+    let stamp = w.next_destiny_stamp();
+    if let Some(fx) = crate::destiny::SpecialFx::new(to, stamp, item_id, FX_UNCLOAK, true) {
+        w.schedule(std::time::Duration::ZERO, fx);
+    }
+    true
+}
+
+/// **Whether a lock may take it** (the node graphs' `Targetable` and
+/// `Untargetable` atoms): a placed object or rock of a live site. Recorded
+/// here and read by `targeting::lock`, which refuses an untargetable or a
+/// cloaked one as it refuses a target that is not there. **[A]** the client
+/// is not told: `attributeUntargetable` (1158) is named in `dogma/const` and
+/// read nowhere in the client **[V]**; falsified by a live lock on an
+/// untargetable rock that fails with a message.
+pub fn set_targetable(w: &mut Registry, item_id: i64, targetable: bool) -> bool {
+    let s = w.ext_mut::<Sites>();
+    if !s.by_item.contains_key(&item_id) {
+        return false;
+    }
+    if targetable {
+        s.untargetable.remove(&item_id);
+    } else {
+        s.untargetable.insert(item_id);
+    }
+    true
+}
+
+/// Whether a lock on `item_id` is refused: it is a site object held back or
+/// marked untargetable.
+pub fn lock_refused(w: &Registry, item_id: i64) -> bool {
+    let s = w.ext::<Sites>();
+    s.cloaked.contains(&item_id) || s.untargetable.contains(&item_id)
 }
 
 /// A site's hackable cans: `(placed, left)`, where a can is done once it is
@@ -1648,6 +1730,54 @@ mod tests {
     /// the authored value (a quantity) and whose radius is the law of that
     /// quantity; a non-rock keeps its own or the default radius; the
     /// bootstrap's site balls (`balls_in`) leave the rocks to the field.
+    /// A cloaked object leaves the pilots' parks and the bootstrap's list and
+    /// cannot be locked; uncloaked, it comes back with `AddBalls2` and the
+    /// `effects.Uncloak` flash. An untargetable rock cannot be locked until it
+    /// is made targetable again.
+    #[test]
+    fn a_cloaked_object_is_held_back_and_an_untargetable_one_refuses_a_lock() {
+        let mut reg = world();
+        assert!(instantiate(&mut reg, &site(ORE_DUNGEON)));
+        drain(&mut reg);
+        let inst = reg.ext::<Sites>().get(SITE_ID).cloned().unwrap();
+        let can = inst
+            .objects
+            .iter()
+            .find(|p| p.dun_object_id == 7004)
+            .unwrap()
+            .item_id;
+        let rock = inst
+            .objects
+            .iter()
+            .find(|p| p.dun_object_id == 7002)
+            .unwrap()
+            .item_id;
+
+        assert!(cloak(&mut reg, can));
+        assert!(!cloak(&mut reg, can), "once");
+        let pushes = drain(&mut reg);
+        assert!(
+            pushes
+                .iter()
+                .any(|(to, n, _)| *n == "DoDestinyUpdate" && to == &vec![ALICE])
+        );
+        assert!(balls_in(&reg, SYSTEM).iter().all(|(b, _)| b.ball_id != can));
+        assert!(crate::targeting::lock(&mut reg, ALICE, can).is_err());
+
+        assert!(uncloak(&mut reg, can));
+        let pushes = drain(&mut reg);
+        assert_eq!(pushes.len(), 2, "the ball, then the flash: {pushes:?}");
+        let flash = format!("{:?}", pushes[1].2);
+        let guid = format!("{:?}", PyValue::Bytes(FX_UNCLOAK.as_bytes().to_vec()));
+        assert!(flash.contains(&guid), "{flash}");
+        assert!(balls_in(&reg, SYSTEM).iter().any(|(b, _)| b.ball_id == can));
+
+        assert!(set_targetable(&mut reg, rock, false));
+        assert!(crate::targeting::lock(&mut reg, ALICE, rock).is_err());
+        assert!(set_targetable(&mut reg, rock, true));
+        assert!(crate::targeting::lock(&mut reg, ALICE, rock).is_ok());
+    }
+
     #[test]
     fn ore_rocks_go_through_the_field_and_round_trip_through_the_law() {
         let mut reg = world();
