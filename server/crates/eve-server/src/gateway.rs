@@ -54,15 +54,32 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::Duration;
 
 /// The port the client dials (`EVE_PUBLIC_GATEWAY_ADDRESS=<host>:8443`).
 pub const PORT: u16 = 8443;
-/// Connections at once. The client opens one.
-const CAP: usize = 8;
+/// Connections at once, from every peer together. The client opens one.
+/// **[A]** 64: well above a friend group, far below what the host's threads
+/// bear (two per connection). Falsified by: a real group whose clients see the
+/// gateway refuse them with fewer than this many players online.
+const CAP: usize = 64;
+/// Connections at once from one address, loopback aside (the SSH tunnel and
+/// local play put every client there). **[A]** 4: one client process opens
+/// one, so a household of four clients behind one NAT fits. Falsified by: one
+/// client process holding more than one, or more clients behind one address.
+const MAX_PER_PEER: usize = 4;
+/// How long a connection may stay silent once it has had a served request.
 const IDLE: Duration = Duration::from_secs(3600);
+/// How long a connection with no served request yet may go without sending
+/// anything, a PING answer included. The client opens the gateway before
+/// login and holds only a `Consume` stream until a pilot is selected, so the
+/// server PINGs it every third of this (`read_header`) and a live client
+/// answers. **[I]** the client's h2 stack answers a PING (RFC 9113 6.7
+/// requires it). Falsified by: a client at login or character select whose
+/// gateway connection is closed after this long (it dials again).
+const PRE_AUTH_IDLE: Duration = Duration::from_secs(15);
 const MAX_FRAME: usize = 1 << 20;
 /// How long one write to a client socket may block before the connection is
 /// given up as dead (#229). A peer that opens big h2 windows and then stops
@@ -953,7 +970,18 @@ impl Hpack {
     }
 
     /// Decode one header block; the `:path` value if it carried one.
+    #[cfg(test)]
     fn decode(&mut self, b: &[u8]) -> Option<Option<Vec<u8>>> {
+        self.decode_names(b, None)
+    }
+
+    /// [`Self::decode`], also pushing every header **name** (never a value)
+    /// onto `names` when given.
+    fn decode_names(
+        &mut self,
+        b: &[u8],
+        mut names: Option<&mut Vec<Vec<u8>>>,
+    ) -> Option<Option<Vec<u8>>> {
         let mut p = 0;
         let mut path = None;
         while p < b.len() {
@@ -984,6 +1012,11 @@ impl Hpack {
                 }
                 (name, value)
             };
+            if let Some(n) = names.as_deref_mut()
+                && !n.contains(&name)
+            {
+                n.push(name.clone());
+            }
             if name == b":path" {
                 path = Some(value);
             }
@@ -1123,7 +1156,6 @@ struct Conn {
     /// Every client process served on this connection, counted open in
     /// `gateway_auth` until the connection ends.
     processes: Vec<Vec<u8>>,
-    /// What the client has left us to send on the connection, h2 flow control.
     /// What the client has left us to send on the connection, h2 flow control.
     window: i64,
     /// `SETTINGS_INITIAL_WINDOW_SIZE` from the client (default 65535).
@@ -1694,6 +1726,33 @@ fn serve_queued(
     limits: (usize, Duration),
     queue_cap: usize,
 ) -> io::Result<()> {
+    serve_idle(
+        s,
+        instance,
+        seen,
+        ground,
+        hub,
+        caps,
+        limits,
+        queue_cap,
+        PRE_AUTH_IDLE,
+    )
+}
+
+/// [`serve_queued`] with the silence allowed before the first served request
+/// given.
+#[allow(clippy::too_many_arguments)]
+fn serve_idle(
+    s: TcpStream,
+    instance: [u8; 16],
+    seen: &mut Vec<String>,
+    ground: &Ground,
+    hub: &NoticeHub,
+    caps: (usize, usize),
+    limits: (usize, Duration),
+    queue_cap: usize,
+    pre_auth: Duration,
+) -> io::Result<()> {
     let (max_streams, write_timeout) = limits;
     s.set_nodelay(true)?;
     let addr = s.peer_addr().ok().map(|a| a.ip());
@@ -1733,7 +1792,16 @@ fn serve_queued(
         ground,
         conn: &conn,
     };
-    let r = run(s, &conn, instance, seen, ground, hub, max_streams, addr);
+    let r = run(
+        s,
+        &conn,
+        instance,
+        seen,
+        ground,
+        hub,
+        (max_streams, pre_auth),
+        addr,
+    );
     drop(counted);
     conn.lock().unwrap_or_else(|e| e.into_inner()).dead = true;
     hub.forget(&conn);
@@ -1766,8 +1834,57 @@ impl Drop for Counted<'_> {
     }
 }
 
-/// Serve the frames of one connection; `addr` is the peer's address, for
-/// `gateway_auth::check`.
+/// How many HTTP/2 PINGs a connection with no served request yet may leave
+/// unanswered, one every third of the silence allowed, before it is closed.
+const PRE_AUTH_PINGS: u32 = 2;
+
+/// Read one frame header (9 bytes). Before the first served request the
+/// socket's read timeout is a third of the silence allowed: each time it
+/// passes with nothing read a PING goes out, and a peer that has answered
+/// none of [`PRE_AUTH_PINGS`] when the next one passes is closed. A live h2
+/// peer answers a PING (RFC 9113 6.7), and the answer is a read, so a client
+/// that only holds a `Consume` stream open stays. `Ok(false)`: end the
+/// connection.
+fn read_header(
+    s: &mut TcpStream,
+    conn: &Shared,
+    h: &mut [u8; 9],
+    authed: bool,
+    unanswered: &mut u32,
+) -> io::Result<bool> {
+    if authed {
+        return read_exact_or_eof(s, h);
+    }
+    loop {
+        match s.read(&mut h[..1]) {
+            Ok(0) => return Ok(false),
+            Ok(_) => break,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                if *unanswered >= PRE_AUTH_PINGS {
+                    return Ok(false);
+                }
+                write_out(conn, &frame(PING, 0, 0, &[0; 8]))?;
+                *unanswered += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    *unanswered = 0;
+    if !read_exact_or_eof(s, &mut h[1..])? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// Serve the frames of one connection. `limits` is the concurrent-stream
+/// limit and the silence allowed before the first served request; `addr` is
+/// the peer's address, for `gateway_auth::check`.
 #[allow(clippy::too_many_arguments)]
 fn run(
     mut s: TcpStream,
@@ -1776,10 +1893,19 @@ fn run(
     seen: &mut Vec<String>,
     ground: &Ground,
     hub: &NoticeHub,
-    max_streams: usize,
+    limits: (usize, Duration),
     addr: Option<IpAddr>,
 ) -> io::Result<()> {
-    s.set_read_timeout(Some(IDLE))?;
+    let (max_streams, pre_auth) = limits;
+    // Short until a request is served, then the long idle limit: a peer that
+    // neither asks for anything nor answers a PING gives its slot back soon
+    // (`read_header`). The preface must come within the same third.
+    s.set_read_timeout(Some(pre_auth / 3))?;
+    let mut unanswered = 0u32;
+    let mut authed = false;
+    // The header names of this connection's first request, while the
+    // once-per-process log line is still to come.
+    let mut names: Option<Vec<Vec<u8>>> = None;
     let mut pre = [0u8; 24];
     if !read_exact_or_eof(&mut s, &mut pre)? || pre != PREFACE {
         return Ok(());
@@ -1798,7 +1924,7 @@ fn run(
     let mut pending: Option<(u32, u8, Vec<u8>)> = None;
     loop {
         let mut h = [0u8; 9];
-        if !read_exact_or_eof(&mut s, &mut h)? {
+        if !read_header(&mut s, conn, &mut h, authed, &mut unanswered)? {
             return Ok(());
         }
         let len = usize::from(h[0]) << 16 | usize::from(h[1]) << 8 | usize::from(h[2]);
@@ -1941,9 +2067,14 @@ fn run(
                 if fl & END_HEADERS != 0
                     && let Some((id, first_flags, blk)) = pending.take()
                 {
-                    let Some(path) = hpack.decode(&blk) else {
+                    let want = names.is_none() && !HEADER_NAMES.load(Ordering::Relaxed);
+                    let mut got = Vec::new();
+                    let Some(path) = hpack.decode_names(&blk, want.then_some(&mut got)) else {
                         return Ok(()); // a compression error ends the connection
                     };
+                    if want {
+                        names = Some(got);
+                    }
                     let known = streams.contains_key(&id);
                     if !known && id <= top {
                         // A closed stream (reset, or already answered): ignore.
@@ -2036,6 +2167,11 @@ fn run(
                         match st.kind {
                             Kind::Send if !compressed => {
                                 let served = crate::gateway_auth::check(ground, &msg, addr);
+                                if served.is_some() && !authed {
+                                    authed = true;
+                                    s.set_read_timeout(Some(IDLE))?;
+                                    log_header_names(names.as_deref());
+                                }
                                 if served.is_some() {
                                     let process = request_instance(&msg);
                                     let new = {
@@ -2130,9 +2266,118 @@ pub fn spawn(addr: SocketAddr, ground: Ground) -> io::Result<SocketAddr> {
 
 /// [`spawn`] with the caller's [`NoticeHub`], so it can [`publish`].
 pub fn spawn_with(addr: SocketAddr, ground: Ground, hub: NoticeHub) -> io::Result<SocketAddr> {
+    spawn_admitting(
+        addr,
+        ground,
+        hub,
+        Admit {
+            total: CAP,
+            per_peer: MAX_PER_PEER,
+            exempt_loopback: true,
+        },
+    )
+}
+
+/// Whether the HPACK header names of a served request were logged yet.
+static HEADER_NAMES: AtomicBool = AtomicBool::new(false);
+
+/// Log the header **names** (never their values) of the first request a
+/// connection was served for, once per process: what the client puts on a
+/// gateway request beside `:path`, to learn whether it carries a credential.
+/// A name outside the HTTP token characters is shown as `?`.
+fn log_header_names(names: Option<&[Vec<u8>]>) {
+    let Some(names) = names else {
+        return;
+    };
+    if HEADER_NAMES.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let shown: Vec<String> = names
+        .iter()
+        .take(32)
+        .map(|n| {
+            let ok = n.len() <= 64
+                && n.iter()
+                    .all(|&b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b));
+            if ok {
+                String::from_utf8_lossy(n).into_owned()
+            } else {
+                "?".to_owned()
+            }
+        })
+        .collect();
+    crate::outln!("[gateway] request header names: {}", shown.join(", "));
+}
+
+/// Who may hold a gateway connection: at most `total` at once, and at most
+/// `per_peer` from one address (loopback is exempt when `exempt_loopback`).
+#[derive(Clone, Copy, Debug)]
+struct Admit {
+    total: usize,
+    per_peer: usize,
+    exempt_loopback: bool,
+}
+
+/// The connections held now, in all and per address.
+#[derive(Default)]
+struct Held {
+    total: usize,
+    per_peer: HashMap<IpAddr, usize>,
+}
+
+/// One admitted connection's place in [`Held`], given back when dropped.
+struct Ticket {
+    held: Arc<Mutex<Held>>,
+    peer: Option<IpAddr>,
+}
+
+impl Drop for Ticket {
+    fn drop(&mut self) {
+        let mut h = self.held.lock().unwrap_or_else(|e| e.into_inner());
+        h.total = h.total.saturating_sub(1);
+        if let Some(p) = self.peer
+            && let Some(n) = h.per_peer.get_mut(&p)
+        {
+            *n -= 1;
+            if *n == 0 {
+                h.per_peer.remove(&p);
+            }
+        }
+    }
+}
+
+/// Admit a connection from `peer` under `rule`, or `None` when a cap is full.
+fn admit(held: &Arc<Mutex<Held>>, rule: Admit, peer: Option<IpAddr>) -> Option<Ticket> {
+    let peer = peer.map(crate::gateway_auth::peer_class);
+    let counted = peer.filter(|p| !(rule.exempt_loopback && p.is_loopback()));
+    let mut h = held.lock().unwrap_or_else(|e| e.into_inner());
+    if h.total >= rule.total {
+        return None;
+    }
+    if let Some(p) = counted {
+        let n = h.per_peer.entry(p).or_insert(0);
+        if *n >= rule.per_peer {
+            return None;
+        }
+        *n += 1;
+    }
+    h.total += 1;
+    Some(Ticket {
+        held: Arc::clone(held),
+        peer: counted,
+    })
+}
+
+/// [`spawn_with`] under the admission `rule`.
+fn spawn_admitting(
+    addr: SocketAddr,
+    ground: Ground,
+    hub: NoticeHub,
+    rule: Admit,
+) -> io::Result<SocketAddr> {
     let socket = TcpListener::bind(addr)?;
     let bound = socket.local_addr()?;
-    let live = Arc::new(AtomicUsize::new(0));
+    let held = Arc::new(Mutex::new(Held::default()));
     let instance = {
         // Any 16 bytes will do; vary them by start time.
         let t = crate::game_clock::clock::wall_system()
@@ -2148,19 +2393,20 @@ pub fn spawn_with(addr: SocketAddr, ground: Ground, hub: NoticeHub) -> io::Resul
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 };
-                if live.fetch_add(1, Ordering::SeqCst) >= CAP {
-                    live.fetch_sub(1, Ordering::SeqCst);
-                    continue;
-                }
-                let live = Arc::clone(&live);
+                let peer = stream.peer_addr().ok().map(|a| a.ip());
+                let Some(ticket) = admit(&held, rule, peer) else {
+                    continue; // dropped: the stream closes
+                };
                 let ground = ground.clone();
                 let hub = hub.clone();
+                // A thread that fails to start drops the closure, and the
+                // ticket with it, so the slot is never lost.
                 let _ = std::thread::Builder::new()
                     .name("gateway-conn".to_owned())
                     .spawn(move || {
+                        let _ticket = ticket;
                         let mut seen = Vec::new();
                         let _ = serve(stream, instance, &mut seen, &ground, &hub);
-                        live.fetch_sub(1, Ordering::SeqCst);
                     });
             }
         })?;
@@ -3786,7 +4032,7 @@ mod tests {
     fn a_closing_connection_whose_peer_reads_a_trickle_frees_its_slot_within_the_timeout() {
         let hub = NoticeHub::default();
         let timeout = Duration::from_millis(1_000);
-        let live = Arc::new(AtomicUsize::new(0));
+        let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         {
@@ -3857,6 +4103,154 @@ mod tests {
         assert_eq!(Arc::strong_count(&out), 1, "the writer outlived its slot");
     }
 
+    // ---- admission and the idle limit before the first served request ----
+
+    /// A gateway on loopback port 0 serving each connection with `pre_auth`
+    /// as the silence allowed before its first served request.
+    fn quick_idle_gateway(pre_auth: Duration) -> SocketAddr {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for sock in l.incoming().flatten() {
+                std::thread::spawn(move || {
+                    let _ = serve_idle(
+                        sock,
+                        [0; 16],
+                        &mut Vec::new(),
+                        &Ground::local(),
+                        &NoticeHub::default(),
+                        (MAX_HELD_STREAM, MAX_HELD_CONN),
+                        (MAX_STREAMS, WRITE_TIMEOUT),
+                        MAX_QUEUED,
+                        pre_auth,
+                    );
+                });
+            }
+        });
+        addr
+    }
+
+    /// Read until the peer closes; `true` if it did within the read timeout.
+    fn closed_by_peer(s: &mut TcpStream) -> bool {
+        let mut b = [0u8; 4096];
+        loop {
+            match s.read(&mut b) {
+                Ok(0) => return true,
+                Ok(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => return true,
+                Err(_) => return false,
+            }
+        }
+    }
+
+    #[test]
+    fn a_silent_connection_is_closed_before_the_idle_limit() {
+        let pre_auth = Duration::from_millis(300);
+        let addr = quick_idle_gateway(pre_auth);
+        // Silent after the preface: closed soon, far inside `IDLE`.
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        let mut out = PREFACE.to_vec();
+        out.extend(frame(SETTINGS, 0, 0, &[]));
+        s.write_all(&out).unwrap();
+        let t = std::time::Instant::now();
+        assert!(closed_by_peer(&mut s), "a silent connection stays open");
+        assert!(t.elapsed() < Duration::from_secs(5));
+        // One served request moves it to the long limit: still served after
+        // twice the short one.
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut out = PREFACE.to_vec();
+        out.extend(frame(SETTINGS, 0, 0, &[]));
+        out.extend(open_stream("/eve_public.gateway.Requests/Send", 1, true));
+        s.write_all(&out).unwrap();
+        let m = request("eve_public.cosmetic.ship.api.GetRequest", b"c1");
+        assert_eq!(send_and_read(&mut s, &m), 404);
+        std::thread::sleep(pre_auth * 2);
+        assert_eq!(send_and_read(&mut s, &m), 404);
+    }
+
+    #[test]
+    fn admission_caps_each_address_and_the_total() {
+        let held = Arc::new(Mutex::new(Held::default()));
+        let rule = Admit {
+            total: 5,
+            per_peer: 2,
+            exempt_loopback: true,
+        };
+        let a: IpAddr = "192.0.2.1".parse().unwrap();
+        let b: IpAddr = "192.0.2.2".parse().unwrap();
+        let lo: IpAddr = "127.0.0.1".parse().unwrap();
+        let t1 = admit(&held, rule, Some(a)).unwrap();
+        let _t2 = admit(&held, rule, Some(a)).unwrap();
+        assert!(admit(&held, rule, Some(a)).is_none(), "past its own cap");
+        let mapped: IpAddr = "::ffff:192.0.2.1".parse().unwrap();
+        assert!(
+            admit(&held, rule, Some(mapped)).is_none(),
+            "the same address"
+        );
+        let _t3 = admit(&held, rule, Some(b)).unwrap();
+        // Loopback is exempt from the per-address cap, not from the total.
+        let _t4 = admit(&held, rule, Some(lo)).unwrap();
+        let _t5 = admit(&held, rule, Some(lo)).unwrap();
+        assert!(admit(&held, rule, Some(lo)).is_none(), "past the total");
+        drop(t1);
+        let _t6 = admit(&held, rule, Some(a)).unwrap();
+        // Without the exemption loopback is one address like any other.
+        let strict = Admit {
+            exempt_loopback: false,
+            ..rule
+        };
+        let held = Arc::new(Mutex::new(Held::default()));
+        let _l1 = admit(&held, strict, Some(lo)).unwrap();
+        let _l2 = admit(&held, strict, Some(lo)).unwrap();
+        assert!(admit(&held, strict, Some(lo)).is_none());
+        assert!(admit(&held, strict, Some(b)).is_some());
+        // An IPv6 host counts by its /64, however many addresses it uses.
+        let held = Arc::new(Mutex::new(Held::default()));
+        let v6 = |s: &str| Some(s.parse::<IpAddr>().unwrap());
+        let _v1 = admit(&held, rule, v6("2001:db8::1")).unwrap();
+        let _v2 = admit(&held, rule, v6("2001:db8::2")).unwrap();
+        assert!(admit(&held, rule, v6("2001:db8::3")).is_none());
+        assert!(admit(&held, rule, v6("2001:db8:0:1::1")).is_some());
+    }
+
+    #[test]
+    fn a_connection_that_answers_pings_stays_open_before_its_first_request() {
+        let pre_auth = Duration::from_millis(300);
+        let addr = quick_idle_gateway(pre_auth);
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut out = PREFACE.to_vec();
+        out.extend(frame(SETTINGS, 0, 0, &[]));
+        out.extend(open_stream("/eve_public.gateway.Notices/Consume", 1, true));
+        s.write_all(&out).unwrap();
+        // Hold only the Consume stream for several times the limit, answering
+        // every PING the gateway sends.
+        let t = std::time::Instant::now();
+        let mut pings = 0;
+        while t.elapsed() < pre_auth * 4 {
+            let (kind, flags, _, body) = read_frame(&mut s);
+            if kind == PING && flags & ACK == 0 {
+                pings += 1;
+                s.write_all(&frame(PING, ACK, 0, &body)).unwrap();
+            }
+        }
+        assert!(pings >= 3, "{pings} pings");
+        // Still open: a request is answered.
+        s.write_all(&open_stream("/eve_public.gateway.Requests/Send", 3, true))
+            .unwrap();
+        let m = request("eve_public.cosmetic.ship.api.GetRequest", b"c1");
+        s.write_all(&frame(DATA, 0, 3, &grpc_message(&m))).unwrap();
+        loop {
+            let (kind, _, sid, body) = read_frame(&mut s);
+            if kind == DATA && sid == 3 {
+                assert_eq!(decoded(&body[5..]).0, 404);
+                break;
+            }
+        }
+    }
+
     #[test]
     fn a_pin_passed_to_another_process_unbinds_the_old_connection() {
         let (g, _w) = two_live_pilots();
@@ -3880,5 +4274,82 @@ mod tests {
         );
         hub.unbind(1_001, b"process-one-0001");
         assert_eq!(publish(&hub, ty, b"a", Target::Character(1_001)), 0);
+    }
+
+    /// Connect and send the preface; the stream if the gateway answered with
+    /// its SETTINGS, `None` if it closed the connection instead.
+    fn greeted(addr: SocketAddr) -> Option<TcpStream> {
+        let mut s = TcpStream::connect(addr).ok()?;
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut out = PREFACE.to_vec();
+        out.extend(frame(SETTINGS, 0, 0, &[]));
+        s.write_all(&out).ok()?;
+        let mut h = [0u8; 9];
+        s.read_exact(&mut h).ok()?;
+        (h[3] == SETTINGS).then_some(s)
+    }
+
+    #[test]
+    fn a_peer_past_its_connection_cap_is_dropped_and_another_peer_is_served() {
+        let strict = Admit {
+            total: 8,
+            per_peer: 2,
+            exempt_loopback: false,
+        };
+        let addr = spawn_admitting(
+            "127.0.0.1:0".parse().unwrap(),
+            Ground::local(),
+            NoticeHub::default(),
+            strict,
+        )
+        .unwrap();
+        let first = greeted(addr).expect("first connection served");
+        let _second = greeted(addr).expect("second connection served");
+        assert!(
+            greeted(addr).is_none(),
+            "a third from one address is dropped"
+        );
+        // The slot comes back once a connection ends.
+        drop(first);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut again = None;
+        while again.is_none() && std::time::Instant::now() < deadline {
+            again = greeted(addr);
+            if again.is_none() {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+        assert!(again.is_some(), "the freed slot is served again");
+        // With loopback exempt (the default rule), the same address is served
+        // past the per-address cap.
+        let open = Admit {
+            exempt_loopback: true,
+            ..strict
+        };
+        let addr = spawn_admitting(
+            "127.0.0.1:0".parse().unwrap(),
+            Ground::local(),
+            NoticeHub::default(),
+            open,
+        )
+        .unwrap();
+        let held: Vec<_> = (0..3).map(|_| greeted(addr)).collect();
+        assert!(held.iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn header_names_are_collected_without_their_values() {
+        let mut h = Hpack::new();
+        // A literal `:path` (indexed name 4) and a literal new name.
+        let mut b = vec![0x44, 3];
+        b.extend_from_slice(b"/ab");
+        b.extend_from_slice(&[0x40, 6]);
+        b.extend_from_slice(b"x-name");
+        b.push(5);
+        b.extend_from_slice(b"value");
+        let mut names = Vec::new();
+        let path = h.decode_names(&b, Some(&mut names)).unwrap();
+        assert_eq!(path.as_deref(), Some(&b"/ab"[..]));
+        assert_eq!(names, vec![b":path".to_vec(), b"x-name".to_vec()]);
     }
 }

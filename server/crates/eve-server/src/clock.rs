@@ -451,8 +451,8 @@ pub const SANCTIONED: &[(&str, &str, usize, &str)] = &[
     (
         "gateway.rs",
         "set_read_timeout(",
-        1,
-        "kept real: the idle read timeout of a gateway connection",
+        2,
+        "kept real: the idle read timeouts of a gateway connection (before and after its first served request)",
     ),
     (
         "gateway.rs",

@@ -31,6 +31,12 @@ EOCI_FCI_TIMEOUT_S = 300
 
 # SERVER-EXPECT: absent  UNANSWERED (userSvc|storeManager|vaultManager|invbroker)
 # SERVER-EXPECT: absent  panicked at
+# The vault is read over the gateway with no pilot named: it is served only to
+# the client process pinned to the account's pilot, from the address of that
+# pilot's game connection (gateway_auth.rs).
+# SERVER-EXPECT: absent  \[gateway\] peer mismatch
+# SERVER-EXPECT: absent  \[gateway\] request class eve_public\.plex\.\S+ -> 403
+# SERVER-EXPECT: present \[gateway\] request header names: \S
 
 # PRELUDE -- byte-identical in every scenario in this directory, on purpose.
 #
