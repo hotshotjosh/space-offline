@@ -25,7 +25,8 @@ What counts as a leak, in an exported file:
 `--out` also writes `tools/doc-private-prefixes.txt` (one `sha256:<hex>` per `docs/` line of the
 private list, so the exported doc lint knows which docs are absent on purpose without the
 file naming them) and drops the
-private rows from the exported `docs/README.md`. `--check` lists every surviving
+private rows, and any section they leave with only its table header, from the exported
+`docs/README.md`. `--check` lists every surviving
 prose mention (`docs/...` in a `.md` file) of a private doc as `mention:` lines; they
 do not change the exit code, because a mention is a dead link to fix, not a leak.
 
@@ -301,9 +302,14 @@ def is_private_doc(path: str, prefixes: list[str]) -> bool:
 
 
 def filter_index(text: str, prefixes: list[str]) -> str:
-    """docs/README.md without the table rows whose first cell is a private doc."""
+    """docs/README.md without the table rows whose first cell is a private doc, and
+    without a `## ` section that lost rows and has nothing left but its table header."""
     keep = []
+    dropped = set()  # indices in `keep` of the headings whose section lost a row
+    heading = None
     for line in text.split("\n"):
+        if line.startswith("## "):
+            heading = len(keep)
         if line.startswith("|"):
             cells = re.split(r"(?<!\\)\|", line.strip())
             first = cells[1] if len(cells) > 2 else ""
@@ -312,9 +318,18 @@ def filter_index(text: str, prefixes: list[str]) -> str:
                 path = m.group(1)
                 path = path if path.startswith("docs/") else "docs/" + path
                 if is_private_doc(path, prefixes):
+                    if heading is not None:
+                        dropped.add(heading)
                     continue
         keep.append(line)
-    return "\n".join(keep)
+    starts = [i for i, l in enumerate(keep) if l.startswith("## ")]
+    out = keep[:starts[0]] if starts else keep
+    for i, j in zip(starts, starts[1:] + [len(keep)]):
+        body = [l for l in keep[i + 1:j] if l.strip()]
+        if i in dropped and len(body) <= 2 and all(l.startswith("|") for l in body):
+            continue
+        out += keep[i:j]
+    return "\n".join(out)
 
 
 DOC_MENTION = re.compile(r"docs/[A-Za-z0-9_./-]*[A-Za-z0-9_/]")

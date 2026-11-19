@@ -277,6 +277,19 @@ class Docs(unittest.TestCase):
         self.assertIn("| `docs/guides/b.md` | other mentions docs/hidden.md |", out)
         self.assertEqual([l for l in out if "hidden.md`" in l or "secret" in l], [])
 
+    def test_filter_index_drops_a_section_left_with_only_its_header(self):
+        text = ("# Index\n\nintro\n\n## Kept\n\n| doc | role |\n|---|---|\n| `docs/a.md` | GUIDE |\n\n"
+                "## Emptied\n\n| doc | role |\n|---|---|\n| `docs/secret/x.md` | PLAN |\n\n"
+                "## Half\n\n| doc | role |\n|---|---|\n| `docs/hidden.md` | PLAN |\n| `docs/b.md` | RE |\n\n"
+                "## Empty on purpose\n\n| doc | role |\n|---|---|\n")
+        out = pe.filter_index(text, self.PRIV)
+        self.assertNotIn("## Emptied", out)
+        self.assertIn("## Kept", out)
+        self.assertIn("## Half", out)
+        self.assertIn("| `docs/b.md` | RE |", out)
+        self.assertIn("## Empty on purpose", out)   # lost no row: kept as written
+        self.assertTrue(out.startswith("# Index\n\nintro\n"))
+
     def test_mentions_lists_a_surviving_prose_mention(self):
         root = tempfile.mkdtemp(prefix="test_public_export-")
         try:
