@@ -38,6 +38,7 @@ usage: eve-server [options]
                        ADDR[,ceiling=gm|player][,cap=N][,account=UID]
                            [,chat=ADDR][,advertise=IP][,signup=on|off]
                            [,capture=on|off][,botnames=on|off]
+                           [,gm-public=on|off]
                      cap: live connections allowed at once; past it a new one
                        is closed at once (default 128 on loopback or the
                        jail host, 16 elsewhere).
@@ -45,6 +46,12 @@ usage: eve-server [options]
                        chat on there; --chat puts it beside every one);
                        advertise: the address its clients are told to dial
                        for chat.
+                     In an accounts mode a listener off loopback with the
+                     default ceiling=gm is refused at startup (a GM's
+                     password crosses plaintext machoNet): give it
+                     ceiling=player, reach it through tools/tunnel.sh, or
+                     accept the risk with gm-public=on. Any listener off
+                     loopback prints a plaintext warning once at startup.
                      Without --accounts, refused at startup: any address
                      that is not loopback or the jail host 10.137.0.1,
                      ceiling=player, and an account= other than --user-id.

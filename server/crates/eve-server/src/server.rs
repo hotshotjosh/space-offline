@@ -98,6 +98,10 @@ pub struct Listener {
     /// pool (`crate::bot_names`) instead of the account's own name. Only the
     /// one-shot loopback listener that signs the bots up turns it on.
     pub bot_names: bool,
+    /// `gm-public=on`: the one explicit opt-in that lets a `ceiling=gm`
+    /// listener sit off loopback in an accounts mode, which sends GM
+    /// passwords in plaintext (OS-2). Off by default.
+    pub gm_public: bool,
 }
 
 impl Listener {
@@ -113,6 +117,7 @@ impl Listener {
             signup: false,
             capture: true,
             bot_names: false,
+            gm_public: false,
         }
     }
 
@@ -156,6 +161,13 @@ impl Listener {
                 }
                 "botnames" => {
                     l.bot_names = match value {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err(bad(&"expected on or off")),
+                    }
+                }
+                "gm-public" => {
+                    l.gm_public = match value {
                         "on" => true,
                         "off" => false,
                         _ => return Err(bad(&"expected on or off")),
@@ -213,6 +225,16 @@ pub fn fail_closed(l: &Listener, hs: &handshake::Config) -> Result<(), String> {
     // none at startup, so the two are not combined.
     if in_world && l.account.is_some() {
         return Err("account= is refused with --world-accounts".to_owned());
+    }
+    // OS-2: machoNet is plaintext (Placebo) and a login carries the password
+    // in clear, so a listener a stranger can reach must never hand out GM.
+    if !is_local(l.addr.ip()) && l.ceiling == Ceiling::Gm && hs.accounts.is_some() && !l.gm_public {
+        return Err(
+            "a GM-ceiling listener off loopback sends GM passwords in plaintext; \
+             add ceiling=player, reach it through tools/tunnel.sh, or name it with \
+             gm-public=on if you accept that"
+                .to_owned(),
+        );
     }
     if let Some(accounts) = &hs.accounts {
         return match l.account {
@@ -576,6 +598,38 @@ impl Server {
             fail_closed(l, &config.handshake).map_err(|e| {
                 io::Error::new(io::ErrorKind::PermissionDenied, format!("{}: {e}", l.addr))
             })?;
+        }
+        // Plaintext warning, naming every non-loopback address: the game
+        // listener, its chat (explicit, or beside it when `--chat`), and the
+        // gateway (OS-2).
+        for l in &config.listeners {
+            let mut open: Vec<String> = Vec::new();
+            if !is_local(l.addr.ip()) {
+                open.push(format!("game {}", l.addr));
+                if config.chat.is_some() && l.chat.is_none() {
+                    open.push(format!("chat beside {}", l.addr.ip()));
+                }
+            }
+            if let Some(chat) = l.chat
+                && !is_local(chat.ip())
+            {
+                open.push(format!("chat {chat}"));
+            }
+            if !open.is_empty() {
+                println!(
+                    "[bind] not loopback: {}: logins on it are plaintext (Placebo); \
+                     expose it only through tools/tunnel.sh",
+                    open.join(", ")
+                );
+            }
+        }
+        if let (Some(_), Some(ip)) = (config.gateway, config.gateway_addr)
+            && !is_local(ip)
+        {
+            println!(
+                "[bind] not loopback: gateway {ip}: plaintext, and a pilot id is its only \
+                 check; expose it only through tools/tunnel.sh"
+            );
         }
         if let Some(dir) = &config.capture_dir {
             std::fs::create_dir_all(dir)?;
@@ -2060,7 +2114,22 @@ mod tests {
     fn accounts_relax_fail_closed_and_check_names_at_bind() {
         let hs = accounts_config("gm", Ceiling::Gm).handshake;
         let public: SocketAddr = "0.0.0.0:0".parse().unwrap();
-        assert!(fail_closed(&Listener::new(public), &hs).is_ok());
+        // OS-2: a public GM-ceiling listener is refused unless named.
+        assert!(fail_closed(&Listener::new(public), &hs).is_err());
+        let named_gm = Listener {
+            gm_public: true,
+            ..Listener::new(public)
+        };
+        assert!(fail_closed(&named_gm, &hs).is_ok());
+        let player_public = Listener {
+            ceiling: Ceiling::Player,
+            ..Listener::new(public)
+        };
+        assert!(fail_closed(&player_public, &hs).is_ok());
+        assert!(
+            fail_closed(&Listener::new(peer(0)), &hs).is_ok(),
+            "loopback keeps its GM ceiling"
+        );
         let remote = Listener {
             ceiling: Ceiling::Player,
             ..Listener::new(peer(0))
