@@ -2836,7 +2836,7 @@ flowchart LR
 second one is the useful one.
 
 `settingsSvc` reaches it off `OnCharacterSessionChanged`, and the path is
-`[V]` (`lanes/ci-trigger.md`):
+`[V]` (the unpublished ci-trigger lane note):
 
 1. `sessions.py:659` scatters `OnCharacterSessionChanged` with the old and new session.
 2. `serviceManager.py:881` runs the handler on a worker uthread
@@ -3264,5 +3264,5 @@ build's `code.ccp`, `resfileindex.txt` and `manifest.dat`. Having
 | [`docs/reference/bound-objects.md`](bound-objects.md) | the bind protocol in full, and the per-service method inventory |
 | [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) | the **instruments**: `evidence.sh`, `evecap --calls/--alerts/--triage`, `client-log.sh`, and how to tell our protocol's tracebacks from the gateway's |
 | [`docs/reference/threads-and-locks.md`](threads-and-locks.md) | **our** side of §6 — one world, one lock, two clocks, and the lock order |
-| the unpublished plan-client-ci note, `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
+| the unpublished plan-client-ci note, the unpublished ci-trigger lane note, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
 
