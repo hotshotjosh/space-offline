@@ -140,6 +140,7 @@ pub mod fw_capture;
 pub mod fw_lp;
 pub mod fw_stats;
 pub mod gateway;
+pub mod gateway_auth;
 pub mod gateway_ext;
 pub mod gateway_out;
 pub mod gateway_plans;
