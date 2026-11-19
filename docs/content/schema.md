@@ -2298,6 +2298,41 @@ Invented example rows:
 
 ---
 
+### `achievements/agent-missions.tsv`
+
+- **Writer:** #205 (`tools/content_achievements.py`, the `achievements` section). **Not from the client install:** it reads the achievement definitions the client downloaded from CCP's CDN (`cache/Storage/achievements/data.bin`, a flatbuffer with identifier `ACHV`, from a client that has logged in to Tranquility; `EVE_ACHIEVEMENTS_BIN` names the file), decoded by the slots of the client's generated accessors [V decompiled `achievement_system/client/model/flatbuffer/generated.pyj`]. The manifest lists it as source `cdn:achievements@<version>`.
+- **Readers:** #205 (`achievements::TABLE`): the Career Program achievement state the gateway serves and the AIR NPE's scene 2.5.01 waits on.
+- **Key:** `(achievement, milestone, reward)`. A milestone with no reward has one row whose `kind` is `NONE` and whose `reward` is empty.
+- **Stable client ids and delta keys (ruling 4):** `achievement` and `milestone` are delta keys of kind `ach`.
+
+```
+#achievement	name	category	divisions	levels	milestone	milestone_name	target	points	reward	kind	amount	type_id
+```
+
+| column | type | source and meaning |
+|---|---|---|
+| `achievement` | uuid | `Achievement.Id` [V] |
+| `name` | text | `Achievement.InternalName` [V] |
+| `category` | uuid | the `Category.Id` that lists it, under the Career Program root [V] |
+| `divisions` | `i64` list | the `agent_division` parameter's `division` values [V] |
+| `levels` | `i64` list | the `agent_level` parameter's `level` values; empty is any level [V] |
+| `milestone` | uuid | `AchievementMilestone.Id` [V] |
+| `milestone_name` | text | `AchievementMilestone.InternalName` [V] |
+| `target` | `u64` | `AchievementMilestone.Target`: distinct missions to reach it [V] |
+| `points` | `u32` | `AchievementMilestone.CategoryPoints` [V] |
+| `reward` | uuid | `Reward.Id` [V] |
+| `kind` | text | `ISK`, `SP`, `ITEM`, `TITLE` (the `RewardPayload` union tag) or `NONE` [V] |
+| `amount` | `u64` | the payload's `Quantity` [V] |
+| `type_id` | `i64?` | `ItemReward.TypeId`; empty for any other kind [V] |
+
+Only achievements whose contribution method counts a `SET` of `mission` values with an `agent_division` parameter are kept.
+
+Invented example row:
+
+```
+11111111-1111-5111-8111-111111111111	invented	66666666-6666-5666-8666-666666666666	98		22222222-2222-5222-8222-222222222222	invented_m1	1	7	77777777-7777-5777-8777-777777777771	ISK	1111	
+```
+
 ## 3. The three kind-tagged files (no header line)
 
 Phase 1 keeps these byte-identical to today's extractors (plan §1.1), so their layouts are frozen as they stand. The field names are the tools' own docstring names. Each line is the record kind, then the fields, TAB-separated. Lines starting with `#` are comments.
