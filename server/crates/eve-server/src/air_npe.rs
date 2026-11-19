@@ -539,6 +539,10 @@ const HANDLED: &[&str] = &[
     "Spawn Dungeon",
     "Move Player To Location",
     "Dungeon Behavior Blackboard Write",
+    "Cloak",
+    "Uncloak",
+    "Targetable",
+    "Untargetable",
 ];
 
 fn describe(args: &Kw) -> String {
@@ -951,9 +955,8 @@ fn owner_of(w: &Registry, site: i64) -> Option<i64> {
 // (`atoms`); what it does is its name.
 
 /// The scene-2.1 atoms. `None` for one not performed here (logged once):
-/// the NPC behaviour writes (`Dungeon Behavior Blackboard Write`),
-/// `Targetable`/`Untargetable`, `Cloak`/`Uncloak`, `Destroy Dungeon Object`
-/// and `Despawn Dungeon When Empty` are not done yet.
+/// `Destroy Dungeon Object` and `Despawn Dungeon When Empty` are not done
+/// yet, and most NPC behaviour writes are only logged ([`behaviour_cue`]).
 fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> {
     match atom {
         "Spawn Dungeon Near Undock" => spawn_near_undock(reg, c, args),
@@ -977,6 +980,36 @@ fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> 
             let type_id = int(args, "type_id")?;
             let keep = int(args, "quantity_to_keep").unwrap_or(0).max(0);
             remove_from_cargo(reg, c, type_id, keep);
+            Some(Kw::new())
+        }
+        // `item_id`, `solar_system_id` **[V-data]** (graph 737 cloaks scene
+        // 2.1's wreck as the site is set up, 711 uncloaks it when the third
+        // rock is mined out): `site::cloak` / `site::uncloak`.
+        "Cloak" | "Uncloak" => {
+            let item = int(args, "item_id")?;
+            let done = if atom == "Cloak" {
+                crate::site::cloak(reg, item)
+            } else {
+                crate::site::uncloak(reg, item)
+            };
+            eprintln!("[airnpe] char {c}: {atom} {item}: {done}");
+            Some(Kw::new())
+        }
+        // `dungeon_object_id`, `dungeon_spawn_id`, `solar_system_id`
+        // **[V-data]**: the object of that catalogue id in that spawned site
+        // (graph 711 keeps the rocks not yet due unlockable).
+        "Targetable" | "Untargetable" => {
+            let dun = int(args, "dungeon_object_id")?;
+            let site = int(args, "dungeon_spawn_id")?;
+            let item = reg
+                .ext::<crate::site::Sites>()
+                .get(site)?
+                .objects
+                .iter()
+                .find(|p| p.dun_object_id == dun)?
+                .item_id;
+            let done = crate::site::set_targetable(reg, item, atom == "Targetable");
+            eprintln!("[airnpe] char {c}: {atom} {dun} ({item}): {done}");
             Some(Kw::new())
         }
         _ => None,
