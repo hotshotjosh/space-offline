@@ -458,6 +458,7 @@ unshare --mount --propagation private`, then `build_view`:
 | `STEAM_COMPAT_DATA_PATH` (the prefix) | rw | the offline client's own prefix, never 8500 |
 | `EVE_CLIENT`, `../ResFiles` | rw, ro | the game; ResFiles read-only on top of the prefix |
 | `tools/jail-client.sh`, `out/client-ci/launch-env` | ro | the shim and its settings |
+| `tools/client-launch-env.tsv` | ro | the fixed launch environment |
 
 **It refuses to launch** when:
 
