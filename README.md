@@ -263,6 +263,12 @@ We thank EvEJS, an independent EVE server project.
 - Its data files are not used as content inputs.
 - Our content data (dungeons, sites, spawns, agents, missions, loot) is extracted by our own tools from the client's static files.
 
+We thank Eden (https://github.com/CJ-SPT/Eden, MIT), an independent EVE server emulator.
+
+- It is a hint source for protocol and behaviour facts.
+- Each fact taken from it is verified against the client.
+- None of its data files are used.
+
 ## Licence
 
 This project is source available, not open source. You may use, study, change,

@@ -134,6 +134,12 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | `docs/re/pochven.md` | RE | current | Pochven: the sealed region, Triglavian filaments and wormholes, standings rules and Local, with a build plan (#72). |
 | `docs/re/sov-gateway.md` | RE | current | The sovereignty gateway: hub upgrades, reagents, workforce, skyhooks and mercenary dens on the wire, with a build plan (#77). |
 
+## Eden facts (MIT, a different client build: facts freely, never its data)
+
+| doc | role | status | covers |
+|---|---|---|---|
+| `docs/eden/README.md` | EDEN | current | How we use Eden: the rule, the files never to copy, and how far to trust it by area. |
+
 ## EvEJS facts (AGPL, a different client build: facts only, never copy code or prose)
 
 | doc | role | status | covers |

@@ -15,6 +15,9 @@ only way a change gets in.
 - **`[A]` marks an assumption, with what would falsify it.** An `[A]` value never goes into
   a test.
 - **EvEJS is AGPL: facts only, verified against the client.** Never copy its code or prose.
+- **Eden is MIT: facts freely, code only with a notice, never its data.** An Eden claim is a
+  hint until verified on our client; one Eden took from EvEJS follows the EvEJS rule
+  (`docs/eden/README.md`).
 - **No money, ever** (the licence: `LICENSE.md` and `LICENSE-additions.md`): nobody receives
   money or anything worth money in connection with this project.
 - **No secrets** in the repo, an issue, a PR, a log or a prompt; never print a token.
