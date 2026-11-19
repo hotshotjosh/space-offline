@@ -362,8 +362,13 @@ fn the_real_peer_spawns_lists_brings_resides_and_despawns() {
         "{reply}"
     );
     let list = slash(&mut gm, "/bots list");
+    // The member line names the character once the bot has logged in
+    // (`control::who`): `alpha-1 (Bea Bot): `, else `alpha-1: `. Which one the
+    // list shows is a race with the bot's own login, so both are right.
+    let head = "alpha side=red role=mine count=1 alive=1\n  alpha-1";
     assert!(
-        list.starts_with("alpha side=red role=mine count=1 alive=1\n  alpha-1: "),
+        list.strip_prefix(head)
+            .is_some_and(|rest| rest.starts_with(": ") || rest.starts_with(" (")),
         "{list}"
     );
     assert!(slash(&mut gm, "/bots spawn alpha red mine 1 all5 merlin").contains("already exists"));
