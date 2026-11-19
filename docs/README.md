@@ -44,6 +44,7 @@ docs/reference/           how the protocol and the server work now
 docs/content/             the content policy and schema, and what only the server holds
 docs/status/              feature state (progress.tsv) and the page generated from it
 docs/re/                  reverse-engineering facts about the client
+docs/eden/                how we use the Eden emulator: what to trust, what never to copy
 findings/                 tables generated from the client (TSV and text), cited by the docs
 ```
 
