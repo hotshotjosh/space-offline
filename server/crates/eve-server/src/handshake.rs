@@ -1650,11 +1650,18 @@ mod tests {
     }
 
     #[test]
-    fn the_v24_02_line_greets_with_its_identity_and_refuses_the_v24_01_one() {
-        // Build 3707965 is registered on its own line [V: start.ini, the
-        // build delta]; a run naming it speaks V24.02 alone.
-        let builds = Builds::parse("3707965").unwrap();
-        assert_eq!(builds.line, &reg::V24_02);
+    fn another_registered_line_greets_with_its_identity_and_refuses_the_reference_one() {
+        // The registry holds builds of two lines (V24.01 and V24.02); a run
+        // naming a build of the line the server does not speak by default
+        // speaks that line alone. Written against whichever line is not
+        // REFERENCE_LINE, so it holds on both sides of a cut-over.
+        let other = reg::BUILDS
+            .iter()
+            .find(|e| e.line != &reg::REFERENCE_LINE)
+            .expect("a registered build of another line");
+        assert_ne!(other.line.version, reg::REFERENCE_LINE.version);
+        let builds = Builds::parse(&other.build.to_string()).unwrap();
+        assert_eq!(builds.line, other.line);
         let config = Config {
             builds,
             ..Config::default()
@@ -1663,10 +1670,10 @@ mod tests {
         let PyValue::Tuple(t) = h.greeting() else {
             unreachable!()
         };
-        assert_eq!(t[3], PyValue::Real(24.02));
-        assert_eq!(t[4], PyValue::Int(3_707_965));
-        assert_eq!(t[5], bstr("V24.02@ccp"));
-        // An H2 echoing the V24.01 identity fails on the version field.
+        assert_eq!(t[3], PyValue::Real(other.line.version));
+        assert_eq!(t[4], PyValue::Int(i64::from(other.build)));
+        assert_eq!(t[5], bstr(other.line.codename_at_region));
+        // An H2 echoing the reference identity fails on the version field.
         let mut h = Handshake::new(config, CHALLENGE);
         h.greeting();
         let err = h.on_payload(&h2()).unwrap_err();
