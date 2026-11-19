@@ -13,7 +13,7 @@
 //! `build.rs`). Its test parses `tools/builds.tsv`, the registry the Python
 //! tools read, and fails if the two disagree. A build-specific value becomes
 //! code here only on the day it differs between builds: 3628513 needs none.
-//! The reference is [`REFERENCE`] (re-pinned 2026-11-04); older builds stay
+//! The reference is [`REFERENCE`] (re-pinned 2026-11-19); older builds stay
 //! registered as `unverified` (reachable with `--client-build`). The next
 //! line's re-pin moves [`REFERENCE`] and [`REFERENCE_LINE`] together.
 
@@ -125,13 +125,14 @@ pub const V24_02: ReleaseLine = ReleaseLine {
 /// The release line the server speaks. A new line is a one-constant edit
 /// here (plus its `ReleaseLine` and `BuildEntry` rows): every alias in
 /// `constants::handshake` and every test reads this.
-pub const REFERENCE_LINE: ReleaseLine = V24_01;
+pub const REFERENCE_LINE: ReleaseLine = V24_02;
 
 /// The pinned build: what the RE corpus and `tools/client-pin.sha256` refer
-/// to. Re-pinned from 3619879 to 3662168 on 2026-10-31 and to 3670638 on
-/// 2026-11-04; older `[V] build 3619879` or `3662168` comments in the tree are
-/// history and still true of that build (3670638's delta is data only).
-pub const REFERENCE: u32 = 3_670_638;
+/// to. Re-pinned from 3619879 to 3662168 on 2026-10-31, to 3670638 on
+/// 2026-11-04 and to 3720952 (line V24.02) on 2026-11-19; older `[V] build
+/// 3619879`, `3662168` or `3670638` comments in the tree are history and
+/// still true of that build.
+pub const REFERENCE: u32 = 3_720_952;
 
 /// Every registered build. Mirrors `tools/builds.tsv` (checked by test).
 pub static BUILDS: &[BuildEntry] = &[
@@ -154,9 +155,9 @@ pub static BUILDS: &[BuildEntry] = &[
         data_hash: None,
     },
     BuildEntry {
-        build: REFERENCE,
+        build: 3_670_638,
         line: &V24_01,
-        status: Status::Pinned,
+        status: Status::Unverified,
         data_hash: None,
     },
     BuildEntry {
@@ -166,9 +167,9 @@ pub static BUILDS: &[BuildEntry] = &[
         data_hash: None,
     },
     BuildEntry {
-        build: 3_720_952,
+        build: REFERENCE,
         line: &V24_02,
-        status: Status::Unverified,
+        status: Status::Pinned,
         data_hash: None,
     },
 ];

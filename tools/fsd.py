@@ -2076,8 +2076,9 @@ CFSD_BUILD_LAYOUTS = {
 }
 
 #: The build `pyd-schemas.tsv` itself is the layout of, and what a caller
-#: with no client (a test, a doc tool) gets.
-CFSD_REFERENCE_BUILD = 3670638
+#: with no client (a test, a doc tool) gets. 3720952 since the 2026-11-19
+#: re-pin: its layout is 3670638's plus the two appended tables, so no overlay.
+CFSD_REFERENCE_BUILD = 3720952
 
 
 def layout_for_build(build):
