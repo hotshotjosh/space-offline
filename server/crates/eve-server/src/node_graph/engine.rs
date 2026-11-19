@@ -130,6 +130,10 @@ pub struct Runtime {
     /// object id) -> item id`, kept by the server for the dungeons it
     /// spawned for this run.
     pub dungeon_objects: HashMap<(i64, i64), i64>,
+    /// What [`Runtime::state`] hands a node of an instance already stopped:
+    /// written to and thrown away, so a node that stops its own graph and
+    /// then touches its state does not take the server down.
+    scratch: NState,
 }
 
 impl Runtime {
@@ -167,6 +171,7 @@ impl Runtime {
             parked: BTreeMap::new(),
             next_ticket: 1,
             dungeon_objects: HashMap::new(),
+            scratch: NState::default(),
         };
         let root = rt.new_inst(graph, None, None, None);
         rt.root = root;
@@ -223,7 +228,7 @@ impl Runtime {
                 break;
             };
             let t = self.timers.remove(i);
-            if self.state(t.at).epoch != t.epoch {
+            if !self.insts.contains_key(&t.at.inst) || self.state(t.at).epoch != t.epoch {
                 continue;
             }
             fired = true;
@@ -284,7 +289,9 @@ impl Runtime {
                     vars,
                     kw,
                 } => {
-                    if self.state(at).epoch == epoch {
+                    // An action queued for an instance stopped since (a scene
+                    // ending while its last node's action waits) is dropped.
+                    if self.insts.contains_key(&at.inst) && self.state(at).epoch == epoch {
                         self.run_action(at, &atom, vars, kw);
                     }
                 }
@@ -444,9 +451,18 @@ impl Runtime {
 
     // -- node plumbing ----------------------------------------------------------
 
+    /// A node's state. **An instance already stopped answers a throwaway
+    /// state** ([`Runtime::scratch`]) rather than panicking: the scene-2.1 to
+    /// 2.2 handoff stopped an instance whose node then read its state, and
+    /// the panic poisoned the world lock and dropped the pilot's connection.
     fn state(&mut self, at: Sub) -> &mut NState {
-        let inst = self.insts.get_mut(&at.inst).expect("live instance");
-        inst.st.entry(at.node).or_default()
+        match self.insts.get_mut(&at.inst) {
+            Some(inst) => inst.st.entry(at.node).or_default(),
+            None => {
+                self.scratch = NState::default();
+                &mut self.scratch
+            }
+        }
     }
 
     fn mark(&mut self, at: Sub, on: bool) {
@@ -1323,6 +1339,43 @@ mod tests {
         assert!(rt.is_running());
         rt.message("done", Value::str("t2"));
         assert!(!rt.is_running(), "the scene stopped, so the master stopped");
+    }
+
+    /// A node of an instance already stopped -- a queued action, a timer, or
+    /// a direct read of its state -- is dropped, not a panic (the scene-2.1
+    /// to 2.2 handoff took the server down on `expect("live instance")`).
+    #[test]
+    fn a_stopped_instances_node_is_dropped_not_a_panic() {
+        let mut rt = Runtime::start(lib(), 1, 77, Kw::new(), BTreeMap::new(), 0.0, 5).unwrap();
+        let gone = Sub {
+            inst: 999_999,
+            node: 0,
+        };
+        assert!(!rt.insts.contains_key(&gone.inst));
+        rt.state(gone).epoch += 1;
+        assert_eq!(rt.state(gone).epoch, 0, "a throwaway state");
+        rt.queue.push_back(Job::Action {
+            at: gone,
+            epoch: 0,
+            atom: "Grant Thing".into(),
+            vars: Kw::new(),
+            kw: Kw::new(),
+        });
+        rt.timers.push(Timer {
+            at: gone,
+            epoch: 0,
+            due: 0.5,
+            kw: Kw::new(),
+        });
+        rt.effects.clear();
+        rt.run();
+        assert!(!rt.tick(1.0), "the dead timer does not fire");
+        assert!(
+            !rt.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Action { atom, .. } if atom == "Grant Thing")),
+            "the dead action does not run"
+        );
     }
 
     #[test]
