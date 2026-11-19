@@ -233,8 +233,9 @@ class ExpectedByBuild(unittest.TestCase):
         self.assertEqual(cd.expected(None), cd.expected(ref))
         counts, bands, ok = cd.expected(None)
         self.assertTrue(ok)
-        self.assertEqual(counts, dict(cd.EXPECT, **cd.EXPECT_BY_BUILD[ref][0]))
-        self.assertEqual(bands, cd.EXPECT_ORE_ANOMALY_BANDS)
+        row_counts, row_bands = cd.EXPECT_BY_BUILD[ref]
+        self.assertEqual(counts, dict(cd.EXPECT, **(row_counts or {})))
+        self.assertEqual(bands, row_bands or cd.EXPECT_ORE_ANOMALY_BANDS)
 
     def test_an_unlisted_build_is_unverified_not_refused(self):
         counts, bands, ok = cd.expected(1234)
