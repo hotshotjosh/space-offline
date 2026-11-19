@@ -650,6 +650,7 @@ fn perform(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> {
 /// messages that waited too long.
 pub fn tick(reg: &mut Registry, _now: Instant, bt: crate::damage::BlueTime) {
     site_tick(reg, bt);
+    mining_penalty_tick(reg, bt);
     let due: Vec<i64> = {
         let runs = reg.ext::<Runs>();
         if runs.runs.is_empty() && runs.pending.is_empty() && runs.kills.is_empty() {
@@ -1843,6 +1844,46 @@ fn site_tick(reg: &mut Registry, at: crate::damage::BlueTime) {
         } else if live && !want && !near {
             crate::site::vacate(reg, id);
             eprintln!("[airnpe] char {c}: site {id} vacated");
+        }
+    }
+}
+
+/// Scene 2.1's mining site: dungeon 9245, whose rocks the pilot mines under
+/// [`MINING_PENALTY`].
+pub const MINING_DUNGEON: i64 = 9245;
+
+/// `(collection, value)` held on a ship in the mining site: dbuff 2155
+/// `[AIR] Mining amount penelty` (PostPercent on `miningAmount` 77 of what
+/// needs Mining 3386 **[V-data]**) at -90 **[V-TQ]**. On a live server
+/// `OnDbuffUpdated(ship, [(2155, (-90.0, None))])` came 4 s after
+/// `OnEnteringDungeonRoom(9245, ...)` and the Civilian Miner's 77 fell from
+/// 7.107 to 0.7107, so a cycle took 7 units of the tutorial's Nephrite; it
+/// was cleared 14 s after the pilot warped off. No client data names it (not
+/// the graphs, not the dungeon or its objects), so it is held here. Without
+/// it one cycle took the whole rock, before graph 728 waits for the rock to
+/// explode, and task 2.1.02 never completed.
+pub const MINING_PENALTY: (i64, f64) = (2155, -90.0);
+
+/// Hold [`MINING_PENALTY`] on a running pilot's ship while it is in their
+/// scene-2.1 mining site, and release it once it is not. **[A]** "in the
+/// site" is [`ROOM_RANGE`] of the anchor; falsified by a live pilot keeping
+/// the buff past that range or losing it inside.
+fn mining_penalty_tick(reg: &mut Registry, at: crate::damage::BlueTime) {
+    let chars: Vec<i64> = reg.ext::<Runs>().runs.keys().copied().collect();
+    for c in chars {
+        let id = spawn_site_id(c);
+        let Some(p) = reg.roster().get(c).copied() else {
+            continue;
+        };
+        let inside = reg.ext::<crate::site::Sites>().get(id).is_some_and(|s| {
+            s.dungeon_id == MINING_DUNGEON
+                && s.system == p.solar_system_id
+                && crate::space_state::distance(p.motion.position, s.anchor) <= ROOM_RANGE
+        });
+        if inside {
+            crate::dbuff::hold(reg, p.ship_id, id, &[MINING_PENALTY], at);
+        } else if crate::dbuff::holds(reg, p.ship_id, id) {
+            crate::dbuff::release(reg, p.ship_id, id, at);
         }
     }
 }
