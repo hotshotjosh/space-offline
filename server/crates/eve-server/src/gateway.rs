@@ -52,7 +52,7 @@ use crate::delta::Deltas;
 use crate::service::Registry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
@@ -462,7 +462,7 @@ pub fn answer(ty: &str, body: &[u8], character: i64, g: &Ground) -> Reply {
 /// Turn one `eve_public.Request` into its `eve_public.Response` bytes, the
 /// request's type name and the status it got.
 pub fn respond(request: &[u8], instance: &[u8; 16], g: &Ground) -> (Vec<u8>, String, u32) {
-    let served = crate::gateway_auth::check(g, request);
+    let served = crate::gateway_auth::check(g, request, None);
     respond_as(request, instance, g, served.as_ref())
 }
 
@@ -1116,6 +1116,14 @@ struct Conn {
     /// ground). A notice reaches the pilot only while that session lives.
     character: i64,
     bound_client: i64,
+    /// The client process (`application_instance_uuid`) of the served
+    /// request that bound `character`: a pin that passes to another process
+    /// unbinds this connection (`NoticeHub::unbind`).
+    instance: Vec<u8>,
+    /// Every client process served on this connection, counted open in
+    /// `gateway_auth` until the connection ends.
+    processes: Vec<Vec<u8>>,
+    /// What the client has left us to send on the connection, h2 flow control.
     /// What the client has left us to send on the connection, h2 flow control.
     window: i64,
     /// `SETTINGS_INITIAL_WINDOW_SIZE` from the client (default 65535).
@@ -1496,6 +1504,23 @@ impl NoticeHub {
         *self.1.lock().unwrap_or_else(|e| e.into_inner()) = Some(live);
     }
 
+    /// Unbind the connections bound to `pilot` through client process
+    /// `instance`: they get none of the pilot's notices until a served request
+    /// binds them again.
+    pub(crate) fn unbind(&self, pilot: i64, instance: &[u8]) {
+        let subs: Vec<Shared> = {
+            let g = self.0.lock().unwrap_or_else(|e| e.into_inner());
+            g.iter().map(|s| Arc::clone(&s.conn)).collect()
+        };
+        for conn in subs {
+            let mut c = conn.lock().unwrap_or_else(|e| e.into_inner());
+            if c.character == pilot && c.instance == instance {
+                c.character = 0;
+                c.bound_client = 0;
+            }
+        }
+    }
+
     /// Drop every stream of `conn` from the hub.
     fn forget(&self, conn: &Shared) {
         let mut subs = self.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -1671,6 +1696,7 @@ fn serve_queued(
 ) -> io::Result<()> {
     let (max_streams, write_timeout) = limits;
     s.set_nodelay(true)?;
+    let addr = s.peer_addr().ok().map(|a| a.ip());
     let peer = s
         .peer_addr()
         .map_or_else(|_| "an unknown peer".to_owned(), |a| a.to_string());
@@ -1687,6 +1713,8 @@ fn serve_queued(
         sock: csock,
         character: 0,
         bound_client: 0,
+        instance: Vec::new(),
+        processes: Vec::new(),
         window: 65535,
         initial: 65535,
         max_frame: 16384,
@@ -1701,7 +1729,12 @@ fn serve_queued(
         peer,
         out: Arc::clone(&out),
     }));
-    let r = run(s, &conn, instance, seen, ground, hub, max_streams);
+    let counted = Counted {
+        ground,
+        conn: &conn,
+    };
+    let r = run(s, &conn, instance, seen, ground, hub, max_streams, addr);
+    drop(counted);
     conn.lock().unwrap_or_else(|e| e.into_inner()).dead = true;
     hub.forget(&conn);
     // The writer sends what is queued (a GOAWAY) within one write timeout and
@@ -1711,6 +1744,31 @@ fn serve_queued(
     r
 }
 
+/// Takes the client processes a connection served off the open count when it
+/// ends, on every path, a panic included.
+struct Counted<'a> {
+    ground: &'a Ground,
+    conn: &'a Shared,
+}
+
+impl Drop for Counted<'_> {
+    fn drop(&mut self) {
+        let done = std::mem::take(
+            &mut self
+                .conn
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .processes,
+        );
+        for p in done {
+            crate::gateway_auth::connection_closed(self.ground, &p);
+        }
+    }
+}
+
+/// Serve the frames of one connection; `addr` is the peer's address, for
+/// `gateway_auth::check`.
+#[allow(clippy::too_many_arguments)]
 fn run(
     mut s: TcpStream,
     conn: &Shared,
@@ -1719,6 +1777,7 @@ fn run(
     ground: &Ground,
     hub: &NoticeHub,
     max_streams: usize,
+    addr: Option<IpAddr>,
 ) -> io::Result<()> {
     s.set_read_timeout(Some(IDLE))?;
     let mut pre = [0u8; 24];
@@ -1976,11 +2035,31 @@ fn run(
                         st.buf.drain(..5 + n);
                         match st.kind {
                             Kind::Send if !compressed => {
-                                let served = crate::gateway_auth::check(ground, &msg);
-                                if let Some((who, client)) = served.as_ref().and_then(|s| s.bind) {
-                                    let mut c = conn.lock().unwrap_or_else(|e| e.into_inner());
-                                    c.character = who;
-                                    c.bound_client = client;
+                                let served = crate::gateway_auth::check(ground, &msg, addr);
+                                if served.is_some() {
+                                    let process = request_instance(&msg);
+                                    let new = {
+                                        let c = conn.lock().unwrap_or_else(|e| e.into_inner());
+                                        !c.processes.contains(&process)
+                                    };
+                                    if new {
+                                        // Count it open before the connection
+                                        // remembers it, so the close never
+                                        // takes off more than was put on.
+                                        crate::gateway_auth::connection_opened(ground, &process);
+                                        conn.lock()
+                                            .unwrap_or_else(|e| e.into_inner())
+                                            .processes
+                                            .push(process.clone());
+                                    }
+                                    if let Some((who, client)) =
+                                        served.as_ref().and_then(|s| s.bind)
+                                    {
+                                        let mut c = conn.lock().unwrap_or_else(|e| e.into_inner());
+                                        c.character = who;
+                                        c.bound_client = client;
+                                        c.instance = process;
+                                    }
                                 }
                                 let (resp, ty, status) =
                                     respond_as(&msg, &instance, ground, served.as_ref());
@@ -2748,6 +2827,8 @@ mod tests {
             sock,
             character: 0,
             bound_client: 0,
+            instance: Vec::new(),
+            processes: Vec::new(),
             window,
             initial: stream_win,
             max_frame,
@@ -3774,5 +3855,30 @@ mod tests {
         done.store(true, Ordering::Relaxed);
         assert!(gone_at < timeout * 3, "freed after {gone_at:?}");
         assert_eq!(Arc::strong_count(&out), 1, "the writer outlived its slot");
+    }
+
+    #[test]
+    fn a_pin_passed_to_another_process_unbinds_the_old_connection() {
+        let (g, _w) = two_live_pilots();
+        let hub = NoticeHub::default();
+        let mut s = connected(&g, &hub);
+        let ty = "eve_public.invented.notice.Thing";
+        let m = crate::gateway_auth::test_request(1_001, None, b"process-one-0001");
+        assert_eq!(send_and_read(&mut s, &m), 200);
+        assert_eq!(publish(&hub, ty, b"a", Target::Character(1_001)), 1);
+        hub.unbind(1_001, b"process-two-0002");
+        assert_eq!(
+            publish(&hub, ty, b"a", Target::Character(1_001)),
+            1,
+            "another process"
+        );
+        hub.unbind(1_002, b"process-one-0001");
+        assert_eq!(
+            publish(&hub, ty, b"a", Target::Character(1_001)),
+            1,
+            "another pilot"
+        );
+        hub.unbind(1_001, b"process-one-0001");
+        assert_eq!(publish(&hub, ty, b"a", Target::Character(1_001)), 0);
     }
 }

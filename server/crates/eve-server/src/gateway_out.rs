@@ -27,9 +27,16 @@ pub type Queued = (String, Vec<u8>, Target);
 #[derive(Default)]
 pub struct GatewayOutbox {
     q: Vec<Queued>,
-    /// Pilot -> (game session, client process) the gateway first served for
-    /// it; see `gateway_auth`. Void once that session ends.
-    pub(crate) pins: std::collections::HashMap<i64, (i64, Vec<u8>)>,
+    /// Pilot -> the game session and client process the gateway serves it
+    /// to; see `gateway_auth`. Void once that session ends.
+    pub(crate) pins: std::collections::HashMap<i64, crate::gateway_auth::Pin>,
+    /// Game session (client id) -> the address its game connection came
+    /// from, recorded at session open (`gateway_auth::note_peer`).
+    pub(crate) peers: std::collections::HashMap<i64, std::net::IpAddr>,
+    /// Client process (`application_instance_uuid`) -> its gateway
+    /// connections open now that it was served on. A mutex, so a connection
+    /// can count itself under the world read lock.
+    pub(crate) open: std::sync::Mutex<std::collections::HashMap<Vec<u8>, usize>>,
 }
 
 /// The world slot. Never persisted.
@@ -74,6 +81,16 @@ static HUB: OnceLock<NoticeHub> = OnceLock::new();
 /// one process keeps the first).
 pub fn install_hub(hub: &NoticeHub) {
     let _ = HUB.set(hub.clone());
+}
+
+/// Unbind the gateway connections bound to `pilot` through client process
+/// `instance` (its pin passed to another process). A no-op with no hub.
+/// Under the world write lock; world, then hub, then connection is the lock
+/// order `take` already uses.
+pub fn unbind(pilot: i64, instance: &[u8]) {
+    if let Some(hub) = HUB.get() {
+        hub.unbind(pilot, instance);
+    }
 }
 
 /// Publish `batch` to `hub`, in order. Returns how many stream deliveries
