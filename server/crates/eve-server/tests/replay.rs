@@ -30,13 +30,20 @@ use eve_server::{dumps, loads};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The capture directory, or `None` when it is absent (the captures are not
-/// part of every checkout).
+/// The capture directory, or `None` when the whole `captures/` directory is
+/// absent (the captures are not part of every checkout). When `captures/`
+/// exists but `regression/` does not, that is a defect and the test fails.
 fn regression_dir() -> Option<PathBuf> {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../captures/regression")
-        .canonicalize()
-        .ok()
+    let captures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../captures");
+    if !captures.exists() {
+        return None;
+    }
+    Some(
+        captures
+            .join("regression")
+            .canonicalize()
+            .expect("captures/ exists, so captures/regression/ must too"),
+    )
 }
 
 /// The object ids a reply hands out, as `evecap` reads them.
@@ -208,7 +215,7 @@ fn replay(path: &Path) -> Replay {
 #[test]
 fn the_committed_captures_still_get_answers() {
     let Some(dir) = regression_dir() else {
-        eprintln!("skipped: captures/regression/ is absent in this checkout");
+        eprintln!("skipped: captures/ is absent in this checkout");
         return;
     };
     let mut total = 0;
