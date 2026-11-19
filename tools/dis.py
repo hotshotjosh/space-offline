@@ -47,10 +47,12 @@ import os as _os
 import sys as _sys
 
 _HERE = _os.path.dirname(_os.path.abspath(__file__))
-# Rotate only when `tools/` really is `sys.path[0]`. Under `python3 -I` the
+# Rotate only when `tools/` really is `sys.path[0]` (compared as real paths:
+# CPython puts the script directory's realpath there, so a symlinked path
+# must not skip the rotation). Under `python3 -I` the
 # script directory is not on the path at all, and an unconditional pop would
 # move an unrelated entry (the first stdlib directory) to the end.
-if _sys.path and _os.path.abspath(_sys.path[0] or _os.getcwd()) == _HERE:
+if _sys.path and _os.path.realpath(_sys.path[0] or _os.getcwd()) == _os.path.realpath(_HERE):
     _sys.path.append(_sys.path.pop(0))
 # Under -I `pyc27` is not importable without this; last, so the stdlib's
 # `dis` still wins over this file (same pattern as tools/census_sink.py).
