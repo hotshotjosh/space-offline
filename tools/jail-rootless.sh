@@ -499,6 +499,7 @@ v_view() {
     # Not in IP14's list (docs/lanes/remote-clients.md, "The patcher in the view").
     bind_back ro user file   patcher    "$REPO/tools/eve_patch.py"
     bind_back ro user dir    patches    "$REPO/tools/patches"
+    bind_back ro user file   launch-env-tsv "$REPO/tools/client-launch-env.tsv"
     # The census (CEN-3), as IP14's: only while census0 is here.
     census=0
     if census_here; then
