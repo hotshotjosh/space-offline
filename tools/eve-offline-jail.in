@@ -489,8 +489,8 @@ build_view() {
     bind_back ro user file   shim       "$CLIENT_SHIM"
     bind_back ro user file   launch-env "$ENV_FILE"
     #   the phone-home patcher and its manifests (PATCH-1): the shim runs
-    #   `eve_patch.py launch-env` inside the jail and refuses the launch if it
-    #   cannot, so without these every launch from a checkout under $HOME
+    #   `eve_patch.py launch-env` inside the jail when it is there, else reads
+    #   the fixed table; without these a checkout under $HOME never had them
     #   refused (found by the remote-clients lane, which fixed jail-rootless.sh).
     bind_back ro user file   patcher    "$REPO/tools/eve_patch.py"
     bind_back ro user dir    patches    "$REPO/tools/patches"
