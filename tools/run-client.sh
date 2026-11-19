@@ -408,8 +408,8 @@ cd "$EVE_CLIENT"
 # The client dials our chat server on 5222 and, unless prefs.ini has
 # `chatserver_disable_tls`, wraps the socket in TLS that checks the chain
 # against its own certifi bundle -- which is listed in the signed
-# manifest.dat, so "add our CA" is not available. Our server speaks plain
-# XMPP. prefs.ini is NOT in the manifest, is user-writable, and is read once
+# manifest.dat, so adding our CA there also needs a re-signed manifest, which
+# this tool does not make. Our server speaks plain XMPP. prefs.ini is NOT in the manifest, is user-writable, and is read once
 # at startup (`eveprefs.prefs`), so the line has to be there before launch.
 # Without it a remote player's client puts up a modal "RetryChatServerConnection"
 # dialog, and our server logs "client attempted TLS".
