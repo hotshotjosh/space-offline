@@ -1686,9 +1686,18 @@ fn move_player(reg: &mut Registry, c: i64, args: &Kw) {
     }
 }
 
-/// What a spawn atom answers for site `id`: `spawn_id`, `spawn_position`,
-/// `entry_position` (the anchor) and `beacon_id` (the entry object, else the
+/// What a spawn atom answers for site `id`: `spawn_id`, `spawn_position`
+/// (the anchor, the room origin), `entry_position` (where the entry object
+/// stands, else the anchor) and `beacon_id` (the entry object, else the
 /// first object).
+///
+/// **`entry_position` is the entry object, not the room origin [V-TQ]**: on
+/// a live server dungeon 9245 (task 2.1.01's mining site) reported its room
+/// origin in `OnEnteringDungeonRoom`, and the warp `Warp Character To
+/// Position` gave the pilot ended 266.5 km from it, 126.5 km up; the entry
+/// object 1114284 is 268.9 km from the origin, 127.6 km up **[V-data]**. (The
+/// live dungeon was also turned about the vertical, which is not done here.)
+/// Warped to the origin, the pilot landed about 200 km from every rock.
 fn spawn_outputs(reg: &Registry, id: i64) -> Option<Kw> {
     let inst = reg.ext::<crate::site::Sites>().get(id)?.clone();
     let entry = reg
@@ -1696,17 +1705,16 @@ fn spawn_outputs(reg: &Registry, id: i64) -> Option<Kw> {
         .try_get::<crate::dungeon_data::Table>()
         .and_then(|t| t.dungeons.get(&inst.dungeon_id))
         .and_then(|d| d.entry_object);
-    let beacon = inst
-        .objects
-        .iter()
-        .find(|p| Some(p.dun_object_id) == entry)
+    let entry_object = inst.objects.iter().find(|p| Some(p.dun_object_id) == entry);
+    let beacon = entry_object
         .or(inst.objects.first())
         .map_or(Value::None, |p| Value::Int(p.item_id));
-    let anchor = Value::List(inst.anchor.iter().map(|x| Value::Float(*x)).collect());
+    let point = |p: [f64; 3]| Value::List(p.iter().map(|x| Value::Float(*x)).collect());
+    let entry_at = entry_object.map_or(inst.anchor, |p| p.position);
     Some(Kw::from([
         ("spawn_id".to_string(), Value::Int(id)),
-        ("entry_position".to_string(), anchor.clone()),
-        ("spawn_position".to_string(), anchor),
+        ("entry_position".to_string(), point(entry_at)),
+        ("spawn_position".to_string(), point(inst.anchor)),
         ("beacon_id".to_string(), beacon),
     ]))
 }
@@ -1951,6 +1959,50 @@ mod tests {
         assert_eq!(
             from_py(&PyValue::Tuple(vec![PyValue::Long(7)])),
             Value::List(vec![Value::Int(7)])
+        );
+    }
+
+    /// A spawn answers the entry object's spot as `entry_position` and the
+    /// room origin as `spawn_position`: the graphs warp and move the pilot
+    /// to `entry_position`, so an entry object far from the origin (task
+    /// 2.1.01's is 269 km out) must not leave the pilot at the origin.
+    #[test]
+    fn a_spawn_enters_at_its_entry_object_not_the_room_origin() {
+        const C: i64 = 90_000_123;
+        const SYSTEM: i64 = 30_990_001;
+        const OUT: [f64; 3] = [150_000.0, 120_000.0, 180_000.0];
+        let mut table = crate::dungeon_data::Table::fixture();
+        let d = table
+            .dungeons
+            .values_mut()
+            .find(|d| !d.objects.is_empty() && d.entry_object.is_some())
+            .expect("the fixture has a dungeon with an entry object");
+        let dungeon_id = d.id;
+        let entry = d.entry_object.unwrap();
+        d.objects
+            .iter_mut()
+            .find(|o| o.id == entry)
+            .expect("the entry object is in the catalogue")
+            .pos = OUT;
+        let mut c = crate::content::Content::fixture();
+        c.insert("dungeon_data", table);
+        let mut reg =
+            Registry::new(crate::model::SandboxConfig::default()).with_content(Arc::new(c));
+        let at = [1.0e11, 2.0e9, -3.0e10];
+        let args = Kw::from([
+            ("dungeon_id".to_string(), Value::Int(dungeon_id)),
+            ("solar_system_id".to_string(), Value::Int(SYSTEM)),
+            (
+                "position".to_string(),
+                Value::List(at.iter().map(|x| Value::Float(*x)).collect()),
+            ),
+        ]);
+        let out = spawn_dungeon(&mut reg, C, &args).expect("spawned");
+        let spot = |k: &str| out.get(k).and_then(vec3).expect(k);
+        assert_eq!(spot("spawn_position"), at);
+        assert_eq!(
+            spot("entry_position"),
+            [at[0] + OUT[0], at[1] + OUT[1], at[2] + OUT[2]]
         );
     }
 
