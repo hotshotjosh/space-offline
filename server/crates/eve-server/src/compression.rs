@@ -26,8 +26,10 @@
 //!   large, 144 km capital) **[V-data]**; `canFitShipType1` (1302) names the
 //!   hull (Porpoise, Orca, Rorqual) and the fitting validator enforces it.
 //! - **The station and structure path** (`structureCompressionMgr`) needs an
-//!   Upwell structure; this server has none, so a station compresses
-//!   nothing. In space is the only compression there is.
+//!   Upwell structure. This server has structures now, but no
+//!   `structureCompressionMgr` arm answers (none is registered), so a
+//!   station or structure compresses nothing. In space is the only
+//!   compression there is.
 //!
 //! What is **[I]** (inferred from the data, no server code to read): a unit
 //! of compressed ore replaces **one** unit of ore -- `types/compress.tsv`'s
