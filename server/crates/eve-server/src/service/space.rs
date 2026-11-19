@@ -1415,11 +1415,30 @@ fn fly(reg: &mut Registry, req: &Request<'_>) {
     // UNDOCK-INVULN: flying the ship gives up the protection.
     crate::invuln::break_for(reg, actor);
     crate::cloak::break_jump(reg, actor);
+    // **A follow or orbit from a shut throttle opens it**, as align and warp
+    // do: a ball that arrived, undocked or was boarded and told nothing has
+    // `speedFraction` 0, and a follow at 0 is an "Approaching" caption on a
+    // ship that never moves. On a live server a new pilot's `CmdFollowBall`
+    // straight after boarding was answered with `FollowBall` alone and the
+    // ship flew **[V-TQ]**. **[A]** full speed, and only from 0 (a throttle
+    // the pilot set is kept); falsified by a live approach from a standing
+    // start whose slider stays at 0.
+    let throttle = (matches!(
+        action,
+        crate::destiny::Action::FollowBall { .. } | crate::destiny::Action::Orbit { .. }
+    ) && here.motion.speed_fraction == 0.0)
+        .then_some(crate::destiny::Action::SetSpeedFraction {
+            ball: here.ship_id,
+            fraction: 1.0,
+        });
     // **Remember before pushing.** The blob we build for the next desync
     // recovery, or for another pilot arriving later, is built from this
     // record and from nothing else.
     if let Some(p) = reg.roster_mut().get_mut(actor) {
         p.motion.after(action);
+        if let Some(t) = throttle {
+            p.motion.after(t);
+        }
     }
     // **The pilot has the ship back: the warp's late reconciliation is off.**
     // A client takes none of these while it is warping, so one that arrives
@@ -1450,7 +1469,8 @@ fn fly(reg: &mut Registry, req: &Request<'_>) {
     // others" would break the tier that already works.
     let mut to = vec![actor];
     to.extend(reg.roster().others_in_system(here.solar_system_id, actor));
-    if let Some(update) = crate::destiny::ActionUpdate::new(to, stamp, vec![action]) {
+    let actions: Vec<_> = std::iter::once(action).chain(throttle).collect();
+    if let Some(update) = crate::destiny::ActionUpdate::new(to, stamp, actions) {
         reg.push(update);
     }
 }
@@ -2731,6 +2751,58 @@ mod tests {
     /// (FCI-FIX2): the real client's ship, told to follow a ball right after
     /// it landed, was stopped and snapped back seven seconds later by the
     /// scheduled `SetBallPosition`/`SetBallVelocity`/`Stop`.
+    /// **A follow or orbit from a shut throttle opens it; one from a set
+    /// throttle keeps it.** A pilot just undocked (throttle 0) approaching a
+    /// planet gets `FollowBall` and `SetSpeedFraction 1.0` in one batch, and
+    /// the server's record says full; a pilot who set half throttle keeps it.
+    #[test]
+    fn a_follow_from_a_shut_throttle_opens_it() {
+        const ALICE: i64 = 1_000_001;
+        let mut reg = Registry::new(SandboxConfig {
+            characters: vec![crate::model::Character {
+                character_id: ALICE,
+                name: "Alice".to_owned(),
+                ship_id: 100_000_001,
+                ..crate::model::Character::default()
+            }],
+            celestials: crate::celestial::Catalogue::parse(
+                "planet\t40000001\t11\t3000000.0\t598391482800.0\t0.0\t0.0",
+            ),
+            ..SandboxConfig::default()
+        });
+        crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+        let _ = reg.take_pending();
+        let call = |reg: &mut Registry, method: &'static str, args: &[PyValue]| {
+            dispatch(
+                reg,
+                &Request {
+                    service: "beyonce",
+                    method,
+                    args,
+                    kwargs: &[],
+                    bind_params: None,
+                    actor: Some(ALICE),
+                },
+            )
+            .expect("answered")
+        };
+        let fraction = |reg: &Registry| reg.roster().get(ALICE).unwrap().motion.speed_fraction;
+        assert_eq!(
+            fraction(&reg),
+            0.0,
+            "the premise: undocked and told nothing"
+        );
+        let follow = [PyValue::Int(40_000_001), PyValue::Real(1000.0)];
+        call(&mut reg, "CmdFollowBall", &follow);
+        assert_eq!(fraction(&reg), 1.0, "the follow opened the throttle");
+        let names = format!("{:?}", reg.take_pending());
+        assert!(names.contains("SetSpeedFraction"), "and said so: {names}");
+
+        call(&mut reg, "CmdSetSpeedFraction", &[PyValue::Real(0.5)]);
+        call(&mut reg, "CmdOrbit", &follow);
+        assert_eq!(fraction(&reg), 0.5, "a throttle the pilot set is kept");
+    }
+
     #[test]
     fn a_follow_after_landing_cancels_the_arrival_batch() {
         const ALICE: i64 = 1_000_001;
