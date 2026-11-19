@@ -67,10 +67,7 @@ tools/test_docs.py	docs/content/C5-economy.md	fixture or skip text in a test: an
 tools/test_docs.py	docs/content/README.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/content/plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_docs.py	docs/guides/patcher.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
-tools/test_docs.py	docs/guides/remote-clients.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
 tools/test_docs.py	docs/lanes	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_docs.py	docs/lanes/INDEX.md	the doc lint's allowlist: docs/README.md names it until the index edit lands
 tools/test_docs.py	docs/packets.tsv	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/plans	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/plans/master-plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
@@ -97,5 +94,4 @@ tools/test_status_page.py	docs/plans	fixture or skip text in a test: an invented
 tools/test_status_page.py	docs/plans/master-plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/up.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/test_jail.py	tools/eve_patch.py	fixture or assertion text in a test: a fake/expected string, nothing is run
