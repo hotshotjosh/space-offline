@@ -56,6 +56,16 @@ pub trait Push: std::fmt::Debug + Send + Sync {
     /// them.
     fn to_push(&self) -> (&'static str, Vec<PyValue>);
 
+    /// **What goes on the wire**, when that is not [`Self::to_push`] itself:
+    /// the event a client is sent, while `to_push` stays the event the push
+    /// *is* (what the server's own readers, the logs and the tests match on).
+    /// The default is `to_push`. The one override is
+    /// `crate::targeting::TargetChange`, which a live server delivers inside
+    /// an `OnMultiEvent` batch rather than on its own.
+    fn to_wire(&self) -> (&'static str, Vec<PyValue>) {
+        self.to_push()
+    }
+
     /// **Who the notification is for**, when it is not the caller.
     ///
     /// Every notification shipped before fleets told the actor about their own
