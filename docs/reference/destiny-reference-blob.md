@@ -642,7 +642,7 @@ would otherwise cost 30 seconds in `WaitForBallpark`.
 
 ## See also
 
-- [the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) — §4.4 for the
+- the unpublished destiny-and-the-ballpark note — §4.4 for the
   layout this measures, §8 step 2 for where it sits in the order of work, and
   §7 for the mode table the `NN-call-*.bin` dumps exercise.
 - [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) — the `[V]`/`[I]`
@@ -652,7 +652,7 @@ would otherwise cost 30 seconds in `WaitForBallpark`.
 - [`docs/reference/session-roles.md`](session-roles.md) §5 and `eve-server/src/roles.rs` — the
   three role bits this depends on, and the one (`ROLE_PROGRAMMER`) that has a
   measured cost of its own.
-- [the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Rounds 2 and 3 — the import-override
+- the unpublished recon-v24.01 note Rounds 2 and 3 — the import-override
   work that §5 narrows rather than replaces.
 
 ---

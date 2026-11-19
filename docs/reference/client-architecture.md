@@ -102,8 +102,8 @@ and [§8](#8-the-symptom-index) is all of them in one place.
    code moved. A function name survives a refactor; `michelle.py:1133` does not.
 
 **Companions.** This file is the map; those are the territory.
-[the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) and
-[`re/warp.md`](../re/warp.md) for space, [the unpublished login-path note](login-path.md) for the
+the unpublished destiny-and-the-ballpark note and
+[`re/warp.md`](../re/warp.md) for space, the unpublished login-path note for the
 handshake payload by payload, [`docs/reference/bound-objects.md`](bound-objects.md) for the
 bind protocol, [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) for the
 instruments, [`docs/reference/threads-and-locks.md`](threads-and-locks.md) for **our** side of
@@ -613,7 +613,7 @@ should do, **read the server branch of the client's own code.**
 
 Everything below the Python is native (`blue.dll`, `carbonio`): the socket, the
 length framing, `sendpacket`/`recvpacketoob`. The framing width/endianness is
-still a **gap** in [the unpublished wire-format note](../archive/wire-format.md) and this file adds
+still a **gap** in the unpublished wire-format note and this file adds
 nothing to it.
 
 ### 2.1a `AwaitVersion` is **our** name, and the client has no state enum at all
@@ -696,7 +696,7 @@ sequenceDiagram
   Note over C: gameui.OnSessionChanged: session.charid is None<br/>-> character selection
 ```
 
-Payload-by-payload detail is [the unpublished login-path note](login-path.md) §4 and is not
+Payload-by-payload detail is the unpublished login-path note §4 and is not
 duplicated. The three things to carry out of it:
 
 1. **The handshake does not populate the session.** `_AssociateWithSession`
@@ -743,7 +743,7 @@ duplicated. The three things to carry out of it:
 
 `machoNetPacket` defines eleven `MachoPacket` subclasses. Command ids are
 `MACHONETMSG_TYPE_*`; `params` are the per-subclass `body` field names `[V]`
-([the unpublished wire-format note](../archive/wire-format.md)):
+(the unpublished wire-format note):
 
 | class | guid on the wire | cmd | body params |
 |---|---|---|---|
@@ -870,7 +870,7 @@ Practical rules, from live runs `[V]`:
   wrong, empty or absent `nodesOfInterest` has **no client-side effect
   whatsoever** `[V]`;
 - a `PingReq` must carry the proxy/server hop chain or the client rejects it
-  `[V]` ([the unpublished login-path note](login-path.md)).
+  `[V]` (the unpublished login-path note).
 
 ### 2.5 The session-change dance
 
@@ -888,7 +888,7 @@ distributed** `[V]`. `__nonpersistvars__` is **11** (`sid`, `c2ooid`,
 `connectedObjects`, `connectedServices`, `clientID`, `localSID`,
 `contextOnly`, `receivedVersion`, `irrelevanceTime`, plus `locationid` and
 `corprole`); `locationid` and `corprole` are injected by the client itself
-`[V]`. The full list is in [the unpublished login-path note](login-path.md) §7.
+`[V]`. The full list is in the unpublished login-path note §7.
 
 > **The "session critical" table, which is what actually makes a session change
 > dangerous.** `CoreSession.__dependant_attributes__` merged with
@@ -1059,7 +1059,7 @@ its own, which should be asked against a world where the change has happened
 | wrong crypto hash at H9 | dialog | `Server response signature incorrect, the server's crypto hash wasn't correct` `[V]` |
 | no H10 ack | dialog | `Server didn't Acknowledge our Challenge-Response` `[V]` |
 | "Local Session Corrupt" dialog | login refused before TCP | `UserError('DirtySession')` — `ConnectToServer` step 2 found a `__persistvars__` not at its default `[V]` |
-| a keepalive/ping without the hop chain | disconnect | `[V]`, see [the unpublished login-path note](login-path.md) |
+| a keepalive/ping without the hop chain | disconnect | `[V]`, see the unpublished login-path note |
 
 ## 3. The service layer
 
@@ -1588,7 +1588,7 @@ object. When you read `RealFlushState` below, `_parent_` means *straight into
 `_destiny.dll`*.
 
 Full line-by-line of `AddBallpark` is in
-[the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §2 and is not
+the unpublished destiny-and-the-ballpark note §2 and is not
 repeated here. The two facts worth carrying:
 
 - **after `beyonce.GetFormations()` returns, `AddBallpark` makes no further
@@ -1691,7 +1691,7 @@ out/pyc/` returns `michelle.pyc` alone) `[V]`.
    `SynchroniseToSimulationTime` is then asked to reach a time that has not
    happened. `[V]`, from the two comparisons (`>` then `<`) in step 3. Our own stamping policy
    avoids this by binding the stamp as the batch *leaves*
-   ([`port-tracker.md`](../port-tracker.md) §36.2) — this is the client-side
+   (the unpublished port tracker §36.2) — this is the client-side
    reason that policy is not merely tidy.
 2. **`waitForBubble` on a queued entry stops the drain dead.** `DoPreTick`
    returns at :1125 without flushing anything, and returns again at :1150 if
@@ -1777,7 +1777,7 @@ service.** `self.remoteBallpark` is set by `Park.InitializeRemoteBallpark`,
 which is `eveMoniker.GetBallPark(solarsystemID)` then `.Bind()`, started as a
 tasklet from `Park.__init__` with ten retries a second apart, and **whose
 return value is discarded** `[V]`
-([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §2).
+(the unpublished destiny-and-the-ballpark note §2).
 
 So: if we never served that bind, `remoteBallpark` stays `None`, and
 `RequestReset` is a **silent no-op**. A desynced client then has no way back
@@ -1951,7 +1951,7 @@ and therefore safe to omit: `isEmpty`, `dunRotation`, `dunDirection`,
 > `foo.SlimItem` itself is forgiving — `__getattr__` returns `None` for any
 > name not starting with `__` — so "unguarded" here means *the consumer* will
 > choke on the `None`, not that the attribute access raises
-> ([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §4.3).
+> (the unpublished destiny-and-the-ballpark note §4.3).
 
 **Cadences, which decide whether a value we push is even looked at** `[V]`:
 
@@ -2952,7 +2952,7 @@ an implementation detail of a path we do not own.
 
 Not a lever we pull, but the one the player pulls through us, so it belongs on
 this list. Two distinct surfaces, and confusing them is a classic `[V]`
-([the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) §6):
+(the unpublished destiny-and-the-ballpark note §6):
 
 | surface | reached how | example |
 |---|---|---|
@@ -3236,7 +3236,7 @@ because an `[I]` with no experiment beside it is just a shrug.
 Recorded here because the next reader of those files should not have to find
 them again.
 
-1. **[the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3** lists the CPython flag
+1. **the unpublished recon-v24.01 note Round 3** lists the CPython flag
    writes as unconditional; they are gated on `/py` being absent, and
    `Py_OptimizeFlag` is `+=` the `/pyoptimize=` value rather than a fixed
    increment. It also concludes `/path` has no consumer anywhere, and
@@ -3258,11 +3258,11 @@ build's `code.ccp`, `resfileindex.txt` and `manifest.dat`. Having
 
 | file | what it has that this one does not |
 |---|---|
-| [the unpublished destiny-and-the-ballpark note](../archive/destiny-and-the-ballpark.md) | `AddBallpark` line by line, the `SetState` bag's minimum contents, the blob's binary layout, the `beyonce` surface |
-| [`re/warp.md`](../re/warp.md), [`port-tracker.md`](../port-tracker.md) §34–§36 | the align gate, the 180-tick watchdog, the warp tunnel, the stamp policy |
-| [the unpublished login-path note](login-path.md) | the handshake payload by payload, H1–H10, the session field list, the role mask |
+| the unpublished destiny-and-the-ballpark note | `AddBallpark` line by line, the `SetState` bag's minimum contents, the blob's binary layout, the `beyonce` surface |
+| [`re/warp.md`](../re/warp.md), the unpublished port tracker §34–§36 | the align gate, the 180-tick watchdog, the warp tunnel, the stamp policy |
+| the unpublished login-path note | the handshake payload by payload, H1–H10, the session field list, the role mask |
 | [`docs/reference/bound-objects.md`](bound-objects.md) | the bind protocol in full, and the per-service method inventory |
 | [`docs/guides/debugging-the-client.md`](../guides/debugging-the-client.md) | the **instruments**: `evidence.sh`, `evecap --calls/--alerts/--triage`, `client-log.sh`, and how to tell our protocol's tracebacks from the gateway's |
 | [`docs/reference/threads-and-locks.md`](threads-and-locks.md) | **our** side of §6 — one world, one lock, two clocks, and the lock order |
-| [the unpublished plan-client-ci note](../archive/plan-client-ci.md), `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
+| the unpublished plan-client-ci note, `lanes/ci-trigger.md`, `tools/client-ci/scenarios/_prelude.py` | how we run code inside the client, and the prelude's own well-verified client facts |
 

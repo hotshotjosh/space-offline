@@ -1,7 +1,7 @@
 # The wallet ledger
 
 Issue #1: *"isk: works, but shows no transaction history."* Step 3 of round 2
-in [the unpublished plan-docked-subsystems note](../archive/plan-docked-subsystems.md). This document is
+in the unpublished plan-docked-subsystems note. This document is
 the specification the implementation is built from; it contains no Rust and
 changes no code.
 

@@ -1,6 +1,6 @@
 # Warp, as an implementation spec
 
-> **Demoted 2026-10-24** — the align-phase section (around line 153) already carries its own SUPERSEDED banner. Current truth: [port-tracker.md](../port-tracker.md) §§47–56. Kept for history; do not brief a lane from this file.
+> **Demoted 2026-10-24** — the align-phase section (around line 153) already carries its own SUPERSEDED banner. Current truth: the unpublished port tracker §§47–56. Kept for history; do not brief a lane from this file.
 
 Lane: `warp-destiny`. Research only — this file and the unpublished warp-destiny lane note
 are the whole output; no code was written and no other file was touched.

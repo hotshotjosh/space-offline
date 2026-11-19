@@ -3,7 +3,7 @@
 Client build **V24.01 (3619879)**. This is the complete server-side spec for
 skills: what the client asks, what each answer must look like, what it does
 with it, and in what order to build it. It is the fifth and last step of
-round 2 in [the unpublished plan-docked-subsystems note](../archive/plan-docked-subsystems.md), and it is
+round 2 in the unpublished plan-docked-subsystems note, and it is
 what that step gets implemented from.
 
 Written because the owner's test said **"nothing bought"**, and earlier

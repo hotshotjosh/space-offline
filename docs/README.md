@@ -101,11 +101,6 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | `docs/content/policy.md` | REFERENCE | current | The content policy: what may be committed, the three classes of data, and where authored tables live. |
 | `docs/content/server-only.md` | REFERENCE | current | What only the server holds (placement, pointed-at tables, money numbers), each item classed derivable, design or capture-only. |
 
-## Lanes: how parallel work is divided, and every lane note
-
-| doc | role | status | covers |
-|---|---|---|---|
-
 ## Reverse-engineering facts about the client (measured on the pinned build in `tools/builds.tsv`, or on the build before the re-pin of 2026-10-31)
 
 | doc | role | status | covers |
@@ -140,13 +135,3 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | doc | role | status | covers |
 |---|---|---|---|
 | `docs/eden/README.md` | EDEN | current | How we use Eden: the rule, the files never to copy, and how far to trust it by area. |
-
-## EvEJS facts (AGPL, a different client build: facts only, never copy code or prose)
-
-| doc | role | status | covers |
-|---|---|---|---|
-
-## Archive: demoted or finished documents, kept for history
-
-| doc | role | status | covers |
-|---|---|---|---|
