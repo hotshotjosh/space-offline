@@ -244,9 +244,11 @@ usage: eve-server [options]
                      world file's directory; none without --world). /bots
                      also needs a dev server.
   --admin ADDR       the admin web page and its JSON API on ADDR (e.g.
-                     0.0.0.0:8090; off by default). The token is in
+                     127.0.0.1:8090; off by default). The token is in
                      admin.token in the --bot-control directory, sent as
-                     the X-Admin-Token header. Read-only.
+                     the X-Admin-Token header. Reads, plus token-guarded
+                     actions (bots, broadcast, save, kick). Plain HTTP:
+                     keep it on loopback or behind SSH.
   --concord          CONCORD answers a high-sec crime: a squad, a warp
   --no-concord       refusal, a dock and gate refusal (the default), or
                      none of it (--no-concord, a CONCORD-free world).

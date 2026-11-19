@@ -2,7 +2,7 @@
 //! token-guarded actions) for the server's owner. A page with the cluster map and the pilots online, and a
 //! JSON API behind a token.
 //!
-//! Off by default: `--admin ADDR` (e.g. `--admin 0.0.0.0:8090`) turns it on.
+//! Off by default: `--admin ADDR` (e.g. `--admin 127.0.0.1:8090`; plain HTTP, keep it on loopback or behind SSH) turns it on.
 //! std sockets and threads only, no dependency.
 //!
 //! # Auth
