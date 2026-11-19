@@ -264,7 +264,7 @@ Closed by default; each line says how much of the system is proved.
 
 <details><summary><b>Space and movement</b>: 14 of 15 proved, 1 open</summary>
 
-- [x] Undock, throttle, warp: *client-proved*, undock_distance W8, throttle_and_warp W8
+- [x] Undock, throttle, warp: *client-proved*, undock_distance W8, throttle_and_warp W8. A follow or orbit from a shut throttle (0, however set) now opens it to full, as align and warp do; our choice [A], built-unproved: service::space a_follow_from_a_shut_throttle_opens_it, no scenario yet (#205)
 - [x] The sun and warping to it: *client-proved*, fci_sun W10
 - [x] Shield, armour and hull on the HUD: *client-proved*, hud_health W8
 - [x] The list of objects near you: *client-proved*, park_census W8

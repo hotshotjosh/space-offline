@@ -1418,11 +1418,27 @@ fn fly(reg: &mut Registry, req: &Request<'_>) {
     // **A follow or orbit from a shut throttle opens it**, as align and warp
     // do: a ball that arrived, undocked or was boarded and told nothing has
     // `speedFraction` 0, and a follow at 0 is an "Approaching" caption on a
-    // ship that never moves. On a live server a new pilot's `CmdFollowBall`
-    // straight after boarding was answered with `FollowBall` alone and the
-    // ship flew **[V-TQ]**. **[A]** full speed, and only from 0 (a throttle
-    // the pilot set is kept); falsified by a live approach from a standing
-    // start whose slider stays at 0.
+    // ship that never moves.
+    //
+    // **The client leaves this to the server** **[V]**: manual Keep at range,
+    // Orbit and Approach send only the movement call, no throttle
+    // (`movementFunctions.py` `_Ship_KeepAtRange` `CmdFollowBall` line 285,
+    // `_Ship_Orbit` `CmdOrbit` 314, `ShipApproach` `CmdFollowBall` 352;
+    // none names `SpeedFraction`), while CCP's autopilot opens the throttle
+    // itself first (`autopilot.py` `AP_ApproachDestID`: `CmdSetSpeedFraction`
+    // 559, then `CmdFollowBall` 562). That autopilot call hints that the live
+    // server does *not* open it on a follow **[I]**; a contributor saw TQ
+    // answer a follow straight after boarding with `FollowBall` alone while
+    // the ship flew, so TQ's throttle was most likely already open from the
+    // ball's earlier state **[I]** (no capture is on file).
+    //
+    // **Pushing `SetSpeedFraction 1.0` here is our choice** **[A]**: full
+    // speed, and only from exactly 0. Any non-zero throttle is kept; a zero
+    // throttle opens to full however it got there, a pilot's own
+    // `CmdSetSpeedFraction 0.0` included. Falsified by a TQ capture of a
+    // follow or orbit from a standing start whose slider stays at 0, or of
+    // a ball whose undock, board or arrival throttle is already non-zero
+    // (then the fix belongs in that starting state, not here).
     let throttle = (matches!(
         action,
         crate::destiny::Action::FollowBall { .. } | crate::destiny::Action::Orbit { .. }
@@ -2747,22 +2763,21 @@ mod tests {
         assert!(has(b"SetBallMassive") && has(b"SetBallPosition") && has(b"Stop"));
     }
 
-    /// **An order after landing cancels the warp's late reconciliation**
-    /// (FCI-FIX2): the real client's ship, told to follow a ball right after
-    /// it landed, was stopped and snapped back seven seconds later by the
-    /// scheduled `SetBallPosition`/`SetBallVelocity`/`Stop`.
     /// **A follow or orbit from a shut throttle opens it; one from a set
     /// throttle keeps it.** A pilot just undocked (throttle 0) approaching a
     /// planet gets `FollowBall` and `SetSpeedFraction 1.0` in one batch, and
-    /// the server's record says full; a pilot who set half throttle keeps it.
+    /// the server's record says full. A throttle shut by hand opens the same
+    /// way on an orbit; a pilot who set half throttle keeps it, and the
+    /// orbit's batch carries no throttle at all.
     #[test]
     fn a_follow_from_a_shut_throttle_opens_it() {
         const ALICE: i64 = 1_000_001;
+        const ALICE_SHIP: i64 = 100_000_001;
         let mut reg = Registry::new(SandboxConfig {
             characters: vec![crate::model::Character {
                 character_id: ALICE,
                 name: "Alice".to_owned(),
-                ship_id: 100_000_001,
+                ship_id: ALICE_SHIP,
                 ..crate::model::Character::default()
             }],
             celestials: crate::celestial::Catalogue::parse(
@@ -2787,22 +2802,60 @@ mod tests {
             .expect("answered")
         };
         let fraction = |reg: &Registry| reg.roster().get(ALICE).unwrap().motion.speed_fraction;
+        // The one destiny batch that carries the movement call `name`.
+        let batch_with = |reg: &mut Registry, name: &[u8]| {
+            let batches: Vec<_> = reg
+                .take_pending()
+                .into_iter()
+                .map(|(_, p)| p.to_push())
+                .filter(|(n, args)| *n == "DoDestinyUpdate" && action_args(args, name).is_some())
+                .collect();
+            assert_eq!(batches.len(), 1, "one batch carries the order");
+            batches.into_iter().next().unwrap().1
+        };
+        let opened = |batch: &[PyValue]| {
+            let throttle =
+                action_args(batch, b"SetSpeedFraction").expect("the same batch opens the throttle");
+            assert_eq!(
+                throttle.first(),
+                Some(&PyValue::Int(ALICE_SHIP)),
+                "the pilot's own ship: {throttle:?}"
+            );
+            assert_eq!(throttle.get(1), Some(&PyValue::Real(1.0)), "to full");
+        };
         assert_eq!(
             fraction(&reg),
             0.0,
             "the premise: undocked and told nothing"
         );
-        let follow = [PyValue::Int(40_000_001), PyValue::Real(1000.0)];
-        call(&mut reg, "CmdFollowBall", &follow);
+        let target = [PyValue::Int(40_000_001), PyValue::Real(1000.0)];
+
+        call(&mut reg, "CmdFollowBall", &target);
+        opened(&batch_with(&mut reg, b"FollowBall"));
         assert_eq!(fraction(&reg), 1.0, "the follow opened the throttle");
-        let names = format!("{:?}", reg.take_pending());
-        assert!(names.contains("SetSpeedFraction"), "and said so: {names}");
+
+        call(&mut reg, "CmdSetSpeedFraction", &[PyValue::Real(0.0)]);
+        let _ = reg.take_pending();
+        assert_eq!(fraction(&reg), 0.0, "shut by hand");
+        call(&mut reg, "CmdOrbit", &target);
+        opened(&batch_with(&mut reg, b"Orbit"));
+        assert_eq!(fraction(&reg), 1.0, "the orbit opened it too");
 
         call(&mut reg, "CmdSetSpeedFraction", &[PyValue::Real(0.5)]);
-        call(&mut reg, "CmdOrbit", &follow);
+        let _ = reg.take_pending();
+        call(&mut reg, "CmdOrbit", &target);
+        let batch = batch_with(&mut reg, b"Orbit");
+        assert!(
+            action_args(&batch, b"SetSpeedFraction").is_none(),
+            "a set throttle is not pushed again: {batch:?}"
+        );
         assert_eq!(fraction(&reg), 0.5, "a throttle the pilot set is kept");
     }
 
+    /// **An order after landing cancels the warp's late reconciliation**
+    /// (FCI-FIX2): the real client's ship, told to follow a ball right after
+    /// it landed, was stopped and snapped back seven seconds later by the
+    /// scheduled `SetBallPosition`/`SetBallVelocity`/`Stop`.
     #[test]
     fn a_follow_after_landing_cancels_the_arrival_batch() {
         const ALICE: i64 = 1_000_001;
