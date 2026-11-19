@@ -74,8 +74,11 @@ ALLOWLIST = {
     ("ro", "user", "dir", "resfiles"),
     ("ro", "user", "file", "shim"),
     ("ro", "user", "file", "launch-env"),
+    # The two patcher binds are skipped by bind_back when the files are absent
+    # (a public checkout); the launch-env table is always there.
     ("ro", "user", "file", "patcher"),
     ("ro", "user", "dir", "patches"),
+    ("ro", "user", "file", "launch-env-tsv"),
     # The census (CEN-3): bound only while census0 is in the namespace.
     ("ro", "user", "dir", "census-bin"),
     ("ro", "user", "file", "census-canary"),

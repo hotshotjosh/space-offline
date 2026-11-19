@@ -494,6 +494,7 @@ build_view() {
     #   refused (found by the remote-clients lane, which fixed jail-rootless.sh).
     bind_back ro user file   patcher    "$REPO/tools/eve_patch.py"
     bind_back ro user dir    patches    "$REPO/tools/patches"
+    bind_back ro user file   launch-env-tsv "$REPO/tools/client-launch-env.tsv"
     #   the census (CEN-3), only while census0 is in this namespace, which
     #   only census-up makes: the browser stand-ins the shim puts first on
     #   PATH and the canary script (read-only), and the two logs the client's
