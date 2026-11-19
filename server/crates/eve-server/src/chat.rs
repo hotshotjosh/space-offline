@@ -48,7 +48,6 @@ use crate::push::{Drain, Drained, STALL_LIMIT, WRITE_BUDGET, Writers};
 use crate::service::Registry;
 use eve_xmpp::{Element, Event, Framer};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::hash::{BuildHasher, Hasher};
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, Weak};
@@ -2301,23 +2300,14 @@ impl Hub {
 
     fn mint_token(&mut self, c: i64) -> String {
         self.token_counter += 1;
-        let now = crate::game_clock::clock::wall_system()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        // 128 bits from two independently keyed SipHashes (std's
-        // `RandomState` is seeded from the OS per instance). Not a crypto
-        // library, and it does not need to be: it guards a LAN chat server
-        // against a client guessing another client's token.
-        let mut halves = [0u64; 2];
-        for h in &mut halves {
-            let mut s = std::collections::hash_map::RandomState::new().build_hasher();
-            s.write_u64(self.token_counter);
-            s.write_u128(now);
-            s.write_i64(c);
-            *h = s.finish();
-        }
-        let token = format!("{:016x}{:016x}", halves[0], halves[1]);
+        // 128 bits from the operating system's CSPRNG (`eve_crypto::rand`
+        // through `accounts::urandom_fill`); the length is the one the token
+        // always had (32 hex characters, the client's XMPP password). A
+        // failure of the OS source is not recoverable here and a weak token
+        // must never be handed out.
+        let mut raw = [0u8; 16];
+        crate::accounts::urandom_fill(&mut raw).expect("os random");
+        let token = crate::accounts::hex(&raw);
         self.tokens.insert(token.clone(), (c, self.token_counter));
         token
     }
@@ -3265,6 +3255,19 @@ mod tests {
         hub.lock().reconcile(&BTreeMap::new(), snapshot);
         assert!(!hub.take_token(&again, A));
         assert!(!hub.lock().streams.contains_key(&A));
+    }
+
+    /// OS-6: tokens come from the OS source: distinct, 32 hex characters.
+    #[test]
+    fn minted_tokens_are_distinct_32_hex() {
+        let hub = ChatHub::new(ChatConfig::default());
+        let mut seen = BTreeSet::new();
+        for i in 0..1000 {
+            let t = hub.mint_token(A + i % 3);
+            assert_eq!(t.len(), 32, "{t}");
+            assert!(t.bytes().all(|b| b.is_ascii_hexdigit()), "{t}");
+            assert!(seen.insert(t), "a repeated token");
+        }
     }
 
     /// Three characters in one system and one NPC corp, all online.
