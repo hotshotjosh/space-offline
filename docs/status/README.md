@@ -698,7 +698,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-## Parked by the owner
+## Parked
 
 - Incursions: deferred by the owner, card pve-owner
 
@@ -713,7 +713,7 @@ Closed by default; each line says how much of the system is proved.
 | stubbed | The server gives a correctly shaped empty answer so the client does not fail. No real feature behind it. |
 | missing | Nothing yet. |
 | unknown | Could not be placed from the evidence. Never a guess. |
-| parked | The owner has said not now. Left out of every percentage. |
+| parked | Parked: not planned now. Left out of every percentage. |
 
 The graphs draw one mark per feature and group the states: filled dark **Proved**
 (client-proved, done), filled mid **Built** (built-unproved), half-filled **Part built**

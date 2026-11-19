@@ -331,12 +331,11 @@ up.sh: $START_INI has cryptoPack = ${pack:-<unset>}, and it must be Placebo.
 
   Do NOT just edit the line by hand: start.ini is covered by manifest.dat,
   which stores a SHA-256 of it, so a hand edit makes the client refuse to
-  start with "Verification Failure". Use the tool, which also updates the
+  start with "Verification Failure". Do it the supported way, which also updates the
   manifest to match:
 
-      tools/client-prepare.sh
-
-  (operates on the copy at \$EVE_CLIENT; reversible with --restore).
+      prepare a patched client copy first (see docs/guides/contributing.md section 3);
+      it operates on the copy at \$EVE_CLIENT.
 MSG
         exit 1
     else
@@ -391,7 +390,7 @@ if [[ -n "$stale" ]]; then
         sleep 0.2
     done
     if pgrep -f "^$REPO/server/target/debug/eve-dns " >/dev/null 2>&1; then
-        echo "up.sh: could not stop the old eve-dns; run: sudo pkill -f eve-dns" >&2
+        echo "up.sh: could not stop the old eve-dns (pid $stale); stop it by hand: sudo kill $stale" >&2
         exit 1
     fi
 fi
@@ -439,7 +438,7 @@ cleanup() {
     if [[ $KEEP -eq 1 ]]; then
         echo "   services left up (--keep): eve-dns, eve-server"
         echo "   stop them with: touch $STOP_FILE (eve-server writes its world and exits);"
-        echo "   sudo pkill -f 'eve-dns --bind'"
+        echo "   sudo kill ${dns_pid:-<the eve-dns pid>}   # eve-dns, by pid, never by pattern"
         echo "   jail left up; tear down with sudo tools/jail-teardown.sh"
         exit $code
     fi

@@ -294,13 +294,13 @@ class Output(unittest.TestCase):
         heads = re.findall(r"^## (.+)$", text, re.M)
         self.assertEqual(heads[:5], [
             "What is left, by theme", "By system", "Client regression waves",
-            "Every feature, by system", "Parked by the owner",
+            "Every feature, by system", "Parked",
         ])
         self.assertEqual(heads[-1], "How to update this page")
         self.assertLess(text.index("overall.svg"), text.index("## What is left, by theme"))
         # The per-theme lists stay open.
         self.assertNotIn("<details>", text[text.index("## What is left, by theme"):text.index("## By system")])
-        every = text[text.index("## Every feature, by system"):text.index("## Parked by the owner")]
+        every = text[text.index("## Every feature, by system"):text.index("## Parked")]
         self.assertEqual(every.count("<details>"), every.count("</details>"))
         self.assertEqual(every.count("<details>"), len({r["system"] for r in sample() if r["state"] != "parked"}))
         self.assertNotIn("###", every)
@@ -312,7 +312,7 @@ class Output(unittest.TestCase):
 
     def test_a_system_lists_every_row_it_has(self):
         text = sp.readme(sample(), WAVES, THEMES, "abc1234")
-        every = text[text.index("## Every feature, by system"):text.index("## Parked by the owner")]
+        every = text[text.index("## Every feature, by system"):text.index("## Parked")]
         for name in ("One", "Two", "Three", "Four", "Five", "Six", "Seven"):
             self.assertIn(f"] {name}:", every)
         self.assertNotIn("] Eight:", every)

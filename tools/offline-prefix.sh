@@ -150,7 +150,7 @@ check() {
         pack=$(sed -n 's/^[[:space:]]*cryptoPack[[:space:]]*=[[:space:]]*//p' \
             "$DST/$EVE_REL/tq-offline/start.ini" 2>/dev/null | tr -d '\r')
         if [[ $pack == Placebo ]]; then say "  ok    cryptoPack = Placebo"
-        else say "  MISS  cryptoPack = ${pack:-unset} (tools/client-prepare.sh)"; rc=1; fi
+        else say "  MISS  cryptoPack = ${pack:-unset} (prepare a patched client copy first, see docs/guides/contributing.md section 3)"; rc=1; fi
     else
         say "  MISS  no client at $DST/$EVE_REL/tq-offline"; rc=1
     fi
@@ -285,7 +285,7 @@ cat <<EOF
 
 Every jailed launch now uses this prefix (tools/run-client.sh, tools/up.sh,
 tools/client-ci.sh). Next:
-    tools/pin-client.sh                 # the copy is still the pinned build
+    tools/pin-client.sh                 # record or verify the copy's file hashes
     tools/client2-setup.sh              # only if you use a second client:
                                         # points its ResFiles at this copy
 The old client copy in the online prefix is no longer used; remove it when

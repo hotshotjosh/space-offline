@@ -69,7 +69,7 @@ STATES = {
     "stubbed": "The server gives a correctly shaped empty answer so the client does not fail. No real feature behind it.",
     "missing": "Nothing yet.",
     "unknown": "Could not be placed from the evidence. Never a guess.",
-    "parked": "The owner has said not now. Left out of every percentage.",
+    "parked": "Parked: not planned now. Left out of every percentage.",
 }
 
 # The four ways the graphs group the eight states, from most to least finished.
@@ -599,7 +599,7 @@ def readme(rows: list[dict], waves: list[dict], themes: dict[str, str], checked_
             out += [f"<details><summary><b>{escape(name)}</b>: {tail}</summary>", ""]
             out += [row_line(r) for r in members]
             out += ["", "</details>", ""]
-    out += ["## Parked by the owner", ""]
+    out += ["## Parked", ""]
     out += [
         f"- {r['feature']}: {r['evidence']}" + (f" ({issue_text(r['issue'])})" if issue_text(r["issue"]) else "")
         for r in rows

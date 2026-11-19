@@ -2,16 +2,13 @@
 # Pin the client build this project is reverse-engineered against, and notice
 # when something replaces it.
 #
-# **Why this exists.** Every `[V]` mark in this repository -- every verified
-# constant, every wire layout, every formula read out of CCP's own bytecode --
-# is measured against the pinned build (**3670638** since the re-pin of
-# 2026-11-04, issue #131; 3662168 from 2026-10-31, #19; first 3619879).
-# Steam had already moved its live copy to 3628513 (`docs/archive/plan-subsystems.md` §2a). Our two jailed installs are still
-# 3619879, and nothing was guarding them: a Steam verify, a reinstall, or a
-# disk sweep would replace the one artefact the whole corpus is anchored to,
-# and the first symptom would be a `[V]` fact quietly ceasing to be true.
+# **Why this exists.** Every `[V]` mark in this repository is measured against the
+# pinned build (the `pinned` row of `tools/builds.tsv`). A launcher verify, a
+# reinstall or a disk sweep would replace the install those marks were measured
+# against, and the first symptom would be a `[V]` fact quietly ceasing to be true.
+# This script records the install's file hashes and verifies them later.
 #
-# It would also wipe our own patches. `start.ini` and `manifest.dat` are
+# A verify would also wipe local patches. `start.ini` and `manifest.dat` are
 # modified in place, with `.eveoffline-orig` backups beside them, so a verify
 # costs the build *and* the patching.
 #
