@@ -15,15 +15,18 @@ character id is A, the other B (`EXPECT_CHARID` is set by the harness).  Both un
    `-0.5 * min(radii)` (they bounce, they do not pass through), and A's velocity becomes non-zero
    (the bump moved it).  A snap shows as a position jump between two 250 ms samples larger than
    the speed allows: none may occur during the contact;
-3. agreement: 10 s after the first contact, A's ball position on A's client and on B's client
-   differ by less than 50 m **[A]** (falsifier: this scenario's own print; tune after the first run);
+3. agreement: after the contact both ships are stopped and the scenario waits until both are at
+   rest on its client; each ship's position there is compared with the server's (`/where
+   <charid>`, metres, advanced to now) within 50 m **[A]** (falsifier: the check's own print;
+   tune after the first run).  Both clients do it, so they agree with each other through the
+   server;
 4. warp: A warps to a planet and back to B at 0 m; the ego ball is massive again after the landing
    on both clients, and neither client log holds `Ship stuck in extended warp`;
 5. no client traceback on either.
 
-NOT here: the undock fling with both docking and undocking at once (needs a station
-dance both clients agree on; `undock_distance` measures one ship), and the server's own
-position against the clients' (no slash echo of it exists to read).
+Also: an undock leg (both clients undock into one station; no ship ends 10 km from where it
+appeared in 10 s).  NOT here: docking and undocking in a loop, and a count of
+`SetState`/`AddBalls2` corrections (nothing in the client or server logs one).
 
 **[A]** `/tr me <system>` lands both on one spot (falsifier: the PRECONDITION on the distance).
 **[A]** a ship's slim names its pilot in `charID` or `ownerID` (falsifier: no peer ball found).
@@ -1434,6 +1437,44 @@ def eoci_main(EOCI_NAME):
     SAMPLE_MS = 250
     AGREE_M = 50.0              # [A] falsified by this scenario's own print
     MASSIVE_WAIT_MS = 30000
+    REST_WAIT_MS = 180000
+    UNDOCK_SETTLE_MS = 10000
+    FLING_M = 10000.0           # spec 6.2 step 5: no ship ends more than this from its undock point
+
+    def server_position(char_id):
+        """The server's own position of a pilot's ship in metres, or None (`/where`)."""
+        import re
+        ok, reply = gm('/where %s' % text(char_id))
+        found = re.search(r'position (-?\d+) (-?\d+) (-?\d+) m', reply) if ok else None
+        if found is None:
+            return None
+        return tuple([float(g) for g in found.groups()])
+
+    def undock_leg():
+        """Both clients undock into one station at about the same time: no ship is flung.
+
+        A massive ship starting inside a massive station would take the overlap branch and
+        leave at once (bump-spec 1.3); stations stay non-massive, so the ship must end within
+        FLING_M of where it appeared, 10 s on.  A second `[A]`: the harness starts both
+        clients within a few seconds of each other (falsifier: the leg passes with the other
+        client still docked, which proves nothing; the print says how far the other ball was).
+        """
+        park, ego = get_ego_ball(timeout_ms=60000)
+        if ego is None:
+            check('undock: the ego ball is in the park', False, 'no ego ball')
+            return
+        start = pos_of(ego)
+        top = [0.0]
+
+        def watch():
+            top[0] = max(top[0], speed_of(ego))
+            return False
+        wait_for(watch, timeout_ms=UNDOCK_SETTLE_MS, step_ms=250)
+        end = pos_of(ego)
+        moved = sum((end[k] - start[k]) ** 2 for k in range(3)) ** 0.5
+        check('undock: the ship is not flung (moved < %s m in %s s)' % (fmt(FLING_M, 0), fmt(UNDOCK_SETTLE_MS / 1000.0, 0)),
+              moved < FLING_M, 'moved %s m, top speed %s m/s' % (fmt(moved, 0), fmt(top[0], 0)))
+        check('undock: the ego ball is massive in space', massive(ego), text(massive(ego)))
 
     def null_candidates(home):
         cands = map_systems(
@@ -1562,11 +1603,33 @@ def eoci_main(EOCI_NAME):
             check('%s: no snap during the contact' % label, not jumps, text(jumps[:4]))
         if is_a:
             check('A: the bump gave A a velocity', moved[0], 'speed now %s m/s' % fmt(speed_of(ego), 1))
-        # 3. agreement: publish A's position through the log and compare by eye / by the other client's print
-        pa = pos_of(ego) if is_a else pos_of(peer)
-        say('bump pair %s: A position on this client %s' % (label, text(['%.1f' % c for c in pa])))
-        check('%s: A\'s position printed for the cross-client agreement (< %s m [A])' % (label, fmt(AGREE_M, 0)),
-              True, 'compare the two clients\' "A position" lines in the verdicts')
+        # 3. agreement: stop both ships, wait until both are at rest on this client, then
+        # compare each ship's position here with the SERVER's (`/where <charid>`, metres,
+        # advanced to now).  Both clients do the same, so the two clients agree with each
+        # other to within twice the bound, through the server.
+        safe(lambda: rbp.CmdStop())
+
+        def both_at_rest():
+            return speed_of(ego) < 0.5 and speed_of(peer) < 0.5
+        rested, waited = wait_for(both_at_rest, timeout_ms=REST_WAIT_MS, step_ms=500)
+        check('%s: both ships come to rest after the stop' % label, bool(rested),
+              'after %s ms; speeds %s / %s m/s' % (text(waited), fmt(speed_of(ego), 2), fmt(speed_of(peer), 2)))
+        sleep_ms(2000)
+        me_id = getattr_safe(builtin('session'), 'charid')
+        for who, ball, char_id in (('own', ego, me_id), ('other', peer, EXPECT_CHARID)):
+            sp = server_position(char_id)
+            cp = pos_of(ball)
+            if sp is None:
+                check('%s: the server states the %s ship\'s position (/where)' % (label, who), False,
+                      'no "position x y z m" line in the reply')
+                continue
+            off = sum((sp[k] - cp[k]) ** 2 for k in range(3)) ** 0.5
+            say('bump pair %s: %s ship on this client %s, on the server %s'
+                % (label, who, text(['%.1f' % c for c in cp]), text(['%.1f' % c for c in sp])))
+            check('%s: the %s ship at rest is within %s m of the server\'s position [A]'
+                  % (label, who, fmt(AGREE_M, 0)), off < AGREE_M,
+                  'client %s, server %s: %s m apart' % (
+                      text(['%.1f' % c for c in cp]), text(['%.1f' % c for c in sp]), fmt(off, 1)))
         # 4. warp away and back
         if is_a:
             planets = slims_where(park, lambda s: getattr_safe(s, 'groupID') == 7)
@@ -1603,6 +1666,7 @@ def eoci_main(EOCI_NAME):
             undocked, detail = undock()
             precondition('undocked into space', undocked, detail)
             if undocked:
+                undock_leg()
                 home = getattr_safe(builtin('session'), 'solarsystemid2')
                 cands = sorted(null_candidates(home))
                 precondition('a null-sec system without an NPC faction', bool(cands), '%d candidate(s)' % len(cands))

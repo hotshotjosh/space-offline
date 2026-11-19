@@ -86,9 +86,11 @@ pub const CLOSING_SPEED_SQ: f64 = 1.0e-4;
 /// The overlap recursion stops here: `depth < 2` recurses (`0x18003f58f...`) **[V]**.
 pub const MAX_DEPTH: u8 = 2;
 
-/// `[A]` Uniform-grid cell edge, metres. Falsified by the blob bench showing
-/// more than 64 balls per occupied cell in a 1,000-ship blob (then halve it).
-pub const CELL: f64 = 4_000.0;
+/// `[A]` Uniform-grid cell edge, metres: 2 km (the first cut was 4 km; the
+/// review halved it). Falsified by `bench_blob` (release) showing more than
+/// 2 ms per serial tick for 1,000 ships in a 4 km cube, or more than 0.5 ms
+/// for 1,000 in a 15 km cube. The numbers it printed are in the commit body.
+pub const CELL: f64 = 2_000.0;
 
 /// A body spanning more cells than this is kept in the grid's "big" list and
 /// checked against everyone, rather than inserted into every cell.
@@ -500,16 +502,37 @@ pub fn candidates_brute(i: usize, pos: &[[f64; 3]], reach: &[f64]) -> Vec<u32> {
 
 /// Whether any two of these swept spheres can touch: the gate that lets a
 /// system with nothing near anything skip collision altogether.
+///
+/// A sweep over the x axis (sorted by the sphere's low edge, each sphere
+/// compared with those whose low edge is under its high edge): two small
+/// allocations and `O(n log n)`, no hash map, because the read path asks
+/// this on every position read.
 pub fn any_pair(pos: &[[f64; 3]], reach: &[f64]) -> bool {
-    if pos.len() < 2 {
+    let mut order: Vec<u32> = (0..pos.len() as u32)
+        .filter(|&i| finite(pos[i as usize]) && reach[i as usize].is_finite())
+        .collect();
+    if order.len() < 2 {
         return false;
     }
-    let grid = Grid::build(pos, reach, CELL);
-    let mut out = Vec::new();
-    (0..pos.len()).any(|i| {
-        grid.candidates(i, pos, reach, &mut out);
-        !out.is_empty()
-    })
+    let low = |i: u32| pos[i as usize][0] - reach[i as usize];
+    order.sort_unstable_by(|&a, &b| low(a).total_cmp(&low(b)));
+    for (k, &i) in order.iter().enumerate() {
+        let high = pos[i as usize][0] + reach[i as usize];
+        for &j in &order[k + 1..] {
+            if low(j) > high {
+                break;
+            }
+            if reaches(
+                pos[i as usize],
+                reach[i as usize],
+                pos[j as usize],
+                reach[j as usize],
+            ) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// The response of body `i` against the grid's candidates, sorted by ball id
@@ -991,12 +1014,27 @@ mod tests {
         assert!(!any_pair(&near_[..1], &[100.0]));
     }
 
+    #[test]
+    fn the_gate_agrees_with_brute_force() {
+        for (n, size, seed) in [
+            (200usize, 400_000.0, 3u64),
+            (200, 20_000.0, 4),
+            (50, 2_000.0, 5),
+        ] {
+            let bodies = blob(n, size, seed);
+            let pos: Vec<[f64; 3]> = bodies.iter().map(|b| b.pos).collect();
+            let reach: Vec<f64> = bodies.iter().map(|b| b.radius).collect();
+            let brute = (0..n).any(|i| !candidates_brute(i, &pos, &reach).is_empty());
+            assert_eq!(any_pair(&pos, &reach), brute, "{n} in {size}");
+        }
+    }
+
     /// Cost of one tick for a 1,000-ship blob; run with
     /// `cargo test --release -p eve-server collision::tests::bench_blob -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn bench_blob() {
-        for blob_m in [15_000.0, 4_000.0] {
+        for blob_m in [400_000.0, 15_000.0, 4_000.0] {
             let bodies = blob(1_000, blob_m, 5);
             for threads in [1usize, 4] {
                 let t = std::time::Instant::now();
@@ -1010,6 +1048,16 @@ mod tests {
                     "bench_blob: 1,000 bodies in a {blob_m} m cube, {threads} thread(s): {per:.3} ms per tick, {contacts} contacts"
                 );
             }
+            let pos: Vec<[f64; 3]> = bodies.iter().map(|b| b.pos).collect();
+            let reach: Vec<f64> = bodies.iter().map(|b| b.radius).collect();
+            let t = std::time::Instant::now();
+            for _ in 0..50 {
+                std::hint::black_box(any_pair(&pos, &reach));
+            }
+            eprintln!(
+                "bench_blob: the gate, {:.3} ms",
+                t.elapsed().as_secs_f64() * 1e3 / 50.0
+            );
             // The cell occupancy the [A] cell size is judged by.
             let pos: Vec<[f64; 3]> = bodies.iter().map(|b| b.pos).collect();
             let reach = vec![200.0; pos.len()];

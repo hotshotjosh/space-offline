@@ -126,3 +126,94 @@ fn below_the_gate_nothing_is_spawned() {
     assert_eq!(crate::par::spawned_here(), before);
     crate::test_clock::thaw();
 }
+
+/// Two pilots on a collision course: the first flying at the second, who sits
+/// still 1,500 m ahead. Records written at `since`.
+fn collision_course() -> Registry {
+    let mut reg = world(2);
+    let since = crate::space_state::now_seconds();
+    let hull = |reg: &Registry, i: usize| {
+        let p = reg.roster().get(pilot(i)).expect("in space");
+        (p.ship_id, p.solar_system_id)
+    };
+    assert_eq!(hull(&reg, 0).1, SYSTEM);
+    for (i, x) in [(0usize, 0.0), (1, 1_500.0)] {
+        let p = reg.roster_mut().get_mut(pilot(i)).expect("in space");
+        p.motion = Motion::arrived([x, 0.0, 0.0], [0.0; 3]);
+        p.since = since;
+        p.entered = since - 100.0;
+        p.ticked = None;
+    }
+    let p = reg.roster_mut().get_mut(pilot(0)).expect("in space");
+    p.motion.velocity = [300.0, 0.0, 0.0];
+    p.motion.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
+    p.motion.speed_fraction = 1.0;
+    reg
+}
+
+/// **A ship read alone is bumped like the system step bumps it** (review
+/// finding 1). The read path used to advance one ship in the closed form,
+/// which flies through a contact, so whether two ships bumped depended on
+/// whether `advance_system` happened to run during the contact. Here the
+/// first ship is read alone every second, as `advance_character` does before
+/// each command and each position read, and both must end where a system
+/// advance every second puts them; the second ship sits still, so only a
+/// bump moves it.
+#[test]
+fn a_ship_read_alone_across_a_contact_is_bumped() {
+    let mut by_system = collision_course();
+    let mut by_reads = collision_course();
+    for _ in 0..12 {
+        crate::test_clock::step(Duration::from_secs(1));
+        by_system.advance_system(SYSTEM);
+        by_reads.advance_character(pilot(0));
+    }
+    by_reads.advance_character(pilot(1));
+    let x = |reg: &Registry, i: usize| {
+        reg.roster()
+            .get(pilot(i))
+            .expect("in space")
+            .motion
+            .position[0]
+    };
+    // Nothing but a bump moves the ship that sits still.
+    assert!(x(&by_system, 1) > 1_500.0, "the system step hits it");
+    assert!(
+        x(&by_reads, 1) > 1_500.0,
+        "read alone, the first ship flew through the second: {} {}",
+        x(&by_reads, 0),
+        x(&by_reads, 1)
+    );
+    for i in 0..2 {
+        assert!(
+            (x(&by_reads, i) - x(&by_system, i)).abs() < 1e-6,
+            "pilot {i}: {} against {}",
+            x(&by_reads, i),
+            x(&by_system, i)
+        );
+    }
+    crate::test_clock::thaw();
+}
+
+/// The gate stays closed for ships that cannot touch: reading one alone
+/// leaves the closed form.
+#[test]
+fn ships_far_apart_are_still_read_alone() {
+    let mut reg = collision_course();
+    reg.roster_mut()
+        .get_mut(pilot(1))
+        .expect("in space")
+        .motion
+        .position = [9.0e7, 0.0, 0.0];
+    assert!(!reg.steps_as_system(SYSTEM));
+    crate::test_clock::step(Duration::from_secs(5));
+    reg.advance_character(pilot(0));
+    assert!(
+        reg.roster()
+            .get(pilot(0))
+            .expect("in space")
+            .ticked
+            .is_none()
+    );
+    crate::test_clock::thaw();
+}

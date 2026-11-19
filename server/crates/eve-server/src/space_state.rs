@@ -125,6 +125,16 @@ pub struct Motion {
 /// 888 m for a cruiser. Real, and not the emergency the old table implied.
 const STOP_Y_DAMPING_RATE: f64 = 0.140_229_341_308_650_25;
 
+/// The same damping as one **whole-tick** factor on `vy`, the way the client
+/// applies it: `EvolveStop` multiplies `mNewVel.y` by it in the evolve pass,
+/// *before* the collision gradient reads the ball and before the integrator
+/// runs (`Ballpark.cpp:1339` and `:467`, Carbon `114e89fa`) **[V]**. The grid
+/// steps ([`Motion::advanced_tick`]) and the collision sample
+/// ([`Motion::tick_start`]) use this; the closed form of
+/// [`STOP_Y_DAMPING_RATE`] is what a step of any other length uses.
+/// `(1 - 0.07) * 0.9345794392523364486` rounded to a double.
+const STOP_Y_TICK_FACTOR: f64 = 0.869_158_878_504_672_9;
+
 /// One ball of a scene, for [`translate_followers`].
 #[derive(Debug, Clone, Copy)]
 pub struct SceneBall {
@@ -601,11 +611,43 @@ impl Motion {
     /// (a ball in warp is not massive), and a pushed ship is never teleported
     /// onto its goto point.
     pub fn advanced_pushed(
+        self,
+        h: &crate::destiny::hull::Hull,
+        dt: f64,
+        now: f64,
+        push: [f64; 3],
+    ) -> Motion {
+        self.advanced_core(h, dt, now, push, true)
+    }
+
+    /// The ball as the client's tick sees it at the start of its evolve
+    /// pass: a STOP ball's `vy` already damped by `EvolveStop`
+    /// ([`STOP_Y_TICK_FACTOR`]). Both the collision sample and the step read
+    /// this, so a contact is planned from the velocity that is integrated.
+    pub fn tick_start(mut self) -> Motion {
+        if matches!(self.mode, Mode::Stop) {
+            self.velocity[1] *= STOP_Y_TICK_FACTOR;
+        }
+        self
+    }
+
+    /// One **whole client tick** from [`Self::tick_start`]'s state, with a
+    /// contact's offset: the vertical damping is the per-tick factor applied
+    /// first (as `EvolveStop` does) and the integration is the plain drag
+    /// law on every axis. Pass the state *before* [`Self::tick_start`]; this
+    /// applies it.
+    pub fn advanced_tick(self, h: &crate::destiny::hull::Hull, now: f64, push: [f64; 3]) -> Motion {
+        self.tick_start()
+            .advanced_core(h, TICK_SECONDS, now, push, false)
+    }
+
+    fn advanced_core(
         mut self,
         h: &crate::destiny::hull::Hull,
         dt: f64,
         now: f64,
         push: [f64; 3],
+        y_rate: bool,
     ) -> Motion {
         if !dt.is_finite() || dt <= 0.0 {
             return self;
@@ -675,7 +717,11 @@ impl Motion {
         for axis in 0..3 {
             // **The y axis decays faster while stopping, and only while
             // stopping.** See [`STOP_Y_DAMPING_RATE`].
-            let tau_axis = axis_tau(self.mode, tau, axis);
+            let tau_axis = if y_rate {
+                axis_tau(self.mode, tau, axis)
+            } else {
+                tau
+            };
             (position[axis], velocity[axis]) = drag_axis(
                 self.position[axis],
                 self.velocity[axis],
@@ -1179,26 +1225,41 @@ impl Motion {
         if !dt.is_finite() || dt <= 0.0 || !range.is_finite() {
             return self;
         }
-        let cruise = f64::from(h.max_velocity) * f64::from(self.speed_fraction);
-        let mut commanded = if !cruise.is_finite() || cruise <= 0.0 {
-            [0.0; 3]
-        } else {
-            match self.mode {
-                Mode::Orbit { .. } => {
-                    let tick = u32::try_from(tick).unwrap_or(0);
-                    scale(
-                        orbit_thrust(self.position, other, range, ball_id, tick),
-                        cruise,
-                    )
-                }
-                Mode::Follow { .. } => follow_velocity(self.position, other, range, cruise),
-                _ => self.commanded_velocity(h),
-            }
-        };
+        let mut commanded = self.tether_commanded(h, ball_id, other, range, tick);
         for (c, p) in commanded.iter_mut().zip(push) {
             *c += p;
         }
         self.integrated(h, commanded, dt)
+    }
+
+    /// The velocity a ship tethered to `other` is steered toward this tick
+    /// (what [`Self::tethered_step_pushed`] integrates, before a contact's
+    /// offset): the orbit or follow law of [`Self::tethered_step`], else
+    /// [`Self::commanded_velocity`]. The collision sample reads it too, so
+    /// the `u` it plans with is the one the step applies.
+    pub fn tether_commanded(
+        &self,
+        h: &crate::destiny::hull::Hull,
+        ball_id: i64,
+        other: [f64; 3],
+        range: f64,
+        tick: i64,
+    ) -> [f64; 3] {
+        let cruise = f64::from(h.max_velocity) * f64::from(self.speed_fraction);
+        if !cruise.is_finite() || cruise <= 0.0 || !range.is_finite() {
+            return [0.0; 3];
+        }
+        match self.mode {
+            Mode::Orbit { .. } => {
+                let tick = u32::try_from(tick).unwrap_or(0);
+                scale(
+                    orbit_thrust(self.position, other, range, ball_id, tick),
+                    cruise,
+                )
+            }
+            Mode::Follow { .. } => follow_velocity(self.position, other, range, cruise),
+            _ => self.commanded_velocity(h),
+        }
     }
 
     /// The drag law over `dt` with the commanded velocity held: Carbon's
@@ -1328,6 +1389,15 @@ pub const TICK_SECONDS: f64 = 1.0;
 /// any observer advances the system).
 pub const MAX_CATCHUP_TICKS: i64 = 3_600;
 
+/// `[A]` The most ticks a **colliding** system is stepped in one call: a
+/// ship whose record is older is carried to this many ticks short of now by
+/// the closed form (no bumps in that stretch), then stepped. One minute
+/// bounds the cost of the first read of a long-unread system to 60 planning
+/// passes; every observer advances the system each tick, so an unread one is
+/// one nobody sees. Falsified by a bump inside such a stretch that a
+/// later observer can tell from the lumped result.
+pub const COLLIDE_CATCHUP_TICKS: i64 = 60;
+
 /// **A tether snaps only what the ship could have flown** (live-fleetgrid,
 /// follow-lead): a follow of a moving ship is put at its range from its target
 /// only when that moves it no more than `cruise * dt + TETHER_SLACK` and the
@@ -1399,6 +1469,9 @@ enum Pull {
 struct Run {
     character_id: i64,
     ship_id: i64,
+    /// A piloted ship the collision pass knows ([`Solid`]); an NPC, a drone,
+    /// a fighter and an abandoned hull are not massive on the wire.
+    solid: bool,
     cloaked: bool,
     hull: crate::destiny::hull::Hull,
     pull: Pull,
@@ -1421,8 +1494,17 @@ impl Run {
     /// has placed it, which a follow snaps to.
     ///
     /// `push` is the tick's contact offset to the commanded velocity
-    /// (`crate::collision`; zero when nothing touched). A ship following a
-    /// mover keeps its snap and ignores it: the snap would undo it.
+    /// (`crate::collision`; zero when nothing touched). **Every massive ball
+    /// takes it whatever its mode**: Carbon runs `Gradient` for each one
+    /// (`Ballpark.cpp:467`, `:2745-2786`, Carbon `114e89fa`) **[V]**, so a
+    /// follower or an orbiter is flown by its thrust plus the push for that
+    /// tick ([`Motion::tethered_step_pushed`]) instead of being snapped onto
+    /// its range, which would undo the push and put it back in contact. An
+    /// unpushed follower keeps the snap, as before.
+    ///
+    /// A whole tick (`dt` = [`TICK_SECONDS`]) is the client's own step, so a
+    /// STOP ball's `vy` is damped first ([`Motion::advanced_tick`]); a
+    /// partial view keeps the closed form.
     fn stepped(
         &self,
         start: &[[f64; 3]],
@@ -1432,15 +1514,27 @@ impl Run {
         push: [f64; 3],
     ) -> Motion {
         let end = tick as f64 + dt;
+        let pushed = push != [0.0; 3];
+        let free = |m: &Motion| {
+            if dt >= TICK_SECONDS {
+                m.advanced_tick(&self.hull, end, push)
+            } else {
+                m.advanced_pushed(&self.hull, dt, end, push)
+            }
+        };
         match self.pull {
-            Pull::Free => self.state.advanced_pushed(&self.hull, dt, end, push),
+            Pull::Free => free(&self.state),
+            Pull::Fixed { at, range } if pushed => {
+                self.state
+                    .tethered_step_pushed(&self.hull, self.ship_id, at, range, tick, dt, push)
+            }
             Pull::Fixed { at, range } => {
-                let mut m = self.state.advanced_pushed(&self.hull, dt, end, push);
+                let mut m = free(&self.state);
                 m.tethered_in_plane(at, range, self.ship_id, end as u32);
                 m.settle_follow([0.0; 3]);
                 m
             }
-            Pull::Mover { index, range } if self.follows_a_mover() => {
+            Pull::Mover { index, range } if self.follows_a_mover() && !pushed => {
                 let lead = sub(placed[index], start[index]);
                 self.state.tethered_advance_led(
                     &self.hull,
@@ -1464,18 +1558,42 @@ impl Run {
         }
     }
 
-    /// Whether this ball is massive at the start of `tick`: not in an
-    /// active warp (the client's `ActivateWarp` clears the flag, the arrival
-    /// sets it), and not a missile (phase 1 does not collide those).
+    /// The commanded velocity [`Self::stepped`] steers this ball toward at
+    /// `tick`, before a contact's offset: what the collision sample's `u`
+    /// must be, so a bump is planned from the motion that is applied.
+    fn commanded_at(&self, start: &[[f64; 3]], tick: i64) -> [f64; 3] {
+        match self.pull {
+            Pull::Free => self.state.commanded_velocity(&self.hull),
+            Pull::Fixed { at, range } => {
+                self.state
+                    .tether_commanded(&self.hull, self.ship_id, at, range, tick)
+            }
+            Pull::Mover { index, range } => {
+                self.state
+                    .tether_commanded(&self.hull, self.ship_id, start[index], range, tick)
+            }
+        }
+    }
+
+    /// Whether this ball is massive and sampled at the start of `tick`: its
+    /// state *is* the state at that tick (a ball already carried past it is
+    /// not sampled: no ghost future states), not cloaked (the client's
+    /// `CloakBall` clears `isMassive`, `Ballpark.cpp:5250` **[V]**), not in an
+    /// active warp (`ActivateWarp` clears it, the arrival sets it), and not a
+    /// missile (phase 1 does not collide those).
     fn massive_at(&self, tick: i64) -> bool {
-        !self.state.warp_active_at(tick as f64) && !matches!(self.state.mode, Mode::Missile { .. })
+        self.tick == tick
+            && self.solid
+            && !self.cloaked
+            && !self.state.warp_active_at(tick as f64)
+            && !matches!(self.state.mode, Mode::Missile { .. })
     }
 }
 
 /// The collision offset of every run at the start of `tick`
-/// (`crate::collision::plan` over the massive ones), zero for the rest. A
-/// run that has already been carried past `tick` is not pushed.
-fn contact_pushes(runs: &[Run], tick: i64, threads: usize) -> Vec<[f64; 3]> {
+/// (`crate::collision::plan` over the massive ones), zero for the rest.
+/// `start` is every run's position at the tick's start.
+fn contact_pushes(runs: &[Run], start: &[[f64; 3]], tick: i64, threads: usize) -> Vec<[f64; 3]> {
     let mut pushes = vec![[0.0; 3]; runs.len()];
     let mut owner = Vec::with_capacity(runs.len());
     let mut bodies = Vec::with_capacity(runs.len());
@@ -1484,17 +1602,18 @@ fn contact_pushes(runs: &[Run], tick: i64, threads: usize) -> Vec<[f64; 3]> {
             continue;
         }
         owner.push(i);
+        let seen = r.state.tick_start();
         bodies.push(crate::collision::Body {
             id: r.ship_id,
-            pos: r.state.position,
-            vel: r.state.velocity,
-            u: r.state.commanded_velocity(&r.hull),
+            pos: seen.position,
+            vel: seen.velocity,
+            u: r.commanded_at(start, tick),
             radius: f64::from(r.hull.radius),
             mass: r.hull.mass,
             agility: f64::from(r.hull.agility),
             free: true,
             junk: true,
-            cloaked: r.cloaked,
+            cloaked: false,
             missile: false,
             owner: 0,
             follow: 0,
@@ -1504,9 +1623,7 @@ fn contact_pushes(runs: &[Run], tick: i64, threads: usize) -> Vec<[f64; 3]> {
         .into_iter()
         .enumerate()
     {
-        if let Some(du) = du
-            && runs[owner[k]].tick <= tick
-        {
+        if let Some(du) = du {
             pushes[owner[k]] = du;
         }
     }
@@ -2074,7 +2191,7 @@ impl Roster {
     }
 
     /// The ids in one system, in character order, from the index.
-    fn ids_in(&self, solar_system_id: i64) -> impl Iterator<Item = i64> + '_ {
+    pub fn ids_in(&self, solar_system_id: i64) -> impl Iterator<Item = i64> + '_ {
         self.by_system
             .get(&solar_system_id)
             .into_iter()
@@ -2194,36 +2311,61 @@ impl Roster {
         }
     }
 
-    /// The broad-phase gate: whether any two ships of `movers` could touch
-    /// between their written records and one tick past `now`. A ship at
-    /// rest reaches only its own radius (it moves only when hit, and the
-    /// ship that hits it reaches it); one under way reaches as far as it
-    /// could fly, `(speed + max velocity) * span`; a ship in a warp reaches
-    /// nothing (it is not massive, and the next advance after its landing
-    /// sees it where it parked). `[A]` the reach is a bound: falsified by a
-    /// contact the tick regime finds that this gate missed.
+    /// The broad-phase gate over `movers`: [`Self::touch_possible`] with the
+    /// radius and top speed each [`Solid`] carries.
     fn could_touch(
         &self,
         movers: &[Mover],
         solids: &std::collections::BTreeMap<i64, &Solid>,
         now: f64,
     ) -> bool {
-        let mut pos = Vec::with_capacity(movers.len());
-        let mut reach = Vec::with_capacity(movers.len());
-        for m in movers {
-            let (Some(p), Some(s)) = (
-                self.by_character.get(&m.character_id),
-                solids.get(&m.character_id),
-            ) else {
+        self.touch_possible(
+            movers.iter().filter_map(|m| {
+                solids.get(&m.character_id).map(|s| {
+                    (
+                        m.character_id,
+                        f64::from(s.hull.radius),
+                        f64::from(s.hull.max_velocity),
+                    )
+                })
+            }),
+            now,
+        )
+    }
+
+    /// **The gate**: whether any two of these ships (character id, hull
+    /// radius, top speed) could touch between their written records and one
+    /// tick past `now`. A ship at rest reaches only its own radius (it moves
+    /// only when hit, and the ship that hits it reaches it); a ship under way,
+    /// **aligning for a warp included** (it is massive and moving until the
+    /// activation stamp comes due), reaches as far as it could fly,
+    /// `(speed + top speed) * span`; a ship already in an active warp at its
+    /// record reaches nothing (it is not massive, and the first advance after
+    /// its landing sees it where it parked). `[A]` the reach is a bound:
+    /// falsified by a contact the tick regime finds that this gate missed,
+    /// and a ship that lands among others inside one span is seen at the next
+    /// advance only. The span is not clamped: a record older than the catch-up
+    /// cap ([`COLLIDE_CATCHUP_TICKS`]) is crossed in a lump the reach must
+    /// include.
+    ///
+    /// `Registry::steps_as_system` asks this on the read path too, so a ship
+    /// read alone is stepped with the system whenever a contact is possible.
+    pub fn touch_possible(
+        &self,
+        ships: impl IntoIterator<Item = (i64, f64, f64)>,
+        now: f64,
+    ) -> bool {
+        let mut pos = Vec::new();
+        let mut reach = Vec::new();
+        for (character_id, radius, top_speed) in ships {
+            let Some(p) = self.by_character.get(&character_id) else {
                 continue;
             };
-            let radius = f64::from(s.hull.radius);
-            let flight = if p.motion.is_at_rest() || p.motion.warp_commanded() {
+            let flight = if p.motion.is_at_rest() || p.motion.warp_active_at(p.since) {
                 0.0
             } else {
-                // A gap past the catch-up bound is crossed in one lump anyway.
-                let span = (now - p.since).clamp(0.0, MAX_CATCHUP_TICKS as f64) + TICK_SECONDS;
-                (p.motion.speed() + f64::from(s.hull.max_velocity)) * span
+                let span = (now - p.since).max(0.0) + TICK_SECONDS;
+                (p.motion.speed() + top_speed) * span
             };
             pos.push(p.motion.position);
             reach.push(radius + flight);
@@ -2317,6 +2459,7 @@ impl Roster {
             runs.push(Run {
                 character_id: m.character_id,
                 ship_id: p.ship_id,
+                solid: solid.is_some(),
                 cloaked: solid.is_some_and(|s| s.cloaked),
                 hull: solid.map_or(m.hull, |s| s.hull),
                 pull,
@@ -2339,8 +2482,33 @@ impl Roster {
                 };
             }
         }
+        // **Nothing is held inside another ship's skin.** A ship tethered to
+        // another ship's ball at a gap under the overlap margin would sit in
+        // contact for ever; Carbon's overlap branch pushes a pair out to
+        // `radii + 1 m` (`collision::OVERLAP_MARGIN`), so that is the closest
+        // a follow or an orbit is held when ships collide.
+        if collide {
+            for i in 0..runs.len() {
+                if let Pull::Mover { index, range } = runs[i].pull {
+                    let closest = f64::from(runs[i].hull.radius)
+                        + f64::from(runs[index].hull.radius)
+                        + crate::collision::OVERLAP_MARGIN;
+                    runs[i].pull = Pull::Mover {
+                        index,
+                        range: range.max(closest),
+                    };
+                }
+            }
+        }
         // A gap longer than the cost bound is crossed in one lump first.
-        let floor = last - MAX_CATCHUP_TICKS;
+        // **A colliding system's bound is [`COLLIDE_CATCHUP_TICKS`]**, since
+        // each tick there plans a contact for every ship.
+        let cap = if collide {
+            COLLIDE_CATCHUP_TICKS
+        } else {
+            MAX_CATCHUP_TICKS
+        };
+        let floor = last - cap;
         let fixed_points: Vec<[f64; 3]> = runs.iter().map(|r| r.state.position).collect();
         for r in &mut runs {
             if r.tick < floor {
@@ -2386,7 +2554,7 @@ impl Roster {
             // (the client reads only start-of-tick state, so the order the
             // balls are stepped in below cannot change an answer).
             let pushes = if collide {
-                contact_pushes(&runs, tick, threads)
+                contact_pushes(&runs, &start, tick, threads)
             } else {
                 Vec::new()
             };
@@ -2405,7 +2573,7 @@ impl Roster {
         let start = positions.clone();
         // The tick in progress is bumped the way the next grid tick will be.
         let view_pushes = if collide {
-            contact_pushes(&runs, last, threads)
+            contact_pushes(&runs, &start, last, threads)
         } else {
             Vec::new()
         };
@@ -5086,13 +5254,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_system_of_bumping_ships_is_the_same_at_one_and_four_threads() {
+    /// `n` invented ships in a block a few hundred metres wide (a storm of
+    /// contacts), advanced to t = 5 s at `threads`: where they all are, and
+    /// where they would be with no collision at all.
+    fn bump_storm(n: usize, threads: usize) -> (Vec<Motion>, Vec<Motion>) {
         let build = || {
             let mut r = Roster::default();
-            // 600 invented ships in a block a few hundred metres wide: a
-            // storm of contacts, and past the planning threshold.
-            for i in 0..600i64 {
+            for i in 0..n as i64 {
                 let x = (i % 10) as f64 * 120.0;
                 let y = ((i / 10) % 10) as f64 * 120.0;
                 let z = (i / 100) as f64 * 120.0;
@@ -5103,26 +5271,266 @@ mod tests {
             }
             r
         };
-        let ids: Vec<i64> = (1..=600).collect();
-        let run = |threads: usize| {
-            let mut r = build();
-            let (movers, solids) = at_rest_or_not(&r, &ids);
-            r.advance_with(&movers, &solids, 5.0, threads);
+        let ids: Vec<i64> = (1..=n as i64).collect();
+        let mut r = build();
+        let (movers, solids) = at_rest_or_not(&r, &ids);
+        r.advance_with(&movers, &solids, 5.0, threads);
+        let mut alone = build();
+        alone.advance_with(&movers, &[], 5.0, 1);
+        let at = |r: &Roster| {
             ids.iter()
                 .map(|c| r.get(*c).expect("in space").motion)
                 .collect::<Vec<_>>()
         };
-        let (one, four) = (run(1), run(4));
+        (at(&r), at(&alone))
+    }
+
+    #[test]
+    fn a_system_of_bumping_ships_is_the_same_at_one_and_four_threads() {
+        // Small enough for a debug build; `bench_bumping_roster` runs 600
+        // (past `COLLIDE_PAR_MIN`, so four threads really split) in release.
+        let (one, alone) = bump_storm(60, 1);
+        let (four, _) = bump_storm(60, 4);
         assert_eq!(one, four);
-        // Collisions really happened: not every ship flew its own coast.
-        let mut alone = build();
-        let (movers, _) = at_rest_or_not(&alone, &ids);
-        alone.advance_with(&movers, &[], 5.0, 1);
-        let moved = ids
+        let moved = one
             .iter()
-            .zip(&one)
-            .filter(|(c, m)| alone.get(**c).expect("in space").motion.position != m.position)
+            .zip(&alone)
+            .filter(|(m, a)| m.position != a.position)
+            .count();
+        assert!(moved > 10, "only {moved} ships were bumped");
+    }
+
+    /// Release only: `cargo test --release -p eve-server
+    /// space_state::tests::bench_bumping_roster -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn bench_bumping_roster() {
+        let t = std::time::Instant::now();
+        let (one, alone) = bump_storm(600, 1);
+        let serial = t.elapsed();
+        let t = std::time::Instant::now();
+        let (four, _) = bump_storm(600, 4);
+        eprintln!(
+            "bench_bumping_roster: 600 ships, 5 ticks: {serial:?} on one thread, {:?} on four",
+            t.elapsed()
+        );
+        assert_eq!(one, four);
+        let moved = one
+            .iter()
+            .zip(&alone)
+            .filter(|(m, a)| m.position != a.position)
             .count();
         assert!(moved > 100, "only {moved} ships were bumped");
+    }
+
+    // ---- the review round: gate, sample, followers, STOP ----
+
+    /// The gate counts an **aligning** ship: it is massive and moving until
+    /// its activation stamp comes due. One already in an active warp reaches
+    /// nothing.
+    #[test]
+    fn the_gate_counts_an_aligning_ship_and_not_a_warping_one() {
+        let warp = |stamp: i32| Mode::Warp {
+            goto: [1.0e9, 0.0, 0.0],
+            effect_stamp: stamp,
+            total_distance: -1.0,
+            stop_distance: 0.0,
+            warp_factor: 4000,
+        };
+        let build = |mode: Mode| {
+            let mut r = Roster::default();
+            let mut a = coaster(1, 0.0, 300.0, 0.0);
+            a.motion.mode = mode;
+            r.arrive(a);
+            r.arrive(coaster(2, 1_000.0, 0.0, 0.0));
+            r
+        };
+        let ships = [(1, 50.0, 300.0), (2, 50.0, 300.0)];
+        // Aligning (negative stamp): 300 m/s plus 300 over two seconds.
+        assert!(build(warp(-1)).touch_possible(ships, 1.0));
+        // Active at its record: not massive, reaches nothing.
+        assert!(!build(warp(0)).touch_possible(ships, 1.0));
+    }
+
+    /// The collision sample is of the ships **at this tick**: a ship the grid
+    /// has already carried past it is not sampled (no ghost future state),
+    /// and a cloaked one, or one that is not a piloted ship, is never massive.
+    #[test]
+    fn only_ships_at_this_tick_and_not_cloaked_are_sampled() {
+        let run = |tick: i64, solid: bool, cloaked: bool| Run {
+            character_id: 1,
+            ship_id: 10_001,
+            solid,
+            cloaked,
+            hull: bumper(),
+            pull: Pull::Free,
+            state: Motion::arrived([0.0; 3], [0.0; 3]),
+            tick,
+        };
+        assert!(run(5, true, false).massive_at(5));
+        assert!(!run(6, true, false).massive_at(5), "a ghost future state");
+        assert!(!run(5, true, true).massive_at(5), "cloaked");
+        assert!(!run(5, false, false).massive_at(5), "not a piloted ship");
+    }
+
+    #[test]
+    fn a_cloaked_ship_and_an_npc_are_not_bumped() {
+        let head_on = |solids: &dyn Fn(Vec<Solid>) -> Vec<Solid>| {
+            let mut r = Roster::default();
+            r.arrive(coaster(1, 0.0, 300.0, 0.0));
+            r.arrive(coaster(2, 300.0, -300.0, 0.0));
+            let (movers, all) = at_rest_or_not(&r, &[1, 2]);
+            r.advance_with(&movers, &solids(all), 20.0, 1);
+            [1, 2].map(|c| r.get(c).expect("in space").motion.position[0])
+        };
+        let [a, b] = head_on(&|s| s);
+        assert!(a < b, "solid ships bounce");
+        let cloaked = head_on(&|mut s| {
+            s[1].cloaked = true;
+            s
+        });
+        assert!(cloaked[0] > cloaked[1], "a cloaked ship is flown through");
+        let npc = head_on(&|mut s| {
+            s.pop();
+            s
+        });
+        assert!(npc[0] > npc[1], "a ship that is no solid is flown through");
+    }
+
+    /// **A follower held at range 0 does not stall its leader** (review
+    /// finding 3). The follow is held at the closest two hulls can be
+    /// (`radii + 1 m`), not inside the leader's skin, so it does not re-enter
+    /// contact on every snap, and a push on either is flown, not snapped away.
+    /// Started overlapping, the pair separates and the leader is back at its
+    /// speed.
+    #[test]
+    fn a_follower_at_range_zero_does_not_stall_its_leader() {
+        const LEADER_SHIP: i64 = 10_001;
+        let mut r = Roster::default();
+        let mut lead = coaster(1, 0.0, 300.0, 0.0);
+        lead.motion.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
+        lead.motion.speed_fraction = 1.0;
+        r.arrive(lead);
+        let mut tail = coaster(2, -60.0, 300.0, 0.0);
+        tail.motion.mode = Mode::Follow {
+            ball_id: LEADER_SHIP,
+            range: 0.0,
+        };
+        tail.motion.speed_fraction = 1.0;
+        r.arrive(tail);
+        let hull = bumper();
+        let solids = [1, 2].map(|c| Solid {
+            character_id: c,
+            hull,
+            cloaked: false,
+        });
+        let centre = 2.0 * f64::from(hull.radius);
+        let mut worst: f64 = 300.0;
+        for second in 1..=40 {
+            let lead_at = r.get(1).expect("in space").motion.position;
+            let movers = [
+                Mover {
+                    character_id: 1,
+                    hull,
+                    tether: None,
+                },
+                Mover {
+                    character_id: 2,
+                    hull,
+                    tether: Some(Tether {
+                        ball_id: LEADER_SHIP,
+                        range: centre,
+                        at: lead_at,
+                    }),
+                },
+            ];
+            r.advance_with(&movers, &solids, f64::from(second), 1);
+            if second > 15 {
+                worst = worst.min(r.get(1).expect("in space").motion.speed());
+            }
+        }
+        let (a, b) = (
+            r.get(1).expect("in space").motion,
+            r.get(2).expect("in space").motion,
+        );
+        assert!(worst > 270.0, "the leader slowed to {worst} m/s");
+        assert!(
+            a.position[0] > 8_000.0,
+            "the leader got {} m",
+            a.position[0]
+        );
+        let gap = distance(a.position, b.position);
+        assert!(
+            gap >= centre,
+            "the follower is outside the leader's skin: {gap}"
+        );
+        assert!(gap < centre + 100.0, "and still following: {gap}");
+    }
+
+    /// **STOP's `vy` damping comes before the integration**, as `EvolveStop`
+    /// does it (`Ballpark.cpp:1339`), and the plain drag law follows on every
+    /// axis: the expected values are computed from CCP's two literals.
+    #[test]
+    fn a_stop_ball_damps_vy_before_the_tick_integrates_it() {
+        #[allow(clippy::excessive_precision)]
+        let k: f64 = (1.0 - 0.07) * 0.934_579_439_252_336_448_598_130_841_121_5;
+        let hull = bumper();
+        let m = Motion {
+            position: [0.0; 3],
+            velocity: [0.0, 300.0, 100.0],
+            mode: Mode::Stop,
+            speed_fraction: 1.0,
+        };
+        let seen = m.tick_start();
+        assert!((seen.velocity[1] - 300.0 * k).abs() < 1e-12);
+        assert_eq!(seen.velocity[2], 100.0, "only y");
+        let after = m.advanced_tick(&hull, 1.0, [0.0; 3]);
+        let tau = 1.0;
+        let decay = (-1.0_f64 / tau).exp();
+        assert!((after.velocity[1] - 300.0 * k * decay).abs() < 1e-9);
+        assert!((after.position[1] - 300.0 * k * tau * (1.0 - decay)).abs() < 1e-9);
+        assert!(
+            (after.velocity[2] - 100.0 * decay).abs() < 1e-9,
+            "z is plain"
+        );
+        // A ship under way is not damped.
+        let mut going = m;
+        going.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
+        assert_eq!(going.tick_start().velocity, going.velocity);
+    }
+
+    /// The `u` the collision sample plans with is the commanded velocity the
+    /// step applies, for a tethered ship too (review finding 4).
+    #[test]
+    fn the_sampled_commanded_velocity_is_the_one_the_step_applies() {
+        let hull = bumper();
+        let mut m = Motion::arrived([0.0; 3], [0.0, 120.0, 0.0]);
+        m.mode = Mode::Orbit {
+            ball_id: 99,
+            range: 800.0,
+        };
+        m.speed_fraction = 1.0;
+        let run = Run {
+            character_id: 1,
+            ship_id: 10_001,
+            solid: true,
+            cloaked: false,
+            hull,
+            pull: Pull::Mover {
+                index: 1,
+                range: 800.0,
+            },
+            state: m,
+            tick: 3,
+        };
+        let start = [[0.0; 3], [2_000.0, 0.0, 0.0]];
+        let u = run.commanded_at(&start, 3);
+        assert_ne!(u, m.commanded_velocity(&hull), "not unit(vel) * speed");
+        let stepped = run.stepped(&start, &start, 3, TICK_SECONDS, [0.0; 3]);
+        for (a, &want) in u.iter().enumerate() {
+            let (x, v) = drag_axis(m.position[a], m.velocity[a], want, 1.0, 1.0);
+            assert!((stepped.position[a] - x).abs() < 1e-9);
+            assert!((stepped.velocity[a] - v).abs() < 1e-9);
+        }
     }
 }

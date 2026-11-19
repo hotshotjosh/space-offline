@@ -524,6 +524,11 @@ fn the_ego_ball_carries_the_cloak_byte_and_it_round_trips() {
     let motion = reg.roster().get(ALICE).expect("in space").motion;
     let before = crate::destiny::pilot_ball(&reg, ALICE_SHIP, HULL, 0, 0, &motion);
     assert_eq!(before.cloak, 0);
+    assert_eq!(
+        before.flags,
+        crate::destiny::FLAGS_PILOT_BALL,
+        "a pilot is massive"
+    );
     cloak_on(&mut reg, T0);
     let ball = crate::destiny::pilot_ball(&reg, ALICE_SHIP, HULL, 0, 0, &motion);
     assert_eq!(ball.cloak, MODE_NORMAL);

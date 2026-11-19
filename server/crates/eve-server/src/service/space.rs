@@ -1200,6 +1200,17 @@ pub(super) fn warp_to_point(
     // the flag and the arrival sets it again (`docs/re/warp.md` §5.2, §7.1,
     // `0x18004309b`) **[V]**, and the server now collides ships with the same
     // physics (`crate::collision`), so there is no demotion to send.
+    //
+    // **`[A]` the arrival is predicted from the unbumped align.** The batch
+    // below is scheduled now, for `flight` seconds on, from the align this
+    // command found. A ship that is bumped while it aligns (aligning is
+    // massive, ordinary flight) has its align shifted by the push, so its own
+    // client activates the warp a little earlier or later than this clock
+    // assumed, and the observers' `SetBallPosition` at the predicted landing
+    // is off by that shift. Falsified by an `fci_bump_pair` bump during an
+    // align showing an observer snap of more than a few hundred metres at the
+    // landing; the fix then is to recompute the arrival when a push changes
+    // the align (cancel the `WarpSettle` and schedule it again).
     let observer_batch = vec![
         crate::destiny::Action::SetBallPosition {
             ball: here.ship_id,

@@ -84,13 +84,19 @@ fn slim_entry(reg: &Registry, slim: crate::destiny::Slim) -> HandoffEntry {
     }
 }
 
-/// What a ship's ball becomes when its pilot leaves: not interactive, stopped,
-/// a slim with no `charID`, and its unskilled flight numbers.
+/// What a ship's ball becomes when its pilot leaves: not interactive, **not
+/// massive** (the server collides only piloted ships, so the hull the
+/// observers hold massive must stop being), stopped, a slim with no `charID`,
+/// and its unskilled flight numbers.
 fn abandoned_entries(reg: &Registry, a: &Abandoned) -> Vec<HandoffEntry> {
     let mut out = vec![
         HandoffEntry::Act(Action::SetBallInteractive {
             ball: a.ship_id,
             interactive: false,
+        }),
+        HandoffEntry::Act(Action::SetBallMassive {
+            ball: a.ship_id,
+            massive: false,
         }),
         HandoffEntry::Act(Action::Stop { ball: a.ship_id }),
         slim_entry(reg, pilotless::slim(a)),
@@ -400,6 +406,11 @@ pub(super) fn board_in_space(
         ball: ship_id,
         interactive: true,
     }));
+    // A piloted ship is massive (the server collides it from now on).
+    entries.push(HandoffEntry::Act(Action::SetBallMassive {
+        ball: ship_id,
+        massive: true,
+    }));
     entries.push(slim_entry(
         reg,
         crate::destiny::Slim {
@@ -598,8 +609,9 @@ mod tests {
         );
     }
 
-    /// The batch, in order: the hull's interactive bit off, stopped, its slim
-    /// with no `charID`; then the capsule's `AddBalls2`.
+    /// The batch, in order: the hull's interactive bit off, its massive bit
+    /// off (the server collides only piloted ships), stopped, its slim with no
+    /// `charID`; then the capsule's `AddBalls2`.
     #[test]
     fn eject_batch_order() {
         let mut reg = world();
@@ -607,8 +619,13 @@ mod tests {
         let e = entries(&mut reg);
         let n = names(&e);
         assert_eq!(
-            &n[..3],
-            ["SetBallInteractive", "Stop", "OnSlimItemChange"],
+            &n[..4],
+            [
+                "SetBallInteractive",
+                "SetBallMassive",
+                "Stop",
+                "OnSlimItemChange"
+            ],
             "{n:?}"
         );
         assert_eq!(
@@ -616,8 +633,13 @@ mod tests {
             vec![PyValue::Int(ALICE_SHIP), PyValue::Int(0)],
             "interactive off"
         );
-        let PyValue::Instance { state, .. } = &e[2].1[1] else {
-            panic!("the slim is an instance: {:?}", e[2].1)
+        assert_eq!(
+            e[1].1,
+            vec![PyValue::Int(ALICE_SHIP), PyValue::Int(0)],
+            "massive off"
+        );
+        let PyValue::Instance { state, .. } = &e[3].1[1] else {
+            panic!("the slim is an instance: {:?}", e[3].1)
         };
         assert_eq!(
             crate::pyutil::dict_get(state, b"charID"),
@@ -644,9 +666,9 @@ mod tests {
             .find(|b| b.ball_id == ALICE_SHIP)
             .expect("the hull is in the scene");
         assert_eq!(ball.flags, pilotless::FLAGS_PILOTLESS);
-        assert_eq!(ball.flags, 0x17);
+        assert_eq!(ball.flags, 0x13);
         let pod = scene.park.balls.iter().find(|b| b.ball_id == ALICE_POD);
-        assert_eq!(pod.map(|b| b.flags), Some(crate::destiny::FLAGS_SHIP_BALL));
+        assert_eq!(pod.map(|b| b.flags), Some(crate::destiny::FLAGS_PILOT_BALL));
         let slim = scene
             .slims
             .iter()
@@ -768,6 +790,10 @@ mod tests {
             n == b"SetBallInteractive" && a == &vec![PyValue::Int(ALICE_SHIP), PyValue::Int(1)]
         });
         assert!(interactive_on, "{:?}", names(&e));
+        let massive_on = e.iter().any(|(n, a)| {
+            n == b"SetBallMassive" && a == &vec![PyValue::Int(ALICE_SHIP), PyValue::Int(1)]
+        });
+        assert!(massive_on, "a boarded hull is a piloted ship again");
     }
 
     /// Every `'otherlost'` the actor is sent (answer and clock), by locker ship.

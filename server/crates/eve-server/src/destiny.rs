@@ -1033,6 +1033,8 @@ pub fn pilot_ball(
     // CLOAK-1: a cloaked ego is rebuilt cloaked (a relog, a state request);
     // observers never get the ball while it is cloaked.
     ball.cloak = crate::cloak::mode_of(w, ship_id);
+    // A piloted ship is the one ball phase 1 collides on both sides.
+    ball.flags = FLAGS_PILOT_BALL;
     ball
 }
 
@@ -2540,14 +2542,20 @@ mod tests {
     /// The `0xff` is still the last byte, immediately after `allianceID` --
     /// which is what puts it *outside* the gated block rather than inside it,
     /// and that is the one thing about this byte we do know.
-    /// **A ship is massive and a static ball is not** (bump lane): ships
-    /// collide, stations, gates, rocks and wrecks wait for their geometry.
+    /// **Only a piloted ship is massive** (bump lane): the server collides
+    /// piloted ships, so only their balls are sent massive (`pilot_ball`);
+    /// an NPC, drone, fighter or pilotless hull (`ego_ball_of`) is not,
+    /// and stations, gates, rocks and wrecks wait for their geometry.
     #[test]
-    fn a_ship_is_massive_and_a_static_ball_is_not() {
+    fn a_piloted_ship_is_massive_and_other_balls_are_not() {
         let motion = crate::space_state::Motion::arrived([0.0; 3], [0.0; 3]);
         let ship = ego_ball_of(&hull::FALLBACK, 1, 0, 0, &motion);
-        assert_eq!(ship.flags, 0x1f, "free, global, massive, interactive, junk");
-        assert_ne!(ship.flags & FLAG_IS_MASSIVE, 0);
+        assert_eq!(ship.flags, 0x1b, "free, global, interactive, junk");
+        assert_eq!(ship.flags & FLAG_IS_MASSIVE, 0);
+        assert_eq!(
+            FLAGS_PILOT_BALL, 0x1f,
+            "free, global, massive, interactive, junk"
+        );
         assert!(ship.flags & FLAG_IS_FREE != 0, "a ship still has physics");
         for (what, flags) in [
             ("station", station_ball(2, 100.0, 0).flags),
@@ -2701,6 +2709,9 @@ mod tests {
         assert_eq!(flags_of(&ball) & FLAG_IS_MASSIVE, 0, "warp: not massive");
         ball.mode = Mode::Stop;
         assert_ne!(flags_of(&ball) & FLAG_IS_MASSIVE, 0, "other modes keep it");
+        // A cloaked ball is not massive either (`CloakBall` clears it).
+        ball.cloak = 1;
+        assert_eq!(flags_of(&ball) & FLAG_IS_MASSIVE, 0, "cloaked: not massive");
     }
 
     /// **The WARP tail is the 52 bytes the client's own writer produced**,

@@ -1411,17 +1411,52 @@ impl Registry {
         };
         // **A pair is stepped together** (FX9): a ship tethered to another
         // ship moves on the tick grid with it, so advancing either one means
-        // advancing the system (`space_state::Roster::advance`).
-        if self.roster.has_pair(system) {
+        // advancing the system (`space_state::Roster::advance`). **So is a
+        // system in which two ships could touch**: a ship read alone in the
+        // closed form flies through a contact, and whether it bumped would
+        // then depend on which path happened to read it.
+        if self.steps_as_system(system) {
             self.advance_system(system);
             return;
         }
         self.advance_unpaired(character_id);
     }
 
+    /// Whether advancing one ship of `solar_system_id` has to advance the
+    /// whole system: a tethered pair ([`crate::space_state::Roster::has_pair`])
+    /// or two ships that could touch
+    /// ([`crate::space_state::Roster::touch_possible`], over the hulls the
+    /// collision pass uses: a ship's type radius, and the fitted top speed
+    /// of one that is moving). Ask once per system per sweep.
+    pub fn steps_as_system(&self, solar_system_id: i64) -> bool {
+        if self.roster.has_pair(solar_system_id) {
+            return true;
+        }
+        let ships = self
+            .roster
+            .ids_in(solar_system_id)
+            .filter(|&id| self.character(id).is_some())
+            .filter_map(|id| {
+                let p = self.roster.get(id)?;
+                let radius = f64::from(
+                    crate::destiny::hull::of_in(self.content(), self.pilot(id)?.ship_type_id)
+                        .radius,
+                );
+                let top = if p.motion.is_at_rest() {
+                    0.0
+                } else {
+                    f64::from(self.flight_hull(id)?.max_velocity)
+                };
+                Some((id, radius, top))
+            });
+        self.roster
+            .touch_possible(ships, crate::space_state::now_seconds())
+    }
+
     /// [`Self::advance_character`] for a caller that has already checked the
-    /// system has no tethered pair (`Roster::has_pair`), so the check is not
-    /// repeated per pilot.
+    /// system does not step as one (`Registry::steps_as_system`: no tethered
+    /// pair, no two ships that could touch), so the check is not repeated per
+    /// pilot.
     pub fn advance_unpaired(&mut self, character_id: i64) {
         if let Some(m) = self.mover(character_id) {
             self.roster.advance(&[m], crate::space_state::now_seconds());
@@ -1498,19 +1533,27 @@ impl Registry {
     }
 
     /// A mover and what the collision pass needs of the same ship
-    /// ([`crate::space_state::Solid`]): the hull its ball carries. A ship at
-    /// rest has the placeholder hull in its [`Self::mover`] (nothing needs
-    /// one to hold still), so its collision hull is the type's, without a
-    /// dogma sheet per idle ship; a ship under way has the mover's own.
+    /// ([`crate::space_state::Solid`]): the hull its ball carries. **Only a
+    /// character's ship is a solid** (phase 1: the ball is sent massive only
+    /// for these, `destiny::FLAGS_PILOT_BALL`); an NPC, a drone, a fighter
+    /// and an abandoned hull are movers with none. A ship at rest has the
+    /// placeholder hull in its [`Self::mover`], so its collision hull is its
+    /// fitted one from [`crate::dogma::rest_hull`] (the mass and agility
+    /// `pilot_ball` sends, cached per ship, so no dogma evaluation per idle
+    /// ship per advance); a ship under way has the mover's own.
     fn mover_solid(
         &self,
         character_id: i64,
-    ) -> Option<(crate::space_state::Mover, crate::space_state::Solid)> {
+    ) -> Option<(crate::space_state::Mover, Option<crate::space_state::Solid>)> {
         let mover = self.mover(character_id)?;
         let p = self.roster.get(character_id)?;
+        if self.character(character_id).is_none() {
+            return Some((mover, None));
+        }
         let hull = if p.motion.is_at_rest() {
             let ship_type_id = self.pilot(character_id)?.ship_type_id;
-            *crate::destiny::hull::of_in(self.content(), ship_type_id)
+            crate::dogma::rest_hull(self, p.ship_id, crate::space_state::now_seconds())
+                .unwrap_or_else(|| *crate::destiny::hull::of_in(self.content(), ship_type_id))
         } else {
             mover.hull
         };
@@ -1519,7 +1562,7 @@ impl Registry {
             hull,
             cloaked: crate::cloak::is_cloaked(self, p.ship_id),
         };
-        Some((mover, solid))
+        Some((mover, Some(solid)))
     }
 
     /// Where a ball is, for the few things that have to ask.
@@ -1758,7 +1801,8 @@ impl Registry {
         // it on the client's tick grid rather than in character order (FX9,
         // `space_state::Roster::advance`).
         let here = self.roster.in_system(solar_system_id);
-        let serial = |reg: &Self| -> Vec<(crate::space_state::Mover, crate::space_state::Solid)> {
+        type Pair = (crate::space_state::Mover, Option<crate::space_state::Solid>);
+        let serial = |reg: &Self| -> Vec<Pair> {
             here.iter()
                 .filter_map(|p| reg.mover_solid(p.character_id))
                 .collect()
@@ -1777,6 +1821,7 @@ impl Registry {
             serial(self)
         };
         let (movers, solids): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+        let solids: Vec<_> = solids.into_iter().flatten().collect();
         self.roster
             .advance_with(&movers, &solids, crate::space_state::now_seconds(), threads);
     }
@@ -1790,6 +1835,7 @@ impl Registry {
             .iter()
             .filter_map(|p| self.mover_solid(p.character_id))
             .unzip();
+        let solids: Vec<_> = solids.into_iter().flatten().collect();
         self.roster
             .advance_with(&movers, &solids, crate::space_state::now_seconds(), 1);
     }

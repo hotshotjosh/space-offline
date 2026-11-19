@@ -213,6 +213,8 @@ pub struct WhereRow {
     pub system_id: Option<i64>,
     /// Kilometres, rounded.
     pub position_km: Option<[i64; 3]>,
+    /// Metres, rounded: what `fci_bump_pair` compares to a client's ball.
+    pub position_m: Option<[i64; 3]>,
     pub ship_id: i64,
     pub ship: String,
     pub fleet: Option<i64>,
@@ -231,6 +233,9 @@ pub fn where_text(r: &WhereRow) -> String {
     let mut out = format!("{}: {place}", r.name);
     if let Some([x, y, z]) = r.position_km {
         out.push_str(&format!("\nposition {x} {y} {z} km"));
+    }
+    if let Some([x, y, z]) = r.position_m {
+        out.push_str(&format!("\nposition {x} {y} {z} m"));
     }
     out.push_str(&format!("\nship {} {}", r.ship_id, r.ship));
     if let Some(sys) = r.system_id {
@@ -267,6 +272,11 @@ pub fn where_cmd(
         Ok(id) => id,
         Err(e) => return Ok(bstr(&format!("{e}; usage: /where [characterID]"))),
     };
+    if reg.character(id).is_none() {
+        return Ok(bstr(&format!("no character {id}")));
+    }
+    // The position as of now, not as of the last time something read it.
+    reg.advance_character(id);
     let Some(c) = reg.character(id) else {
         return Ok(bstr(&format!("no character {id}")));
     };
@@ -285,6 +295,7 @@ pub fn where_cmd(
         system: system_label(&names, system_id),
         system_id,
         position_km: presence.map(|p| p.motion.position.map(|m| (m / 1000.0).round() as i64)),
+        position_m: presence.map(|p| p.motion.position.map(|m| m.round() as i64)),
         ship_id: presence.map_or(c.ship_id, |p| p.ship_id),
         ship: ship_name(reg, c.ship_type_id),
         fleet: crate::combat::fleet_of(reg, id),
@@ -591,6 +602,7 @@ mod tests {
             system: "Testsys".to_owned(),
             system_id: Some(SYS),
             position_km: Some([1, -2, 3]),
+            position_m: Some([1_200, -2_000, 3_400]),
             ship_id: ALICE_SHIP,
             ship: "Hull".to_owned(),
             fleet: Some(77),
@@ -598,12 +610,14 @@ mod tests {
         let t = where_text(&r);
         assert!(t.contains(&format!("system Testsys ({SYS})")), "{t}");
         assert!(t.contains("position 1 -2 3 km"), "{t}");
+        assert!(t.contains("position 1200 -2000 3400 m"), "{t}");
         assert!(t.contains(&format!("ship {ALICE_SHIP}")), "{t}");
         assert!(t.contains("in fleet 77"), "{t}");
         r.state = "docked";
         r.station = Some(60_000_009);
         r.fleet = None;
         r.position_km = None;
+        r.position_m = None;
         let t = where_text(&r);
         assert!(t.contains("docked at station 60000009"), "{t}");
         assert!(t.contains("not in a fleet"), "{t}");

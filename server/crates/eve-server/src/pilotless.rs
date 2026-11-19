@@ -64,7 +64,7 @@ pub const KIND: &str = "pilotless";
 pub const FLAG_IS_INTERACTIVE: u8 = 0x08;
 
 /// The flags byte of a pilotless ship: a ship ball without
-/// [`FLAG_IS_INTERACTIVE`] (0x17, massive) [V].
+/// [`FLAG_IS_INTERACTIVE`] (0x13) [V].
 pub const FLAGS_PILOTLESS: u8 = destiny::FLAGS_SHIP_BALL & !FLAG_IS_INTERACTIVE;
 
 /// `maxBoardingDistance`, metres between the two hulls' surfaces [V]

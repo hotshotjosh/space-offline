@@ -37,6 +37,22 @@ fn start() -> (SocketAddr, std::thread::JoinHandle<()>) {
     (addr, handle)
 }
 
+/// [`start`] with every character marked a bot: a bot learns that its warp
+/// landed from the arrival batch (the server sends a human pilot nothing at
+/// the landing, its own client lands itself).
+fn start_marked_bot() -> (SocketAddr, std::thread::JoinHandle<()>) {
+    let mut config = config();
+    for c in &mut config.sandbox.characters {
+        c.is_bot = true;
+    }
+    let server = Server::bind(config).expect("bind");
+    let addr = server.local_addr().expect("local addr");
+    let handle = std::thread::spawn(move || {
+        let _ = server.run_once();
+    });
+    (addr, handle)
+}
+
 #[test]
 fn the_bot_completes_the_handshake_against_a_real_server() {
     let (addr, server) = start();
@@ -425,7 +441,7 @@ fn the_bot_times_its_own_arrival_against_the_server_s_own_model() {
     // This is also the first end-to-end test over a real socket of the
     // SCHEDULED push queue -- the newest machinery in the server. Everything
     // else that exercises it does so in-process.
-    let (addr, server) = start();
+    let (addr, server) = start_marked_bot();
     let mut bot = eve_bot::Conn::connect(addr, Duration::from_secs(20)).expect("the bot connects");
     bot.handshake().expect("handshake");
     bot.select_character(90_000_001)
@@ -476,10 +492,10 @@ fn the_bot_times_its_own_arrival_against_the_server_s_own_model() {
     let sent = std::time::Instant::now();
     bot.warp_to_item(target.ball_id, 0.0).expect("warp");
 
-    // Wait for the pilot's settle batch. The pilot's own client flies and
-    // stops its warp, so it is sent only the massive demotion at the
-    // predicted landing (CAPTURE-UNDOCK); observers get the
-    // SetBallPosition, SetBallVelocity, Stop batch.
+    // Wait for the settle batch. A human pilot's own client flies and stops
+    // its warp and is sent nothing at the landing; a bot is not a client, so
+    // it is in the observers' SetBallPosition, SetBallVelocity, Stop batch
+    // (a ship is massive outside a warp: there is no demotion to send).
     let mut arrived_after = None;
     let mut names = Vec::new();
     let deadline = Duration::from_secs_f64(expected + 10.0);
@@ -493,7 +509,7 @@ fn the_bot_times_its_own_arrival_against_the_server_s_own_model() {
             {
                 for (_, name) in eve_bot::read_actions(&args) {
                     names.push(name.clone());
-                    if name == "SetBallMassive" && arrived_after.is_none() {
+                    if name == "SetBallPosition" && arrived_after.is_none() {
                         arrived_after = Some(sent.elapsed());
                     }
                 }

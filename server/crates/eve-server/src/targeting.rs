@@ -1017,7 +1017,7 @@ pub fn sweep_out_of_range_stats(w: &mut Registry) -> crate::clock_probe::SweepSt
     for (system, id) in movers {
         let pair = *paired
             .entry(system)
-            .or_insert_with(|| w.roster().has_pair(system));
+            .or_insert_with(|| w.steps_as_system(system));
         if pair {
             if stepped_systems.insert(system) {
                 w.advance_system(system);

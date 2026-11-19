@@ -61,16 +61,28 @@ pub const FLAGS_FREE_BALL: u8 = 0x1f;
 /// inferred). Stations, gates and structures therefore stay non-massive
 /// ([`FLAGS_STATIC_BALL`]) until they carry collision geometry.
 ///
-/// The server collides ships with the same physics (`crate::collision`); a
-/// massive ship whose server motion ignored bumps would desync its observers
-/// on the first contact, so the two land together.
+/// The server collides piloted ships with the same physics
+/// (`crate::collision`); a massive ship whose server motion ignored bumps
+/// would desync its observers on the first contact, so the two land
+/// together, and only a ball the server collides is sent massive
+/// ([`FLAGS_PILOT_BALL`]).
 pub const FLAG_IS_MASSIVE: u8 = 0x04;
 
-/// A ship's ball: the client's default, `isMassive` set (`0x1f`). Drones,
-/// fighters, NPCs, capsules and pilotless hulls take it too; a ball in WARP
-/// has the bit cleared on the wire (below). `[A]` for drones: falsified by TQ
-/// footage of drones passing through each other.
-pub const FLAGS_SHIP_BALL: u8 = FLAGS_FREE_BALL;
+/// A ship ball the server does **not** collide: the client's default with
+/// [`FLAG_IS_MASSIVE`] cleared (`0x1b`). NPCs, drones, fighters, pilotless
+/// hulls and free deployables, until they are bodies of `crate::collision`
+/// (phase 1 collides a piloted ship with a piloted ship and nothing else).
+/// A ball the client is told is massive must be one the server collides, or
+/// the first bump desyncs it (`bump-spec.md` §1.5.4).
+pub const FLAGS_SHIP_BALL: u8 = FLAGS_FREE_BALL & !FLAG_IS_MASSIVE;
+
+/// A **piloted** ship's ball (a character's ship or capsule, a bot's too):
+/// the client's default, `isMassive` set (`0x1f`). Only these are massive in
+/// phase 1, and `crate::collision` is what the server does with them. A ball
+/// in WARP, or cloaked, has the bit cleared on the wire (below): the client's
+/// `ActivateWarp` and `CloakBall` clear it (`Ballpark.cpp:5250`, Carbon
+/// `114e89fa`) **[V]**.
+pub const FLAGS_PILOT_BALL: u8 = FLAGS_FREE_BALL;
 
 /// A static ball (station, planet, rock, wreck, structure): not free, and
 /// not massive.
@@ -419,6 +431,7 @@ impl Park {
             // (Evolve) and `0x18003f968` (collision), not run.
             let flags = match b.mode {
                 Mode::Warp { .. } => flags & !FLAG_IS_MASSIVE,
+                _ if b.cloak != 0 => flags & !FLAG_IS_MASSIVE,
                 _ => flags,
             };
             out.push(flags);

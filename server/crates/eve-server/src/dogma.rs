@@ -1802,6 +1802,39 @@ type Cached = (Inputs, Vec<crate::dbuff::Applied>, Dynamic, Arc<Sheet>);
 #[derive(Debug, Default)]
 pub struct Sheets {
     cache: Mutex<HashMap<i64, Cached>>,
+    /// [`rest_hull`]'s kept hulls: ship id -> (when taken, hull).
+    rest: Mutex<HashMap<i64, (f64, crate::destiny::hull::Hull)>>,
+}
+
+/// `[A]` How long a [`rest_hull`] is kept, seconds. Falsified by a fit change
+/// (a mass or agility module fitted, a rig, a skill) within this window that
+/// a bump then shows between the server's ball and the client's: the
+/// `fci_bump_pair` agreement leg after a refit.
+pub const REST_HULL_TTL: f64 = 10.0;
+
+/// The fitted hull of a ship **at rest**, for the collision pass: what
+/// [`hull`] gives, kept for [`REST_HULL_TTL`] per ship so that a system of
+/// idle ships (300 miners) costs a map lookup each per advance, not a sheet
+/// check. `None` when [`hull`] has none (the caller reads the type's).
+pub fn rest_hull(w: &Registry, ship_id: i64, now: f64) -> Option<crate::destiny::hull::Hull> {
+    let kept = &w.ext::<Sheets>().rest;
+    if let Ok(m) = kept.lock()
+        && let Some((at, h)) = m.get(&ship_id)
+        && now >= *at
+        && now - *at < REST_HULL_TTL
+    {
+        return Some(*h);
+    }
+    let h = hull(w, ship_id)?;
+    if let Ok(mut m) = kept.lock() {
+        // Bounded: dropped ships leave stale entries; sweep the expired
+        // ones when the map outgrows the ships a world holds.
+        if m.len() > 4_096 {
+            m.retain(|_, (at, _)| now >= *at && now - *at < REST_HULL_TTL);
+        }
+        m.insert(ship_id, (now, h));
+    }
+    Some(h)
 }
 
 /// The registration row in `world_ext::SLOTS` (coordinator-only). `make`

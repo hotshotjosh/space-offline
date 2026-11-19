@@ -53,6 +53,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Capitals fight: *partial*, capital_fight.rs: bot dreads and FAXes siege/triage on a fight grid and stock the fuel (#34); a sieged pilot locks and fires its guns at the nearest hostile off high sec (#37); they fit the siege or triage module from their own stock or buy it (#140); sov_bot guards launch an owned cyno inhibitor at an enemy capital pair and forget it at expiry (#36); the theatre machine commits our capital pilots against enemy capitals and disengages with none (doctrine_theatre.rs, doctrine::Role::Capital, no seat without a hull seen on sale or held; #35); unit tests; a pair forms in dev rosters and in society play from a held or bought hull; Readiness.capital from a held, paired hull (#35); a pilot logs `[cap] NAME hull=TYPE from=hangar|market` when it boards or buys its hull, and pvp-report checks capital sourced (#35); scenario and titans open
 - [ ] A dev roster or a run of /bots spawns pairs a capital pilot with the cyno alt after it: *built-unproved*, dev.rs roster_pairs, DevHall link/partner_of, driver dev_turn sets Policy::partner, the alt's dev kit carries a generator; unit tests. dev only: the dev market supplies the hull, generator and fuel; the alt boards a hull its generator fits on before fitting it (the standard generator's hulls when the generators share none; it fits only a generator that hull allows)
 - [ ] A corp pairs its capital pilot with a member it picks, only once the pilot holds a jumper or can buy a listed one; the alt fits its own generator: *built-unproved*, capital/pair.rs match_corp, corpmind cap_pairs (cpair rows), driver social_turn sets Policy::partner, capital_fight::fit_effect; unit tests
+- [ ] Piloted ships bump each other: massive balls and the client's own collision response on the server (NPCs, drones, fighters, pilotless hulls, stations, gates, rocks and wrecks not yet): *built-unproved*, collision.rs unit tests (time of impact, elastic and static response, overlap push, damping, broad phase and gate against brute force, one and four threads); space_state tests (read-alone path, aligning gate, ghost and cloaked samples, followers at range 0, STOP vy damping before the step, applied commanded velocity); fci_bump_pair (agreement at rest against the server's /where, an undock leg) written, not run. Carbon Potential diffed against the compiled client; [A] 2 km cell, 60-tick catch-up of a colliding system, 10 s rest-hull cache, bumped aligning warp arrival predicted unbumped; undock_distance prints useIterativeCollision
 
 ### 3.4 Upwell
 
@@ -186,7 +187,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | system | proved | built | part | missing | unknown |
 |---|--:|--:|--:|--:|--:|
 | Login and sessions | 9 | 2 | 0 | 0 | 0 |
-| Space and movement | 14 | 0 | 0 | 1 | 0 |
+| Space and movement | 14 | 1 | 0 | 1 | 0 |
 | Combat | 31 | 11 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 4 | 0 | 0 | 0 |
@@ -263,7 +264,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Space and movement</b>: 14 of 15 proved, 1 open</summary>
+<details><summary><b>Space and movement</b>: 14 of 16 proved, 2 open</summary>
 
 - [x] Undock, throttle, warp: *client-proved*, undock_distance W8, throttle_and_warp W8. A follow or orbit from a shut throttle (0, however set) now opens it to full, as align and warp do; our choice [A], built-unproved: service::space a_follow_from_a_shut_throttle_opens_it, no scenario yet (#205)
 - [x] The sun and warping to it: *client-proved*, fci_sun W10
@@ -280,6 +281,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Autopilot: *client-proved*, fci_autopilot 11-03
 - [ ] Time dilation: *missing*, advised against at this scale. Not planned
 - [x] NPC warp-in effects: *client-proved*, fci_npc_warpin 11-03 (regress-w21b); npc::spawn_warping_in; commit 728a25c
+- [ ] Piloted ships bump each other: massive balls and the client's own collision response on the server (NPCs, drones, fighters, pilotless hulls, stations, gates, rocks and wrecks not yet): *built-unproved*, collision.rs unit tests (time of impact, elastic and static response, overlap push, damping, broad phase and gate against brute force, one and four threads); space_state tests (read-alone path, aligning gate, ghost and cloaked samples, followers at range 0, STOP vy damping before the step, applied commanded velocity); fci_bump_pair (agreement at rest against the server's /where, an undock leg) written, not run. Carbon Potential diffed against the compiled client; [A] 2 km cell, 60-tick catch-up of a colliding system, 10 s rest-hull cache, bumped aligning warp arrival predicted unbumped; undock_distance prints useIterativeCollision
 
 </details>
 

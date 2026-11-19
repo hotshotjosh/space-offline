@@ -29,7 +29,7 @@ fn the_interactive_bit_is_0x08() {
         flags(ATTR),
         crate::destiny::FLAGS_FREE_BALL & !FLAG_IS_INTERACTIVE
     );
-    assert_eq!(FLAGS_PILOTLESS, 0x17);
+    assert_eq!(FLAGS_PILOTLESS, 0x13);
     assert_eq!(FLAGS_PILOTLESS & FLAG_IS_INTERACTIVE, 0);
 }
 
