@@ -235,6 +235,24 @@ fn check_registry(table: &[BuildEntry], line: &ReleaseLine) -> Result<(), String
 mod tests {
     use super::*;
 
+    /// Each line's identity, spelled out, so a typo in a `ReleaseLine` row
+    /// fails here and not only at a real client's greeting (the handshake
+    /// tests read these rows back, so they cannot catch one).
+    #[test]
+    fn each_release_line_has_its_start_ini_identity() {
+        for (l, version, codename) in [(&V24_01, 24.01, "V24.01"), (&V24_02, 24.02, "V24.02")] {
+            assert_eq!(l.version, version, "{codename}");
+            assert_eq!(l.codename, codename);
+            assert_eq!(l.region, "ccp", "{codename}");
+            assert_eq!(l.codename_at_region, format!("{codename}@ccp"));
+            assert_eq!(
+                (l.macho, l.secret, l.padding),
+                (496, 170_472, 64),
+                "{codename}"
+            );
+        }
+    }
+
     /// `tools/builds.tsv`, the registry the Python tools read.
     fn registry_tsv() -> Vec<(u32, String, String, String)> {
         let path =
