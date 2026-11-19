@@ -1221,6 +1221,76 @@ class ShimCensus(unittest.TestCase):
         self.assertRefused(self.run_setup("1", ""), "exec.log is not writable")
 
 
+LAUNCH_ENV_FN = """set -euo pipefail
+gate() { echo "gate: $*" >&2; exit 3; }
+declare -A cfg=([EVE_CLIENT]=/nonexistent/probe)
+REPO=$1
+read -r -a args <<< "${2:-}"
+%s
+launch_env_lines
+"""
+
+
+class ShimLaunchEnvFallback(unittest.TestCase):
+    """jail-client.sh without the private patcher: the fixed table
+    tools/client-launch-env.tsv gives the env and the forbidden arguments.
+    The function runs in bash against an invented checkout; nothing is launched."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp(prefix="test-shim-launchenv-")
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(self.repo, "tools"))
+        self.script = os.path.join(self.tmp, "fn.sh")
+        with open(self.script, "w") as f:
+            f.write(LAUNCH_ENV_FN % loose_function_body(read(SHIM_PATH), "launch_env_lines").join(
+                ["launch_env_lines() {\n", "}"]))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_fn(self, args: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", self.script, self.repo, args], capture_output=True, text=True, timeout=30)
+
+    def use_real_table(self) -> None:
+        shutil.copy(os.path.join(HERE, "client-launch-env.tsv"), os.path.join(self.repo, "tools"))
+
+    def test_the_table_gives_a_dead_proxy_and_our_gateway(self) -> None:
+        self.use_real_table()
+        r = self.run_fn("/noCrashReportUpload")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("env HTTP_PROXY=http://127.0.0.1:9\n", r.stdout)
+        self.assertIn("env HTTPS_PROXY=http://127.0.0.1:9\n", r.stdout)
+        self.assertIn("env NO_PROXY=10.137.0.1,localhost,127.0.0.1\n", r.stdout)
+        self.assertIn("env EVE_PUBLIC_GATEWAY_ADDRESS=10.137.0.1:8443\n", r.stdout)
+        self.assertIn("env EVE_CLIENT_SENTRY_DSN=http://0@127.0.0.1:9/0\n", r.stdout)
+        self.assertNotIn("{server}", r.stdout)
+
+    def test_forbidden_arguments_are_refused(self) -> None:
+        self.use_real_table()
+        for bad in ("/tools=x", "/TOOLS=x", "/enableTelemetry", "/enableTelemetry=1", "/refreshToken=abc", "/refreshToken"):
+            r = self.run_fn("/foo " + bad)
+            self.assertEqual(r.returncode, 3, bad + r.stdout + r.stderr)
+            self.assertIn("forbidden client argument", r.stderr)
+        for ok in ("/toolsfoo", "/refreshTokens", "/nocrashreportupload"):
+            self.assertEqual(self.run_fn(ok).returncode, 0, ok)
+
+    def test_a_missing_table_refuses(self) -> None:
+        r = self.run_fn("")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("no ", r.stderr)
+
+    def test_the_patcher_path_is_kept_when_the_patcher_exists(self) -> None:
+        s = read(SHIM_PATH)
+        body = loose_function_body(s, "launch_env_lines")
+        self.assertLess(body.index("[[ -f $REPO/tools/eve_patch.py ]]"), body.index("client-launch-env.tsv"))
+        self.assertIn('python3 -I "$REPO/tools/eve_patch.py" launch-env --client', body)
+
+    def test_the_table_is_the_only_new_input_and_has_no_other_kinds(self) -> None:
+        kinds = {l.split("\t")[0] for l in read(os.path.join(HERE, "client-launch-env.tsv")).splitlines()
+                 if l and not l.startswith("#")}
+        self.assertEqual(kinds, {"env", "forbid-arg"})
+
+
 class ShimCensusStatic(unittest.TestCase):
     """What the control drops, and what census mode adds, in jail-client.sh."""
 

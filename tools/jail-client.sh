@@ -198,9 +198,38 @@ declare -A patch_allowed=(
     [EVE_PUBLIC_GATEWAY_ADDRESS]=1 [EVE_CLIENT_SENTRY_DSN]=1
 )
 patch_env=()
-lenv=$(python3 -I "$REPO/tools/eve_patch.py" launch-env --client "${cfg[EVE_CLIENT]}" \
-        --check-args "${args[*]+"${args[*]}"}") \
-    || gate "tools/eve_patch.py launch-env refused (no manifest for this build, or a forbidden client argument)"
+# Without the patcher (a public checkout) the same lines come from the fixed
+# tools/client-launch-env.tsv, with the same forbidden-argument check.
+launch_env_lines() {
+    if [[ -f $REPO/tools/eve_patch.py ]]; then
+        python3 -I "$REPO/tools/eve_patch.py" launch-env --client "${cfg[EVE_CLIENT]}" \
+            --check-args "${args[*]+"${args[*]}"}" \
+            || gate "tools/eve_patch.py launch-env refused (no manifest for this build, or a forbidden client argument)"
+        return 0
+    fi
+    local tsv=$REPO/tools/client-launch-env.tsv server=10.137.0.1
+    local kind val a f
+    [[ -r $tsv ]] || gate "no $tsv"
+    while IFS=$'\t' read -r kind val; do
+        [[ -z $kind || $kind == '#'* ]] && continue
+        val=${val//\{server\}/$server}
+        case $kind in
+            forbid-arg)
+                f=${val,,}
+                for a in ${args[@]+"${args[@]}"}; do
+                    a=${a,,}
+                    if [[ $f == *[=:] ]]; then
+                        [[ $a == "$f"* ]] && gate "forbidden client argument: $a"
+                    else
+                        [[ ${a%%[=:]*} == "$f" ]] && gate "forbidden client argument: $a"
+                    fi
+                done ;;
+            env|arg) printf '%s %s\n' "$kind" "$val" ;;
+        esac
+    done < "$tsv"
+    return 0
+}
+lenv=$(launch_env_lines) || exit 3
 # The control (EVE_CENSUS_CONTROL=1, census only) launches as the unpatched
 # copy would: the patcher still checks the arguments, but its env and args
 # are not applied, so every path the patch closes is open and recorded.

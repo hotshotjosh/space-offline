@@ -32,9 +32,9 @@ tools/export_refs.py	private/export-private-paths.txt	guarded: the check says it
 tools/fsd.py	docs/lanes/fsd-generic.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/gate.sh	tools/test_client_kit.py	guarded by [[ -e ]]: the test list skips files the export lacks
 tools/gate.sh	tools/test_plan_owners.py	guarded by [[ -e ]]: the test list skips files the export lacks
-tools/jail-client.sh	tools/eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/jail-rootless.sh	tools/eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/jail-rootless.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
+tools/jail-client.sh	tools/eve_patch.py	optional, maintainer-side: used only when the file exists
+tools/jail-rootless.sh	tools/eve_patch.py	optional, maintainer-side: bound only when the file exists
+tools/jail-rootless.sh	tools/patches	optional, maintainer-side: bound only when the directory exists
 tools/land.sh	private/post-land.sh	[[ -x ]]-guarded maintainer post-land hook
 tools/new-build.sh	findings/client-calls.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/new-build.sh	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
@@ -98,3 +98,4 @@ tools/test_status_page.py	docs/plans/master-plan.md	fixture or skip text in a te
 tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/up.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
+tools/test_jail.py	tools/eve_patch.py	fixture or assertion text in a test: a fake/expected string, nothing is run
