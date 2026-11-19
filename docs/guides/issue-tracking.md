@@ -7,8 +7,8 @@ This project keeps two issue boards:
 - **A maintainer-side tracker** may also exist, for private and infrastructure work.
   Contributors never need it; GitHub is where you discuss.
 
-`tools/issue-sync.py` keeps the two in step. It is plain, deterministic code, and
-no language model is ever in the sync path.
+A maintainer-side sync tool (not in this repository) keeps the two in step. It is
+plain, deterministic code, and no language model is ever in the sync path.
 
 | what | direction | who wins on a conflict |
 |---|---|---|
