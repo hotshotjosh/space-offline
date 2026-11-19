@@ -79,6 +79,7 @@ pub mod char_settings;
 pub mod chat;
 pub mod chat_dir;
 pub(crate) mod clones;
+pub mod collision;
 pub mod combat;
 pub mod concord;
 pub(crate) mod conn;
