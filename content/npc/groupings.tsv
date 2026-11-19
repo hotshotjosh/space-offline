@@ -1,0 +1,51 @@
+# NPC groupings seen on a live server: the fleet a spawn row's `npc_grouping_id`
+# put out, one row per observed fleet [V-TQ].
+#
+# `npcGroupingID` names a server-side fleet template that is not in the client's
+# corpus (docs/re/dungeon-model.md section 5). The rows are read off the AddBalls2
+# slims of three TQ recordings: 20261117_122753 (17NOV2026, build 3707965) and
+# 20261118_074641 and 20261118_090207 (18NOV2026, build 3714173). Each NPC
+# carries its spawn row's `entityGroupID`, which spawns.tsv maps to the
+# grouping.
+#
+# npc_grouping_id: the spawns.tsv column. ships: the fleet's type ids,
+# space-separated, sorted by type. seen: where it was recorded.
+#
+# A spawn row whose grouping has rows draws one of its fleets
+# (`npc_gen::dungeon_squads`); one without keeps the budgeted fill [A].
+# Read by `npc_data::TABLE` through `authored.rs` (schema.md section 4).
+npc_grouping_id	ships	seen
+1144	16877	dungeon 14205 entity 152701: 1x 16877 Gistii Hijacker
+1145	16883	dungeon 14205 entity 152700: 1x 16883 Gistii Outlaw
+2869	16877 16886 16886	dungeon 14205 entity 152699: 1x 16877 Gistii Hijacker, 2x 16886 Gistii Rogue
+2871	16883 16888	dungeon 14205 entity 152698: 1x 16883 Gistii Outlaw, 1x 16888 Gistii Thug
+27624	16883 16888	dungeon 2082 entity 80834: 1x 16883 Gistii Outlaw, 1x 16888 Gistii Thug
+27624	16888 16888	dungeon 2082 entity 80836: 2x 16888 Gistii Thug
+27624	16883 16883	dungeon 2094 entity 109377: 2x 16883 Gistii Outlaw
+27624	16883 16883	dungeon 2094 entity 109387: 2x 16883 Gistii Outlaw
+27624	16888 16888	dungeon 2094 entity 109388: 2x 16888 Gistii Thug
+27692	16877	dungeon 2055 entity 147133: 1x 16877 Gistii Hijacker
+27692	16877	dungeon 4179 entity 124611: 1x 16877 Gistii Hijacker
+28308	2052 2052	dungeon 4192 entity 124647: 2x 2052 Mercenary Trainee
+28602	16883	dungeon 3522 entity 121370: 1x 16883 Gistii Outlaw
+28894	33806	dungeon 9418 entity 144156: 1x 33806 CONCORD Starship Vessel
+28979	16877 16886 16886	dungeon 2082 entity 80837: 1x 16877 Gistii Hijacker, 2x 16886 Gistii Rogue
+29329	2012	dungeon 4192 entity 124646: 1x 2012 Terrorist Leader
+29432	32471	dungeon 4174 entity 124581: 1x 32471 Damaged Vessel
+29623	16877 16877 16877	dungeon 2065 entity 80811: 3x 16877 Gistii Hijacker
+30296	16877 16877 16877 16877 16877	dungeon 2065 entity 80812: 5x 16877 Gistii Hijacker
+30657	25181 25181 25181 25181 25182 25182 25182 25182 25182 25182	dungeon 9413 entity 144138: 4x 25181 Elite Federation Arx, 6x 25182 Elite Federation Auxilia
+30942	16877	dungeon 2082 entity 80835: 1x 16877 Gistii Hijacker
+30942	16886	dungeon 3522 entity 121365: 1x 16886 Gistii Rogue
+30942	16886	dungeon 3522 entity 121368: 1x 16886 Gistii Rogue
+31177	30369 30369	dungeon 3522 entity 121364: 2x 30369 Angel Rookie
+31177	30369 30369	dungeon 3522 entity 121367: 2x 30369 Angel Rookie
+31177	30369 30369	dungeon 3522 entity 121369: 2x 30369 Angel Rookie
+31549	16877 16877	dungeon 2055 entity 103967: 2x 16877 Gistii Hijacker
+31549	16877 16877	dungeon 2060 entity 103259: 2x 16877 Gistii Hijacker
+31549	16877 16877	dungeon 2065 entity 80813: 2x 16877 Gistii Hijacker
+31641	16874 16874 16885	dungeon 2090 entity 82235: 2x 16874 Gistii Ambusher, 1x 16885 Gistii Raider
+31860	27287	dungeon 2094 entity 109397: 1x 27287 Pirate Capsule
+31870	16211 16211 16211	dungeon 9413 entity 144139: 3x 16211 Spider Drone II
+31872	27295	dungeon 2077 entity 103292: 1x 27295 Angel Resilient Destroyer
+32864	64404	dungeon 4181 entity 144162: 1x 64404 CONCORD Fleet Commander

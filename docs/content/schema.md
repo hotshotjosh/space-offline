@@ -2398,6 +2398,7 @@ Rules: §1.1's authored form. Every row that carries an `[A]` value states its f
 | `content/conquest/season.tsv` | #291 CQ-1 | `tools/content_conquest.py` (validates it; the server readers are CQ-3a and later) |
 | `content/econ/geode-picks.tsv` | L6A | `content_geodes.py` |
 | `content/econ/geode-loot.tsv` | L6A | L6A (`eve-mod-econ` `geode::TABLE`) |
+| `content/npc/groupings.tsv` | #205 | `npc_data::TABLE` (`Table::groupings`), `npc_gen::dungeon_squads` |
 | `content/pve/filament-drops.tsv` | #61 FIL-DROP | `filament_drops::TABLE` (the roll is called from NPC and site loot by #121) |
 | `content/pve/abyss-loot.tsv` | #5 AD-2 | `abyss::loot::TABLE` (the roll is called from `eve-mod-econ` `abyss_loot::on_npc_kill`) |
 | `content/pve/proving-events.tsv` | #64 PG-1b | `proving::TABLE` (read by `service/proving.rs`, `pvpFilamentMgr`) |
@@ -3002,6 +3003,28 @@ minerals	10	[A] invented example row
 ```
 
 ---
+
+### `content/npc/groupings.tsv`
+
+- **Owner:** #205. **Readers:** `npc_data::TABLE` (`Table::groupings`, through `authored.rs`); `npc_gen::dungeon_squads` flies one of a grouping's fleets for a spawn row of that grouping.
+- **Not invented and not client data:** a spawn row's `npc_grouping_id` names a server-side fleet template the client corpus does not hold (`docs/re/dungeon-model.md` section 5). Each row is a fleet a live server was seen to put out [V-TQ], read off the AddBalls2 slims of a TQ recording: each NPC carries its spawn row's `entityGroupID`, which `dungeons/spawns.tsv` maps to the grouping. A grouping with no row keeps the budgeted fill [A].
+- **Key:** none; a grouping may have several rows (each one fleet), all kept.
+
+```
+npc_grouping_id	ships	seen
+```
+
+| column | type | meaning |
+|---|---|---|
+| `npc_grouping_id` | `i64` | `dungeons/spawns.tsv`'s `npc_grouping_id` |
+| `ships` | `i64` list, space-separated | the fleet's NPC type ids |
+| `seen` | text | the recording and the dungeon and entity it was seen in (the evidence) |
+
+Invented example row:
+
+```
+990001	990101 990101	invented recording, dungeon 1 entity 2
+```
 
 ## 5. `out/live/status.tsv` (an operator file, not a bundle file)
 
