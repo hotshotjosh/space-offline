@@ -50,7 +50,7 @@
 
 use crate::delta::Deltas;
 use crate::service::Registry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::OnceLock;
@@ -200,12 +200,30 @@ pub(crate) fn get_uint(b: &[u8], n: u64) -> Option<u64> {
 /// .character.sequential` (fields 6, 10, 1, 1), which the client fills in
 /// from the session (`publicGateway/grpc/requestBroker.py`) **[V]**. 0 when
 /// absent.
-fn request_character(request: &[u8]) -> i64 {
+pub(crate) fn request_character(request: &[u8]) -> i64 {
     get_bytes(request, 6)
         .and_then(|c| get_bytes(&c, 10))
         .and_then(|i| get_bytes(&i, 1))
         .and_then(|c| get_uint(&c, 1))
         .map_or(0, |n| n as i64)
+}
+
+/// The client process that sent a request: `Request.application_instance_uuid`
+/// (field 5), a uuid4 the client makes once per process **[V]**
+/// (`publicGateway/grpc/requestBroker.pyc`). Empty when absent.
+pub(crate) fn request_instance(request: &[u8]) -> Vec<u8> {
+    get_bytes(request, 5).unwrap_or_default()
+}
+
+/// The account a request claims: `authoritative_context.authenticated_user
+/// .sequential` (fields 6, 5, 1), a zigzag `sint32` **[V]**
+/// (`eveProto/generated/eve_public/public_pb2.py`, `user/user_pb2.py`).
+/// `None` when absent.
+pub(crate) fn request_user(request: &[u8]) -> Option<i64> {
+    let v = get_bytes(request, 6)
+        .and_then(|c| get_bytes(&c, 5))
+        .and_then(|i| get_uint(&i, 1))?;
+    Some(((v >> 1) as i64) ^ -((v & 1) as i64))
 }
 
 /// Where the gateway's stored state lives: the server's world (its delta
@@ -444,12 +462,29 @@ pub fn answer(ty: &str, body: &[u8], character: i64, g: &Ground) -> Reply {
 /// Turn one `eve_public.Request` into its `eve_public.Response` bytes, the
 /// request's type name and the status it got.
 pub fn respond(request: &[u8], instance: &[u8; 16], g: &Ground) -> (Vec<u8>, String, u32) {
+    let served = crate::gateway_auth::check(g, request);
+    respond_as(request, instance, g, served.as_ref())
+}
+
+/// [`respond`] with the pilot check already made (`None`: refused, 403).
+fn respond_as(
+    request: &[u8],
+    instance: &[u8; 16],
+    g: &Ground,
+    served: Option<&crate::gateway_auth::Served>,
+) -> (Vec<u8>, String, u32) {
     let f = fields(request);
     let get = |n: u64| f.iter().find(|(k, _)| *k == n).map(|(_, v)| v.as_slice());
     let any = get(3).unwrap_or(&[]);
     let ty = get_bytes(any, 1).map(|v| type_name(&v)).unwrap_or_default();
     let value = get_bytes(any, 2).unwrap_or_default();
-    let r = answer(&ty, &value, request_character(request), g);
+    let r = match served {
+        Some(s) => answer(&ty, &value, s.character, g),
+        None => Reply {
+            status: 403,
+            payload: None,
+        },
+    };
     let mut out = Vec::new();
     // dispatched: Timestamp { seconds }
     put_bytes(&mut out, 1, &timestamp(now_secs()));
@@ -1076,8 +1111,11 @@ fn read_exact_or_eof(s: &mut TcpStream, buf: &mut [u8]) -> io::Result<bool> {
 /// so frames never interleave.
 struct Conn {
     sock: TcpStream,
-    /// The pilot, learned from the first `Send` on the connection (0 until).
+    /// The pilot, learned from the latest served `Send` on the connection (0
+    /// until), and the game session that vouched for it (0: none, a local
+    /// ground). A notice reaches the pilot only while that session lives.
     character: i64,
+    bound_client: i64,
     /// What the client has left us to send on the connection, h2 flow control.
     window: i64,
     /// `SETTINGS_INITIAL_WINDOW_SIZE` from the client (default 65535).
@@ -1448,9 +1486,16 @@ struct Sub {
 
 /// Every open `Notices/Consume` stream. Cloning shares it.
 #[derive(Clone, Default)]
-pub struct NoticeHub(Arc<Mutex<Vec<Sub>>>);
+pub struct NoticeHub(Arc<Mutex<Vec<Sub>>>, Arc<Mutex<Option<HashSet<i64>>>>);
 
 impl NoticeHub {
+    /// The game sessions alive now, as the world last said (`None`: never
+    /// said, nothing is held back). A connection bound through a session not
+    /// in it gets no notices. Set under the world lock by `gateway_out::take`.
+    pub(crate) fn set_live(&self, live: HashSet<i64>) {
+        *self.1.lock().unwrap_or_else(|e| e.into_inner()) = Some(live);
+    }
+
     /// Drop every stream of `conn` from the hub.
     fn forget(&self, conn: &Shared) {
         let mut subs = self.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -1519,6 +1564,7 @@ pub fn publish(hub: &NoticeHub, ty: &str, payload: &[u8], target: Target) -> usi
     let (group, id, members) = target.parts();
     let msg = grpc_message(&notice(ty, payload, group, id));
     let mut sent = 0;
+    let live = hub.1.lock().unwrap_or_else(|e| e.into_inner()).clone();
     // The hub lock is held only to copy the handles.
     let subs: Vec<(Shared, u32)> = {
         let g = hub.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -1538,6 +1584,13 @@ pub fn publish(hub: &NoticeHub, ty: &str, payload: &[u8], target: Target) -> usi
             continue;
         };
         if c.character == 0 || !members.contains(&c.character) {
+            continue;
+        }
+        if c.bound_client != 0 && live.as_ref().is_some_and(|l| !l.contains(&c.bound_client)) {
+            // Its session ended: the binding is void, a later served request
+            // makes a new one.
+            c.character = 0;
+            c.bound_client = 0;
             continue;
         }
         let n = msg.len() as i64;
@@ -1633,6 +1686,7 @@ fn serve_queued(
     let conn: Shared = Arc::new(Mutex::new(Conn {
         sock: csock,
         character: 0,
+        bound_client: 0,
         window: 65535,
         initial: 65535,
         max_frame: 16384,
@@ -1922,14 +1976,14 @@ fn run(
                         st.buf.drain(..5 + n);
                         match st.kind {
                             Kind::Send if !compressed => {
-                                let who = request_character(&msg);
-                                if who != 0 {
+                                let served = crate::gateway_auth::check(ground, &msg);
+                                if let Some((who, client)) = served.as_ref().and_then(|s| s.bind) {
                                     let mut c = conn.lock().unwrap_or_else(|e| e.into_inner());
-                                    if c.character == 0 {
-                                        c.character = who;
-                                    }
+                                    c.character = who;
+                                    c.bound_client = client;
                                 }
-                                let (resp, ty, status) = respond(&msg, &instance, ground);
+                                let (resp, ty, status) =
+                                    respond_as(&msg, &instance, ground, served.as_ref());
                                 if !seen.contains(&ty) {
                                     crate::outln!("[gateway] request class {ty} -> {status}");
                                     seen.push(ty);
@@ -2122,6 +2176,138 @@ mod tests {
     fn ask(g: &Ground, ty: &str, value: &[u8], who: u64) -> (u64, Vec<u8>) {
         let (r, _, _) = respond(&request_for(ty, value, b"x", who), &[0; 16], g);
         (decoded(&r).0, payload(&r))
+    }
+
+    /// Two pilots of two accounts, each in a live session (clients 1 and 2).
+    fn two_live_pilots() -> (Ground, Arc<RwLock<Registry>>) {
+        let mut reg = crate::testkit::registry_with(|cfg| {
+            let a = crate::model::Character {
+                character_id: 1_001,
+                owner_user_id: Some(11),
+                ..Default::default()
+            };
+            let mut b = a.clone();
+            b.character_id = 1_002;
+            b.ship_id = a.ship_id + 1;
+            b.owner_user_id = Some(12);
+            cfg.characters = vec![a, b];
+            cfg.catch_all = None;
+        });
+        for (client_id, user_id, who) in [(1, 11, 1_001), (2, 12, 1_002)] {
+            reg.session_opened(crate::session_table::SessionEntry {
+                client_id,
+                session_id: client_id,
+                user_id,
+                character_id: Some(who),
+            });
+        }
+        let w = Arc::new(RwLock::new(reg));
+        (Ground::Server(Arc::clone(&w)), w)
+    }
+
+    #[test]
+    fn a_server_ground_serves_a_live_pilot_and_refuses_one_with_no_session() {
+        let (g, w) = two_live_pilots();
+        let ask = |who: i64, proc_: &[u8]| {
+            let (r, _, status) = respond(
+                &crate::gateway_auth::test_request(who, None, proc_),
+                &[0; 16],
+                &g,
+            );
+            (status, decoded(&r))
+        };
+        // Served: a typed 200 (the empty-message arm for an unknown class).
+        let (status, d) = ask(1_001, b"process-one-0001");
+        assert_eq!(status, 200);
+        assert_eq!(d.0, 200);
+        assert!(d.2.unwrap().ends_with("thing.api.GetResponse"));
+        // Another process for that pilot, a pilot of nobody's session, none.
+        assert_eq!(ask(1_001, b"process-two-0002").0, 403);
+        w.write().unwrap().session_closed(2);
+        let (status, d) = ask(1_002, b"process-two-0002");
+        assert_eq!((status, d), (403, (403, b"c1".to_vec(), None)));
+    }
+
+    /// Send `m` on stream 1 and read until its reply arrives.
+    fn send_and_read(s: &mut TcpStream, m: &[u8]) -> u64 {
+        s.write_all(&frame(DATA, 0, 1, &grpc_message(m))).unwrap();
+        loop {
+            let (kind, _, sid, body) = read_frame(s);
+            if kind == DATA && sid == 1 {
+                return decoded(&body[5..]).0;
+            }
+        }
+    }
+
+    /// A connection to a server-ground gateway with a `Send` stream (1) and a
+    /// `Consume` stream (3) open.
+    fn connected(g: &Ground, hub: &NoticeHub) -> TcpStream {
+        let addr = spawn_with("127.0.0.1:0".parse().unwrap(), g.clone(), hub.clone()).unwrap();
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut out = PREFACE.to_vec();
+        out.extend(frame(SETTINGS, 0, 0, &[]));
+        out.extend(open_stream("/eve_public.gateway.Requests/Send", 1, true));
+        out.extend(open_stream("/eve_public.gateway.Notices/Consume", 3, true));
+        s.write_all(&out).unwrap();
+        s
+    }
+
+    fn live_clients(w: &Arc<RwLock<Registry>>) -> HashSet<i64> {
+        let r = w.read().unwrap();
+        r.sessions().entries().iter().map(|e| e.client_id).collect()
+    }
+
+    #[test]
+    fn a_pilot_who_is_not_live_is_not_bound_for_notices() {
+        let (g, _w) = two_live_pilots();
+        let hub = NoticeHub::default();
+        let mut s = connected(&g, &hub);
+        // Pilot 1_003 has no session: refused, and the connection stays unbound.
+        let m = crate::gateway_auth::test_request(1_003, None, b"process-one-0001");
+        assert_eq!(send_and_read(&mut s, &m), 403);
+        let ty = "eve_public.invented.notice.Thing";
+        assert_eq!(publish(&hub, ty, b"pp", Target::Character(1_003)), 0);
+        // A live pilot's request binds it.
+        let m = crate::gateway_auth::test_request(1_001, None, b"process-one-0001");
+        assert_eq!(send_and_read(&mut s, &m), 200);
+        assert_eq!(publish(&hub, ty, b"pp", Target::Character(1_001)), 1);
+    }
+
+    #[test]
+    fn notices_stop_at_logout_and_a_character_switch_moves_the_binding() {
+        let (g, w) = two_live_pilots();
+        let hub = NoticeHub::default();
+        let mut s = connected(&g, &hub);
+        let ty = "eve_public.invented.notice.Thing";
+        let m = crate::gateway_auth::test_request(1_001, None, b"process-one-0001");
+        assert_eq!(send_and_read(&mut s, &m), 200);
+        assert_eq!(publish(&hub, ty, b"a", Target::Character(1_001)), 1);
+        // The same connection now serves a second pilot (a second window of
+        // one client process): the binding moves.
+        let m = crate::gateway_auth::test_request(1_002, None, b"process-one-0001");
+        assert_eq!(send_and_read(&mut s, &m), 200);
+        assert_eq!(publish(&hub, ty, b"a", Target::Character(1_001)), 0);
+        assert_eq!(publish(&hub, ty, b"b", Target::Character(1_002)), 1);
+        // The world tells the hub who is live (`gateway_out::take` does, under
+        // the world lock); once 1_002's session ends, nothing reaches it.
+        hub.set_live(live_clients(&w));
+        assert_eq!(publish(&hub, ty, b"b", Target::Character(1_002)), 1);
+        w.write().unwrap().session_closed(2);
+        hub.set_live(live_clients(&w));
+        assert_eq!(publish(&hub, ty, b"b", Target::Character(1_002)), 0);
+        // And it stays unbound: a re-login of that pilot does not revive it.
+        {
+            let mut r = w.write().unwrap();
+            r.session_opened(crate::session_table::SessionEntry {
+                client_id: 3,
+                session_id: 3,
+                user_id: 12,
+                character_id: Some(1_002),
+            });
+        }
+        hub.set_live(live_clients(&w));
+        assert_eq!(publish(&hub, ty, b"b", Target::Character(1_002)), 0);
     }
 
     #[test]
@@ -2561,6 +2747,7 @@ mod tests {
         let mut c = Conn {
             sock,
             character: 0,
+            bound_client: 0,
             window,
             initial: stream_win,
             max_frame,

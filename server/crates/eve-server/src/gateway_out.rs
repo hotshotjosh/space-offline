@@ -27,6 +27,9 @@ pub type Queued = (String, Vec<u8>, Target);
 #[derive(Default)]
 pub struct GatewayOutbox {
     q: Vec<Queued>,
+    /// Pilot -> (game session, client process) the gateway first served for
+    /// it; see `gateway_auth`. Void once that session ends.
+    pub(crate) pins: std::collections::HashMap<i64, (i64, Vec<u8>)>,
 }
 
 /// The world slot. Never persisted.
@@ -49,7 +52,19 @@ pub fn take(reg: &mut crate::service::Registry) -> Vec<Queued> {
     if q.is_empty() {
         return Vec::new();
     }
-    std::mem::take(q)
+    let out = std::mem::take(q);
+    // Tell the hub which game sessions are alive now, so a gateway connection
+    // bound through one that has ended gets none of these (`gateway::publish`).
+    if let Some(hub) = HUB.get() {
+        hub.set_live(
+            reg.sessions()
+                .entries()
+                .iter()
+                .map(|e| e.client_id)
+                .collect(),
+        );
+    }
+    out
 }
 
 static HUB: OnceLock<NoticeHub> = OnceLock::new();

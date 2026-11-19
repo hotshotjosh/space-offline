@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (232 of 361) · **94% built** (338 of 361) · 3 parked, not counted.
+**64% proved** (232 of 362) · **94% built** (339 of 362) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -153,6 +153,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.8 Remote clients, hosting
 
 - [ ] The public gateway (h2c) holds up against a slow or hostile peer: *built-unproved*, gateway.rs: frames split at the peer's max frame size, flow-control windows with held-DATA caps, at most 100 streams (#226); writes run against a deadline, a failed write drops the connection from the hub, publish drops the hub lock before writing (#229); in-process tests; publish only enqueues to a bounded per-connection outbox drained by the connection's own writer thread, joined when the connection ends (#233)
+- [ ] The public gateway serves a pilot only while the owning account has that pilot selected in a live session: *built-unproved*, gateway_auth.rs (a pilot is answered only while a live session of the account that may play it exists, and only to the client process that asked first; a pilot-less request only for a live account; else 403; a connection's notice binding ends with its session); in-process tests; no credential or encryption on the gateway, the rule is stated in docs/guides/remote-clients.md
 - [ ] Client kit and hosted server tools: *built-unproved*, tools/client-kit.sh, tools/client-setup.sh; no dry run. Hosting is issue 141
 - [ ] Client kit dry run end to end: *built-unproved*, #180 dry run in --network none containers on a synthetic install: kit built, unpacked, check and copy, remote listener up, probe login and sign-up; fixed the tunnel script mode, the recovery order (never advising rm of the only pinned copy) and the pin-failure output (docs/guides/remote-clients.md "Dry run (#180)"); the real client patch, tunnel, jail relay and a real client connecting are left for the owner
 - [ ] No-jail route for Windows remote players: *missing*, the always-jailed rule stands until a census proves it
@@ -182,7 +183,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 | system | proved | built | part | missing | unknown |
 |---|--:|--:|--:|--:|--:|
-| Login and sessions | 9 | 1 | 0 | 0 | 0 |
+| Login and sessions | 9 | 2 | 0 | 0 | 0 |
 | Space and movement | 14 | 0 | 0 | 1 | 0 |
 | Combat | 31 | 11 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 7 | 0 | 0 | 0 |
@@ -244,7 +245,7 @@ A wave is one run of `tools/client-ci/regress.list` against real clients. Compar
 
 Closed by default; each line says how much of the system is proved.
 
-<details><summary><b>Login and sessions</b>: 9 of 10 proved, 1 open</summary>
+<details><summary><b>Login and sessions</b>: 9 of 11 proved, 2 open</summary>
 
 - [x] Log in and reach space; every scenario depends on this: *client-proved*, fci_reads W10; ballpark_smoke W11
 - [x] Two clients at once, each seen in the station guest list: *client-proved*, lobby_guests W8
@@ -256,6 +257,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] The Randomize name button on character creation: *client-proved*, fci_social_answers W10. Landed after wave 8 started
 - [x] Delete a character: *client-proved*, fci_char_delete W10. Wait is a world setting (1 hour default, 0 in CI); deleted characters keep assets, orders and name
 - [ ] The public gateway (h2c) holds up against a slow or hostile peer: *built-unproved*, gateway.rs: frames split at the peer's max frame size, flow-control windows with held-DATA caps, at most 100 streams (#226); writes run against a deadline, a failed write drops the connection from the hub, publish drops the hub lock before writing (#229); in-process tests; publish only enqueues to a bounded per-connection outbox drained by the connection's own writer thread, joined when the connection ends (#233)
+- [ ] The public gateway serves a pilot only while the owning account has that pilot selected in a live session: *built-unproved*, gateway_auth.rs (a pilot is answered only while a live session of the account that may play it exists, and only to the client process that asked first; a pilot-less request only for a live account; else 403; a connection's notice binding ends with its session); in-process tests; no credential or encryption on the gateway, the rule is stated in docs/guides/remote-clients.md
 
 </details>
 

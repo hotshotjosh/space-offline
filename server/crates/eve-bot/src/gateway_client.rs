@@ -118,6 +118,23 @@ fn bytes_of(f: &[(u64, Val)], n: u64) -> Option<&[u8]> {
     })
 }
 
+/// This process's `application_instance_uuid`: the real client sends one per
+/// process on every request, and the server pins a pilot to the first it sees.
+fn instance_uuid() -> &'static [u8; 16] {
+    static ID: std::sync::OnceLock<[u8; 16]> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        // The std hasher's keys are random per process: no clock needed.
+        use std::hash::{BuildHasher, Hasher};
+        let mut id = [0u8; 16];
+        for (i, half) in id.chunks_mut(8).enumerate() {
+            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+            h.write_u32(std::process::id() ^ i as u32);
+            half.copy_from_slice(&h.finish().to_le_bytes());
+        }
+        id
+    })
+}
+
 /// One `eve_public.Request` for `character` (0 leaves the context out).
 pub fn encode_request(character: i64, ty: &str, body: &[u8], correlation: &[u8]) -> Vec<u8> {
     let mut any = Vec::new();
@@ -128,6 +145,7 @@ pub fn encode_request(character: i64, ty: &str, body: &[u8], correlation: &[u8])
     let mut r = Vec::new();
     put_bytes(&mut r, 2, correlation);
     put_bytes(&mut r, 3, &any);
+    put_bytes(&mut r, 5, instance_uuid());
     if character != 0 {
         let mut id = Vec::new();
         put_uint(&mut id, 1, character as u64);
@@ -426,6 +444,8 @@ mod tests {
         let who = walk(bytes_of(&ctx, 10).unwrap()).unwrap();
         let id = walk(bytes_of(&who, 1).unwrap()).unwrap();
         assert_eq!(id, vec![(1, Val::Int(9000001))]);
+        // Every request names this process (field 5), the same one each time.
+        assert_eq!(bytes_of(&f, 5), Some(&instance_uuid()[..]));
         // No pilot, no context; no body, no value.
         let r = encode_request(0, "a.B", b"", b"c");
         let f = walk(&r).unwrap();

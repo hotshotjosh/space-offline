@@ -100,6 +100,9 @@ pub fn key_of(reg: &Registry, character: i64) -> i64 {
 /// bare test ground has no characters, so the negated pilot id.
 pub fn key_of_ground(g: &Ground, character: i64) -> i64 {
     match g {
+        // A request that names no pilot arrives as minus the account it
+        // claimed (`gateway_auth`, which has checked a session of it lives).
+        Ground::Server(_) if character < 0 => -character,
         Ground::Server(w) => key_of(
             &crate::service::world_read_timed(w, "nes_vault_key"),
             character,
