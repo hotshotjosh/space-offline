@@ -617,7 +617,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Hacking: *client-proved*, fci_hacking_board W10, fci_hacking_can W10
 - [ ] A placed wreck in a site shows as empty in the overview and brackets: *built-unproved*, site.rs slim_extras: a placed wreck's slim carries isEmpty from its contents; unit test a_placed_wreck_says_whether_it_is_empty; nothing fills a placed wreck yet, so all show empty. Filling and opening tutorial wrecks stays open under #205
 - [x] Probing a signature and warping to it: *client-proved*, fci_probe_site W10
-- [x] Wormhole space as the client shows it: *client-proved*, fci_y_wh W10. Research said this green once proved little; lane WH-0 tightened it
+- [x] Wormhole space as the client shows it: *client-proved*, fci_y_wh W10. An earlier green proved little; the scenario was tightened since
 - [x] Epic arcs: *client-proved*, fci_epic_arc (regress-w28a): a talk-start arc offered, accepted, completed, and the next missions offered, read through the client's journal; epic_arc.rs
 - [x] A wormhole below half mass keeps its model: *client-proved*, fci_wh_mass W10. Landed after wave 8 started
 - [x] Boosters: *client-proved*, fci_boosters W10
@@ -700,7 +700,7 @@ Closed by default; each line says how much of the system is proved.
 
 ## Parked
 
-- Incursions: deferred by the owner, card pve-owner
+- Incursions: not planned now
 
 ## What the states mean
 
