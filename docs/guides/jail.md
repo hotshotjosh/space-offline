@@ -512,7 +512,7 @@ SSH tunnel, never over a raw internet path: this is a real security risk.
 
 Besides that, `machoNet.HandleMessage` on a client dispatches any inbound
 `CallReq` to the exported set: 103 classes declare `__exportedcalls__`, 81
-non-empty, 608 methods (`findings/client-callable.tsv`). The client makes no
+non-empty, 608 methods (our census of the exported calls, not published). The client makes no
 role check on calls from the server. That channel is bounded, but with
 `GetSettingsInfo` available the bound no longer matters.
 
