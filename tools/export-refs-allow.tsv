@@ -42,7 +42,6 @@ tools/new-build.sh	tools/client-patch-manifest.py	M4: owner ruling pending (main
 tools/new-build.sh	tools/eve_patch_author.py	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/new-build.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/new-build.sh	tools/test_eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/offline-prefix.sh	tools/client-prepare.sh	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/pin-client.sh	docs/archive/plan-subsystems.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/pin-client.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/port-recheck.py	findings/client-calls.tsv	default input of a maintainer-side RE tool (findings/ is private); M4: owner ruling pending
@@ -68,13 +67,15 @@ tools/test_docs.py	docs/content/C5-economy.md	fixture or skip text in a test: an
 tools/test_docs.py	docs/content/README.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/content/plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
+tools/test_docs.py	docs/guides/patcher.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
+tools/test_docs.py	docs/guides/remote-clients.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
 tools/test_docs.py	docs/lanes	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
+tools/test_docs.py	docs/lanes/INDEX.md	the doc lint's allowlist: docs/README.md names it until the index edit lands
 tools/test_docs.py	docs/packets.tsv	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/plans	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/plans/master-plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/plans/plan-public-release.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/port-tracker.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_docs.py	docs/reference/unattended-root.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/review	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/review/plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/review/state-of-the-emulator.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
@@ -85,6 +86,7 @@ tools/test_env_ref.py	private/export-private-paths.txt	fixture or skip text in a
 tools/test_export_parity.py	private/export-private-paths.txt	fixture: an invented tree's private list
 tools/test_export_refs.py	private/export-private-paths.txt	fixture: an invented tree's private list
 tools/test_fci_scenarios.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
+tools/test_gate.py	private/post-land.sh	fixture in a test: a stub hook committed in a temporary repo, the real path is never read
 tools/test_new_build.py	tools/eve_patch_author.py	fixture or assertion text in a test: a fake/expected string, nothing is run
 tools/test_new_build.py	tools/patches	fixture: an invented tree's patches dir
 tools/test_public_export.py	private/export-private-paths.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
@@ -96,7 +98,3 @@ tools/test_status_page.py	docs/plans/master-plan.md	fixture or skip text in a te
 tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/up.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
-tools/up.sh	tools/client-prepare.sh	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/test_docs.py	docs/guides/remote-clients.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
-tools/test_docs.py	docs/guides/patcher.md	the doc lint's allowlist of contributor-path citations pending a maintainer decision on the client path
-tools/test_docs.py	docs/lanes/INDEX.md	the doc lint's allowlist: docs/README.md names it until the index edit lands
