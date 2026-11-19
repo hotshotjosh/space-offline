@@ -679,8 +679,7 @@ pub fn tick(reg: &mut Registry, _now: Instant, bt: crate::damage::BlueTime) {
         .collect();
     for c in dying {
         reg.ext_mut::<Runs>().kills.remove(&c);
-        let killed = crate::combat::self_destruct_kill(reg, c, crate::pyutil::filetime_now());
-        eprintln!("[airnpe] char {c}: scripted death: {killed}");
+        scripted_kill(reg, c);
     }
     let now = clock(reg);
     let chars: Vec<i64> = reg.ext::<Runs>().runs.keys().copied().collect();
@@ -1556,6 +1555,20 @@ fn schedule_death(reg: &mut Registry, c: i64, after: Duration) {
     eprintln!("[airnpe] char {c}: death scheduled in {after:?}");
 }
 
+/// Destroy whatever `c` flies, ship or capsule, and tell them which
+/// (`notify::Death`): the client's graph hears a death only from that
+/// notice, and 1.2.08 waits on the pod's.
+fn scripted_kill(reg: &mut Registry, c: i64) {
+    let pod = reg
+        .pilot(c)
+        .is_some_and(|p| p.ship_type_id == crate::service::TYPE_CAPSULE);
+    let killed = crate::combat::self_destruct_kill(reg, c, crate::pyutil::filetime_now());
+    eprintln!("[airnpe] char {c}: scripted death (pod {pod}): {killed}");
+    if killed {
+        reg.push(crate::notify::Death { to: c, pod });
+    }
+}
+
 /// The pocket's ship, the AIR Civilian Astero **[V-data]** (dungeon 9103).
 const ASTERO_TYPE: i64 = 58_745;
 
@@ -2170,6 +2183,41 @@ mod tests {
         }
         let answer = crate::targeting::lock(&mut reg, ALICE, id);
         assert!(answer.is_ok(), "lockable: {answer:?}");
+    }
+
+    /// A scripted death tells the pilot which died (`OnShipDeath` for a
+    /// hull, `OnPodDeath` for a capsule, no arguments): the client's graph
+    /// hears a death from nothing else, and 1.2.08 waited on the pod's for
+    /// ever.
+    #[test]
+    fn a_scripted_death_tells_the_pilot_ship_or_pod() {
+        const ALICE: i64 = 1_000_001;
+        for (hull, name) in [
+            (587, "OnShipDeath"),
+            (crate::service::TYPE_CAPSULE, "OnPodDeath"),
+        ] {
+            let mut reg = Registry::new(crate::model::SandboxConfig {
+                characters: vec![crate::model::Character {
+                    character_id: ALICE,
+                    name: "Alice".to_owned(),
+                    ship_id: 100_000_001,
+                    ship_type_id: hull,
+                    ..crate::model::Character::default()
+                }],
+                ..crate::model::SandboxConfig::default()
+            });
+            crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+            let _ = reg.take_pending();
+            scripted_kill(&mut reg, ALICE);
+            let deaths: Vec<(&str, Vec<PyValue>)> = reg
+                .take_pending()
+                .into_iter()
+                .filter(|(_, p)| p.audience() == Some(vec![ALICE]))
+                .map(|(_, p)| p.to_push())
+                .filter(|(n, _)| n.ends_with("Death"))
+                .collect();
+            assert_eq!(deaths, vec![(name, vec![])], "hull {hull}");
+        }
     }
 
     /// A point is read from an atom's list or a graph's `v:` text alike; the
