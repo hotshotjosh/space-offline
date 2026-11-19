@@ -60,7 +60,7 @@ findings/                 generated censuses (TSV and text), cited by the docs
 | `docs/guides/working-together.md` | GUIDE | current | How several people's agents share one tree: overlap checks, the open-PR cap, the layering rule, generated files. |
 | `docs/guides/gm-commands.md` | GUIDE | current | The GM slash commands and the server flags. |
 | `docs/guides/hosting.md` | GUIDE | current | Hosting on a dedicated box: frozen bundle, the owner listener, host bots, backups, wipe. |
-| `docs/guides/census.md` | GUIDE | current | The census: proving the patched client phones nobody. |
+| `docs/guides/census.md` | GUIDE | current | The census: proving the client phones nobody. |
 | `docs/guides/build-compat.md` | GUIDE | current | Adding, checking and retiring a client build (`tools/new-build.sh`); the provisional status and the re-pin cadence. |
 | `docs/guides/tracking-tq.md` | GUIDE | current | Tracking Tranquility: detect a new build, triage it (T0 to T3), cut over, take in its content and code changes, and measure the lag (`tools/tq-lag.py`). Some tools it names are planned and marked so. |
 | `docs/guides/debugging-the-client.md` | GUIDE | current | The method for debugging the real client against our server: instruments, traps, tooling. |
