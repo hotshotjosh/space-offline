@@ -12,16 +12,15 @@ This replaces the older "freeze and hold the build" stance. Evidence marks follo
 is verified (with a file, row or line), `[I]` is inferred, `[A]` is assumed (with its falsifier).
 Sizes: S is under a day of work, M one to three, L more.
 
-**Which tools exist.** Today: `tools/import-build.sh`, `tools/new-build.sh`, `tools/build-delta.py`,
+**Which tools exist.** `tools/import-build.sh`, `tools/new-build.sh`,
 `tools/port-surface.sh`, `tools/port-recheck.py`, `tools/bundle-diff.py`, `tools/re-pin.sh`,
 `tools/client-ci-regress.sh`, `tools/regress-compare.py`,
 `tools/content-report.py`, `tools/client-ci/fci-surface.py`, `tools/retire-build.sh`, `tools/census.sh`, `tools/tq-lag.py`,
-`tools/client-setup.sh refresh` (with `tools/pins/<build>.sha256` for `tools/pin-client.sh`) and
-`tools/client-ci/cutover.list`. Planned (each is named where it is used, and tracked on #290):
-`tq-watch.py`, `build-triage.py`, `answer-shapes.py`,
-`intake-issues.py`,
-`v-audit.py`, and the `recompiled` class of `build-delta.py`. Until a planned tool lands, its
-step is done by hand from the same inputs.
+`tools/client-setup.sh refresh` (with `tools/pins/<build>.sha256` for `tools/pin-client.sh`),
+`tools/client-ci/cutover.list`, `tools/tq-watch.py`, `tools/build-triage.py`, `tools/answer-shapes.py`,
+`tools/intake-issues.py` and `tools/v-audit.py` (#290). `build-delta.py`, which measures a build
+against the pinned one, runs on the maintainer's side and is not published. A step marked
+planned below is done by hand from the same inputs until its tool lands.
 
 ## 1. Words
 
@@ -34,7 +33,7 @@ step is done by hand from the same inputs.
 | served builds | every registered build the server accepts by default: `pinned`, `equivalent` and `provisional` (section 4.2) | `Status::accepted()` |
 | TQ build | the newest build the TQ launcher ships | `docs/status/tq-builds.tsv` |
 | lag | hours from "TQ build first seen" to "TQ build served" | `tools/tq-lag.py` |
-| tier | how big a build's delta is, T0 to T3 (section 3) | `tools/build-triage.py` (planned) |
+| tier | how big a build's delta is, T0 to T3 (section 3) | `tools/build-triage.py` |
 | intake | the content and code work a build brings beyond login | tracker issues labelled `tq-intake` |
 
 Two invariants, which the registry test enforces:
@@ -66,7 +65,7 @@ Two invariants, which the registry test enforces:
   `docs/status/tq-builds.tsv` after a month shows fewer builds than revisions. Plan for several
   builds a week after an expansion, and about one a week or fewer otherwise.
 
-**The watcher** (`tools/tq-watch.py`, planned, S) will fetch D2 and D1 with the standard library
+**The watcher** (`tools/tq-watch.py`) fetches D2 and D1 with the standard library
 only (a generic `User-Agent`, no token) and read the one `start.ini` the maintainer points it at.
 It appends to `out/tq-watch/state.tsv` and exits 3 (a source shows a newer build or notes
 revision), 4 (the online install holds a build that `builds.tsv` lacks: the import is due), 5
@@ -90,16 +89,16 @@ patch-day issue (counts and names only) and take `tq-intake` issues.
 
 ## 3. Triage: tiers by delta class
 
-**Prerequisite.** Today `tools/build-delta.py` calls a module `changed` when only its
-`co_filename`, `co_firstlineno` or `co_lnotab` differ, so a recompile of the whole client looks
+**Prerequisite.** Before its `recompiled` class, the maintainer's `build-delta.py` called a module `changed` when only its
+`co_filename`, `co_firstlineno` or `co_lnotab` differ, so a recompile of the whole client looked
 like thousands of changes. [I, measured locally on 3670638 to 3707965 (the delta file is not committed): 12,723 modules `changed`
-and 1,130 call-surface hits, while only 379 modules change in meaning.] A `recompiled` class
+and 1,130 call-surface hits, while only 379 modules change in meaning.] Its `recompiled` class
 (compare code objects the way `tools/port-recheck.py` does; ignore filename, first line number,
 lnotab and the `absolute_import` future flag; emit call-surface rows only for modules changed in
-meaning) is a planned change (S-M); exit codes stay 0 equivalent, 3 differs, 1 check mismatch, 2
+meaning) is in it now; exit codes stay 0 equivalent, 3 differs, 1 check mismatch, 2
 not an install.
 
-**The classifier** (`tools/build-triage.py BUILD`, planned) reads the delta, the port-surface and
+**The classifier** (`tools/build-triage.py BUILD`) reads the delta, the port-surface and
 port-recheck outputs, the answer shapes and the bundle diff, and exits 20 (T0), 21 (T1), 22 (T2)
 or 23 (T3). A missing input is `skipped`, never a pass. The highest tier that fires wins, and a
 higher tier's sequence includes the lower tiers' items:
@@ -119,7 +118,7 @@ Every sequence starts with **S0**, the read-only part, run by the maintainer:
 tools/import-build.sh tq-<N> --check          # exit 0, or MISSING blobs: back to the launcher
 tools/import-build.sh tq-<N>                  # copy, link, md5, pin -> out/new-build/<N>/
 tools/new-build.sh tq-<N> --report            # steps 1 to 9; stops with exit 10 at each decision
-python3 -I tools/build-triage.py <N>          # exit 20..23 = T0..T3 (planned)
+python3 -I tools/build-triage.py <N>          # exit 20..23 = T0..T3
 ```
 
 The census control copy is made **straight after the import, before any modification**
@@ -296,8 +295,8 @@ rolling back the build is never an option. The options are:
 
 ## 5. Content intake ("datamining")
 
-**The report** (`tools/content-report.py OLD_BUNDLE NEW_BUNDLE [--notes FILE] [--uses]`, planned,
-M) compares two bundles from the **same extractor commit** (the manifest's `extractor` hash must
+**The report** (`tools/content-report.py OLD_BUNDLE NEW_BUNDLE [--notes FILE] [--uses]`)
+compares two bundles from the **same extractor commit** (the manifest's `extractor` hash must
 match or is missing on either side, else exit 2; `--allow-extractor-mismatch` goes on with a warning in the report), reusing `bundle-diff.py`'s loader. It writes `content-report.md` and
 `intake.tsv` (`area`, `kind`, `what`, `count`, `sample_ids` at most 5, `server_readers`,
 `in_notes`, `verdict` of data-driven, needs work, notes-only or `review`,
@@ -335,7 +334,7 @@ names.
 
 ### 5.2 Intake issues
 
-`tools/intake-issues.py out/new-build/<N>/content/intake.tsv --out DIR` (planned, S) writes one
+`tools/intake-issues.py out/new-build/<N>/content/intake.tsv --out DIR` writes one
 issue draft per (area, theme) group and an `index.tsv`. It never posts: filing is the
 maintainer's. The title is a plain sentence of what should become true, for example "V24.02: the
 asset safety window lists wraps with the new row keys". The body has: **Build** (number, line,
@@ -366,13 +365,13 @@ The **login path** is login, character select, station, undock, warp and the HUD
 of `tools/client-ci/cutover.list`. A must on it blocks `provisional`. Each ignore row gets one line
 in the patch-day issue saying why, and no issue.
 
-### 6.2 Answer shapes: `tools/answer-shapes.py` (planned, M)
+### 6.2 Answer shapes: `tools/answer-shapes.py`
 
 port-surface G1 sees calls, arity and the first consumer, but not the keys the client reads from
 our answers. In 3707965 the `GetItemsInSafetyFor*` row keys were renamed under an unchanged call
 (`daysUntilCanDeliverConst` became `daysUntilCanDeliver`, `daysUntilAutoMoveConst` became
 `daysUntilAutoMove`, `nearestNPCStationInfo` became `defaultDestinationInfo`, and
-`structureTypeID` is new); G1 missed it [V `server/crates/eve-server/src/service/structures/safety.rs`, the row keys we emit; the client side is `[I]`]. The tool will run as port-surface step G7,
+`structureTypeID` is new); G1 missed it [V `server/crates/eve-server/src/service/structures/safety.rs`, the row keys we emit; the client side is `[I]`]. The tool runs as port-surface step G7,
 in three passes:
 
 - **A, the server key inventory:** every string literal used as an answer key under
@@ -432,9 +431,9 @@ Re-pins at a new line, and the routine 30-day re-pin within a line, are standing
 | Rust consts against client consts and bundle rows | `port-recheck.py` constants | a reader |
 | wire facts (handshake, framing, marshal) | the build-delta protocol rows plus the T3 rules | T3 |
 | content counts | `content.py --check` with `EXPECT_BY_BUILD` | the notes give new counts |
-| answer keys we emit | `answer-shapes.py` (planned) | `SERVED gone` is a must |
+| answer keys we emit | `answer-shapes.py` | `SERVED gone` is a must |
 | citations in docs (`docs/re/*.md`, `docs/reference/*.md`) | **not covered today**; planned: add them to port-recheck's citation roots (#290) | |
-| prose `[V]` without a citation | nothing; planned: `tools/v-audit.py` (#290) lists them at re-pin | |
+| prose `[V]` without a citation | `tools/v-audit.py` (#290) lists them at re-pin | |
 
 **Rule for a claim that moved:** re-verify it against the new pinned build and keep `[V]` with the
 new citation; or downgrade it to `[I]` with `(was [V] at <old build>; moved in <new build>,
@@ -458,7 +457,7 @@ dates it against `builds.tsv`'s evidence column.
   names, counts and repo paths. It never names local machine paths, host names or maintainer-side
   cleanup.
 
-**Daily** (maintainer; cheap): `tq-watch` (planned; exit 3, 4 or 5 starts a patch day) and
+**Daily** (maintainer; cheap): `tq-watch` (exit 3, 4 or 5 starts a patch day) and
 `python3 -I tools/tq-lag.py --check` (exit 3 when a build is over its tier target).
 
 **Patch day**, in order:

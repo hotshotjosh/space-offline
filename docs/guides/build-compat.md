@@ -19,6 +19,10 @@ It stops (exit 10) at each step that needs a decision and prints what to do;
 run it again afterwards. It never launches the client; the analysis container
 has no network and mounts the installs read-only.
 
+Some steps use maintainer-side tools and tables that are not published:
+`build-delta.py` and the client-call, client-callable and push-event tables under
+`findings/`. Those steps run on the maintainer's side.
+
 ## The procedure
 
 1. Install the new build as a **separate** dir beside `tq-offline`. Update
