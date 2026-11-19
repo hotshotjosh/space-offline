@@ -115,9 +115,11 @@ mod tests {
                  600=2.0;1281=3.0{extra}\tFixture Hull {id}\n"
             )
         };
-        let module = |id: i64, extra: &str| {
+        // `cpu` is written once: a second `50=` after the default would be
+        // shadowed by the first, which is how the hungry module once fitted.
+        let module = |id: i64, cpu: &str, extra: &str| {
             format!(
-                "type\t{id}\t55\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t0\t12,16\t50=1.0{extra}\tFixture Module {id}\n"
+                "type\t{id}\t55\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t0\t12,16\t50={cpu}{extra}\tFixture Module {id}\n"
             )
         };
         let rows = format!(
@@ -129,9 +131,9 @@ mod tests {
                 FOURTH_HULL,
                 ";182=3300.0;277=2.0;183=3327.0;278=1.0;184=3300.0;279=1.0;1285=3301.0;1286=3.0"
             ),
-            module(LOCKED_MOD, ";182=3301.0;277=3.0"),
-            module(FREE_MOD, ""),
-            module(HUNGRY_MOD, ";182=3301.0;277=3.0;50=900000000.0"),
+            module(LOCKED_MOD, "1.0", ";182=3301.0;277=3.0"),
+            module(FREE_MOD, "1.0", ""),
+            module(HUNGRY_MOD, "900000000.0", ";182=3301.0;277=3.0"),
         );
         let text = format!("{}{rows}", crate::typedata::FIXTURE);
         let table = crate::typedata::Table::parse(&text).expect("the test rows parse");
@@ -375,6 +377,18 @@ mod tests {
         let r = crate::modules::set_module_online(&mut reg, Some(ALICE), ids[7], true, 1);
         let (key, _) = refusal(r);
         assert_eq!(key, "OnlineHasSkillPrerequisites");
+        assert!(!reg.modules().is_online(ids[7]));
+    }
+
+    #[test]
+    fn a_skilled_module_past_the_cpu_output_is_refused_for_cpu() {
+        let (mut reg, ids) = world();
+        give(&mut reg, SMALL_HYBRID, 3);
+        fit(&mut reg, ids[0], ids[7], HI0).expect("fitted while skilled");
+        reg.modules_mut().set_online(ids[7], false);
+        let r = crate::modules::set_module_online(&mut reg, Some(ALICE), ids[7], true, 1);
+        let (key, _) = refusal(r);
+        assert_eq!(key, "NotEnoughCpu", "skills pass, so the CPU gate speaks");
         assert!(!reg.modules().is_online(ids[7]));
     }
 
