@@ -32,7 +32,7 @@ holds what you extract from **your own** installation.
   `docs/guides/build-compat.md` (`tools/new-build.sh`); the pinned build is the
   `pinned` row of `tools/builds.tsv`.
 - The offline client's Wine prefix: `tools/offline-prefix.sh --link-resfiles`
-  (README, "Once, on a new machine").
+  (`docs/guides/getting-started.md` §3).
 - The content bundle `out/content/` is extracted by `tools/content.py`, which
   `tools/serve.sh` and `tools/up.sh` run on first start. What may and may not
   be committed: `content/README.md` and `docs/content/policy.md`.
@@ -209,26 +209,25 @@ Done when: <the test or scenario that proves it>
 ## 10. Areas, hot files (reviewed at import) and guarded files
 
 One area per system of `docs/status/progress.tsv`. Read the area's docs, then
-grep its code roots. Some areas cite design notes that are not published; there,
-the code roots are the reference. Paths without a crate are under
+grep its code roots. Paths without a crate are under
 `server/crates/eve-server/src/`.
 
 | area | read first | code roots |
 |---|---|---|
-| `login` | the unpublished session-roles note | `conn.rs`, `session.rs`, `accounts.rs` |
-| `space` | the unpublished warp and jump-gates notes | `destiny.rs`, `warp_in.rs`, `celestial.rs` |
-| `combat` | the unpublished damage-death and targeting notes | `combat.rs`, `damage.rs`, `crimewatch.rs`, `concord.rs` |
-| `fitting` | the unpublished dogma note | `fitting.rs`, `fitstate.rs`, `dogma.rs` |
-| `modules` | the unpublished modules note | `modules.rs`, `module.rs`, `modules/` |
-| `market` | the unpublished market-browse and wallet-ledger notes | `market_fees.rs`, `contracts.rs` |
+| `login` | `docs/reference/session-roles.md` | `conn.rs`, `session.rs`, `accounts.rs` |
+| `space` | `docs/re/warp.md`, `docs/re/jump-gates.md` | `destiny.rs`, `warp_in.rs`, `celestial.rs` |
+| `combat` | `docs/re/damage-death.md`, `docs/re/targeting.md` | `combat.rs`, `damage.rs`, `crimewatch.rs`, `concord.rs` |
+| `fitting` | `docs/re/dogma.md` | `fitting.rs`, `fitstate.rs`, `dogma.rs` |
+| `modules` | `docs/re/modules.md` | `modules.rs`, `module.rs`, `modules/` |
+| `market` | `docs/reference/market-browse.md`, `docs/reference/wallet-ledger.md` | `market_fees.rs`, `contracts.rs` |
 | `industry` | `docs/content/schema.md` | `industry.rs`, `industry/`, `belts.rs`, `compression.rs` |
 | `corp` | `docs/content/schema.md` | `corp_*.rs`, `alliance.rs` |
-| `fleet` | the unpublished push-path note | `fleet.rs`, `fleet_*.rs` |
+| `fleet` | `docs/reference/push-path.md` | `fleet.rs`, `fleet_*.rs` |
 | `sov` | `docs/content/schema.md` | `sov.rs`, `sov_*.rs`, `sov_campaign/` |
 | `upwell` | `docs/content/schema.md` | `structure.rs`, `structure_*.rs`, `structure_dock/` |
 | `fw` | `docs/status/progress.tsv` (grep `fw`) | `fw_lp.rs`, `fw_stats.rs` |
-| `pve` | the unpublished agents-missions and npc-behaviors notes | `mission*.rs`, `dungeon.rs`, `abyss.rs` |
-| `bots` | the unpublished server note | `server/crates/eve-bot/src/` |
+| `pve` | `docs/re/agents-missions.md`, `docs/re/npc-behaviors.md` | `mission*.rs`, `dungeon.rs`, `abyss.rs` |
+| `bots` | `docs/reference/server.md` | `server/crates/eve-bot/src/` |
 | `tools` | `docs/README.md` | `tools/` |
 
 **Hot files.** A PR may touch these; expect a closer review and a slower import,
