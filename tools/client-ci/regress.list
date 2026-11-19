@@ -439,3 +439,5 @@ fci_hud_new --with-second -- --character Alice --character Bob --no-concord
 fci_wire_calls
 # missions (#296): a kill mission spawns its own dungeon squads at its bookmark; the plain server with a bundle (dungeon catalogue and NPC data)
 fci_mission_dungeon --serial
+# bumping (#296): two piloted ships meet head on and both clients see the same bump; two clients
+fci_bump_pair --with-second -- --character Alice --character Bob
