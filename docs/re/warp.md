@@ -661,17 +661,10 @@ here needs them.
 
 ### 6.3 The "warp to within X" offsets
 
-`movementFunctions.GetWarpToRanges()` (`:380-388`) `[V]`:
-
-```python
-[const.minWarpEndDistance,
- (const.minWarpEndDistance / 10000 + 1) * 10000,
- (… + 2) * 10000, (… + 3) * 10000, (… + 5) * 10000, (… + 7) * 10000,
- const.maxWarpEndDistance]
-```
-
-With `minWarpEndDistance = 0` that is **`[0, 10000, 20000, 30000, 50000,
-70000, 100000]`** — the seven submenu entries, and the exact set of
+`movementFunctions.GetWarpToRanges()` (`:380-388`) `[V]` builds the list from the
+minimum warp-end distance, then that minimum rounded down to 10 km plus 1, 2, 3, 5 and 7
+times 10 km, then the maximum warp-end distance. With `minWarpEndDistance = 0` that is
+**`[0, 10000, 20000, 30000, 50000, 70000, 100000]`** — the seven submenu entries, and the exact set of
 `minRange` values a right-click can produce.
 
 The plain "Warp To" entry passes
