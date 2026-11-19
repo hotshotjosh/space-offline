@@ -89,6 +89,7 @@ pub(crate) mod contacts;
 pub mod content;
 pub(crate) mod content_tables;
 // #57: cargo containers, their passwords and a courier package's seal.
+pub mod achievements;
 pub mod anchor;
 pub mod bubble;
 pub mod containers;
