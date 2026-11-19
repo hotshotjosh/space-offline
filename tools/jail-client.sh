@@ -186,10 +186,11 @@ census_setup "${cfg[EVE_CENSUS]:-}" "${cfg[EVE_CENSUS_CONTROL]:-}" "$REPO" "${cf
 # arguments, which contain no spaces.
 read -r -a args <<< "${cfg[EVE_CLIENT_ARGS]:-}"
 
-# **The phone-home patch's launch layer** (tier A, docs/guides/patcher.md). The
-# patcher prints, per build, the env the client must see (a dead loopback
-# proxy with NO_PROXY for our server, the gateway address, a loopback Sentry
-# DSN), the args it must get, and the args it must never get. Read as you,
+# **The launch layer.** `tools/eve_patch.py launch-env` (maintainer-side, when
+# present) or the fixed `tools/client-launch-env.tsv` gives, per build, the env
+# the client must see (a dead loopback proxy with NO_PROXY for our server, the
+# gateway address, a loopback Sentry DSN), the args it must get, and the args
+# it must never get. Read as you,
 # like everything here; only `env` lines whose key is in this fixed list are
 # taken, so the "allow-list, never source" property holds. An install whose
 # build has no manifest, or a forbidden argument, refuses the launch.
@@ -209,9 +210,14 @@ launch_env_lines() {
     fi
     local tsv=$REPO/tools/client-launch-env.tsv server=10.137.0.1
     local kind val a f
+    echo "jail-client.sh: no tools/eve_patch.py here; using tools/client-launch-env.tsv" >&2
     [[ -r $tsv ]] || gate "no $tsv"
+    for a in ${args[@]+"${args[@]}"}; do
+        [[ $a == *[!\!-~]* ]] && gate "client argument with a non-printable or non-ASCII character: $a"
+    done
     while IFS=$'\t' read -r kind val; do
         [[ -z $kind || $kind == '#'* ]] && continue
+        if [[ -z $val || $val == *[[:space:][:cntrl:]]* ]]; then gate "bad line in $tsv: $kind"; fi
         val=${val//\{server\}/$server}
         case $kind in
             forbid-arg)
@@ -225,6 +231,7 @@ launch_env_lines() {
                     fi
                 done ;;
             env|arg) printf '%s %s\n' "$kind" "$val" ;;
+            *) gate "bad line in $tsv: $kind" ;;
         esac
     done < "$tsv"
     return 0

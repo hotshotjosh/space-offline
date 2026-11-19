@@ -3,12 +3,17 @@
 # arguments, "forbid-arg X" refuses the launch if the client arguments hold it (a value
 # ending in = or : is a prefix, otherwise the name before any = or :). {server} is
 # replaced by the jail host address. These are environment variables and arguments only:
-# a dead loopback proxy so nothing leaves by HTTP, our gateway, a loopback error-report address.
+# a dead loopback proxy so nothing leaves by HTTP, our gateway, a loopback error-report address, and
+# loopback-only crash upload and resource server.
 env	HTTP_PROXY=http://127.0.0.1:9
 env	HTTPS_PROXY=http://127.0.0.1:9
 env	NO_PROXY={server},localhost,127.0.0.1
 env	EVE_PUBLIC_GATEWAY_ADDRESS={server}:8443
 env	EVE_CLIENT_SENTRY_DSN=http://0@127.0.0.1:9/0
-forbid-arg	/tools=
+arg	/noCrashReportUpload
+arg	/resfileserver=http://127.0.0.1:9/
+forbid-arg	/tools
 forbid-arg	/enableTelemetry
 forbid-arg	/refreshToken
+forbid-arg	/py
+forbid-arg	/thinclient

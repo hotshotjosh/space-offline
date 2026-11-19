@@ -1266,16 +1266,36 @@ class ShimLaunchEnvFallback(unittest.TestCase):
         self.assertIn("env NO_PROXY=10.137.0.1,localhost,127.0.0.1\n", r.stdout)
         self.assertIn("env EVE_PUBLIC_GATEWAY_ADDRESS=10.137.0.1:8443\n", r.stdout)
         self.assertIn("env EVE_CLIENT_SENTRY_DSN=http://0@127.0.0.1:9/0\n", r.stdout)
+        self.assertIn("arg /noCrashReportUpload\n", r.stdout)
+        self.assertIn("arg /resfileserver=http://127.0.0.1:9/\n", r.stdout)
         self.assertNotIn("{server}", r.stdout)
 
     def test_forbidden_arguments_are_refused(self) -> None:
         self.use_real_table()
-        for bad in ("/tools=x", "/TOOLS=x", "/enableTelemetry", "/enableTelemetry=1", "/refreshToken=abc", "/refreshToken"):
+        for bad in ("/tools", "/tools:x", "/py", "/thinclient", "/tools=x", "/TOOLS=x", "/enableTelemetry", "/enableTelemetry=1", "/refreshToken=abc", "/refreshToken"):
             r = self.run_fn("/foo " + bad)
             self.assertEqual(r.returncode, 3, bad + r.stdout + r.stderr)
             self.assertIn("forbidden client argument", r.stderr)
         for ok in ("/toolsfoo", "/refreshTokens", "/nocrashreportupload"):
             self.assertEqual(self.run_fn(ok).returncode, 0, ok)
+
+    def test_a_bad_table_line_or_argument_refuses(self) -> None:
+        tsv = os.path.join(self.repo, "tools", "client-launch-env.tsv")
+        for line in ("forbid_arg\t/x\n", "env\t\n", "env\tK=a b\n", "env\tK=a\r\n"):
+            with open(tsv, "w") as f:
+                f.write(line)
+            r = self.run_fn("")
+            self.assertEqual(r.returncode, 3, repr(line) + r.stderr)
+            self.assertIn("bad line", r.stderr)
+        self.use_real_table()
+        for odd in ("/foo\x0b/py", "/f\u00e9"):
+            r = self.run_fn(odd)
+            self.assertEqual(r.returncode, 3, repr(odd) + r.stderr)
+            self.assertIn("non-printable or non-ASCII", r.stderr)
+
+    def test_the_fallback_says_so_on_stderr(self) -> None:
+        self.use_real_table()
+        self.assertIn("using tools/client-launch-env.tsv", self.run_fn("").stderr)
 
     def test_a_missing_table_refuses(self) -> None:
         r = self.run_fn("")
@@ -1291,7 +1311,7 @@ class ShimLaunchEnvFallback(unittest.TestCase):
     def test_the_table_is_the_only_new_input_and_has_no_other_kinds(self) -> None:
         kinds = {l.split("\t")[0] for l in read(os.path.join(HERE, "client-launch-env.tsv")).splitlines()
                  if l and not l.startswith("#")}
-        self.assertEqual(kinds, {"env", "forbid-arg"})
+        self.assertLessEqual(kinds, {"env", "arg", "forbid-arg"})
 
 
 class ShimCensusStatic(unittest.TestCase):
