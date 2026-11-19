@@ -1,14 +1,18 @@
 # Documentation index
 
 Every doc under `docs/`, by role, with its status. `tools/test_docs.py` fails if a
-doc has no row here (flat lane notes are the exception: they are in
-`docs/lanes/INDEX.md`, which is private). Start at `AGENTS.md`; this page is where you find the rest.
+doc has no row here (flat lane notes are the exception: they are not published). Start at
+`AGENTS.md`; this page is where you find the rest.
+
+Some code comments and older docs cite design notes that are not published (lane notes,
+plans, the archive, the port tracker). The code and the docs listed here are the
+reference.
 
 **Status:** `current` (checked against the code or newer than the code it describes),
 `stale-in-part` (some statements are contradicted by the code or a later doc; the doc says
 which, or the row does), `historical` (a finished piece of work, kept as history),
 `superseded` (replaced by the doc named in its banner). **Role:** `HISTORY` rows carry a
-`> **Demoted` banner in their first lines (the lint checks it) and live in the archive (maintainer-side).
+`> **Demoted` banner in their first lines (the lint checks it).
 
 ## Where to start
 
@@ -37,11 +41,10 @@ README.md                 the front page
 docs/README.md            this index
 docs/guides/              how to run, test and operate
 docs/reference/           how the protocol and the server work now
-docs/plans/               the master plan, and the parked public-release plans (private)
-docs/content/, review/    the closed content and improvement plans, research, rulings
+docs/content/             the content policy and schema, and what only the server holds
 docs/status/              feature state (progress.tsv) and the page generated from it
 docs/re/                  reverse-engineering facts about the client
-findings/                 generated censuses (TSV and text), cited by the docs
+findings/                 tables generated from the client (TSV and text), cited by the docs
 ```
 
 ## Guides: how to run, test and operate
