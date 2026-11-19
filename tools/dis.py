@@ -43,14 +43,22 @@ Read-only: it opens one file and writes nothing.
 # several say "all line numbers are `tools/dis.py` numbers", so renaming it
 # would falsify those records to fix something one line settles.
 # `docs/port-tracker.md` **42** has the measurement.
+import os as _os
 import sys as _sys
 
-_sys.path.append(_sys.path.pop(0))
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+# Rotate only when `tools/` really is `sys.path[0]`. Under `python3 -I` the
+# script directory is not on the path at all, and an unconditional pop would
+# move an unrelated entry (the first stdlib directory) to the end.
+if _sys.path and _os.path.abspath(_sys.path[0] or _os.getcwd()) == _HERE:
+    _sys.path.append(_sys.path.pop(0))
+# Under -I `pyc27` is not importable without this; last, so the stdlib's
+# `dis` still wins over this file (same pattern as tools/census_sink.py).
+if _HERE not in _sys.path:
+    _sys.path.append(_HERE)
 
 import sys
 
-# `tools/` itself is already on the path -- the rotation above put it last,
-# behind the stdlib, which is the whole point. See that comment.
 import pyc27
 
 
