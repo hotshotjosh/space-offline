@@ -1802,9 +1802,16 @@ type Cached = (Inputs, Vec<crate::dbuff::Applied>, Dynamic, Arc<Sheet>);
 #[derive(Debug, Default)]
 pub struct Sheets {
     cache: Mutex<HashMap<i64, Cached>>,
-    /// [`rest_hull`]'s kept hulls: ship id -> (when taken, hull).
-    rest: Mutex<HashMap<i64, (f64, crate::destiny::hull::Hull)>>,
+    /// [`rest_hull`]'s kept hulls: ship id -> (when taken, who and when it
+    /// entered space, hull).
+    rest: Mutex<HashMap<i64, (f64, RestKey, crate::destiny::hull::Hull)>>,
 }
+
+/// What a kept [`rest_hull`] is valid for: the pilot and the moment the ship
+/// entered space (`Presence::entered`). A board, an eject, a dock and
+/// undock (a refit happens docked: `fitting::refuse_in_space`) each change it,
+/// so the hull is read afresh after any of them.
+pub type RestKey = (i64, u64);
 
 /// `[A]` How long a [`rest_hull`] is kept, seconds. Falsified by a fit change
 /// (a mass or agility module fitted, a rig, a skill) within this window that
@@ -1816,10 +1823,16 @@ pub const REST_HULL_TTL: f64 = 10.0;
 /// [`hull`] gives, kept for [`REST_HULL_TTL`] per ship so that a system of
 /// idle ships (300 miners) costs a map lookup each per advance, not a sheet
 /// check. `None` when [`hull`] has none (the caller reads the type's).
-pub fn rest_hull(w: &Registry, ship_id: i64, now: f64) -> Option<crate::destiny::hull::Hull> {
+pub fn rest_hull(
+    w: &Registry,
+    ship_id: i64,
+    key: RestKey,
+    now: f64,
+) -> Option<crate::destiny::hull::Hull> {
     let kept = &w.ext::<Sheets>().rest;
     if let Ok(m) = kept.lock()
-        && let Some((at, h)) = m.get(&ship_id)
+        && let Some((at, k, h)) = m.get(&ship_id)
+        && *k == key
         && now >= *at
         && now - *at < REST_HULL_TTL
     {
@@ -1830,9 +1843,9 @@ pub fn rest_hull(w: &Registry, ship_id: i64, now: f64) -> Option<crate::destiny:
         // Bounded: dropped ships leave stale entries; sweep the expired
         // ones when the map outgrows the ships a world holds.
         if m.len() > 4_096 {
-            m.retain(|_, (at, _)| now >= *at && now - *at < REST_HULL_TTL);
+            m.retain(|_, (at, _, _)| now >= *at && now - *at < REST_HULL_TTL);
         }
-        m.insert(ship_id, (now, h));
+        m.insert(ship_id, (now, key, h));
     }
     Some(h)
 }

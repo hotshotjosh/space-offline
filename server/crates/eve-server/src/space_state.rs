@@ -116,9 +116,11 @@ pub struct Motion {
 ///
 /// As a rate: `-ln(0.869158879) / 1 s` = 0.1402 s⁻¹, i.e. a time constant of
 /// 7.13 s on its own. Composed with the hull's own drag it gives
-/// `1/tau_y = 1/tau + this`, which is what the integrator uses — the product
-/// of two exponentials is one exponential, so the closed form stays closed
-/// and agrees with the client exactly at every tick boundary.
+/// `1/tau_y = 1/tau + this`, which is what the integrator uses **for a
+/// fraction of a tick**. Over whole ticks the closed form is [`stop_y`], the
+/// geometric series of the per-tick product: that agrees with the client in
+/// velocity *and* position at every tick boundary (the continuous form agreed
+/// only in velocity; its distance ran 8 % long at tau 5 s).
 ///
 /// What it is worth, recomputed in §55.2 against the client's own step order:
 /// 54 m of y divergence at 2 s and 232 m at 10 s for a frigate, 72 m and
@@ -131,7 +133,7 @@ const STOP_Y_DAMPING_RATE: f64 = 0.140_229_341_308_650_25;
 /// runs (`Ballpark.cpp:1339` and `:467`, Carbon `114e89fa`) **[V]**. The grid
 /// steps ([`Motion::advanced_tick`]) and the collision sample
 /// ([`Motion::tick_start`]) use this; the closed form of
-/// [`STOP_Y_DAMPING_RATE`] is what a step of any other length uses.
+/// [`STOP_Y_DAMPING_RATE`] covers the fraction of a tick left over.
 /// `(1 - 0.07) * 0.9345794392523364486` rounded to a double.
 const STOP_Y_TICK_FACTOR: f64 = 0.869_158_878_504_672_9;
 
@@ -282,6 +284,38 @@ pub fn drag_axis(x0: f64, v0: f64, u: f64, tau: f64, dt: f64) -> (f64, f64) {
     let decay = (-dt / tau).exp();
     let gap = v0 - u;
     (x0 + u * dt + gap * tau * (1.0 - decay), u + gap * decay)
+}
+
+/// A STOP ball's `y` after `dt` seconds from `(y0, v0)`, **the way the client
+/// gets there**: every whole tick damps `vy` by [`STOP_Y_TICK_FACTOR`] and
+/// then drags it (`EvolveStop`, then `Integrate`, `Ballpark.cpp:1339`,
+/// `:751`), so over `n` whole ticks `v` is multiplied by `r = K e^(-1/tau)`
+/// each and the distance is the geometric series
+/// `v0 K tau (1 - e^(-1/tau)) (1 - r^n) / (1 - r)`. The same positions the
+/// per-tick step ([`Motion::advanced_tick`]) reaches, so the closed form and
+/// the grid agree at every tick boundary; a remainder under one tick is the
+/// continuous composition ([`axis_tau`]), which meets the next tick's step at
+/// its end in velocity. (The earlier closed form was the continuous one for
+/// the whole span: right in velocity at the boundaries, 8 % long in
+/// distance at tau 5 s.)
+fn stop_y(y0: f64, v0: f64, tau: f64, dt: f64) -> (f64, f64) {
+    let e = (-TICK_SECONDS / tau).exp();
+    let r = STOP_Y_TICK_FACTOR * e;
+    let n = (dt / TICK_SECONDS).floor();
+    let first = v0 * STOP_Y_TICK_FACTOR * tau * (1.0 - e);
+    let sum = if (1.0 - r).abs() < 1e-12 {
+        n
+    } else {
+        (1.0 - r.powf(n)) / (1.0 - r)
+    };
+    let (mut y, mut v) = (y0 + first * sum, v0 * r.powf(n));
+    let rest = dt - n * TICK_SECONDS;
+    if rest > 0.0 {
+        let (dy, w) = drag_axis(0.0, v, 0.0, axis_tau(Mode::Stop, tau, 1), rest);
+        y += dy;
+        v = w;
+    }
+    (y, v)
 }
 
 impl Motion {
@@ -717,6 +751,10 @@ impl Motion {
         for axis in 0..3 {
             // **The y axis decays faster while stopping, and only while
             // stopping.** See [`STOP_Y_DAMPING_RATE`].
+            if y_rate && axis == 1 && matches!(self.mode, Mode::Stop) && commanded[1] == 0.0 {
+                (position[1], velocity[1]) = stop_y(self.position[1], self.velocity[1], tau, dt);
+                continue;
+            }
             let tau_axis = if y_rate {
                 axis_tau(self.mode, tau, axis)
             } else {
@@ -1389,15 +1427,6 @@ pub const TICK_SECONDS: f64 = 1.0;
 /// any observer advances the system).
 pub const MAX_CATCHUP_TICKS: i64 = 3_600;
 
-/// `[A]` The most ticks a **colliding** system is stepped in one call: a
-/// ship whose record is older is carried to this many ticks short of now by
-/// the closed form (no bumps in that stretch), then stepped. One minute
-/// bounds the cost of the first read of a long-unread system to 60 planning
-/// passes; every observer advances the system each tick, so an unread one is
-/// one nobody sees. Falsified by a bump inside such a stretch that a
-/// later observer can tell from the lumped result.
-pub const COLLIDE_CATCHUP_TICKS: i64 = 60;
-
 /// **A tether snaps only what the ship could have flown** (live-fleetgrid,
 /// follow-lead): a follow of a moving ship is put at its range from its target
 /// only when that moves it no more than `cruise * dt + TETHER_SLACK` and the
@@ -2058,6 +2087,31 @@ pub struct Roster {
     by_ship: std::collections::BTreeMap<i64, std::collections::BTreeSet<i64>>,
     /// A count of structural writes (PA-8): see [`Revision`].
     revision: Revision,
+    /// What [`Registry::steps_as_system`] last answered per system: see
+    /// [`GateCache`].
+    gate: GateCache,
+}
+
+/// The answer of the read-path gate per system, kept for one destiny tick
+/// and one [`Revision`]: system -> (tick, revision, answer). **Not state**
+/// (derived, never equal or unequal). A command (`get_mut`) does not bump
+/// the revision, so an answer can be up to one tick stale for a ship just
+/// ordered under way; the next tick's gate looks at the reach since the
+/// ship's written record, which covers that. `[A]` falsified by a contact in
+/// that tick that the next tick's catch-up then shows as a snap.
+#[derive(Debug, Default)]
+pub struct GateCache(std::sync::Mutex<std::collections::BTreeMap<i64, (i64, u64, bool)>>);
+
+impl Clone for GateCache {
+    fn clone(&self) -> Self {
+        GateCache::default()
+    }
+}
+
+impl PartialEq for GateCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// A count of the roster's structural writes (`arrive`, `leave`,
@@ -2076,6 +2130,21 @@ impl PartialEq for Revision {
 
 impl Roster {
     /// The count of structural writes so far ([`Revision`]).
+    /// The kept gate answer for `system` at destiny `tick`, if still this
+    /// revision's ([`GateCache`]).
+    pub fn gate_kept(&self, system: i64, tick: i64) -> Option<bool> {
+        let m = self.gate.0.lock().ok()?;
+        let &(t, rev, answer) = m.get(&system)?;
+        (t == tick && rev == self.revision.0).then_some(answer)
+    }
+
+    /// Keep the gate answer for `system` ([`Self::gate_kept`]).
+    pub fn keep_gate(&self, system: i64, tick: i64, answer: bool) {
+        if let Ok(mut m) = self.gate.0.lock() {
+            m.insert(system, (tick, self.revision.0, answer));
+        }
+    }
+
     pub fn revision(&self) -> u64 {
         self.revision.0
     }
@@ -2345,7 +2414,7 @@ impl Roster {
     /// falsified by a contact the tick regime finds that this gate missed,
     /// and a ship that lands among others inside one span is seen at the next
     /// advance only. The span is not clamped: a record older than the catch-up
-    /// cap ([`COLLIDE_CATCHUP_TICKS`]) is crossed in a lump the reach must
+    /// cap ([`MAX_CATCHUP_TICKS`]) is crossed in a lump the reach must
     /// include.
     ///
     /// `Registry::steps_as_system` asks this on the read path too, so a ship
@@ -2482,33 +2551,16 @@ impl Roster {
                 };
             }
         }
-        // **Nothing is held inside another ship's skin.** A ship tethered to
-        // another ship's ball at a gap under the overlap margin would sit in
-        // contact for ever; Carbon's overlap branch pushes a pair out to
-        // `radii + 1 m` (`collision::OVERLAP_MARGIN`), so that is the closest
-        // a follow or an orbit is held when ships collide.
-        if collide {
-            for i in 0..runs.len() {
-                if let Pull::Mover { index, range } = runs[i].pull {
-                    let closest = f64::from(runs[i].hull.radius)
-                        + f64::from(runs[index].hull.radius)
-                        + crate::collision::OVERLAP_MARGIN;
-                    runs[i].pull = Pull::Mover {
-                        index,
-                        range: range.max(closest),
-                    };
-                }
-            }
-        }
         // A gap longer than the cost bound is crossed in one lump first.
-        // **A colliding system's bound is [`COLLIDE_CATCHUP_TICKS`]**, since
-        // each tick there plans a contact for every ship.
-        let cap = if collide {
-            COLLIDE_CATCHUP_TICKS
-        } else {
-            MAX_CATCHUP_TICKS
-        };
-        let floor = last - cap;
+        // **A colliding system is stepped over the whole span** (up to
+        // [`MAX_CATCHUP_TICKS`]): ships that meet inside an unread gap bump
+        // on both clients, so lumping any of it in the closed form skips a
+        // contact. `[A]` the cost is bounded: one gated planning pass per
+        // tick (about 0.3 ms per 1,000 ships in release, `collision::tests::
+        // bench_blob`), at most 3,600 of them in the first read of a long
+        // unread system; falsified by a first read that holds the world lock
+        // for seconds.
+        let floor = last - MAX_CATCHUP_TICKS;
         let fixed_points: Vec<[f64; 3]> = runs.iter().map(|r| r.state.position).collect();
         for r in &mut runs {
             if r.tick < floor {
@@ -5397,74 +5449,58 @@ mod tests {
         assert!(npc[0] > npc[1], "a ship that is no solid is flown through");
     }
 
-    /// **A follower held at range 0 does not stall its leader** (review
-    /// finding 3). The follow is held at the closest two hulls can be
-    /// (`radii + 1 m`), not inside the leader's skin, so it does not re-enter
-    /// contact on every snap, and a push on either is flown, not snapped away.
-    /// Started overlapping, the pair separates and the leader is back at its
-    /// speed.
+    /// **A contact inside a long unread gap is not skipped** (review finding
+    /// 2): two ships whose records are 200 s old meet 100 s in, and the one
+    /// that sits still is hit although the gap is longer than a minute.
     #[test]
-    fn a_follower_at_range_zero_does_not_stall_its_leader() {
-        const LEADER_SHIP: i64 = 10_001;
+    fn ships_that_meet_inside_a_long_unread_gap_are_bumped() {
         let mut r = Roster::default();
         let mut lead = coaster(1, 0.0, 300.0, 0.0);
         lead.motion.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
         lead.motion.speed_fraction = 1.0;
         r.arrive(lead);
-        let mut tail = coaster(2, -60.0, 300.0, 0.0);
-        tail.motion.mode = Mode::Follow {
-            ball_id: LEADER_SHIP,
+        r.arrive(coaster(2, 30_000.0, 0.0, 0.0));
+        let (movers, solids) = at_rest_or_not(&r, &[1, 2]);
+        r.advance_with(&movers, &solids, 200.0, 1);
+        let hit = r.get(2).expect("in space").motion.position[0];
+        assert!(hit > 30_000.0, "the ship at rest was never hit: {hit}");
+    }
+
+    /// **A pushed follower is flown, not snapped** (review finding 3): Carbon
+    /// runs `Gradient` for every massive ball, so a contact adds its push to
+    /// the follower's own thrust, and the snap onto its range would undo it.
+    /// An unpushed follower keeps the snap. (No range floor: Carbon's follow
+    /// aims at `range + radii`, `Ballpark.cpp:1086`, and `fci_bump_pair`
+    /// decides what a follow at 0 does on the client.)
+    #[test]
+    fn a_pushed_follower_is_flown_and_an_unpushed_one_is_snapped() {
+        let hull = bumper();
+        let mut m = Motion::arrived([-300.0, 0.0, 0.0], [300.0, 0.0, 0.0]);
+        m.mode = Mode::Follow {
+            ball_id: 10_001,
             range: 0.0,
         };
-        tail.motion.speed_fraction = 1.0;
-        r.arrive(tail);
-        let hull = bumper();
-        let solids = [1, 2].map(|c| Solid {
-            character_id: c,
-            hull,
+        m.speed_fraction = 1.0;
+        let run = Run {
+            character_id: 2,
+            ship_id: 10_002,
+            solid: true,
             cloaked: false,
-        });
-        let centre = 2.0 * f64::from(hull.radius);
-        let mut worst: f64 = 300.0;
-        for second in 1..=40 {
-            let lead_at = r.get(1).expect("in space").motion.position;
-            let movers = [
-                Mover {
-                    character_id: 1,
-                    hull,
-                    tether: None,
-                },
-                Mover {
-                    character_id: 2,
-                    hull,
-                    tether: Some(Tether {
-                        ball_id: LEADER_SHIP,
-                        range: centre,
-                        at: lead_at,
-                    }),
-                },
-            ];
-            r.advance_with(&movers, &solids, f64::from(second), 1);
-            if second > 15 {
-                worst = worst.min(r.get(1).expect("in space").motion.speed());
-            }
-        }
-        let (a, b) = (
-            r.get(1).expect("in space").motion,
-            r.get(2).expect("in space").motion,
-        );
-        assert!(worst > 270.0, "the leader slowed to {worst} m/s");
-        assert!(
-            a.position[0] > 8_000.0,
-            "the leader got {} m",
-            a.position[0]
-        );
-        let gap = distance(a.position, b.position);
-        assert!(
-            gap >= centre,
-            "the follower is outside the leader's skin: {gap}"
-        );
-        assert!(gap < centre + 100.0, "and still following: {gap}");
+            hull,
+            pull: Pull::Mover {
+                index: 1,
+                range: 100.0,
+            },
+            state: m,
+            tick: 3,
+        };
+        let start = [[0.0; 3], [0.0; 3]];
+        let push = [0.0, 80.0, 0.0];
+        let pushed = run.stepped(&start, &start, 3, TICK_SECONDS, push);
+        let flown = m.tethered_step_pushed(&hull, 10_002, start[1], 100.0, 3, TICK_SECONDS, push);
+        assert_eq!(pushed, flown, "flown by thrust plus push");
+        let plain = run.stepped(&start, &start, 3, TICK_SECONDS, [0.0; 3]);
+        assert_ne!(plain.position, pushed.position);
     }
 
     /// **STOP's `vy` damping comes before the integration**, as `EvolveStop`
@@ -5497,6 +5533,37 @@ mod tests {
         let mut going = m;
         going.mode = Mode::Goto([1.0e9, 0.0, 0.0]);
         assert_eq!(going.tick_start().velocity, going.velocity);
+    }
+
+    /// **The closed form and the per-tick step agree in position and velocity**
+    /// on a stopping ship's `y` at every whole tick (review finding 4).
+    #[test]
+    fn a_stopping_ships_closed_form_matches_its_tick_product() {
+        let hull = crate::destiny::hull::Hull {
+            agility: 5.0,
+            ..bumper()
+        };
+        let m = Motion {
+            position: [0.0; 3],
+            velocity: [10.0, 300.0, -20.0],
+            mode: Mode::Stop,
+            speed_fraction: 1.0,
+        };
+        let mut ticked = m;
+        for n in 1..=12 {
+            ticked = ticked.advanced_tick(&hull, f64::from(n), [0.0; 3]);
+            let closed = m.advanced_at(&hull, f64::from(n), f64::from(n));
+            for a in 0..3 {
+                assert!(
+                    (ticked.position[a] - closed.position[a]).abs() < 1e-6,
+                    "n {n} axis {a}"
+                );
+                assert!(
+                    (ticked.velocity[a] - closed.velocity[a]).abs() < 1e-9,
+                    "n {n} axis {a}"
+                );
+            }
+        }
     }
 
     /// The `u` the collision sample plans with is the commanded velocity the

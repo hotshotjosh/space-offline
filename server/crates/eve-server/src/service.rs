@@ -1429,28 +1429,40 @@ impl Registry {
     /// collision pass uses: a ship's type radius, and the fitted top speed
     /// of one that is moving). Ask once per system per sweep.
     pub fn steps_as_system(&self, solar_system_id: i64) -> bool {
+        // A tethered pair is asked fresh (a command makes one without a
+        // roster write); the touch gate is kept once per system per tick and
+        // roster revision ([`GateCache`]): it costs a hull lookup per moving
+        // ship.
         if self.roster.has_pair(solar_system_id) {
             return true;
         }
-        let ships = self
-            .roster
-            .ids_in(solar_system_id)
-            .filter(|&id| self.character(id).is_some())
-            .filter_map(|id| {
-                let p = self.roster.get(id)?;
-                let radius = f64::from(
-                    crate::destiny::hull::of_in(self.content(), self.pilot(id)?.ship_type_id)
-                        .radius,
-                );
-                let top = if p.motion.is_at_rest() {
-                    0.0
-                } else {
-                    f64::from(self.flight_hull(id)?.max_velocity)
-                };
-                Some((id, radius, top))
-            });
-        self.roster
-            .touch_possible(ships, crate::space_state::now_seconds())
+        let now = crate::space_state::now_seconds();
+        let tick = now.floor() as i64;
+        if let Some(kept) = self.roster.gate_kept(solar_system_id, tick) {
+            return kept;
+        }
+        let answer = {
+            let ships = self
+                .roster
+                .ids_in(solar_system_id)
+                .filter(|&id| self.character(id).is_some())
+                .filter_map(|id| {
+                    let p = self.roster.get(id)?;
+                    let radius = f64::from(
+                        crate::destiny::hull::of_in(self.content(), self.pilot(id)?.ship_type_id)
+                            .radius,
+                    );
+                    let top = if p.motion.is_at_rest() {
+                        0.0
+                    } else {
+                        f64::from(self.flight_hull(id)?.max_velocity)
+                    };
+                    Some((id, radius, top))
+                });
+            self.roster.touch_possible(ships, now)
+        };
+        self.roster.keep_gate(solar_system_id, tick, answer);
+        answer
     }
 
     /// [`Self::advance_character`] for a caller that has already checked the
@@ -1552,8 +1564,13 @@ impl Registry {
         }
         let hull = if p.motion.is_at_rest() {
             let ship_type_id = self.pilot(character_id)?.ship_type_id;
-            crate::dogma::rest_hull(self, p.ship_id, crate::space_state::now_seconds())
-                .unwrap_or_else(|| *crate::destiny::hull::of_in(self.content(), ship_type_id))
+            crate::dogma::rest_hull(
+                self,
+                p.ship_id,
+                (character_id, p.entered.to_bits()),
+                crate::space_state::now_seconds(),
+            )
+            .unwrap_or_else(|| *crate::destiny::hull::of_in(self.content(), ship_type_id))
         } else {
             mover.hull
         };

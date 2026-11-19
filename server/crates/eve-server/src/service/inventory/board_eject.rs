@@ -411,6 +411,14 @@ pub(super) fn board_in_space(
         ball: ship_id,
         massive: true,
     }));
+    if leaving_pod {
+        // The capsule left behind has no pilot: the server no longer collides
+        // it, so the clients must not either, for its POD_REMOVE_DELAY.
+        entries.push(HandoffEntry::Act(Action::SetBallMassive {
+            ball: pod.item_id,
+            massive: false,
+        }));
+    }
     entries.push(slim_entry(
         reg,
         crate::destiny::Slim {
@@ -867,6 +875,12 @@ mod tests {
         let _ = (entries(&mut reg), reg.take_session_changes());
         board_it(&mut reg, ALICE, ALICE_SHIP).expect("back aboard");
         let now = pending_entries(&mut reg);
+        assert!(
+            now.iter().any(|(n, a)| n == b"SetBallMassive"
+                && a == &vec![PyValue::Int(ALICE_POD), PyValue::Int(0)]),
+            "the pilotless capsule is not massive while it waits: {:?}",
+            names(&now)
+        );
         assert!(
             !names(&now).iter().any(|n| n == "RemoveBalls"),
             "not in the answer's flush: {:?}",

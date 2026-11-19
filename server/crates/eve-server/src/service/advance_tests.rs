@@ -217,3 +217,38 @@ fn ships_far_apart_are_still_read_alone() {
     );
     crate::test_clock::thaw();
 }
+
+/// Release only: `cargo test --release -p eve-server advance_tests::bench_gate_reads
+/// -- --ignored --nocapture`. What the read-path gate costs per call: a miss
+/// (computed) against a hit (kept for the tick and the roster revision).
+#[test]
+#[ignore]
+fn bench_gate_reads() {
+    let mut reg = world(PILOTS);
+    for i in 0..PILOTS {
+        let p = reg.roster_mut().get_mut(pilot(i)).expect("in space");
+        p.motion.mode = Mode::Stop;
+        p.motion.velocity = if i % 4 == 0 {
+            [50.0, 0.0, 0.0]
+        } else {
+            [0.0; 3]
+        };
+    }
+    let reps = 200;
+    let t = std::time::Instant::now();
+    for _ in 0..reps {
+        // A structural write each time: the kept answer is never valid.
+        reg.roster_mut().leave(-1);
+        let p = *reg.roster().get(pilot(0)).expect("in space");
+        reg.roster_mut().arrive(p);
+        std::hint::black_box(reg.steps_as_system(SYSTEM));
+    }
+    let miss = t.elapsed().as_secs_f64() * 1e6 / reps as f64;
+    let t = std::time::Instant::now();
+    for _ in 0..reps {
+        std::hint::black_box(reg.steps_as_system(SYSTEM));
+    }
+    let hit = t.elapsed().as_secs_f64() * 1e6 / reps as f64;
+    eprintln!("bench_gate_reads: {PILOTS} pilots, miss {miss:.1} us, hit {hit:.1} us per call");
+    crate::test_clock::thaw();
+}

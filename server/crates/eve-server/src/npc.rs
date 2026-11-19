@@ -1796,6 +1796,26 @@ pub fn spawn_warping_in(
             warp_factor: factor,
         };
     }
+    // **The client makes a ball massive when it drops out of warp**
+    // (`Ballpark.cpp:4330`, `:4355`, Carbon `114e89fa`) **[V]**, and the
+    // server does not collide an NPC (phase 1 collides piloted ships only), so
+    // each client is told it is not massive at the predicted landing, the way
+    // a human pilot's arrival once was. `[A]` the flight is the model's
+    // (`warp_flight_seconds`) and the audience is who is in the system now;
+    // falsified by a client that holds a landed NPC massive (a pilot who
+    // arrived mid-flight and missed the batch, or a late landing).
+    let flight = destiny::warp_flight_seconds(WARP_IN_DISTANCE, factor, 0.0);
+    let to = crate::dungeon::audience(w, solar_system_id);
+    if let Some(update) = destiny::ActionUpdate::new(
+        to,
+        0,
+        vec![destiny::Action::SetBallMassive {
+            ball: id,
+            massive: false,
+        }],
+    ) {
+        w.schedule(Duration::from_secs_f64(flight), update);
+    }
     Some(id)
 }
 
@@ -2311,6 +2331,43 @@ mod tests {
         }
         let _ = reg.take_pending();
         reg
+    }
+
+    /// **An NPC that warps in is told not massive at its landing**: the
+    /// client's warp drop makes a ball massive, and the server does not
+    /// collide NPCs.
+    #[test]
+    fn a_warping_in_npc_is_sent_not_massive_at_its_landing() {
+        let mut reg = world(&[ALICE]);
+        // On Alice's grid at the start of its flight (100 km out along x).
+        reg.roster_mut()
+            .get_mut(ALICE)
+            .expect("in space")
+            .motion
+            .position = [WARP_IN_DISTANCE, 0.0, 0.0];
+        let before = reg.scheduled_count();
+        let id = spawn_warping_in(&mut reg, &FIXTURE_RAT, SYSTEM, [0.0; 3], [1.0, 0.0, 0.0])
+            .expect("an id");
+        assert_eq!(reg.scheduled_count(), before + 1);
+        crate::grid::reconcile_in(&mut reg, SYSTEM);
+        let _ = reg.take_pending();
+        // Alice is told of the ball first (the grid's add), then of its landing.
+        let _ = reg.take_due(Instant::now() + std::time::Duration::from_millis(1));
+        let due = reg.take_due(Instant::now() + std::time::Duration::from_secs(3600));
+        let found = due.iter().any(|p| {
+            let (name, args) = p.to_push();
+            name == "DoDestinyUpdate"
+                && p.audience() == Some(vec![ALICE])
+                && format!("{args:?}").contains(&format!("{:?}", b"SetBallMassive".to_vec()))
+                && format!("{args:?}").contains(&format!("Int({id}), Int(0)"))
+        });
+        assert!(
+            found,
+            "{:?}",
+            due.iter()
+                .map(|p| (p.to_push(), p.audience()))
+                .collect::<Vec<_>>()
+        );
     }
 
     pub(super) fn ship_of(reg: &Registry, who: i64) -> i64 {

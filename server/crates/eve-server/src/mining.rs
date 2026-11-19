@@ -570,7 +570,7 @@ pub fn on_completed(w: &mut Registry, done: Vec<Cycle>) {
         let Some(system) = w.roster().get(c.character_id).map(|p| p.solar_system_id) else {
             continue;
         };
-        if !fresh.contains(&system) && w.roster().has_pair(system) {
+        if !fresh.contains(&system) && w.steps_as_system(system) {
             w.advance_system(system);
             fresh.insert(system);
         }

@@ -164,8 +164,8 @@ pub trait Push: std::fmt::Debug + Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelTag {
     /// A warp's arrival reconciliation for `ball`: the observers' batch
-    /// (`SetBallPosition`, `SetBallVelocity`, `Stop`, `SetBallMassive`, all
-    /// on it) or the pilot's lone `SetBallMassive`.
+    /// (`SetBallPosition`, `SetBallVelocity`, `Stop`). A human pilot is sent
+    /// none (the client lands itself).
     WarpSettle { ball: i64 },
     /// `OnTarget('add', ship)` to the one character `to`.
     TargetAdd { to: i64, ship: i64 },
