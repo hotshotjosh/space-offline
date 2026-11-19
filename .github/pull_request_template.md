@@ -39,7 +39,7 @@ The coding agent and model you used, or "none, written by hand":
 ## Checklist
 - [ ] Status rows updated in `docs/status/progress.tsv` and the page regenerated, or a `Status: none (<why>)` line above.
 - [ ] No extracted client data, in tests or anywhere else (tests use invented ids and rows).
-- [ ] No new dependency (`server/deps.allow` stays empty) and no `unsafe`.
+- [ ] No new third-party crate (`server/deps.allow` and `server/deps.digest` unchanged) and no `unsafe` in our code.
 - [ ] I touched no guarded path (see `.github/CODEOWNERS`), or I say here why: 
 - [ ] I ran the gate (`tools/land.sh --no-push`) and it is green.
 - [ ] I accept the Contributor Terms (`CONTRIBUTING-terms.md`) for this PR: I wrote it or have the right to submit it, it contains no AGPL, GPL or other incompatible code, and I grant thewhitekidney the rights set out there, including relicensing.
