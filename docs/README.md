@@ -57,6 +57,7 @@ findings/                 tables generated from the client (TSV and text), cited
 | `docs/guides/wing.md` | GUIDE | current | The wing: bots that fly with you; the `/bots` and fleet-chat words, with the not-yet ones marked. |
 | `docs/guides/bench-ramp.md` | GUIDE | current | Bench ramp: ramp bots into one system with its own server and find the knee (`tools/bench-ramp.sh`). |
 | `docs/guides/jail.md` | GUIDE | current | The jail: tools that network-isolate the client; what it protects and what it does not. |
+| `docs/guides/windows.md` | GUIDE | current | The native Windows client on one PC, the server in WSL2: the client copy, Placebo, chat, the gateway, the launcher, and no jail. |
 | `docs/guides/client-ci.md` | GUIDE | current | Client CI in one page: run a scenario against the real client, exit codes, where the pieces are. |
 | `docs/guides/getting-started.md` | GUIDE | current | Zero to playing: build, content bundle, server, client, bots, tests and the gate, with launch examples. |
 | `docs/guides/content-bundle.md` | GUIDE | current | The content pipeline: inputs, steps, outputs, verify, rebuild for a new build. |
