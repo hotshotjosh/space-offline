@@ -2066,6 +2066,13 @@ CFSD_BUILD_LAYOUTS = {
     # appended to pyd-schemas.tsv. [V] re-extraction: every component kind
     # still present in `npc/components.tsv`.
     3707965: (None, CFSD_PRESENCE_FIXES),
+    # V24.02 with a patch. Every loader schema identical to 3670638's (all 149
+    # `schema` rows of `findings/build-delta-3670638-3720952.tsv`); the two
+    # loaders it adds over 3670638, academyship and fittings, are 3707965's,
+    # signature-only against it (`tools/build-delta.py 3707965 3720952`), so
+    # their appended tables hold as well. The eight loaders that differ from
+    # 3707965 in code have identical schemas there too.
+    3720952: (None, CFSD_PRESENCE_FIXES),
 }
 
 #: The build `pyd-schemas.tsv` itself is the layout of, and what a caller
