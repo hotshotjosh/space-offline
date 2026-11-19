@@ -114,6 +114,19 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                 let who = Args::new(req).int_lax_or_kw(0, "characterID").or(req.actor);
                 Ok(PyValue::List(employment_record(reg, who)))
             }
+            // `infosvc.GetEmploymentHistorySubContent` unpacks
+            // `employmentHistory, charTransfers` and reads `.corporationID`,
+            // `.startDate`, `.deleted` off the first (the rows of
+            // `GetEmploymentRecord`) and `.transferDate` off the second
+            // **[V out/pyc `infosvc.py:3567` (unpack), `:3606` (`if charTransfers`), `:3627` (`.transferDate`)]**. Nothing here records a
+            // character transfer, and the client skips an empty list.
+            "GetEmployementRecordAndCharacterTransfers" => {
+                let who = Args::new(req).int_lax_or_kw(0, "characterID").or(req.actor);
+                Ok(PyValue::Tuple(vec![
+                    PyValue::List(employment_record(reg, who)),
+                    PyValue::List(vec![]),
+                ]))
+            }
             _ => Err(reg.no_method(req)),
         },
         // CORP-O: offices are `service/corp_office.rs`'s.
@@ -2515,6 +2528,10 @@ fn corp_registry(reg: &mut Registry, req: &Request<'_>) -> Option<Result<PyValue
         m if super::corp_shares::CORP_REGISTRY_METHODS.contains(&m) => {
             super::corp_shares::corp_registry(reg, req)
         }
+        // `corp_ui_member_autokicks` iterates `(characterID,
+        // kickedByCharacterID)` pairs **[V out/pyc `corp_ui_member_autokicks.py:25`]**. No auto-kick state is kept,
+        // so none is pending.
+        "GetPendingAutoKicks" => Ok(PyValue::List(vec![])),
         "AddCorporation" => add_corporation(reg, req),
         "RegisterNewAggressionSettings" => register_aggression(reg, req, actor),
         "GetSuggestedTickerNames" => {
@@ -6692,6 +6709,47 @@ mod tests {
         // Nor is a character in no corp.
         let mut lone = two();
         assert!(!heal_ceo_roles(&mut lone, ALICE));
+    }
+
+    /// The info window unpacks a pair and `GetPendingAutoKicks` is iterated.
+    #[test]
+    fn the_employment_pair_and_the_pending_kicks_are_lists() {
+        const WHO: i64 = 90_000_902;
+        let mut reg = Registry::new(SandboxConfig {
+            characters: vec![crate::model::Character {
+                character_id: WHO,
+                ship_id: 100_000_902,
+                ..crate::model::Character::default()
+            }],
+            ..SandboxConfig::default()
+        });
+        let mut ask = |service: &'static str, method: &'static str| {
+            dispatch(
+                &mut reg,
+                &Request {
+                    service,
+                    method,
+                    args: &[PyValue::Int(WHO)],
+                    kwargs: &[],
+                    bind_params: None,
+                    actor: Some(WHO),
+                },
+            )
+            .expect("answered")
+        };
+        let PyValue::Tuple(pair) = ask(
+            "corporationSvc",
+            "GetEmployementRecordAndCharacterTransfers",
+        ) else {
+            panic!("a pair")
+        };
+        assert!(
+            matches!(&pair[..], [PyValue::List(h), PyValue::List(t)] if h.len() == 1 && t.is_empty())
+        );
+        assert_eq!(
+            ask("corpRegistry", "GetPendingAutoKicks"),
+            PyValue::List(vec![])
+        );
     }
 
     /// FW-1: `corporationSvc.GetEmploymentRecord` is a list the enlist

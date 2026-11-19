@@ -435,3 +435,5 @@ fci_hypernet --with-second -- --character Alice --character Bob
 fci_rig_set
 # hud2 (#290, 3707965): the new ship HUD opted in in-client, on a tactical destroyer beside a second pilot: cycle timer and clock, charge counts, consumption gauge, stop window, reload, overload, remote repair, jam, stance; it turns the preview off again
 fci_hud_new --with-second -- --character Alice --character Bob --no-concord
+# wire-calls (#296): employment history pair, agent solar system, alpha injection time, pending auto-kicks, GetWarsByOwners with a set; the plain server
+fci_wire_calls

@@ -347,6 +347,21 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // branch -- whose `cfg.evelocations.Get` is unguarded -- is never
             // taken.
             "GetAgentLocationWrap" => Ok(agent_location(reg, req)),
+            // `agents.GetSolarSystemOfAgent` caches the answer per agent for
+            // the whole session; `infosvc` and the job board use it as a
+            // solar system id and both handle `None` **[V out/pyc
+            // `agents.py:878`]**. The pool agent's system, else `None`: the
+            // caller's own system would go stale in that cache.
+            "GetSolarSystemOfAgent" => {
+                let agent = args::as_int(args::Args::new(req).get_or_kw(0, "agentID"))
+                    .unwrap_or_else(|| bound_agent(req, None));
+                Ok(reg
+                    .content()
+                    .try_get::<crate::mission_pool::Table>()
+                    .and_then(|t| t.agent(agent))
+                    .and_then(|a| a.system)
+                    .map_or(PyValue::None, PyValue::Int))
+            }
             // One bound call per agent in the station, from the lobby's
             // Agents tab (`station/agents/agents.py:295`), with the
             // `characterID`. **Falsy means no replay cooldown.** CP41: when
@@ -833,6 +848,21 @@ mod tests {
         assert_eq!(cargo_again, cargo, "accepting twice must not re-spawn");
     }
 
+    /// `GetSolarSystemOfAgent` is `None`, not an error, for an agent the
+    /// pool does not hold.
+    #[test]
+    fn the_solar_system_of_an_unknown_agent_is_none() {
+        let mut reg = Registry::new(SandboxConfig::default());
+        let got = call_args(
+            &mut reg,
+            "agentMgr",
+            "GetSolarSystemOfAgent",
+            &[PyValue::Int(3_999_999)],
+        )
+        .expect("answered");
+        assert_eq!(got, PyValue::None);
+    }
+
     /// The agent's location omits `locationType` deliberately.
     ///
     /// `'locationType' in location` gates the `LocationWrapper` branch, whose
@@ -1033,6 +1063,19 @@ mod pool_tests {
         for l in &lines {
             assert_eq!(l.len(), header.len(), "{l:?}");
         }
+    }
+
+    /// A pool agent's solar system is its own, not the caller's.
+    #[test]
+    fn the_solar_system_of_a_pool_agent_is_its_own() {
+        let mut reg = world();
+        let got = call(
+            &mut reg,
+            "GetSolarSystemOfAgent",
+            None,
+            &[PyValue::Int(FAR)],
+        );
+        assert_eq!(got, PyValue::Int(39_000_002));
     }
 
     /// The fixture's invented agent appears at its station, with its own

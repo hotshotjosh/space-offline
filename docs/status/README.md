@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**65% proved** (232 of 358) · **94% built** (335 of 358) · 3 parked, not counted.
+**65% proved** (232 of 359) · **94% built** (336 of 359) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -15,6 +15,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.1 Prove what landed
 
 - [ ] Rig sets: a synchronizer's bonus scales with the faction modules fitted beside it: *built-unproved*, no server code: the engine takes the chain from the bundle; dogma.rs tests a_rig_set_counts_faction_modules_and_scales_the_synchronizer, a_rig_set_counter_is_passive_and_its_bonus_needs_the_rig_online; fci_rig_set (written, not yet run on 3707965: the client's gun damageMultiplier rises with the rig and with a third faction module; the client's dogma top speed against the ego ball during an Aberrant burst); [I] the chain is exact against the client, falsified by fci_rig_set or the fitting window showing another damage figure; the scenario's item names are [A]
+- [ ] Info-window calls answered: employment history pair, pending auto-kicks, agent solar system, alpha injection time, GetWarsByOwners with a set, single-item open check: *built-unproved*, service/corp.rs, base.rs, agents.rs, inventory.rs, war.rs owner_ids_arg; fci_wire_calls written, not yet run
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
 - [ ] Militia on drone and fighter slims: *built-unproved*, facwar_mgr::slim_extras resolves a drone's or squadron's owner; the drone launch AddBalls2 carries the extras; unit tests; fci_fw_kill_lp: A (Incursus) launches a Hobgoblin; B checks its slim's warFactionID and CheckAtWarMilitia; [I] TQ sends it, from CATEGORIES_WITH_WARFACTIONID; fci_fw_kill_lp green 11-16 (var/ci-1116g-a, A 60/60, B 32/32): B sees A's Hobgoblin slim carry A's militia and CheckAtWarMilitia is true; fighters unit-tested only
 - [ ] Bots use filaments: *built-unproved*, commit 7bbc445; unit tests; socket test tests/bots/hunt.rs a_hunter_with_a_filament_jumps_hunts_the_new_space_and_flies_home (stock, jump through randomJumpMgr, scan, roam home); escort.rs no longer unloads a stocked filament as loot (it kept the hunter docked)
@@ -187,7 +188,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 44 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
-| Corp and social | 18 | 0 | 2 | 0 | 0 |
+| Corp and social | 18 | 1 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
@@ -495,7 +496,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Corp and social</b>: 18 of 20 proved, 2 open</summary>
+<details><summary><b>Corp and social</b>: 18 of 21 proved, 3 open</summary>
 
 - [x] Found a corp and an alliance: *client-proved*, fci_corp_alliance W10
 - [x] Corporation assets window: *client-proved*, fci_corp_assets W10
@@ -513,6 +514,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Recruitment adverts and corp finder: *partial*, fci_corp_ads (regress-w30a, two clients): A posts an advert, B finds it in the corp finder and applies, A sees the application; corp_rec.rs; the bot side is built-unproved (#152: bot CEOs post an advert while their corp has room and remove it when full; corpless bots search the finder and apply to an advertising bot corp, else the old pick; eve-bot corp_ads.rs, corpmind.rs Plan::Adverts/Plan::Find; open offers count toward a full corp; tests/bots/corp_ads.rs drives tend and find over a socket, including an open offer taking the advert down; society-report counts adverts and finder applications); no soak has shown it yet. The panels no longer fail
 - [x] Shares: *client-proved*, fci_dividend 11-03 (regress-w14c); corp_shares.rs, service/corp_shares.rs. Founding grant to the CEO (1000 is an assumption); move and give; voting still absent
 - [x] Medals: *client-proved*, fci_medals W10. Free for now (owner decision pending); ISK fees would be a later change
+- [ ] Info-window calls answered: employment history pair, pending auto-kicks, agent solar system, alpha injection time, GetWarsByOwners with a set, single-item open check: *built-unproved*, service/corp.rs, base.rs, agents.rs, inventory.rs, war.rs owner_ids_arg; fci_wire_calls written, not yet run
 - [ ] Voting: *partial*, fci_corp_votes (regress-w28a, two clients): a Director proposes, two shareholders vote by snapshot weight, a repeat vote and a member's proposal are refused; corp_votes.rs (expiry and result unit-tested); a won CEO vote whose yes holds more than half the issued shares hands over the CEO seat ([A] quorum; corp_votes.rs take_due/ceo_quorum_met, service/corp_votes.rs settle, unit tests; fci_corp_votes step 6 green 11-15 (var/ci-1115m-a): a GM /vote close ends the vote inside the run and the seat changes hands); a won kick vote is a sanctioned action the CEO puts in effect: fci_corp_votes step 7 (CreateVote, vote, /vote close, GetCorpSanctionedActions, ActivateSanctionedAction expels the member, a second Activate refused) green 11-16 through CreateVote (var/ci-1116d-a, A 32/32, B 36/36); the expelled pilot's own sight of the open case is not proved; create shares and blueprint lock or unlock refused until built. Research report r-corp-social says keep it last
 - [x] Dividends: *client-proved*, fci_dividend 11-03 (regress-w14c); service/corp_shares.rs. Shareholders by weight or members evenly, whole cents, type-23 notification
 - [x] Player chat channels: *client-proved*, fci_chat_channels W10

@@ -35,6 +35,7 @@ pub(crate) const SERVICES: &[&str] = &[
     "multiLoginBlocker",
     "XmppChatMgr",
     "chatAuthenticationService",
+    "alphaInjectorMgr",
 ];
 
 /// The calls [`dispatch_ro`] answers (PA-12a).
@@ -59,6 +60,15 @@ pub(crate) fn dispatch_ro(
 pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
     match req.service {
         "machoNet" => reg.macho_net(req),
+        // `skillsvc.GetNextAlphaInjectionDateTime` returns this and the client
+        // computes `max(0, value - blue.os.GetWallclockTime())` and shows the
+        // injector timer only when `value > now` **[V out/pyc `skillsvc.py:1168`/`:1171`,
+        // `banner.py:211`]**: a FILETIME of the next permitted injection. We
+        // never limit injections, so a time already past (0) means "now".
+        "alphaInjectorMgr" => match req.method {
+            "GetNextAvailableInjection" => Ok(PyValue::Long(0)),
+            _ => Err(reg.no_method(req)),
+        },
         "pingService" => match req.method {
             // The return is ignored; the call only proves the transport
             // is alive.
@@ -1250,7 +1260,23 @@ mod tests {
         }
     }
 
-    /// Tests for this subsystem belong here, not in the parent. That is the    /// Tests for this subsystem belong here, not in the parent. That is the
+    /// `skillsvc` does `max(0, value - now)` on this: a number, in the past.
+    #[test]
+    fn the_next_alpha_injection_is_a_filetime_in_the_past() {
+        let mut reg = Registry::new(SandboxConfig::default());
+        let req = Request {
+            service: "alphaInjectorMgr",
+            method: "GetNextAvailableInjection",
+            args: &[],
+            kwargs: &[],
+            bind_params: None,
+            actor: None,
+        };
+        let got = dispatch(&mut reg, &req).expect("answered");
+        assert_eq!(got, PyValue::Long(0));
+    }
+
+    /// Tests for this subsystem belong here, not in the parent. That is the
     /// other half of why the split exists: two lanes adding a method each
     /// would otherwise contend for one `mod tests`.
     /// Every service this module advertises must reach an arm in *this*

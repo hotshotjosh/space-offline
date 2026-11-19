@@ -211,6 +211,12 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             "ListCargo" | "ListHardwareModules" | "ValidateItemListCanBeOpened" => {
                 Ok(PyValue::List(vec![]))
             }
+            // `invCache.ValidateItemCanBeOpened` returns this straight to
+            // `invWindow._IsCurrentInventoryValid`, where a falsy answer marks
+            // the open inventory invalid and the window closes
+            // **[V out/pyc `invCache.py:493`, `invWindow.py:688`]**. The list variant
+            // above names none as unopenable, so the single one is true.
+            "ValidateItemCanBeOpened" => Ok(PyValue::Bool(true)),
             // **"Stack All", and it stacks.**
             //
             // The client has already done the hard half. `invCacheContainer.StackAll`
@@ -2875,6 +2881,12 @@ mod tests {
                 "{method} is iterated; None raises, and empty is the truth"
             );
         }
+        // The single-item form is truthy, or `invWindow` closes the open
+        // inventory.
+        assert_eq!(
+            read(&mut reg, "ValidateItemCanBeOpened", Some(&hangar)),
+            PyValue::Bool(true)
+        );
     }
 
     /// One call, with a `SandboxConfig::default()` registry behind it.
