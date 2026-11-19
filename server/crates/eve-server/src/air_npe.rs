@@ -126,6 +126,12 @@ struct Run {
 pub struct Runs {
     runs: HashMap<i64, Run>,
     pending: HashMap<i64, Instant>,
+    /// Scripted deaths due (scene 1.2): character -> when whatever they fly
+    /// is destroyed ([`tick`]).
+    kills: HashMap<i64, Instant>,
+    /// The scene-1.2 attackers spawned for a character, removed when the
+    /// character's run starts again ([`start_run`]).
+    npcs: HashMap<i64, Vec<i64>>,
 }
 
 pub const SLOT: crate::world_ext::SlotSpec = crate::world_ext::SlotSpec {
@@ -314,6 +320,12 @@ fn start_run(reg: &mut Registry, c: i64) {
     for id in void_site_ids(c) {
         crate::site::vacate(reg, id);
     }
+    // The last run's attackers go with its pocket; a pending scripted death
+    // is forgotten.
+    if let Some(ids) = reg.ext_mut::<Runs>().npcs.remove(&c) {
+        crate::npc::despawn_ids(reg, VOID_SYSTEM, &ids);
+    }
+    reg.ext_mut::<Runs>().kills.remove(&c);
     // And the pilot starts scene 1.1 in the capsule again. After a relog a
     // live server had the pilot back in the capsule with a new Astero to
     // board **[V-TQ]** (`Board(newAstero, capsule)`); here the pilot who
@@ -640,7 +652,7 @@ pub fn tick(reg: &mut Registry, _now: Instant, bt: crate::damage::BlueTime) {
     site_tick(reg, bt);
     let due: Vec<i64> = {
         let runs = reg.ext::<Runs>();
-        if runs.runs.is_empty() && runs.pending.is_empty() {
+        if runs.runs.is_empty() && runs.pending.is_empty() && runs.kills.is_empty() {
             return;
         }
         runs.pending
@@ -652,6 +664,18 @@ pub fn tick(reg: &mut Registry, _now: Instant, bt: crate::damage::BlueTime) {
     for c in due {
         reg.ext_mut::<Runs>().pending.remove(&c);
         start_run(reg, c);
+    }
+    let dying: Vec<i64> = reg
+        .ext::<Runs>()
+        .kills
+        .iter()
+        .filter(|(_, at)| **at <= crate::game_clock::clock::wall())
+        .map(|(c, _)| *c)
+        .collect();
+    for c in dying {
+        reg.ext_mut::<Runs>().kills.remove(&c);
+        let killed = crate::combat::self_destruct_kill(reg, c, crate::pyutil::filetime_now());
+        eprintln!("[airnpe] char {c}: scripted death: {killed}");
     }
     let now = clock(reg);
     let chars: Vec<i64> = reg.ext::<Runs>().runs.keys().copied().collect();
@@ -866,6 +890,15 @@ pub const SITE_CHECKPOINT: i64 = 45;
 pub const NPE_SITE_BASE: i64 = 8_950_000_000;
 pub const NPE_SITE_END: i64 = 9_000_000_000;
 
+/// How near a tutorial site's room origin a pilot is inside it, metres
+/// (`crate::dungeon_tracking`). Dungeon 9105's signal stands 189 km from its
+/// room origin **[V-data]**, and on a live server a pilot who warped in
+/// beside it was told `OnEnteringDungeonRoom` for 9105 **[V-TQ]**; the
+/// usual 120 km would never count them in. **[A]** 400 km: past the
+/// room's furthest object, nowhere near the pocket's other site (7 864 km
+/// per grid unit away).
+pub const ROOM_RANGE: f64 = 400_000.0;
+
 /// Whether `site.rs`'s sweep should leave this instance alone (it is ours to vacate).
 pub fn is_npe_site(site_id: i64) -> bool {
     (NPE_SITE_BASE..NPE_SITE_END).contains(&site_id)
@@ -949,11 +982,19 @@ fn site_action(reg: &mut Registry, c: i64, atom: &str, args: &Kw) -> Option<Kw> 
     }
 }
 
+/// A point: a three-item list (an atom's output), or a graph's `v:` literal,
+/// which arrives as the text `"x,y,z"` (`Spawn Dungeon`'s `grid_offset` in
+/// graph 733 is `v:-35.0,10.0,17.0`).
 fn vec3(v: &Value) -> Option<[f64; 3]> {
     match v {
         Value::List(items) if items.len() == 3 => {
             let f = |i: usize| items[i].as_float();
             Some([f(0)?, f(1)?, f(2)?])
+        }
+        Value::Str(s) => {
+            let mut it = s.split(',').map(|p| p.trim().parse::<f64>().ok());
+            let p = [it.next()??, it.next()??, it.next()??];
+            it.next().is_none().then_some(p)
         }
         _ => None,
     }
@@ -1069,11 +1110,12 @@ fn void_pocket(c: i64) -> Kw {
     ])
 }
 
-/// How far one unit of `Spawn Dungeon`'s `grid_offset` is, metres. **[A]**
-/// a megametre, so the graph's (-35, 10, 17) puts the second dungeon ~40 000
-/// km off the first, a warp away; falsified by a lesson that has the pilot fly
-/// (not warp) between them.
-const GRID_OFFSET_UNIT: f64 = 1.0e6;
+/// How far one unit of `Spawn Dungeon`'s `grid_offset` is, metres
+/// **[V-TQ]**: on a live server dungeon 9105, spawned at grid offset
+/// (-35, 10, 17), had its room origin (the objects whose catalogue position
+/// is 0, 0, 0) at (-275 251.2, 78 643.2, 133 693.4) km from dungeon 9103's:
+/// 7 864.3 km per unit on every axis.
+const GRID_OFFSET_UNIT: f64 = 7.8643e6;
 
 /// `dungeon_id`, `solar_system_id`, `position`, `grid_offset` -> `spawn_id`,
 /// `spawn_position`, `beacon_id`, `entry_position` **[V-data]** (atom 211's
@@ -1145,6 +1187,16 @@ fn behaviour_cue(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
         ("BALIN_SPAWN", Some(site)) => balin_spawn(reg, c, site),
         ("BALIN_REPAIR_PLAYER", Some(site)) => balin_repair(reg, c, site),
         ("BALIN_WARP_TO_SITE_2", Some(site)) => balin_leave(reg, c, site),
+        // Scene 1.2's cues go to the second dungeon (graph 686).
+        ("PLAYER_IN_ANOMALY_RANGE", Some(site)) => air_fleet_arrives(reg, c, site),
+        ("SPAWN_UNIDENTIFIED_FLEET" | "SPAWN_UNIDENTIFIED_FLEET_TEST", Some(site)) => {
+            hostiles_arrive(reg, c, site)
+        }
+        // The battleship's ECM lesson is the end of the fight: the ship is
+        // lost a little later, after the lesson that watches for it has
+        // started (graph 756); then the capsule (graph 757).
+        ("ECM_ACTIVATED", _) => schedule_death(reg, c, SHIP_DEATH_AFTER),
+        ("PLAYER_IN_POD", _) => schedule_death(reg, c, POD_DEATH_AFTER),
         _ => eprintln!("[airnpe] char {c}: behaviour cue {key} (not scripted)"),
     }
     Some(Kw::new())
@@ -1218,17 +1270,74 @@ fn balin_repair(reg: &mut Registry, c: i64, site: i64) {
     eprintln!("[airnpe] char {c}: Balin repairs ship {}", here.ship_id);
 }
 
-/// Balin warps on to the second site: his warp flash, then he is gone from
-/// this grid. **[A]** he leaves rather than flying to dungeon 9105 (scene
-/// 1.2's own set-up is not done yet); falsified by a scene-1.2 lesson that
-/// finds him there.
+/// Where Balin waits at the second site, metres from its signal **[V-TQ]**:
+/// his warp target there (`WarpTo` in the pocket's `DoDestinyUpdate`).
+const BALIN_AT_SITE_2: [f64; 3] = [61_000.0, -13_200.0, -9_000.0];
+
+/// Where the pilot lands at the second site, metres from its signal
+/// **[V-TQ]** (the pilot's `WarpTo` there).
+const PILOT_AT_SITE_2: [f64; 3] = [63_600.0, -14_650.0, -16_900.0];
+
+/// `c`'s pocket site that holds `dungeon_id`.
+fn void_site_of(reg: &Registry, c: i64, dungeon_id: i64) -> Option<i64> {
+    let sites = reg.ext::<crate::site::Sites>();
+    void_site_ids(c)
+        .into_iter()
+        .find(|id| sites.get(*id).is_some_and(|s| s.dungeon_id == dungeon_id))
+}
+
+/// Where the second site's signal (object 1107878, type 60144) stands from
+/// the room's origin, metres **[V-data]** (dungeon 9105's catalogue). The
+/// scene-1.2 spots below were measured from the signal on a live server.
+const SIGNAL_AT: [f64; 3] = [187_976.7, 20_491.4, 2_877.1];
+
+/// `site`'s signal moved by `offset` metres: the anchor (the room's origin)
+/// plus [`SIGNAL_AT`] plus `offset`.
+fn at_site(reg: &Registry, site: i64, offset: [f64; 3]) -> Option<[f64; 3]> {
+    let a = reg.ext::<crate::site::Sites>().get(site)?.anchor;
+    Some([
+        a[0] + SIGNAL_AT[0] + offset[0],
+        a[1] + SIGNAL_AT[1] + offset[1],
+        a[2] + SIGNAL_AT[2] + offset[2],
+    ])
+}
+
+/// Balin warps on to the second site: his warp flash here, then he is gone
+/// from this grid and waits at the second site (dungeon 9105), where scene
+/// 1.2 has the pilot orbit him (graph 751). **[A]** he is placed there rather
+/// than flown; falsified by a lesson that watches him travel.
 fn balin_leave(reg: &mut Registry, c: i64, site: i64) {
-    let Some(balin) = balin_in(reg, site) else {
+    let Some(here) = std::iter::once(site)
+        .chain(void_site_ids(c))
+        .find(|s| balin_in(reg, *s).is_some())
+    else {
         return;
     };
-    let Some(system) = reg.ext::<crate::site::Sites>().get(site).map(|i| i.system) else {
+    let Some(balin) = balin_in(reg, here) else {
         return;
     };
+    let Some(system) = reg.ext::<crate::site::Sites>().get(here).map(|i| i.system) else {
+        return;
+    };
+    if let Some(site2) = void_site_of(reg, c, 9105) {
+        if let Some(at) = at_site(reg, site2, BALIN_AT_SITE_2)
+            && let Some(p) = crate::site::add_object(reg, site2, BALIN_TYPE, at)
+        {
+            crate::site::set_owner(reg, p.item_id, BALIN_OWNER);
+            eprintln!(
+                "[airnpe] char {c}: Balin waits at site {site2} as {}",
+                p.item_id
+            );
+        }
+        // The pilot goes with him: on a live server the same cue aligned the
+        // pilot's ship to the second site and warped it in with the fleet
+        // **[V-TQ]** (`GotoPoint`, then `WarpTo` to this spot); scene 1.2's
+        // first lesson starts on that warp's end (`Warp Finished`, graph 750).
+        if let Some(to) = at_site(reg, site2, PILOT_AT_SITE_2) {
+            crate::service::warp_character_to(reg, c, to);
+            eprintln!("[airnpe] char {c}: warped to site {site2}");
+        }
+    }
     let to = crate::dungeon::audience(reg, system);
     let stamp = reg.next_destiny_stamp();
     if let Some(fx) = crate::destiny::SpecialFx::new(
@@ -1248,10 +1357,184 @@ fn balin_leave(reg: &mut Registry, c: i64, site: i64) {
     eprintln!("[airnpe] char {c}: Balin warps out");
 }
 
+// -- scene 1.2: the fleet, the attackers, and the pilot's deaths ----------------
+//
+// On a live server, about ten seconds after the pilot landed at the second
+// site, the AIR fleet warped in beside Balin (group 4128); when the pilot
+// had orbited him, the attackers warped in (group 4105: frigate 57801,
+// cruiser 57802, two battleships 57803; group 4130: their escort) **[V-TQ]**
+// (their `AddBalls2`, each ship in warp to its spot). The lessons have the
+// pilot kill the frigate (graph 753) and the cruiser (754), and engage a
+// battleship with the ECM (755); then the ship is lost (756) and the capsule
+// (757).
+
+/// The AIR fleet's ships and spots, metres from the second site's signal ([`at_site`])
+/// **[V-TQ]** (their warp targets).
+const AIR_FLEET: [(i64, [f64; 3]); 10] = [
+    (58_162, [60_500.0, -12_900.0, -2_600.0]),
+    (58_163, [63_100.0, -14_400.0, -10_600.0]),
+    (57_800, [71_000.0, -14_400.0, 5_600.0]),
+    (59_986, [61_800.0, -13_700.0, -6_600.0]),
+    (59_985, [67_100.0, -13_700.0, 4_200.0]),
+    (59_987, [64_400.0, -15_100.0, -14_500.0]),
+    (59_985, [59_200.0, -12_200.0, 1_300.0]),
+    (59_985, [74_900.0, -15_100.0, 7_000.0]),
+    (59_987, [65_700.0, -15_900.0, -18_500.0]),
+    (59_985, [63_200.0, -12_900.0, 2_800.0]),
+];
+
+/// The attackers and their spots, metres from the second site's signal ([`at_site`])
+/// **[V-TQ]** (their warp targets).
+const ATTACKERS: [(i64, [f64; 3]); 16] = [
+    (57_801, [5_300.0, 4_700.0, 20_700.0]),
+    (57_802, [-4_100.0, 3_600.0, 28_800.0]),
+    (57_803, [-21_100.0, -900.0, 38_200.0]),
+    (57_803, [-20_800.0, 2_600.0, 36_400.0]),
+    (59_604, [-10_500.0, 6_600.0, 29_300.0]),
+    (59_604, [-21_100.0, 800.0, 37_600.0]),
+    (59_605, [-11_500.0, 9_000.0, 33_100.0]),
+    (59_606, [-6_200.0, 7_700.0, 34_400.0]),
+    (59_607, [-19_700.0, -1_200.0, 33_300.0]),
+    (59_607, [-15_300.0, -1_700.0, 43_600.0]),
+    (59_607, [-16_700.0, -5_700.0, 41_200.0]),
+    (59_609, [-2_900.0, -10_600.0, 35_900.0]),
+    (59_609, [-2_400.0, -2_100.0, 26_200.0]),
+    (59_609, [-18_400.0, -3_600.0, 34_800.0]),
+    (59_610, [-11_700.0, 6_700.0, 36_600.0]),
+    (59_611, [-15_600.0, 4_000.0, 31_400.0]),
+];
+
+/// The owner on every scene-1.2 ship's slim **[V-TQ]**.
+const SCENE_OWNER: i64 = 500_021;
+
+/// The AIR fleet takes its places beside Balin. **[A]** they stand as
+/// scenery (site objects): no lesson reads them, and their fight with the
+/// attackers is not modelled; falsified by a lesson that waits on one.
+fn air_fleet_arrives(reg: &mut Registry, c: i64, site: i64) {
+    let mut n = 0;
+    for (type_id, off) in AIR_FLEET {
+        if let Some(at) = at_site(reg, site, off)
+            && let Some(p) = crate::site::add_object(reg, site, type_id, at)
+        {
+            crate::site::set_owner(reg, p.item_id, SCENE_OWNER);
+            n += 1;
+        }
+    }
+    eprintln!("[airnpe] char {c}: the AIR fleet ({n} ships) is at site {site}");
+}
+
+/// A law NPC whose offender is nobody's character: its brain sees no one, so
+/// it never locks or fires, and it is not CONCORD's standby either
+/// (`concord::STANDBY` is offender 0).
+const PASSIVE: crate::npc::Law = crate::npc::Law { offender: -1 };
+
+/// The attackers take their spots, as NPCs the pilot can lock and kill.
+/// **[A]** they do not fire: the lessons that need the pilot hurt are
+/// scripted ([`schedule_death`]), and a pirate brain on sixteen ships with
+/// two battleships would end the fight before the frigate lesson; falsified
+/// by a lesson that waits on the pilot taking damage before the ECM one.
+/// **[A]** they appear rather than warp in (a live server warped them in):
+/// these entity types carry no warp speed here, so a warp-in never landed on
+/// the server and every lock on one was silently cancelled as "in warp";
+/// falsified by a lesson that waits on their arrival.
+fn hostiles_arrive(reg: &mut Registry, c: i64, site: i64) {
+    let Some(system) = reg.ext::<crate::site::Sites>().get(site).map(|i| i.system) else {
+        return;
+    };
+    let mut ids = Vec::new();
+    for (type_id, off) in ATTACKERS {
+        let Some(at) = at_site(reg, site, off) else {
+            continue;
+        };
+        let Some(kind) = crate::npc::resolve_law(reg, type_id, SCENE_OWNER) else {
+            eprintln!("[airnpe] char {c}: no NPC data for type {type_id}");
+            continue;
+        };
+        if let Some(id) = crate::npc::spawn_bound(reg, kind, system, at, PASSIVE) {
+            ids.push(id);
+        }
+    }
+    crate::npc::announce(reg, system, &ids, true);
+    reg.ext_mut::<Runs>()
+        .npcs
+        .entry(c)
+        .or_default()
+        .extend(ids.iter().copied());
+    eprintln!("[airnpe] char {c}: {} attackers at site {site}", ids.len());
+}
+
+/// How long after the ECM lesson's cue the ship is lost, and after the
+/// capsule's cue the capsule. **[A]** long enough for the lesson that watches
+/// for it to have started and spoken; falsified by a lesson that misses it.
+const SHIP_DEATH_AFTER: Duration = Duration::from_secs(12);
+const POD_DEATH_AFTER: Duration = Duration::from_secs(6);
+
+/// Whatever `c` flies is destroyed `after` from now ([`tick`]), through the
+/// game's own death: wreck, capsule, clone. **[A]** the pilot is the killer
+/// on the killmail (it is the self-destruct path); falsified by a lesson that
+/// reads the killer.
+fn schedule_death(reg: &mut Registry, c: i64, after: Duration) {
+    let at = crate::game_clock::clock::wall() + after;
+    reg.ext_mut::<Runs>().kills.insert(c, at);
+    eprintln!("[airnpe] char {c}: death scheduled in {after:?}");
+}
+
+/// The pocket's ship, the AIR Civilian Astero **[V-data]** (dungeon 9103).
+const ASTERO_TYPE: i64 = 58_745;
+
+/// What the Astero carries, `(type, flag)` **[V-TQ]**: the modules a live
+/// pilot's Astero fired in scene 1.2 (`OnSpecialFX` from its module ids):
+/// two Civilian Gatling Pulse Lasers (3634, group 53), a stasis webifier
+/// (30328, group 65) and an ECM (1957, group 201). **[A]** the fifth (a
+/// module id that never fired an effect) is the propulsion module scene 1.2
+/// checks is active (21857, group 46, graph 753); and the slots: guns in the
+/// first two high slots, the rest in the medium slots in that order.
+/// Falsified by a fitting window showing other modules or another layout.
+const ASTERO_FIT: [(i64, i64); 5] = [(3634, 27), (3634, 28), (21857, 19), (30328, 20), (1957, 21)];
+
+/// Fit the Astero's modules into `ship` and assemble them in place, as the
+/// rookie ship is fitted (`crate::starter_ship`).
+fn fit_astero(reg: &mut Registry, c: i64, ship: i64, owner: i64) {
+    let plan: Vec<crate::item::Edit> = ASTERO_FIT
+        .iter()
+        .map(|&(type_id, flag)| crate::item::Edit::Create {
+            type_id,
+            quantity: 1,
+            to: crate::item::Slot::new(owner, ship, flag),
+        })
+        .collect();
+    let modules: Vec<i64> = match reg.apply_items(&plan) {
+        Ok(changes) => changes
+            .iter()
+            .filter_map(|ch| match ch {
+                crate::item::Change::Created { item_id, .. } => Some(*item_id),
+                _ => None,
+            })
+            .collect(),
+        Err(e) => {
+            eprintln!("[airnpe] char {c}: Astero fit refused: {e:?}");
+            return;
+        }
+    };
+    let assemble: Vec<crate::item::Edit> = modules
+        .iter()
+        .filter_map(|&id| reg.item(id).map(|i| (id, i.slot())))
+        .map(|(item_id, to)| crate::item::Edit::Assemble { item_id, to })
+        .collect();
+    if let Err(e) = reg.apply_items(&assemble) {
+        eprintln!("[airnpe] char {c}: Astero modules not assembled: {e:?}");
+    }
+    for &m in &modules {
+        crate::modules::on_fitted(reg, ship, ASTERO_TYPE, m);
+    }
+}
+
 /// How far from a character's pocket an empty hull counts as theirs, metres.
-/// **[A]**: well past the pocket's two grids, and nowhere near another
+/// The second site stands ~3e8 m from the first (7 864 km per grid unit,
+/// offset (-35, 10, 17)), so a hull left there by a relog is in reach.
+/// **[A]**: 5e8, nowhere near another
 /// character's pocket (they are 1e9 m apart along z).
-const POCKET_REACH: f64 = 1.0e8;
+const POCKET_REACH: f64 = 5.0e8;
 
 /// Take the empty hulls in `c`'s pocket out of the world: the item, its
 /// pilotless record and its ball. They are the tutorial's Asteros, made by
@@ -1298,11 +1581,13 @@ fn hulls_for_ship_objects(reg: &mut Registry, c: i64, site: i64) {
     let Some(inst) = reg.ext::<crate::site::Sites>().get(site).cloned() else {
         return;
     };
+    // A ship by category (6): a structure with a hull row (the scene-1.2
+    // signal, 60144) is not one.
     let is_ship = |reg: &Registry, type_id: i64| {
         reg.content()
             .try_get::<crate::typedata::Installed>()
-            .and_then(|t| t.hull(type_id))
-            .is_some()
+            .and_then(|t| t.table().get(type_id))
+            .is_some_and(|r| r.category_id == crate::model::CATEGORY_SHIP)
     };
     let objects: Vec<_> = inst
         .objects
@@ -1359,6 +1644,9 @@ fn hulls_for_ship_objects(reg: &mut Registry, c: i64, site: i64) {
             a,
             crate::space_state::Motion::arrived(p.position, [0.0; 3]),
         );
+        if p.type_id == ASTERO_TYPE {
+            fit_astero(reg, c, ship_id, p.owner_id);
+        }
         eprintln!(
             "[airnpe] char {c}: ship object {} is now hull {ship_id}, pilotless",
             p.type_id
@@ -1664,6 +1952,63 @@ mod tests {
             from_py(&PyValue::Tuple(vec![PyValue::Long(7)])),
             Value::List(vec![Value::Int(7)])
         );
+    }
+
+    /// A scene-1.2 attacker (a law NPC with no offender, warped in) can be
+    /// locked once it has landed: the frigate lesson locks one (graph 753).
+    #[test]
+    fn a_passive_attacker_can_be_locked_once_it_lands() {
+        const ALICE: i64 = 1_000_001;
+        let mut reg = Registry::new(crate::model::SandboxConfig {
+            characters: vec![crate::model::Character {
+                character_id: ALICE,
+                name: "Alice".to_owned(),
+                ship_id: 100_000_001,
+                ..crate::model::Character::default()
+            }],
+            ..crate::model::SandboxConfig::default()
+        });
+        crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+        let here = *reg.roster().get(ALICE).expect("in space");
+        let kind = &crate::npc::FIXTURE_RAT;
+        let at = [
+            here.motion.position[0] + 5_000.0,
+            here.motion.position[1],
+            here.motion.position[2],
+        ];
+        let id = crate::npc::spawn_bound_warping_in(
+            &mut reg,
+            kind,
+            here.solar_system_id,
+            at,
+            PASSIVE,
+            [1.0, 0.0, 0.0],
+        )
+        .expect("spawned");
+        // Its warp began ten minutes ago: long landed.
+        if let Some(p) = reg.roster_mut().get_mut(id)
+            && let crate::destiny::Mode::Warp { effect_stamp, .. } = &mut p.motion.mode
+        {
+            *effect_stamp -= 600;
+        }
+        let answer = crate::targeting::lock(&mut reg, ALICE, id);
+        assert!(answer.is_ok(), "lockable: {answer:?}");
+    }
+
+    /// A point is read from an atom's list or a graph's `v:` text alike; the
+    /// second dungeon's grid offset is text (graph 733), and reading it as
+    /// nothing laid the two dungeons on one spot.
+    #[test]
+    fn a_point_reads_from_a_list_or_vector_text() {
+        let list = Value::List(vec![Value::Float(1.0), Value::Int(2), Value::Float(-3.5)]);
+        assert_eq!(vec3(&list), Some([1.0, 2.0, -3.5]));
+        assert_eq!(
+            vec3(&Value::str("-35.0,10.0,17.0")),
+            Some([-35.0, 10.0, 17.0])
+        );
+        assert_eq!(vec3(&Value::str("1,2")), None);
+        assert_eq!(vec3(&Value::str("1,2,3,4")), None);
+        assert_eq!(vec3(&Value::str("a,b,c")), None);
     }
 
     /// The pocket is the live server's void system at its spot, and two
