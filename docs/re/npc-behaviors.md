@@ -597,19 +597,12 @@ is **not** owner-primed. Cost: nothing, because §4.1 shows the client already
 has every NPC owner name locally. A bot in a `categoryShip` hull takes the
 player path and is primed exactly like a human.
 
-**(b) Naming.** `uix.GetSlimItemName:487` **[V]**:
-
-```
-488  if slimItem.categoryID == const.categoryShip or HasNpcPilotComponent(slimItem.typeID):
-489      if not slimItem.charID or (slimItem.charID == session.charid and slimItem.itemID != session.shipid):
-490          return evetypes.GetName(slimItem.typeID)
-491      if idCheckers.IsCharacter(slimItem.charID):
-492          return cfg.eveowners.Get(slimItem.charID).name
-...
-493+ ... asteroid/cloud -> type name; mineable -> output type; orbital; disrupted gate
-     locationname = cfg.evelocations.Get(slimItem.itemID).name   # Hinted at :1635
-     ... else return evetypes.GetName(slimItem.typeID)
-```
+**(b) Naming.** `uix.GetSlimItemName:487-493` **[V]**: the name is the pilot's when
+`categoryID == categoryShip` or the type has `npcpilot`. It is the type name when
+there is no `charID`, or when the pilot is us and the ball is not our ship. It is
+the owner name for a character. Asteroids, clouds, mineables, orbitals and
+disrupted gates are handled next. The fallback is the location name (hinted at
+`:1635`) and then the type name.
 
 So a ball is named after its **pilot** when `categoryID == categoryShip`
 *or* its type carries the `npcpilot` space component, and after its **type**
@@ -725,19 +718,13 @@ Hostility is **three independent channels**, and only the third is purely
 server-driven.
 
 **(a) Standings colour — client-computed, server-supplied inputs.**
-`bracketVarious.GetIconColor:107` **[V]**, in branch order:
-
-```
-113  if slimItem.categoryID in (categoryShip, categoryDrone):
-         if slimItem.itemID == session.shipid: own-ship colour
-118  elif IsNpcObject(slimItem) and slimItem.typeID:
-         iconColor = ICON_COLOR_NEUTRAL
-120      fwAttackMethod = getattr(slimItem, 'fwAttackMethod', None)
-122      if fwAttackMethod and session.warfactionid: ... fw colouring
-132      if fwAttackMethod is not None and HasBehaviorComponent(typeID) and slimItem.group_standings_disabled is True: pass
-135      elif HasEntityStandingsComponent(typeID):
-136          iconColor, sort, hint = get_icon_color_sort_value_and_hint_for_owner_standing(slimItem, session.charid)
-```
+`bracketVarious.GetIconColor:107` **[V]**, in branch order (`:113-136`): a ship or
+drone comes first (own-ship colour); then an NPC object with a typeID starts
+NEUTRAL (`:118`); FW colouring applies if `fwAttackMethod` is set and
+`session.warfactionid` (`:122`); standings colouring is skipped when
+`fwAttackMethod is not None`, the type has a behaviour component and
+`group_standings_disabled is True` (`:132`); otherwise, with an
+entity-standings component, the owner-standing colour (`:135`).
 
 **Note the order: the ship/drone branch comes first.** A ball in a
 `categoryShip` hull *never reaches the NPC branch*, whatever its `ownerID`.

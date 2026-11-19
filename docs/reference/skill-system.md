@@ -121,11 +121,8 @@ nothing joins the two on the client.
 ## 2. The call surface
 
 One service method and a bound object. `skillsvc.GetSkillHandler`
-(`skillsvc.py:152`) is:
-
-1. If `self.skillHandler` is unset (153), it is set to
-   `session.ConnectToRemoteService('skillMgr2').GetMySkillHandler()` (155).
-2. The handler is returned (156).
+(`skillsvc.py:152-156`) connects to the remote service `skillMgr2` once, takes
+its `GetMySkillHandler()` result and caches it.
 
 `skillMgr2.GetMySkillHandler()` takes **no arguments** and must return a bound
 object. We already serve it as `skillMgr2::skillHandler`
@@ -406,12 +403,9 @@ A **flat list of the skill type ids actually purchased** — not an echo of the
 request, not a bool, not a rowset. The authority is CCP's own shared logic,
 `characterskills/purchase.purchase_skills`:
 
-1. Copy the ids into a list and run `context.validate` on it.
-2. For each id in order, `context.pay_for_skill(id)` and then add the id to
-   `skills_to_inject`.
-3. In a `finally`, if `skills_to_inject` is not empty,
-   `context.inject_skills(skills_to_inject)` runs.
-4. Return `skills_to_inject`.
+It validates the ids, then pays for each in order and adds it to
+`skills_to_inject`; in a `finally` it injects whatever is in that list and returns
+it.
 
 The `try/finally` is the contract: a purchase that runs out of ISK halfway
 still injects and still **returns the part that succeeded**. So a partial
@@ -420,14 +414,10 @@ returns.
 
 ### `seen`, and why no answer alone can satisfy it
 
-`WaitUntilSkillsAreAvailable(skillTypeIDs)` (1242, body 1250):
-
-1. Make a set of the ids and an empty `seen` set (1250-1251).
-2. While the id set differs from `seen` (1252): call `blue.pyos.BeNice()`
-   (1253), then walk the ids (1254). For each id, if
-   `GetSkillIncludingLapsed(id)` is `None` (1255) stop the walk (1256);
-   otherwise add the id to `seen` (1257).
-3. Scatter `OnSkillsAvailable` with the ids (1258).
+`WaitUntilSkillsAreAvailable(skillTypeIDs)` (1242, body 1250-1258) loops, yielding
+with `blue.pyos.BeNice()`, until every id is in `seen`; an id joins `seen` only
+when `GetSkillIncludingLapsed(id)` (1255) is not `None`. It then scatters
+`OnSkillsAvailable` with the ids.
 
 **`seen` is populated from `self.mySkillsIncludingLapsed`, and from nothing
 else.** `GetSkillIncludingLapsed` is called at line 1255 **without `renew`**
@@ -520,15 +510,12 @@ and breaks the fitting screen's "train required skills" as well.
 
 ### The wire form **[V]**
 
-`InjectSkillIntoBrain(skillX)` (892):
-
-1. Collect the item ids of the skills (897); return if there are none.
-2. For each skill that is not published (`evetypes.IsPublished`), raise
-   `UserError('ItemNotASkill', {'skillName': typeID})`.
-3. Call `godma.GetDogmaLM().InjectSkillIntoBrain(skillIDList)` (906). A
-   `UserError` is re-raised.
-4. On success, for each skill, make and scatter a `notificationTypeSkillInjected`
-   notification carrying `typeID`, then play `SOUND_ADD_OR_USE`.
+`InjectSkillIntoBrain(skillX)` (892-906) returns when there are no skills; it
+raises `UserError('ItemNotASkill', {'skillName': typeID})` for an unpublished
+type and otherwise calls `godma.GetDogmaLM().InjectSkillIntoBrain` with the item
+ids, re-raising a `UserError`. On success it scatters a
+`notificationTypeSkillInjected` notification per skill and plays
+`SOUND_ADD_OR_USE`.
 
 `godma.GetDogmaLM()` is `eveMoniker.CharGetDogmaLocation()` (`godma.py:1330`),
 which binds **`dogmaIM`** — `bindParams` `(solarsystemID, groupSolarSystem)` or
@@ -543,13 +530,8 @@ Entry points **[V]**:
 - The right-click **Train Now**: `invItemFunctions.TrainNow` (`:87`) — and this
   one is worth reading in full, because it tells us our deadline:
 
-  `TrainNow(invItems)` (87):
-
-  1. with more than one item it shows the `TrainMoreTheOne` dialog and
-     returns;
-  2. it calls `InjectSkillIntoBrain(invItems)` (91);
-  3. it sleeps 500 ms of wall clock (92);
-  4. it calls `skillqueue.TrainSkillNow(invItems[0].typeID, 1)` (93).
+  `TrainNow` (87-93) takes one item only (more shows the `TrainMoreTheOne`
+  dialog); it injects, waits 500 ms of wall clock, then calls `TrainSkillNow`.
 
   **CCP's own code sleeps 500 ms waiting for the push.** `TrainSkillNow`
   (`skillQueueSvc.py:1234`) goes through `CheckCanInsertSkillAtPosition`
@@ -631,12 +613,9 @@ say "training now".
 
 ### Write
 
-`skillQueueSvc.CommitTransaction` (`:201`):
-
-1. `queueInfo` is built from the local queue as `{index: (trainingTypeID,
-   trainingToLevel)}`.
-2. `skillHandler = self.skills.GetSkillHandler()`.
-3. `skillHandler.SaveNewQueue(queueInfo, activate=activate)` (227).
+`skillQueueSvc.CommitTransaction` (`:201-227`) sends the local queue to the
+server's `SaveNewQueue` as `{index: (trainingTypeID, trainingToLevel)}` with
+`activate=`.
 
 - One positional argument: a **dict keyed by integer position**, values
   `(typeID, toLevel)` 2-tuples. Not a list.
@@ -656,9 +635,9 @@ say "training now".
 all. `OnNewSkillQueueSaved(newQueue)` (`skillQueueSvc.py:1228`) exists to
 replace it with the server's authoritative version:
 
-`OnNewSkillQueueSaved(newQueue)` (1228): if a transaction is open it stores
-`newQueue` in `cachedSkillQueue`; it always sets `self.skillQueue = newQueue`
-and scatters `OnSkillQueueChanged`.
+`OnNewSkillQueueSaved(newQueue)` (1228) stores `newQueue` in `cachedSkillQueue`
+when a transaction is open, always replaces the local queue with it and
+scatters `OnSkillQueueChanged`.
 
 Same row shape as the read. Optional for the owner's test; required for the
 queue to survive a second client.

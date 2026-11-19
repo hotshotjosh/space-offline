@@ -120,7 +120,7 @@ nothing to unlock here; it has to come from us.
 To play on this server the client must be patched. That is not part of this
 repository, and these pages do not describe it; the public guides are the
 [new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
-[blue_patcher](https://github.com/stschake/blue_patcher). Always patch the
+[blue_patcher](https://github.com/stschake/blue_patcher). Always prepare the
 **copy** (below), never the install you play on.
 
 ## Use

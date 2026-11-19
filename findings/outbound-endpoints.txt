@@ -20,7 +20,7 @@ vm-single.dev.evetech.net        VictoriaMetrics (victoriametrics/metrics_report
 api.ipify.org                    also store_payment_svc, on a purchase [V]
 www.google-analytics.com         characterCreationMetrics, character creation [V]
 NVIDIA Streamline OTA            _trinity_dx12.dll slInit: Preferences.flags default 0x49 | 0x84, over-the-air plugin updater on [V] site,
-                                 [I] flag names. Runs nvngx_update.exe (absent in this prefix); closed by B3
+                                 [I] flag names. Runs nvngx_update.exe (absent in this prefix); closed by the jail
 Authenticode CRL/OCSP            crl3/crl4/ocsp.digicert.com, crl.comodoca.com, ocsp.usertrust.com, entrust AIA, from signature blobs [I]; Wine
                                  cryptnet may fetch; only the census can say
 wpad.*                           blue's BlueRemoteStream (libcurl), IE config autodetect, on the first CDN transfer [V] site, [I] Wine default

@@ -109,7 +109,7 @@ Per copy, by `census_report.py RUN --role control|subject`:
   (`--role control` gives `VERDICT CONTROL` and the list); the subject's
   report reads the control's (`--control CONTROL/report.json`) and marks
   each such path INCONCLUSIVE. With no valid control, every path is
-  INCONCLUSIVE. If the crash path never fires under Wine, B1 stays [I],
+  INCONCLUSIVE. If the crash path never fires under Wine, the crash-upload path (phone-home N1) stays [I],
   and the summary's second line says so.
 - **V1, verified (jailed)**: no LEAK at all, and every path exercised
   in the control.

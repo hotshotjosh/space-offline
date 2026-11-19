@@ -330,16 +330,12 @@ format `blue.pyos.cpuUsage`; the `ccpProfile` timer re-exports; `Shutdown`,
 **`bluepy.Terminate` is how a scenario should exit, and it leaves three
 greppable lines** `[V]`:
 
-```text
-509  isinstance(exit_code, (int, long)) or raise TypeError('exit_code must be an integer value.')
-513  if exit_code == 0: log.general.Log('bluepy.Terminate - Reason: %s' % reason, log.LGNOTICE)
-516  else:              log.general.Log('bluepy.Terminate - Reason: %s' % reason, log.LGERR)
-519  if 'sm' in __builtins__: sm.ChainEvent('ProcessShutdown')
-523  log.general.Log('Terminate - all ProcessShutdown done', log.LGNOTICE)
-525  atexit._run_exitfuncs()
-526  log.general.Log('Terminate - atexit done, about to shut down', log.LGNOTICE)
-528  blue.os.Terminate(exit_code)
-```
+The exit code must be an int (else `TypeError`, `:509`). It logs
+`bluepy.Terminate - Reason: %s` at NOTICE for 0 and at ERR otherwise
+(`:513-516`), chains `ProcessShutdown` when `sm` exists (`:519`), logs
+`Terminate - all ProcessShutdown done` (`:523`), runs the atexit functions
+(`:525`), logs `Terminate - atexit done, about to shut down` (`:526`), then
+calls `blue.os.Terminate` (`:528`). The three log strings are the grep targets.
 
 Note **`exit_code != 0` logs at `LGERR`**, and `TerminateSilently` skips both
 the `ChainEvent` and the two "done" lines. (`blue.os.Quit()` does not exist in
@@ -775,16 +771,10 @@ not reserved and unused, absent `[V]`.
 
 **Parity is load-bearing.** `command % 2 == 0` means *request*, odd means
 *response*, and the client tests it in four places (`HandleMessage`,
-`LockSession`, `_AssociateWithSession`) `[V]`. The two consequences:
-
-```text
-5053  if theMessage.command % 2:                 # a RESPONSE
-5055      destination.addressType in (ANY, BROADCAST) -> Close(
-              'A response must be sent to a specific address, not a forking one')
-5057  else:                                      # a REQUEST
-5058      source.addressType in (ANY, BROADCAST) -> Close(
-              'A request must be sent from a specific address, not a forking one')
-```
+`LockSession`, `_AssociateWithSession`) `[V]`. The consequence: a response (odd command) whose destination is ANY or
+BROADCAST, or a request whose source is, closes the connection with "A
+response/request must be sent to/from a specific address, not a forking one"
+(`machoNet.py:5053-5058`).
 
 `HandleMessage` also dispatches on **set membership, not a switch** `[V]`:
 `__notificationtypes__ = {12, 16, 18}`, `__calltypes__ = {6, 10}`,
@@ -1249,13 +1239,8 @@ is an if/else, and an already-registered service is **never re-instantiated**:
 **`WaitForServiceObjectState` has no deadline and no raise on elapsed time**
 `[V]` (`serviceManager.py:297`). The sleep ramps `1, 2, 4, …, 100` ms and then
 stays at 100; the first warning lands at `i == 600`, i.e. roughly **60 s**, and
-then every ~60 s **for ever**:
-
-```text
-318  svc.LogWarn('WaitForServiceObjectState has been sleeping for a long time '
-                 'waiting for ', svc.__logname__, ' to either get to state ',
-                 desiredStates, 'current state is', svc.state)
-```
+then every ~60 s **for ever**, with the message `WaitForServiceObjectState has
+been sleeping for a long time` (`:318`).
 
 The only exits are the desired state or an error state — and on an error state
 it **re-raises the dependency's own stored traceback** into the dependant's

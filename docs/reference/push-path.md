@@ -857,15 +857,12 @@ __notifyevents__` contains `'OnAccountChange'`:
    keys have further arms);
 3. scatters `OnAccountChange_Local` with the same three arguments.
 
-`_OnCharAccountChange(newBalance)`:
-
-1. when the setting `notifyAccountChange` is on, blinks the neocom wallet
-   button with the label `UI/Neocom/Blink/ISKBalanceChanged` and blinks the
-   personal wallet's transactions panel;
-2. computes `difference = newBalance - self.wealth`;
-3. scatters `OnPersonalAccountChangedClient(newBalance, difference)`;
-4. stores `_wealth = newBalance`;
-5. fires the `on_personal_isk_balance_changed(newBalance, difference)` signal.
+`_OnCharAccountChange(newBalance)`: when the setting `notifyAccountChange` is on
+it blinks the neocom wallet button (label `UI/Neocom/Blink/ISKBalanceChanged`)
+and the personal wallet's transactions panel. It then scatters
+`OnPersonalAccountChangedClient(newBalance, difference)`, where `difference` is
+the new balance minus the old, replaces the stored wealth with the new balance,
+and fires the `on_personal_isk_balance_changed` signal.
 
 **Three things happen on screen, and the setting gates only the first:**
 

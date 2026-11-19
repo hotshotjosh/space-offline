@@ -197,16 +197,13 @@ driven by an `OnSpecialFX` Destiny action whose `guid` is a travel effect.
 It does nothing unless `ENABLED` is set and `IsTravelEffect(guid)` holds
 (`:452`). Then `[V]`:
 
-1. `:455`: the destination system is `graphicInfo[0]` when `graphicInfo` is set.
-2. `:458`: `guid` is replaced by `JUMP_EFFECT_OVERRIDE` when that is set.
-3. `:459`: if `shipID` is the session's ship (the jumper), it records the ship,
-   the gate (`targetID`, `:461`), the origin system (`:462`) and the destination
-   system (`:463`), then calls `StartJump(shipID, targetID, guid,
-   destinationSystem)` (`:465`). If that raises, it logs, runs
-   `PostJumpServiceCalls` for the gate and cleans up. Finally it asks the `space`
-   service to prioritise loading for the gate's ids (`:470`).
-4. `:472-473`: for every other ship, it calls `StartJumpForAudience(shipID, guid,
-   destinationSystem)`.
+The destination system is `graphicInfo[0]` (`:455`) and `guid` is replaced by
+`JUMP_EFFECT_OVERRIDE` when that is set (`:458`). For the session's own ship (the
+jumper, `:459`) it records the ship, the gate (`targetID`), the origin system and
+the destination system, then calls `StartJump` (`:465`); if that raises, it
+logs, runs `PostJumpServiceCalls` for the gate and cleans up, and finally asks
+the `space` service to prioritise loading for the gate's ids (`:470`). Every
+other ship gets `StartJumpForAudience` (`:472-473`).
 
 So the server must send, as one Destiny action in a batch addressed to
 **everyone in the origin system including the jumper**:
@@ -254,18 +251,13 @@ This is the headline and it decides the shape of the server's jump.
 **`michelle.UpdateBallpark`, lines 215-234, is the only caller of
 `RemoveBallpark` on the jump path** `[V]`:
 
-The steps, by line (`michelle.py`): **[V]**
-
-1. `:216`: the whole body runs only when the session has a `solarsystemid` and
-   the primary view is `inflight` or `structure`; otherwise it takes the `else`
-   branch at `:226-227` and calls `RemoveBallpark()`.
-2. `:217-218`: if a ballpark exists and its `solarsystemID` differs from the
-   session's, call `RemoveBallpark()`.
-3. `:219-224`: if there is now no ballpark, touch the `space` service and call
-   `AddBallpark(session.solarsystemid)`.
-4. `:225`: scatter `OnEnterSpace`.
-5. `:231-234`: in the `else` branch, when the ballpark is gone, unregister the
-   `default` scene, clean up space resources and clear the recycler.
+The body runs only when the session has a `solarsystemid` and the primary view is
+`inflight` or `structure` (`:216`); otherwise the `else` branch calls
+`RemoveBallpark()` (`:226-227`). A ballpark whose `solarsystemID` differs from
+the session's is removed (`:217-218`); with no ballpark left it calls
+`AddBallpark(session.solarsystemid)` (`:219-224`) and scatters `OnEnterSpace`
+(`:225`); in the `else` branch a vanished ballpark also unregisters the
+`default` scene and cleans up space resources (`:231-234`). **[V]**
 
 Line 217 is the jump: **the ballpark whose `solarsystemID` disagrees with the
 session is destroyed**, and line 219 builds a fresh one for the new system.
@@ -403,18 +395,13 @@ a `push_later`.
 
 `gameui._HandleSessionChangeInSpace`, lines 762-780 `[V]`:
 
-The steps, by line (`gameui.py`): **[V]**
-
-1. `:765`: get the ballpark `bp`.
-2. `:766-768`: if `solarsystemid` is in the change, read the old and new values.
-3. `:769-772`: if the old value is truthy (a jump, not an undock), clear all
-   FX sequences and log "Cleared effects".
-4. `:773-776`: if `bp` exists and `session.shipid` is in `bp.balls`, log that it
-   is heading for inflight with a valid ego, set `bp.ego` to the ship and reset
-   `wannaBeEgo` to `-1`.
-5. `:778-780`: otherwise log that space is being activated without an ego ball,
-   set `wannaBeEgo = session.shipid`, and start the `inflight` view
-   activation in a pooled tasklet.
+`_HandleSessionChangeInSpace` **[V]** reads the old and new `solarsystemid` from the
+change (`:765-768`). When the old value is truthy (a jump, not an undock) it
+clears all FX sequences and logs "Cleared effects" (`:769-772`). If the ballpark
+exists and `session.shipid` is in `bp.balls`, it sets `bp.ego` to the ship and
+resets `wannaBeEgo` to `-1` (`:773-776`); otherwise it logs that space is being
+activated without an ego ball, sets `wannaBeEgo = session.shipid` and starts the
+`inflight` view activation in a pooled tasklet (`:778-780`).
 
 Line 769 is `[V]` proof that the client distinguishes a jump
 (`oldSolarSystemID` truthy) from an undock (`None`) — it clears the FX
@@ -720,13 +707,13 @@ constellationID  20000001
 regionID         10000001
 factionID        500007
 nameID           268957          (localisation id -> tools/loctable.py)
-securityStatus   0.8583240509033203
+securityStatus   0.858
 securityClass    'B'
 neighbours       [{'jumpType': 0, 'solarSystemID': 30000003, 'stargateID': 50000056},
                   {'jumpType': 0, 'solarSystemID': 30000005, 'stargateID': 50000057},
                   {'jumpType': 0, 'solarSystemID': 30000007, 'stargateID': 50000058}]
-planetItemIDs    [40000002, 40000005, 40000007, 40000008, 40000011, 40000017]
-center           {'x': -8.851e16, 'y': 4.237e16, 'z': -4.451e16}
+planetItemIDs    [6 planet item ids]
+center           {x, y, z}  (metres, about 1e16)
 ```
 
 This one table gives the session's `constellationid` and `regionid` *and* the
@@ -748,9 +735,9 @@ stargates: dict[int]                # key = this system's stargate itemID
 Sample, system 30000001 `[V]`:
 
 ```
-50000056 -> {'destination': 50000342, 'position': {'x': 331516354560.0,  'y':  43597455360.0, 'z': -586353991680.0}, 'typeID': 29624}
-50000057 -> {'destination': 50001739, 'position': {'x': -1106114273280.0,'y': -145449984000.0, 'z':  182777241600.0}, 'typeID': 29624}
-50000058 -> {'destination': 50002084, 'position': {'x': 331517583360.0,  'y':  43610234880.0, 'z': -586343669760.0}, 'typeID': 29624}
+50000056 -> {'destination': 50000342, 'position': {x, y, z} (metres, about 1e11 to 1e12), 'typeID': 29624}
+50000057 -> {'destination': 50001739, 'position': {x, y, z}, 'typeID': 29624}
+50000058 -> {'destination': 50002084, 'position': {x, y, z}, 'typeID': 29624}
 ```
 
 and the reverse row confirms symmetry: `solarsystemcontent[30000003].stargates`

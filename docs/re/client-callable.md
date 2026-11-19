@@ -38,11 +38,8 @@ The three facts that settle it:
    6 is in `__calltypes__` (`machoNet.py:467`) and takes the branch at
    `machoNet.py:5096`:
 
-   ```text
-   ret = srcTransport.SessionCall(theMessage)     # machoNet.py:5102
-   ...
-   srcTransport.Write(ret)                        # machoNet.py:5109
-   ```
+   `SessionCall` (`machoNet.py:5102`) runs the call and the transport writes its
+   result (`machoNet.py:5109`).
 
    **[V]** This is the same structural fact `docs/reference/push-path.md` established
    for notifications — `_AssociateWithSession` takes the `mode == 'client'`
@@ -189,12 +186,8 @@ arm), the same backstop `docs/reference/push-path.md` §3 relied on for notifica
 A `CallReq` names a service in `destination.service`. On the client,
 `SessionCall` resolves that name to a live service object:
 
-```text
-msgSession.connectedServices[packet.destination.service] =
-    packet.service = msgSession.ConnectToService(packet.destination.service, remote=1)   # machoNetTransport.py:697
-...
-ret = self.machoNet.channelHandlersUp[channel].CallUp(packet)                            # machoNetTransport.py:706
-```
+It connects the named service to the session (`machoNetTransport.py:697`) and
+sends the packet up the channel handler (`:706`).
 
 **[V]** `channel` is `None` for a `CallReq` (only session-change commands map
 to the `'sessionchange'` channel — `machobase.packetTypeChannelMap`, which

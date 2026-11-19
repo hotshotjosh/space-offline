@@ -9,10 +9,12 @@ listed here on purpose; no client bytes or extracted data are.
 **Marks.** [V] read in this build's code or bytes. [I] inferred. [A]
 assumption, with its falsifier in the row or in the unpublished phone-home lane note.
 
-**"Closed by"** is one of three words. **jail**: the client cannot leave its
-network namespace (`docs/guides/jail.md`). **launch env**: the launch sets a dead
+**"Closed by"** is one of two words, or a "not reachable" note. **jail only**: nothing in
+the launch stops it; only the jail does (`docs/guides/jail.md`: the client cannot
+leave its network namespace), so outside the jail it can leave. **launch env**: the launch sets a dead
 loopback proxy, our gateway address and a loopback Sentry DSN, and refuses the
-forbidden arguments. **open**: only the jail stops it today.
+forbidden arguments. Other values (`code`, `region`, `none needed`, `we send
+none`, `our server sends none`, `n/a`) mean the path is not reachable.
 `tools/census.sh` shows which paths actually fire.
 
 ## Native (`bin64`)
@@ -20,17 +22,17 @@ forbidden arguments. **open**: only the jail stops it today.
 | id | path | host or mechanism | trigger | data | default | closed by | mark |
 |---|---|---|---|---|---|---|---|
 | N1 | Crashpad upload (`eve_crashmon.exe`, WinHTTP) | `sentry.io` minidump URL in `exefile.exe` | a crash, or a hang (`frameTimeTimeout` 30 s) | minidump, crash keys (tags, user, geo, IP), session, start args minus tokens, CPU/RAM/OS, PDM data | yes | launch env | site [V], effect [I] until a forced crash |
-| N3 | LaunchDarkly native SDK | six `*.launchdarkly.com` hosts | first flag read | hostname, user id, tenant, build, later character id and language | yes | jail | [V] |
+| N3 | LaunchDarkly native SDK | six `*.launchdarkly.com` hosts | first flag read | hostname, user id, tenant, build, later character id and language | yes | jail only | [V] |
 | N4 | Gateway gRPC (Go) | `{tier}-public-gateway.evetech.net`, or `EVE_PUBLIC_GATEWAY_ADDRESS` | service start | see "To our server only" | yes | launch env | [V] |
-| N5 | `BlueRemoteStream` resource CDN (libcurl in `blue.dll`) | `clientresources.eveonline.com` (primary, and the backup, which is the same host); `res.eveprobe.ccpgames.com` is the `prepare()` default | a `res:/` file missing from `ResFiles` | the requested paths | no (0 rows missing) | launch env for the primary (`/resfileserver`); the backup and the probe default: jail | [V] |
-| N6 | WPAD from N5 | `GetAutoProxyUrl`: IE config, then `WinHttpGetProxyForUrl`, result becomes `CURLOPT_PROXY` | the first curl transfer, if the IE config says autodetect | `wpad.*` lookups | no (needs a miss) | open | site [V], Wine default [I] |
+| N5 | `BlueRemoteStream` resource CDN (libcurl in `blue.dll`) | `clientresources.eveonline.com` (primary, and the backup, which is the same host); `res.eveprobe.ccpgames.com` is the `prepare()` default | a `res:/` file missing from `ResFiles` | the requested paths | no (0 rows missing) | launch env for the primary (`/resfileserver`); the backup and the probe default: jail only | [V] |
+| N6 | WPAD from N5 | `GetAutoProxyUrl`: IE config, then `WinHttpGetProxyForUrl`, result becomes `CURLOPT_PROXY` | the first curl transfer, if the IE config says autodetect | `wpad.*` lookups | no (needs a miss) | jail only | site [V], Wine default [I] |
 | N7 | Tracy | `TracyClient.dll`, UDP broadcast and listen | profiler API only | profiler data | no | launch env (forbidden args `/tools=`, `/enableTelemetry`) | gate [V] |
 | N8 | RAD Telemetry | `rad_tm_win64.dll` | `/enableTelemetry` | profile | no | launch env (forbidden arg) | [V] |
 | N9 | Wwise comms and WAAPI | `_audio2.dll` sockets, an embedded HTTP server | no Python caller found | audio debug | no | none needed | [V] no caller |
 | N10 | GELF log sink | `blue.EnableNetworkLogging`, prefs `networkLogging` | the prefs key | the whole client log | no | launch env (the key is forbidden) | [V] |
-| N11 | Browser hand-off | `blue.os.ShellExecute` and `webbrowser` (about 40 callers: chat links, store, survey, help, petition), then `winebrowser`, then `xdg-open` | a user click | the URL, including the `GetUserToken` value on store and survey URLs | no | open (the jail sets `WINEDLLOVERRIDES=winebrowser.exe=d`) | callers [V], chain [I] |
-| N12 | NVIDIA Streamline OTA | `sl.interposer.dll` runs `nvngx_update.exe` and loads downloaded plugins | `slInit` in `_trinity_dx12.dll`, NVIDIA GPU, DX12 | hardware and driver ids to NVIDIA [I] | flags on (0xCD) | jail | site [V], flag names [I] |
-| N13 | Authenticode revocation | `crl3/crl4/ocsp.digicert.com`, `crl.comodoca.com`, `ocsp.usertrust.com`, an entrust AIA | load of a signed DLL | a CRL GET | [A] no; falsifier: such a name in the census DNS log | open | [I] |
+| N11 | Browser hand-off | `blue.os.ShellExecute` and `webbrowser` (about 40 callers: chat links, store, survey, help, petition), then `winebrowser`, then `xdg-open` | a user click | the URL, including the `GetUserToken` value on store and survey URLs | no | jail only (the jail sets `WINEDLLOVERRIDES=winebrowser.exe=d`) | callers [V], chain [I] |
+| N12 | NVIDIA Streamline OTA | `sl.interposer.dll` runs `nvngx_update.exe` and loads downloaded plugins | `slInit` in `_trinity_dx12.dll`, NVIDIA GPU, DX12 | hardware and driver ids to NVIDIA [I] | flags on (0xCD) | jail only | site [V], flag names [I] |
+| N13 | Authenticode revocation | `crl3/crl4/ocsp.digicert.com`, `crl.comodoca.com`, `ocsp.usertrust.com`, an entrust AIA | load of a signed DLL | a CRL GET | [A] no; falsifier: such a name in the census DNS log | jail only | [I] |
 
 Not paths [V]: no CEF, Chromium, WebView, Steamworks or overlay DLL in
 `bin64`; `sl.*`, `nvngx_*`, `libxess`, FidelityFX and Aftermath import no
@@ -47,8 +49,8 @@ socket API; `_videoplayer.dll` has none either.
 | P5 | Datadog, statsd, Prometheus | `app.datadoghq.com` | `monolithmetrics` | never on a client (`on_client()` returns first) | none | no | code | [V] |
 | P6 | VictoriaMetrics | `vm-single.dev.evetech.net` | `victoriametrics`, `statscapture`, a new node-graph atom (728) | a node graph with that atom [I: QA; shipped graphs not scanned] | metric floats, machine name | no | launch env | sink [V] |
 | P7 | Image server | `imageserver.eveonline.com` | `evePhotosvc` | the server sends such a URL | ids | no | we send none | [V] |
-| P8 | URL textures | any | `photo.GetTextureFromURL` (`requests`): omega offer, VGS, `urlSprite`, subcellular images | a server-provided URL | a fetch | only if our data has a URL | launch env; otherwise open | [V] |
-| P8b | Rich-text `<img>`, CSS, page | any, including `ftp://` | `browserImage`, `browserutil.GetStringFromURL` (`urllib2`, UA `CCP-minibrowser/3.0`), `edit.py`, `parserbase.py` | rendered HTML with a remote URL | a fetch, which shows the viewer to the URL's host | [I] reach from player text unchecked | launch env for http(s); `ftp://` goes past it and is open | sink [V] |
+| P8 | URL textures | any | `photo.GetTextureFromURL` (`requests`): omega offer, VGS, `urlSprite`, subcellular images | a server-provided URL | a fetch | only if our data has a URL | launch env; otherwise jail only | [V] |
+| P8b | Rich-text `<img>`, CSS, page | any, including `ftp://` | `browserImage`, `browserutil.GetStringFromURL` (`urllib2`, UA `CCP-minibrowser/3.0`), `edit.py`, `parserbase.py` | rendered HTML with a remote URL | a fetch, which shows the viewer to the URL's host | [I] reach from player text unchecked | launch env for http(s); `ftp://` goes past it and is jail only | sink [V] |
 | P8c | `ImageDownloader` | any https | `imagecaching` (store catalogue) | a catalogue URL from the server | ETag fetch | no | launch env | [V] |
 | P9 | Bug reports | `ebr-service.ccpeveweb.com/v1` in 3662168 (3619879 has `bugsservice.eveonline.com/api`; override in both: globalConfig `bugReporting_BugReportServer`) | `bugReporting`, `bugreporter` | the Help window, Report Bug, Send | `Authorization: Bearer` access token, description, session, computer info, attachments (screenshots, logs, settings, `prefs.ini`, crash list, dxdiag, PDM data) | on a user action | launch env | [V] |
 | P10 | SSO refresh | `login.eveonline.com`, or the token's `iss` | `clientRefreshToken` | `/refreshToken=` | the token | no | launch env (forbidden arg) | [V] |
@@ -71,9 +73,9 @@ constant to change: only the proxy (and, today, the jail) stops them.
 
 | id | path | trigger | closed by | mark |
 |---|---|---|---|---|
-| W1 | gecko and mono downloads on a new prefix | a prefix is created | open; our prefix script makes the prefix once | [I] |
-| W2 | the resolver and reverse lookups | any name lookup | open (jail: `eve-dns`) | [V] |
-| W3 | Proton's NGX updater | `PROTON_ENABLE_NGX_UPDATER`, off by default | open | [I] from memory; falsifier: Proton's `proton` script |
+| W1 | gecko and mono downloads on a new prefix | a prefix is created | jail only; our prefix script makes the prefix once | [I] |
+| W2 | the resolver and reverse lookups | any name lookup | jail only (jail: `eve-dns`) | [V] |
+| W3 | Proton's NGX updater | `PROTON_ENABLE_NGX_UPDATER`, off by default | jail only | [I] from memory; falsifier: Proton's `proton` script |
 
 ## To our server only, by design
 

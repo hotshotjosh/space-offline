@@ -281,7 +281,7 @@ and 145168 are a farewell and a thanks, both addressed to
 decline remarks with no token. (Invented stand-in:
 "Well done, `{[character]player.name}`. Report for your next assignment.")
 
-**Objectives text** (115759-115767, a contiguous run): one-line goals, such as
+**Objectives text** (115759-115767, a contiguous run): one-line goals with no tokens, such as
 "explore and clear an area", "destroy a structure, then report back" and "collect
 captives, leave by the gate and hand them over". Ids 115759, 115761 and 115767 are
 examples.

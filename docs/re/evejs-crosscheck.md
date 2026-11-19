@@ -296,24 +296,20 @@ writes one — so this is latent, not live.
 H8 is a 4-tuple; element 2 is `signedFunc` and element 3 is the `eval` locals
 dict (`GPS.py:962`):
 
-The execution path, by line (`GPS.py`): **[V]**
+The execution path (`GPS.py`) **[V]**: the unmarshalled H8 payload unpacks into
+`serverChallenge`, `signedFunc`, `context`, `response` (`:962`). The client
+calls `__Execute(signedFunc, context)` (`:977`, defined at `:1009`), which passes
+`signedFunc` to `Crypto.Verify` and raises
+`RuntimeError('Failed to verify initial function blobs')` when the verified flag
+is false (`:1010-1012`). It unmarshals the verified bytes into a code object
+(`:1014`) and evaluates it with the context dict as the locals (`:1026`); if that
+raises, the result is an empty dict and the traceback goes to the captured
+output. It returns the captured output and the result.
 
-1. `:962`: the unmarshalled H8 payload unpacks into four values:
-   `serverChallenge`, `signedFunc`, `context`, `response`.
-2. `:977`: the client calls `__Execute(signedFunc, context)` (defined at `:1009`)
-   and gets back an output buffer and a result.
-3. `:1010-1012`: `__Execute` passes `signedFunc` to `Crypto.Verify`, which
-   returns a pair of the marshalled bytes and a verified flag; when the flag is
-   false it raises `RuntimeError('Failed to verify initial function blobs')`.
-4. `:1014`: it unmarshals the bytes into a code object.
-5. `:1026`: it evaluates that object with the context dict as the locals. If
-   that raises, the result is an empty dict and the traceback goes to the
-   captured output.
-6. It restores stdout and stderr and returns the captured output and the result.
-
-With the default crypto pack (`evecrypto/settings.py`), `Verify` returns the
-first element of `signedData` and a verified flag that is true when the second
-element is `0` (`evecrypto/placebo.py:21`).
+Under the Placebo crypto pack (the one the handshake runs under here;
+`docs/reference/code-push.md`), `Verify` returns the first element of
+`signedData` and a verified flag that is true when the second element is `0`
+(`evecrypto/placebo.py:21`).
 
 **[V]** on all of it.
 

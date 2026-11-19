@@ -24,7 +24,7 @@ machine — this document fills in the data behind it),
 real level-1 courier mission is in the client, except four: the *destination*,
 the *ISK and LP payout*, the *expiry instant* and the *decline window* — and
 those four were server policy on Tranquility too. **A server can offer,
-brief, accept, decline and turn in CCP's own "Slave Shipment" with no
+brief, accept, decline and turn in CCP's own level-1 courier mission 4832 with no
 authored prose at all.**
 
 ---
@@ -39,26 +39,24 @@ reader can see what the player reads.
 
 | thing | value | where it was read |
 | --- | --- | --- |
-| station | **60012526**, *"Tanoo V - Moon 1 - Ammatar Consulate Bureau"*, typeID 2502, operationID 33, owner 1000126 | `solarsystemcontent.static`, system 30000001, planet 40000011, moon 40000012, key `stationName` **[V]** |
-| solar system | **30000001**, *"Tanoo"*, security 0.858 | same file **[V]** |
-| agent | **3010110**, *"Alfroren Agitta"* — `agentLevel` **1**, `agentType` **2** (`agentTypeBasicAgent`), `agentDivisionID` **24** (*"Security"*), `corporationID` **1000126**, `stationID` **60012526**, `storyLineMissions` absent | `npccharacters.fsdbinary`, nested `agent` struct **[V]** |
-| corporation | 1000126, *"Ammatar Consulate"*, faction 500007 | already in `service.rs` **[V]** |
-| mission | **4832**, *"Slave Shipment"*, `contentTemplate` `agent.missionTemplatizedContent_BasicCourierMission` | `missions.fsdbinary` **[V]** |
+| station | **60012526**, the Ammatar Consulate station in system 30000001, typeID 2502, operationID 33, owner 1000126 | `solarsystemcontent.static`, system 30000001, planet 40000011, moon 40000012, key `stationName` **[V]** |
+| solar system | **30000001**, security 0.858 | same file **[V]** |
+| agent | **3010110** — `agentLevel` **1**, `agentType` **2** (`agentTypeBasicAgent`), `agentDivisionID` **24**, `corporationID` **1000126**, `stationID` **60012526**, `storyLineMissions` absent | `npccharacters.fsdbinary`, nested `agent` struct **[V]** |
+| corporation | 1000126, the station owner, faction 500007 | already in `service.rs` **[V]** |
+| mission | **4832**, `contentTemplate` `agent.missionTemplatizedContent_BasicCourierMission` | `missions.fsdbinary` **[V]** |
 | `contentID` | **4832** — ours to choose, and choosing `missionID` costs nothing | `agents-missions.md` §11 **[V]** |
-| destination | **60014437**, *"Tanoo IV - Trust Partners Trading Post"*, typeID 2502, owner 1000163, **same solar system** | `solarsystemcontent.static` **[V]** — but *which* station is the server's choice, see §3 |
+| destination | **60014437**, a second station, typeID 2502, owner 1000163, **same solar system** | `solarsystemcontent.static` **[V]** — but *which* station is the server's choice, see §3 |
 
 **The server is currently using the wrong agent, and this is the first thing
 to change.** `service.rs`'s `STATION_AGENT_ID` is 3,004,001. That id is a
-real `npccharacters` row — *"Anfrid Uptemulf"*, corporation 1000126, station
-60012526 — but its `agent` presence bit is **clear**: it is an NPC employee,
-not an agent. **[V]** The three characters at 60012526 that do carry an
-`agent` struct are:
+real `npccharacters` row (corporation 1000126, station
+60012526) — but its `agent` presence bit is **clear**: it is an NPC employee,
+not an agent. **[V]** The character at 60012526 that carries an
+`agent` struct is:
 
-| agentID | name | level | agentType | division |
-| --- | --- | --- | --- | --- |
-| **3010110** | Alfroren Agitta | **1** | **2** (basic) | 24 (Security) |
-| 3019363 | Dovirch Anselm | 1 | 10 (epic arc) | 24 |
-| 3018559 | Kaeg Zkaen | 3 | 24 | 24 |
+| agentID | level | agentType | division |
+| --- | --- | --- | --- |
+| **3010110** | **1** | **2** (basic) | 24 |
 
 So 3010110 is exactly the agent `agents-missions.md` §1 Step 1 asks for, and
 the `agentTypeID = 2` / `level = 1` that `agent_rowset` currently *chooses*
@@ -86,11 +84,11 @@ Mission 4832, every populated column (the rest of the 22 are absent — see
 
 ```
 missionID                4832
-nameID                   56901        -> 'Slave Shipment'
+nameID                   56901
 contentTemplate          agent.missionTemplatizedContent_BasicCourierMission
 factionID                500003       (Amarr Empire)
 hasStandingRewards       1
-courierMission.objectiveTypeID    2665   -> 'Group of Elite Slaves', 60.0 m3, groupID 283
+courierMission.objectiveTypeID    2665   -> 60.0 m3, groupID 283
 courierMission.objectiveQuantity     4   -> 240.0 m3 total
 courierMission.objectiveSingleton    0
 messages                 10 entries, below
@@ -129,7 +127,7 @@ has to supply is `objectiveDestinationID`. **[V]**
 
 | slot | id | what it says |
 | --- | --- | --- |
-| `messages.mission.briefing` | 134916 | the briefing: a shipment of cargo has to reach `{[location]objectiveDestinationID.name}`; it ends with a line, in red markup, telling the player to move the cargo to the cargo hold before departure |
+| `messages.mission.briefing` | 134916 | the briefing: a shipment of cargo has to reach `{[location]objectiveDestinationID.name}`; it ends with a line, in red markup, telling the player to move the cargo to the cargo hold before departure. Two `<br>` breaks. Only this one token is ours to supply |
 | `messages.mission.offered.agentsays` | 134918 | the offer (903 characters): the agent talks about duty, says the work at `{[location]objectiveDestinationID.name}` is short-handed, asks whether the player can do it quickly, and says a bookmark will be uploaded to People & Places |
 | `messages.mission.accepted.agentsays` | 134919 | a one-line acknowledgement |
 | `messages.mission.declined.agentsays` | 134921 | a one-line disappointed reply naming `{[character]player.name}` |
@@ -163,11 +161,10 @@ All five are on `Moniker('agentMgr', 3010110)`. Shapes are
 `len(availableActions) == 1` or the agent is neither a locator nor a research
 agent. **[V]** (`agents-missions.md` §1 Step 4 gives the first three
 conditions and not the fourth.) Offering Accept first therefore costs **one**
-round trip and no invented greeting. (The ids in the wire dicts of this section
-are invented stand-ins for the mission, stations, system and message of §1.1.)
+round trip and no invented greeting.
 
 ```python
-(( (134998, 4899),              # agentSaysMsg = (messageID, contentID)
+(( (134918, 4832),              # agentSaysMsg = (messageID, contentID)
    [ (2, 3),                    # our actionID 2 -> button Accept  (3)
      (3, 9) ] ),                # our actionID 3 -> button Decline (9)
  { 'missionCompleted': 0, 'missionDeclined': 0,
@@ -192,7 +189,7 @@ Then: `DoAction(2)` → `((134919, 4832), [])` plus the
 module code: **[V]**
 
 ```python
-{ 'ContentID':           4899,     # subscripted whenever the dict is truthy
+{ 'ContentID':           4832,     # subscripted whenever the dict is truthy
   'Mission Title ID':    56901,    # subscripted
   'Mission Briefing ID': 134916,   # the briefing slot
   'Mission Keywords':    {'objectiveDestinationID': 60014437},
@@ -259,23 +256,23 @@ an accepted 4832:
   'missionState':     2,                       # accepted
   'objectives': [ ('transport',
                    (1000126,                                   # pickupOwnerID
-                    {'solarsystemID': 30099001, 'typeID': 2599,
-                     'locationID': 60099001},                   # pickupLocation
+                    {'solarsystemID': 30000001, 'typeID': 2502,
+                     'locationID': 60012526},                   # pickupLocation
                     1000163,                                    # dropoffOwnerID
-                    {'solarsystemID': 30099001, 'typeID': 2599,
+                    {'solarsystemID': 30000001, 'typeID': 2502,
                      'locationID': 60014437},                   # dropoffLocation
                     {'hasCargo': 1, 'quantity': 4,
                      'typeID': 2665, 'volume': 240.0})) ],
   'dungeons':       [],
-  'locations':      [30099001],                # solar system ids
-  'agentGift':      [],                        # initialAgentGift* absent on 4899
+  'locations':      [30000001],                # solar system ids
+  'agentGift':      [],                        # initialAgentGift* absent on 4832
   'normalRewards':  [(29, 15000, None)],       # typeID 29 = Credits; see below
   'loyaltyPoints':  0,
   'researchPoints': 0,
-  'bonusRewards':   [],                        # missionRewards absent on 4899
+  'bonusRewards':   [],                        # missionRewards absent on 4832
   'collateral':     [],
   'missionExtra':   (134917, 134915),           # extrainfo header, body
-  'contentID':      4899 }                      # required when missionExtra is set
+  'contentID':      4832 }                      # required when missionExtra is set
 ```
 
 - `'transport'` versus `'fetch'` is **[I]**. A classic courier's cargo
@@ -295,7 +292,7 @@ an accepted 4832:
 sends, and now provably right:
 
 ```python
-{'locationID': 60099001, 'typeID': 2599, 'solarsystemID': 30099001}
+{'locationID': 60012526, 'typeID': 2502, 'solarsystemID': 30000001}
 ```
 
 `locationType` stays omitted so the `LocationWrapper` branch whose
@@ -471,13 +468,12 @@ x:R5, y:R5, z:R5, locationNameID:I4` (the unpublished login-path note §9). **[V
 
 And the names are in the client's own static data:
 `solarsystemcontent.static` gives each NPC station's `stationName` verbatim —
-*"Tanoo IV - Trust Partners Trading Post"*, *"Tanoo V - Moon 1 - Ammatar
-Consulate Bureau"* — along with its `solarSystemID`, `typeID`, `ownerID`,
+the station name for 60014437 and 60012526 — along with its `solarSystemID`, `typeID`, `ownerID`,
 `operationID` and position. **[V]** So the server answers
 `GetMultiLocationsEx([60014437])` out of a file it already reads and the
 briefing names a real station.
 
-Recommended destination for 4832: **60014437, in Tanoo itself.** It is the
+Recommended destination for 4832: **60014437, in the agent's own system.** It is the
 other station in system 30000001, so `objectiveDestinationSystemID` is the
 system the player is already in, `'locations'` has one entry, and the whole
 mission needs exactly one extra `evelocations` row. The cross-system
@@ -603,7 +599,7 @@ station. **[V]**
 (`journal.CheckUndock` → `agents.CheckCourierCargo`)" as servable. It is —
 but it is also the *only* completion test that can ever fire for 4832, and
 it fires on **undock**, not on delivery. Delivery is "be docked at 60014437
-with four `Group of Elite Slaves` in the hold", and the server cannot know
+with four units of cargo type 2665 in the hold", and the server cannot know
 that until the player docks, which needs Destiny. So 4832 is offerable,
 acceptable, declinable and **turn-in-able only by fiat** today: the server
 can accept `DoAction(Complete)` without verifying anything, which is a GM
@@ -611,8 +607,7 @@ cheat-complete (`completionStatus == 2`) wearing a normal hat. That is a
 deliberate choice a reader should make knowingly, not a thing the data
 decides.
 
-**The caveat.** The courier *items* have to exist. Four `Group of Elite
-Slaves` (typeID 2665, 60 m3 each) must appear in the player's hangar at
+**The caveat.** The courier *items* have to exist. Four units of the courier cargo (typeID 2665, 60 m3 each) must appear in the player's hangar at
 60012526 on accept, or the briefing's own red closing line (move the cargo to
 the cargo hold before departure) is a lie and
 `CheckCourierCargo` has nothing to check. `item.rs` already spawns items into
@@ -744,7 +739,7 @@ three things to avoid are `messages` at +56 (that is `extraStandings`),
 `killMission.dungeonID`), and treating a dict slot as 8 bytes.
 
 **(e) `server/.../service.rs` — the station agent.** `STATION_AGENT_ID`
-should be **3010110** (*Alfroren Agitta*), and with it `divisionID` becomes
+should be **3010110**, and with it `divisionID` becomes
 **24** instead of `None`, `agentTypeID = 2` and `level = 1` become copies
 rather than choices, and the comment about the nested-struct convention being
 unsettled can go: the convention is `findings/pyd-schemas.tsv`'s, and 3004001

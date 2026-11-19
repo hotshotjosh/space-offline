@@ -195,14 +195,11 @@ key *in* and never reads it back.
 **Container family: a plain `list` of `utillib.KeyVal`. [V]** Not a rowset of
 either family, and again the reason has nothing to do with reading:
 
-`GetStaticData(itemName, trCol, trID, *args)` (`accountsvc.py:97`):
-
-1. if `itemName` is not in `self.data`, it calls the account service's
-   `itemName` method with `*args` (99);
-2. for **every row** it takes the message id from the `trID` column,
-   translates it with `localization.GetByMessageID`, and **writes** the result
-   back to the row with `setattr(rec, trCol, ...)`;
-3. it stores the list in `self.data[itemName]` and returns it.
+`GetStaticData(itemName, trCol, trID, *args)` (`accountsvc.py:97`) guards on
+`itemName not in self.data` (98) and calls the account service's `itemName`
+method then. For **every row** it translates the message id in the `trID` column
+with `localization.GetByMessageID` and **writes** the result back to the row
+with `setattr(rec, trCol, ...)`; it caches the list and returns it.
 
 `Row.__setattr__` goes through `header.index(key)` and raises
 `AttributeError` for an undeclared column; `blue.DBRow` is a fixed native
@@ -252,18 +249,13 @@ client-side** (`marketSvc.py:55-59`) and overwrite anything we send;
 ## 3. Every field the UI formats, and how
 
 `transactionsPanel.Transaction.__init__` is the whole per-row formatter
-(lines 40-62):
-
-1. `amount` and `balance` are copied from the data (41-42).
-2. The ref type is looked up with `account.GetRefTypeKeyByID(entryTypeID)` (44).
-3. `dateString` is the `UI/Wallet/WalletWindow/FmtWalletDate` label with
-   `dt=transactionDate` (46); `typeString` is the ref type's `entryTypeName`
-   (45/47).
-4. `amountString` and `balanceString` are `FmtWalletCurrency(value, currency)`
-   (48-49).
-5. `descriptionString` is `FmtWalletEntry(entryTypeID, ownerID1, ownerID2,
-   referenceID, amount=..., reason=description)` (51-57).
-6. `hint` is `GetTransactionHint(data)` (58).
+(lines 40-62). It copies `amount` and `balance`, looks the ref type up with
+`account.GetRefTypeKeyByID(entryTypeID)` (44) and builds the date string from
+the `UI/Wallet/WalletWindow/FmtWalletDate` label with `dt=transactionDate`
+(46), the type string from the ref type's `entryTypeName` (45/47), the two
+currency strings with `FmtWalletCurrency(value, currency)` (48-49), the
+description with `FmtWalletEntry` over the ref type, both owners, the reference
+and the `reason` (51-57), and `hint` from `GetTransactionHint(data)` (58).
 
 and the caller wraps it in exactly one handler:
 
@@ -371,12 +363,11 @@ the client log. See §5.3 for the full unknown-id story.
 `FmtWalletEntry(entryTypeID, o1, o2, arg1, pretty=1, amount, reason)`
 (`eve/common/script/util/walletEntryFormat.py`):
 
-1. If `entryTypeID` is not in `MANUAL_WALLET_REFERENCES`, the localization id
-   comes from `get_entry_format_localization_id(entryTypeID)`.
-2. When that id is not `None`, the result is
-   `_FmtWalletEntryNormalized(messageID, GetName(o1), GetName(o2), arg1)`.
-3. Otherwise the result is `_FmtWalletEntryManual(entryTypeID, o1, o2, arg1,
-   pretty, amount, reason)`.
+A type outside `MANUAL_WALLET_REFERENCES` takes its localization id from
+`get_entry_format_localization_id(entryTypeID)`; when that is not `None` the
+result is `_FmtWalletEntryNormalized(messageID, GetName(o1), GetName(o2), arg1)`,
+otherwise `_FmtWalletEntryManual(entryTypeID, o1, o2, arg1, pretty, amount,
+reason)`.
 
 Three things follow, and all three are good news:
 
@@ -713,14 +704,12 @@ handlers exist for it; `findings/push-events.tsv` lists all of them:
 | `walletSvc.py:78` `WalletSvc.OnAccountChange` | → `_OnCharAccountChange` (line 83) |
 | `industrySvc.py:382`, `lpStoreSvc.py:452`, `securityOfficeWindow.py:233` | unrelated |
 
-and `_OnCharAccountChange` (`walletSvc.py:89`):
-
-1. When the `notifyAccountChange` setting is on (90), the neocom wallet button
-   blinks (91) and `BlinkPersonalWallet(PANEL_TRANSACTIONS)` runs (92).
-2. `difference = newBalance - self.wealth`.
-3. `OnPersonalAccountChangedClient(newBalance, difference)` is scattered (94).
-4. `_wealth = newBalance`.
-5. `on_personal_isk_balance_changed(newBalance, difference)` fires.
+and `_OnCharAccountChange` (`walletSvc.py:89`): when the `notifyAccountChange`
+setting is on (90) the neocom wallet button blinks (91) and
+`BlinkPersonalWallet(PANEL_TRANSACTIONS)` runs (92). It scatters
+`OnPersonalAccountChangedClient(newBalance, difference)` (94) with `difference`
+the new balance minus the old, replaces the stored wealth, and fires
+`on_personal_isk_balance_changed`.
 
 Two things to know:
 

@@ -74,23 +74,15 @@ Four consequences a Rust encoder must honour:
 Function bounds `0x1802de1c0-0x1802de424` (from `.pdata`; 612 bytes, so the
 leaf-function caveat in the unpublished marshal-tags note does not apply).
 
-1. Remember the shared flag (`r15`), stream (`r12`) and context (`r13`) (`0x1802de1e4`).
-2. `RegisterShared(stream, 0)` (`0x1802dbdf0`) reserves the shared slot
-   **before any child is read** (`0x1802de1f8`).
-3. `ReadObject()` reads one child, the header (`0x1802de21b`).
-4. `callable = header[0]` and `args = header[1]`, both by `PyTuple_GetItem`
-   with index constants 0 and 1 (`0x1802de239`, `0x1802de253`).
-5. `PyObject_CallObject(callable, args)` builds the object (`0x1802de268`).
-6. The reserved shared slot is committed with the new object (`0x1802dbf30`,
-   call at `0x1802de2b1`).
-7. When `header->ob_size` is 2 or less there is no state (`0x1802de2be`);
-   otherwise `state = header->ob_item[2]` (`0x1802de2c9`).
-8. State goes in by `obj.__setstate__(state)` (name from `ctx[0x78]`,
-   `0x1802de2d4`, call at `0x1802de2eb`); when that attribute is missing the
-   error is cleared (`0x1802de311`) and `obj.__dict__.update(state)` runs
-   instead (name from `ctx[0x80]`, `0x1802de321`, `0x1802de335`).
-9. The list-append stream (`0x1802de6b0`) and then the dict-setitem stream
-   (`0x1802de800`) are read (`0x1802de375`, `0x1802de387`; see §5).
+The handler reserves the shared slot with `RegisterShared(stream, 0)` **before any
+child is read** (`0x1802de1f8`), reads one child, the header, and takes
+`callable = header[0]` and `args = header[1]` by `PyTuple_GetItem`. It builds the
+object with `PyObject_CallObject(callable, args)` (`0x1802de268`) and commits the
+reserved slot. When `header->ob_size` is 2 or less there is no state
+(`0x1802de2be`); otherwise `state = header->ob_item[2]`. State goes in by
+`obj.__setstate__(state)` (name from `ctx[0x78]`); when that attribute is missing
+the error is cleared and `obj.__dict__.update(state)` runs instead (name from
+`ctx[0x80]`). The list-append and dict-setitem streams are read last (§5).
 
 `PyTupleObject` field offsets: `ob_refcnt 0x00, ob_type 0x08, ob_size 0x10,
 ob_item 0x18`, so `[rsi+0x10]` is the length and `[rsi+0x28]` is
@@ -109,19 +101,14 @@ ob_item 0x18`, so `[rsi+0x10]` is the length and `[rsi+0x28]` is
 
 Function bounds `0x1802de430-0x1802de6b0` (640 bytes).
 
-1. `RegisterShared` reserves the slot before any child is read (`0x1802de468`).
-2. `ReadObject()` reads one child, the header (`0x1802de48b`).
-3. `argsTuple = header[0]`, then `cls = argsTuple[0]`, both by
-   `PyTuple_GetItem` with index 0 (`0x1802de4a9`, `0x1802de4c0`).
-4. `cls.__new__` is looked up with the name in `ctx[0x88]` (`0x1802de4cf`,
-   `0x1802de4d9`) and called with `*header[0]`, that is `cls.__new__(*argsTuple)`
-   (`0x1802de4f9`).
-5. The shared slot is committed (`0x1802de51e`).
-6. When `header->ob_size` is 1 or less there is no state (`0x1802de530`);
-   otherwise `state = header->ob_item[1]` (`0x1802de536`).
-7. State goes in by the same `__setstate__` / `__dict__.update` step as in
-   `0x22`, and the list-append and dict-setitem streams follow
-   (`0x1802de5e2`, `0x1802de5f4`).
+The handler reserves the shared slot before any child is read, reads the header
+and takes `argsTuple = header[0]`, then `cls = argsTuple[0]` (`0x1802de4a9`,
+`0x1802de4c0`). It looks `__new__` up on `cls` (name in `ctx[0x88]`) and calls
+it with `*header[0]`, that is `cls.__new__(*argsTuple)` (`0x1802de4f9`), then
+commits the slot. When `header->ob_size` is 1 or less there is no state
+(`0x1802de530`); otherwise `state = header->ob_item[1]`. State goes in by the same
+`__setstate__` / `__dict__.update` step as in `0x22`, and the list-append and
+dict-setitem streams follow.
 
 The key difference from `0x22`, and the thing easiest to get wrong:
 
@@ -164,21 +151,15 @@ The unpublished marshal-tags note.
 
 Function bounds `0x1802dde40-0x1802de1be` (894 bytes).
 
-1. `RegisterShared` reserves the slot before any child is read (`0x1802dde74`).
-2. `ReadObject()` reads child 1, the class name object (`0x1802dde97`).
-3. `ResolveGlobal(ctx, nameObj)` (`0x1802deb60`) returns the class (`0x1802ddeb6`);
-   its `ob_type` must be `PyClass_Type` (`0x1802ddecf`, `0x1802dded6`),
-   otherwise the error is "global object %s should be of class type but is of
-   %s" (`0x1802ddf20`).
-4. A whitelist/audit hook (`0x1802e1e70`) is called with "ClassType: %s"
-   (`0x1802ddf93`).
-5. `PyInstance_NewRaw(klass, NULL)` makes the instance (`0x1802ddfa8`).
-6. The shared slot is committed (`0x1802ddfd0`).
-7. `ReadObject()` reads child 2, the state (`0x1802ddfe3`).
-8. `PyObject_HasAttr` probes the **class** for the `__setstate__` name in
-   `ctx[0x78]` (`0x1802de000`); if present, `PyObject_CallMethodObjArgs` calls
-   it on the **instance** (`0x1802de04b`).
-9. Otherwise `inst.__dict__.update(state)` (`0x1802de0d9`, `0x1802de0ed`).
+The handler reserves the shared slot before any child is read, reads child 1, the
+class name object, and resolves it with `ResolveGlobal` (`0x1802deb60`); the result
+must have `ob_type == PyClass_Type`, otherwise the error is "global object %s
+should be of class type but is of %s" (`0x1802ddf20`). A whitelist/audit hook
+(`0x1802e1e70`) is called with "ClassType: %s". `PyInstance_NewRaw(klass, NULL)`
+makes the instance (`0x1802ddfa8`), the slot is committed, and child 2, the state,
+is read. `PyObject_HasAttr` probes the **class** for `__setstate__` (name in
+`ctx[0x78]`); if present it is called on the **instance**. Otherwise
+`inst.__dict__.update(state)` runs.
 
 - **Exactly two children, in this order: the class name object, then the
   state.** Both are mandatory — a NULL from either `ReadObject` aborts.
@@ -204,18 +185,13 @@ by two dedicated helpers.
 
 ### List-append stream — `0x1802de6b0`
 
-1. If no bytes are left (`stream[0x28] - stream[0x30] < 1`) the error is
-   "Can't read %d elements of %d bytes, only have %Iu bytes left".
-2. **Peek** the next byte (`0x1802de6f9`); the position is stored back
-   unchanged, so nothing is consumed (`0x1802de6fd`).
-3. If the byte equals `0x2d` (`0x1802de701`, `0x1802de704`) go to step 6.
-4. Otherwise `ReadObject()` reads a child, re-reading that byte as a tag
-   (`0x1802de70c`).
-5. Call `obj.append(child)` with the name in `ctx[0x98]` (`0x1802de72d`) and
-   go back to step 1.
-6. At the terminator the per-tag stats entry at offset `0xb4` (`0x2d * 4`) is
-   bumped (`0x1802de76a`), the position advances by one (`0x1802de78c`) so
-   the `0x2D` byte **is** consumed, and the helper returns true.
+The helper errors with "Can't read %d elements of %d bytes, only have %Iu bytes
+left" when no bytes are left. Each round it **peeks** the next byte, storing the
+position back unchanged (`0x1802de6f9`, `0x1802de6fd`). A byte equal to `0x2d`
+(`0x1802de701`) ends the stream: the per-tag stats entry at `0xb4` (`0x2d * 4`) is
+bumped, the position advances by one so the `0x2D` byte **is** consumed, and the
+helper returns true. Otherwise `ReadObject()` reads a child, re-reading that byte
+as a tag, and calls `obj.append(child)` (name in `ctx[0x98]`).
 
 The peek is a genuine peek: `[rdi+0x30]` is re-stored with the value just
 loaded from it. So a non-`0x2D` byte stays in the stream and `ReadObject`
@@ -232,10 +208,9 @@ Same peek/terminator structure (`0x1802de879 cmp cl, 0x2d`, stats at
 `+0xb4`, byte consumed at `0x1802e08a0`), but each iteration reads **two**
 objects:
 
-1. `ReadObject()` reads the FIRST object (`0x1802de8b1`).
-2. `ReadObject()` reads the SECOND object (`0x1802de8d5`).
-3. `PyObject_CallMethodObjArgs(obj, "__setitem__", FIRST, SECOND, NULL)`, with
-   the name taken from `ctx[0xa0]` (`0x1802de8ed`, `0x1802de8f7`).
+`ReadObject()` reads the FIRST object (`0x1802de8b1`) and the SECOND
+(`0x1802de8d5`), then calls `PyObject_CallMethodObjArgs(obj, "__setitem__", FIRST,
+SECOND, NULL)` with the name taken from `ctx[0xa0]`.
 
 `PyObject_CallMethodObjArgs(o, name, a1, a2, NULL)` → `obj.__setitem__(FIRST,
 SECOND)` → `obj[FIRST] = SECOND`. **The first object read is the KEY.** **[V]**
@@ -267,22 +242,14 @@ dict items still end in `2D 2D`. **[V]**
 ## 6. The `0x17` class name: what it is, and the whitelist **[V]**
 
 The resolver is `0x1802deb60` — the same helper tag `0x02` uses
-(the unpublished marshal-tags note). It:
-
-1. `PyDict_GetItem(ctx[0x30], nameObj)` — a resolution cache, keyed by the
-   name object. (`0x1802deb84`)
-2. requires a **string**, else `RuntimeError "expected string"`
-   (`0x1802debb3`; the type test is `tp_flags & 0x8000000`).
-3. `strrchr(name, '.')` (`0x1802debe9`) to split module from attribute; with
-   no dot the module is `"__builtin__"` (`0x1802dec35`).
-4. `PyImport_ImportModule(module)` (`0x1802dec77`), then
-   `PyObject_GetAttrString` (`0x1802ded82`).
-5. `0x1802e1ca0` — the whitelist check:
-   `PyDict_GetItem(globalsWhitelist, obj)`, and on a miss
-   `RuntimeError "HACKER WARNING! object %s.%s is not in whitelist"`
-   (`0x18097e2c0`, referenced at `0x1802e1d0b`). A blacklist check with
-   `"HACKER WARNING! object %s.%s is blacklisted"` sits next to it.
-6. caches the result (`PyDict_SetItem` at `0x1802dedc0`).
+(the unpublished marshal-tags note). It checks a resolution cache keyed by the
+name object (`ctx[0x30]`), requires a **string** (else `RuntimeError "expected
+string"`), splits the name at the last dot with `strrchr` (no dot means the module
+`"__builtin__"`), imports the module and takes the attribute. The whitelist check
+at `0x1802e1ca0` does `PyDict_GetItem(globalsWhitelist, obj)` and, on a miss,
+raises `RuntimeError "HACKER WARNING! object %s.%s is not in whitelist"`; a
+blacklist check with `"HACKER WARNING! object %s.%s is blacklisted"` sits next to
+it. The result is cached.
 
 So the `0x17` child #1 is **a marshal string holding a dotted
 `module.ClassName`** — not a `(module, name)` tuple, not a shared-table
@@ -336,15 +303,11 @@ blue.DBRow, blue.DBRowDescriptor
 
 `Marshal::WriteObject` = `0x1802dee00` (`0x1802dee00-0x1802dfbfc`).
 
-1. An object whose type is `PyInstance_Type` goes to the `0x17` writer
-   (`0x1802dff60`, called at `0x1802df254`).
-2. After the other type tests, a shared / back-reference test runs
-   (`0x1802db0f0`, call at `0x1802dfa13`).
-3. Then the ObjectEx writer (`0x1802e02a0`, the `0x22`/`0x23` catch-all) is
-   tried (`0x1802dfa36`).
-4. If that declines, a message "defaulting to cPickle for object %p of type
-   %s" is formed (`0x1802dfa5f`) and the tag is `0x21`, the cPickle fallback
-   (`0x1802dfb2e`).
+An object whose type is `PyInstance_Type` goes to the `0x17` writer (`0x1802dff60`).
+After the other type tests, a shared / back-reference test runs (`0x1802db0f0`),
+then the ObjectEx writer (`0x1802e02a0`, the `0x22`/`0x23` catch-all) is tried. If
+that declines, a message "defaulting to cPickle for object %p of type %s" is
+formed and the tag is `0x21`, the cPickle fallback.
 
 So: **old-style instance → `0x17`; anything otherwise unrecognised → try
 `__reduce_ex__`/`__reduce__` → `0x22` or `0x23`; if that declines →
@@ -361,11 +324,9 @@ callable is encoded in practice, confirming `docs/reference/dbrow.md`'s
 
 `WriteTag` = `0x1802e2310`:
 
-1. The save-side per-tag stats array (a pointer at `ctx[0xf0]`) is bumped at
-   index `tag & 0x3f` (`0x1802e231a`, `0x1802e232e`).
-2. The pending flag bits are read from `stream[0x60]` and cleared
-   (`0x1802e2332`, `0x1802e2335`).
-3. `flag | tag` is written as one byte (`0x1802e233c`, `0x1802e2355`).
+`WriteTag` bumps the save-side per-tag stats array (a pointer at `ctx[0xf0]`) at
+index `tag & 0x3f`, reads and clears the pending flag bits from `stream[0x60]`,
+and writes `flag | tag` as one byte (`0x1802e233c`).
 
 The shared bit is staged in `stream[0x60]` and OR'd into the *next* tag byte;
 `0x1802db0f0` sets `stream[0x60] = 0x40` (`0x1802db27f`) for a repeat object,
@@ -377,24 +338,15 @@ simply never use `0x1B`. **[V]**
 
 ### 7.3 The `0x17` writer — `0x1802dff60` **[V]**
 
-1. If `obj->ob_refcnt > 1` (`0x1802dff89`), the shared test (`0x1802db0f0`,
-   call at `0x1802dffa9`) may emit a `0x1B` back-reference instead.
-2. If the save callback (`stream[0x70]`) is set (`0x1802dffce`), it is called
-   with the object (`0x1802e0027`). A result that is not `None` is written as
-   tag `0x19` followed by that object (`0x1802e007f`, `0x1802e008b`,
-   `0x1802e009d`).
-3. Otherwise the real `0x17`: the class dict's `__module__` is fetched
-   (`0x1802e00da`..`0x1802e00e6`); if absent the error is "Instance %s has no
-   __module__ attribute." (`0x1802e0104`).
-4. The name is built as `"%s.%s"` of the module and the class's `cl_name`
-   (`0x1802e0136`..`0x1802e0149`) and interned (`0x1802e015e`).
-5. `WriteTag(0x17)` (`0x1802e016c`, `0x1802e0178`), then `WriteObject(name)`,
-   child 1 (`0x1802e018c`).
-6. If the instance has the `__getstate__` attribute (name in `ctx[0x70]`,
-   `0x1802e01c4`), `WriteObject(obj.__getstate__())` is child 2
-   (`0x1802e020c`, `0x1802e0250`).
-7. Otherwise `WriteObject(inst.__dict__)` is child 2 (`0x1802e0272`,
-   `0x1802e027c`).
+If `obj->ob_refcnt > 1` (`0x1802dff89`) the shared test (`0x1802db0f0`) may emit a
+`0x1B` back-reference instead. If the save callback (`stream[0x70]`) is set it is
+called with the object, and a result that is not `None` is written as tag `0x19`
+followed by that object. Otherwise the real `0x17` is written: the class dict's
+`__module__` is fetched (error "Instance %s has no __module__ attribute." if
+absent), the name is built as `"%s.%s"` of the module and the class's `cl_name` and
+interned, `WriteTag(0x17)` is emitted, then child 1 is the name, and child 2 is
+`obj.__getstate__()` when the instance has `__getstate__` (name in `ctx[0x70]`)
+and `inst.__dict__` otherwise.
 
 `PyInstanceObject{ob_refcnt 0, ob_type 8, in_class 0x10, in_dict 0x18}` and
 `PyClassObject{..., cl_dict 0x18, cl_name 0x20}`. **[V]**
@@ -415,20 +367,14 @@ home-slot spills at `0x1802e02a3..0x1802e02ab` and the reloads at
 `0x1802e0586` (`[rsp+0xc8]` → `*handled = 1`), `0x1802e0594`
 (`[rsp+0xd0]` → stream) and `0x1802e059f` (`[rsp+0xc0]` → ctx).
 
-1. Set `*handled = false` (`0x1802e02d3`).
-2. Call `obj.__reduce_ex__(2)` (`0x1802e02ed`); on failure clear the error and
-   call `obj.__reduce__()` instead (`0x1802e0313`).
-3. The result must be a tuple (`0x1802e034f`). Its length `n` is taken
-   (`0x1802e035f`) and trailing `None`s are stripped (`0x1802e0377`).
-4. Require `2 <= n <= 5`, else bail (`0x1802e0386`..`0x1802e038e`).
-5. `callable = r[0]` and it must pass `PyCallable_Check` (`0x1802e0394`,
-   `0x1802e03a0`); `args = r[1]`, which must be a tuple (`0x1802e03ae`).
-6. The callable's `__name__` (name in `ctx[0x90]`, `0x1802e03d3`) is compared
-   with `"__newobj__"` (`0x1802e040e`); a match sets `useNewObj`
-   (`0x1802e0419`).
-7. `state = r[2]` if `n > 2` (NULL if `None`) (`0x1802e0428`);
-   `listitems = r[3]` if `n > 3` (`0x1802e0445`); `dictitems = r[4]` if
-   `n > 4` (`0x1802e0486`).
+The writer sets `*handled = false`, calls `obj.__reduce_ex__(2)` and, on failure,
+clears the error and calls `obj.__reduce__()` (`0x1802e0313`). The result must be
+a tuple; trailing `None`s are stripped and the length `n` must satisfy
+`2 <= n <= 5`, else it bails (`0x1802e0386`). `callable = r[0]` must pass
+`PyCallable_Check`, `args = r[1]` must be a tuple, and `state`, `listitems` and
+`dictitems` are `r[2]`, `r[3]`, `r[4]` when present (`None` counts as absent). The
+callable's `__name__` (name in `ctx[0x90]`) is compared with `"__newobj__"`; a
+match sets `useNewObj` (`0x1802e0419`).
 
 Header construction — the two branches:
 
@@ -443,26 +389,13 @@ Header construction — the two branches:
 
 Emission:
 
-1. Set `*handled = true` (`0x1802e058e`).
-2. `WriteTag(0x22 or 0x23)` (`0x1802e05aa`), then `WriteObject(header)`
-   (`0x1802e05c0`).
-3. If `listitems` is present and not `None`, iterate it (`PyIter_Next`,
-   `0x1802e05e3`) and `WriteObject(item)` for each (`0x1802e0606`).
-4. **Terminator #1:** bump the stats entry at `+0xb4` (`0x1802e06b6`), OR the
-   pending flag bits with `0x2d` (`0x1802e06c0`), clear the flag bits
-   (`0x1802e06c3`) and write the byte **unconditionally** (`0x1802e06e8`).
-5. Call the dict-items helper `0x1802e0840` for the dict items and
-   terminator #2 (`0x1802e06f8`).
-
-`0x1802e0840`:
-
-1. If `dictitems` is present and not `None`, iterate it (`0x1802e0883`).
-2. Each item must be a 2-tuple (`0x1802e089e`, `0x1802e08aa`); otherwise the
-   error is "iterator should return 2-tuple" (`0x1802e0918`).
-3. `WriteObject(item[0])`, the KEY, first (`0x1802e08bb`), then
-   `WriteObject(item[1])`, the VALUE (`0x1802e08ce`).
-4. **Terminator #2**, also unconditional: bump the stats entry
-   (`0x1802e0958`) and write `0x2d` (`0x1802e0961`).
+Emission: it sets `*handled = true`, writes `WriteTag(0x22 or 0x23)` and then
+`WriteObject(header)`, then each item of `listitems` (via `PyIter_Next`). **Terminator
+#1** follows: the pending flag bits are OR'd with `0x2d`, cleared, and the byte is
+written **unconditionally** (`0x1802e06e8`). The dict-items helper `0x1802e0840`
+then iterates `dictitems`, requires each item to be a 2-tuple (otherwise the error
+is "iterator should return 2-tuple"), writes `item[0]`, the KEY, then `item[1]`,
+the VALUE, and writes **Terminator #2**, also unconditional (`0x1802e0961`).
 
 Both terminators are written on every path through the function, reached
 whether or not the corresponding iterator exists. **[V]** That is the writer

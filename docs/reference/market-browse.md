@@ -36,41 +36,31 @@ immediately written back, i.e. "default on, and persist the default". It is
 reached from `Startup` at `marketbase.py:649` **[V]**, so it runs once per
 market-window construction.
 
-**[V]** `MarketBase.FilterItemsForBrowse` (`firstlineno` 2667) does, in order:
-
-1. read the `showonlyavailable` setting into `filterNone` (default 0) (2681);
-2. for each type in the group's `types`, look it up in `asksForMyRange` (2683-2684);
-3. keep the type when `(not filterNone or an ask exists)` and `ShouldShowType`
-   accepts it (2685-2686);
-4. otherwise keep it only if it is the PLEX type and the global PLEX market
-   experiment is enabled (2687-2688);
-5. return the kept list (2689).
+**[V]** `MarketBase.FilterItemsForBrowse` (`firstlineno` 2667) reads the
+`showonlyavailable` setting into `filterNone` (default 0, 2681) and keeps a type
+of the group when `(not filterNone or an ask exists in asksForMyRange)` and
+`ShouldShowType` accepts it (2683-2686). Otherwise it keeps the PLEX type alone,
+when the global PLEX market experiment is enabled (2687-2688).
 
 so with `filterNone` truthy a type survives only if `asksForMyRange` has an
 entry for it.
 
 **[V]** And the group itself disappears, which is why the tree is *empty*
 rather than full of empty folders. `GetGroupListForBrowse` (`firstlineno` 965),
-in its top-level arm:
-
-1. take the market groups for `marketGroupID` from `marketutils.GetMarketGroups()` (1022);
-2. skip a group with no `types` (1024-1025);
-3. run `FilterItemsForBrowse` on it and skip the group when the result is
-   empty (1030-1032).
+in its top-level arm, takes the market groups for `marketGroupID` from
+`marketutils.GetMarketGroups()` (1022), skips a group with no `types`
+(1024-1025), and skips a group whose `FilterItemsForBrowse` result is empty
+(1030-1032).
 
 Every group filters to zero, every group is skipped, the scroll gets an empty
 `contentList`.
 
 **[V]** `asksForMyRange` is ours and it is empty. `PopulateAsksForMyRange`
 (`firstlineno` 878) stores whatever `_GetAsksForRange` returns (896, 901), and
-`_GetAsksForRange` (`firstlineno` 903) does:
-
-1. get the `marketQuote` service (904) and the current range (905);
-2. range is the station: `quote.GetStationAsks()` (906-907);
-3. range is the solar system, or the region is a wormhole region:
-   `quote.GetSystemAsks()` (908-909);
-4. otherwise: `quote.GetRegionBest()` (910-911);
-5. return what that call gave (912).
+`_GetAsksForRange` (`firstlineno` 903-912) asks the `marketQuote` service for
+`GetStationAsks()` when the range is the station, `GetSystemAsks()` when it is
+the solar system or the region is a wormhole region, and `GetRegionBest()`
+otherwise, and returns that.
 
 and all three are answered `{}` by
 `server/crates/eve-server/src/service/market.rs` today.
@@ -127,13 +117,8 @@ same frame, so there is no relaunch and no window reopen needed.
 
 ## 2. Where that control is, exactly
 
-**[V]** The icon: `MarketBase.Startup` builds it at `marketbase.py:505` as
-
-```text
-UtilMenu(parent=filterParent, align=uiconst.CENTER, GetUtilMenu=self.SettingMenu,
-         texturePath=eveicon.tune, width=24, height=24, iconSize=16,
-         uniqueUiName=pConst.UNIQUE_NAME_MARKET_BROWSE_SETTINGS)
-```
+**[V]** The icon: `MarketBase.Startup` builds a `UtilMenu` at `marketbase.py:505`, a
+24-px square with `GetUtilMenu=self.SettingMenu`.
 
 `filterParent` is a `ContainerAutoSize` aligned `TORIGHT, idx=0` inside
 `searchAndSettingParent`, the 24-px-tall strip at the top of the market
@@ -142,13 +127,9 @@ button — so the icon is the leftmost of the two small buttons to the right of
 the search box.
 
 **[V]** The menu: `MarketBase.SettingMenu`, whose **first** entry is at
-`marketbase.py:700`:
-
-```text
-menuParent.AddCheckBox(text=localization.GetByLabel('UI/Market/ShowOnlyAvailable'),
-                       checked=bool(settings.user.ui.Get('showonlyavailable', 1)),
-                       callback=(self.OnCheckboxChange, 'showonlyavailable'))
-```
+`marketbase.py:700`: a checkbox labelled by the key `UI/Market/ShowOnlyAvailable`,
+checked from the `showonlyavailable` setting (default `1`), calling
+`OnCheckboxChange` with that setting name.
 
 The localisation **key** is `UI/Market/ShowOnlyAvailable` **[V]**; the English
 string is "Show only available" **[I]** — no localisation table is extracted
@@ -200,24 +181,8 @@ unambiguously in bounds.
    (the file holds ~60 other keys, including the quickbar). Against one click,
    that is a poor trade.
 
-2. **Patch the registered default in the installed client.** **[V]**
-   `SettingSection.Get` falls back to
-   `GetAttrs(defaultsetting, self._name, groupName, n)` at
-   `carbonui/util/settings.py:150`, and `carbonui/util/defaultsetting.py:33`
-   is `user = SafeBundle(ui=SafeBundle(language=0))` — so adding
-   `showonlyavailable=False` to that bundle registers a client-wide default.
-   **[I]** It would also win over the `True` literal at `marketbase.py:3074`,
-   because `SettingSection.Get` returns the registered default and
-   `Group.Get` only substitutes its own `defValue` when the result `is None`
-   — so `SetupFilters` would read `False` and persist `False`.
-   This is **modifying a file inside the client install**: in bounds only as a
-   patch to the player's own copy, in the same category as
-   `tools/client-patch-manifest.py` and `tools/client-prepare.py`, and it
-   would have to be described that way and never redistributed. It is also a
-   `.pyc` edit inside the script archive, which is a heavier mechanism than we
-   have today — `tools/client-overrides/` is a *drop a script into
-   `C:\eve-logs` and run it from the client console* mechanism
-   (`docs/reference/destiny-reference-blob.md` §2), not an import override.
+2. **Change the default inside the installed client.** That is a client
+   modification, outside this repository, and not pursued.
 
 **Recommendation: ship neither.** One click, documented, and the real fix is
 §4.
@@ -236,13 +201,10 @@ Two paths, one shared setting, and they diverge on **what the setting gates**.
 | what the setting decides | **membership**: `ret.append(typeID)` is skipped (2685–2686), then the whole group is skipped (1031–1032) | **one boolean on the node**: `data.inRange = False` (2003) vs `True` (2005) |
 
 **The exact point of divergence is `marketbase.py:2002`.** **[V]**
-`GetSearchEntry` (`firstlineno` 1990):
-
-1. read `showonlyavailable` into `onlyShowAvailable` (2000);
-2. when it is set and `IsTypeIdInCurrentRange(typeID)` is false, set
-   `data.inRange = False` (2002-2003); otherwise `True` (2005);
-3. build the entry with `GetFromClass(GenericMarketItem, data)` and return it
-   (2006-2007).
+`GetSearchEntry` (`firstlineno` 1990) reads `showonlyavailable` (2000) and, when it
+is set and `IsTypeIdInCurrentRange(typeID)` is false, sets `data.inRange = False`
+(2002-2003), otherwise `True` (2005). It builds the entry with
+`GetFromClass(GenericMarketItem, data)` and returns it (2006-2007).
 
 The entry is built and returned either way — there is no `continue` and no
 `append` guard. `IsTypeIdInCurrentRange` (`firstlineno` 2009) is
@@ -297,13 +259,10 @@ and it is the main thing this document exists to record.
 
 ### The shape that dict must have — and a trap in it
 
-**[V]** `PopulateAsksForMyRange` does *not* treat the three forms alike, in order:
-
-1. read the current range (898);
-2. when the range is the station or the solar system, or the region is a
-   wormhole region, convert the tuples with `ConvertTuplesToBestByOrders`
-   (899-900);
-3. store the result in `self.asksForMyRange` (901).
+**[V]** `PopulateAsksForMyRange` does *not* treat the three forms alike: when the current range (898) is the
+station or the solar system, or the region is a wormhole region, it converts the
+tuples with `ConvertTuplesToBestByOrders` (899-900); it stores the result in
+`self.asksForMyRange` (901).
 
 and `ConvertTuplesToBestByOrders` (`marketutil/__init__.py:8`) is
 `{typeID: BestByOrder(*order) for typeID, order in bestOrdersByType.iteritems()}`

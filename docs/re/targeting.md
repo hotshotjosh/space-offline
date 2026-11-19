@@ -313,21 +313,14 @@ attributes, and animates it on a 50 ms timer with no server involvement.
 `bracketMgr.GetScanSpeed(source, target)` (`bracketMgr.py:1305`), read off the
 bytecode and transcribed instruction by instruction **[V]**:
 
-The steps, by line (`bracketMgr.py`), with the signature radius taken from the
-*type* of the target: **[V]**
-
-1. `:1307-1310`: when `source` is `None` it becomes `session.shipid`; return
-   `None` when there is still no source.
-2. `:1313-1314`: fetch the source's godma item; `scanSpeed` starts as `None`.
-3. `:1317-1339`: when the item has a `scanResolution` and a target is given,
-   take the type's `signatureRadius` when the type has that attribute, else 0
-   (`:1325-1330`). If the radius is not positive, use the target ball's radius
-   from the ballpark (`:1333-1334`); if still not positive, the type's radius
-   (`:1336`); if still not positive, 1.0 (`:1338`). Then
-   `scanSpeed = 40,000,000 / scanResolution / ln(radius + sqrt(radius^2 + 1))^2`
-   (`:1339`).
-4. `:1341-1342`: when `scanSpeed` is still `None`, it is 2000, with a warning.
-5. `:1346`: return `min(scanSpeed, 180000)`.
+The source defaults to `session.shipid` (`:1307-1310`). When the source's godma
+item has a `scanResolution` and a target is given, the signature radius is taken
+from the *type* of the target (0 when the type has none, `:1325-1330`); if it is
+not positive, the ball's radius, then the type's radius, then 1.0
+(`:1333-1338`); then
+`scanSpeed = 40,000,000 / scanResolution / ln(radius + sqrt(radius^2 + 1))^2`
+(`:1339`). A still-unset `scanSpeed` is 2000, with a warning (`:1341-1342`), and
+the result is `min(scanSpeed, 180000)` (`:1346`) **[V]**.
 
 i.e. **`lockTime_ms = min(180000, 40_000_000 / scanResolution / asinh(signatureRadius)²)`**,
 since `ln(r + sqrt(r²+1))` is `asinh(r)`.

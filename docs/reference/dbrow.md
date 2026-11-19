@@ -171,14 +171,9 @@ blobSize = ceil((8*F + nB + nNonEmpty)/8)
 
 ### The NULL bitmap — a third region usually omitted **[V]**
 
-`0x1802fc0b0` opens, before any type dispatch:
-
-```text
-cmp  r8, [r10+0x94]        ; columnIndex >= nullBitCount -> no NULL bit
-movsxd rax, [r10+0x80]     ; nullBitBase
-add  rax, r8               ; + columnIndex
-bt   ecx, eax              ; set -> return Py_None
-```
+`0x1802fc0b0` opens, before any type dispatch: a column index at or above
+`nullBitCount` (`+0x94`) has no NULL bit. Otherwise bit `nullBitBase (+0x80) +
+columnIndex` is tested, and a set bit returns `None`.
 
 **A set bit means the column reads as `None` whatever the bytes say.** An
 encoder must size the blob to include this region; leaving the bits clear falls

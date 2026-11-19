@@ -176,15 +176,12 @@ who are. Both are in `nonDestinyCriticalFunctions`.
 `michelle.DoDestinyUpdate(state, waitForBubble, dogmaMessages=None)`,
 `michelle.py:625` `[V]`:
 
-`DoDestinyUpdate`, by line `[V]`:
-
-- `:632`: return if there is no ballpark.
-- `:635-637`: if `dogmaMessages` is set, scatter them as `OnMultiEvent`.
-- `:644-655`: expand every `PackagedAction` entry by unmarshalling its payload;
-  other entries pass through.
-- `:659-666`: collect the set of timestamps; if it holds more than one value,
-  report a fatal desync, which does not return.
-- `:668`: otherwise flush the state into the ballpark.
+`DoDestinyUpdate` `[V]` returns at once when there is no ballpark (`:632`) and scatters
+`dogmaMessages`, if set, as `OnMultiEvent` (`:635-637`). It expands every
+`PackagedAction` entry by unmarshalling its payload (`:644-655`). If the
+timestamps across the entries differ, it reports a fatal desync that does not
+return (`:659-666`). Otherwise it flushes the original `state`, not the expanded
+list, into the ballpark (`:668`); the expansion only feeds the timestamp check.
 
 So **one `DoDestinyUpdate` can carry destiny actions and dogma events at
 once**, and `dogmaMessages` is handed straight to godma's `OnMultiEvent`
@@ -194,25 +191,20 @@ the two gauge families from drifting, and it is available to us for free.
 `Park.RealFlushState(state)`, `:1507`, then dispatches each entry
 `(eventStamp, (funcName, args))` `[V]`:
 
-`RealFlushState` `[V]`, by line:
+`RealFlushState` `[V]` handles a `SetState` entry first (`:1515-1525`) and ignores
+events, with a log line "Events ignored", when the park is not in a valid state
+(`:1527`, `:1594`). It builds `exploders` from every
+`TerminalPlayDestructionEffect` entry, key the first argument and value the last
+(`:1537`), then walks the other entries (`:1539-1544`):
 
-- `:1515-1518`: it takes the first entry's `(funcName, args)`; a `SetState` entry
-  goes to `self.SetState(*args)` (`:1525`).
-- `:1527`, `:1594`: when the park is not in a valid state it logs "Events ignored"
-  and returns.
-- `:1537`: it collects `exploders`, a map built from every
-  `TerminalPlayDestructionEffect` entry (key: the first argument; value: the last).
-- `:1539-1544`: it then walks the entries again, skipping `SetState`.
-- `:1551-1553`: a function in `nonDestinyCriticalFunctions` is called at once
-  and the loop continues with the next entry.
-- `:1558-1567`: otherwise it synchronises to the simulation time of the entry's
-  stamp once; if that fails, it reports a recoverable desync, requests a reset
-  and returns.
-- `:1574-1578`: a function in `localActions` is called on the park itself; for
-  `RemoveBalls`, `exploders` is appended to its arguments.
-- `:1581`: any other function is called as `_parent_<funcName>`.
-- `:1582-1583`: a function in `scatterEvents` is also announced as
-  `OnBallparkCall`.
+- a function in `nonDestinyCriticalFunctions` is called at once (`:1551-1553`);
+- otherwise it synchronises to the entry's simulation time once, and on failure
+  reports a recoverable desync, requests a reset and returns (`:1558-1567`);
+- a function in `localActions` is called on the park itself, and `RemoveBalls`
+  gets `exploders` appended (`:1574-1578`);
+- any other function is called as `_parent_<funcName>` (`:1581`);
+- a function in `scatterEvents` is also announced as `OnBallparkCall`
+  (`:1582-1583`).
 
 The three membership sets are built in `Park.__init__`, `michelle.py:1010`
 `[V]`:
@@ -265,13 +257,10 @@ What is new is the update message. `StateManager.OnModuleAttributeChange`,
 newValue, oldValue, wallclockTime, scatterAttr=True)` is at `godma.py:1575`, and
 its worker `OnModuleAttributeChange_` at `:1584` `[V]`:
 
-1. `:1585`: return if `_IsAttributeChangeRelevant(itemKey, attributeID,
-   wallclockTime)` says the change is stale.
-2. `:1589`: when `wallclockTime` is set, remember it in `lastAttributeChange` for
-   `(itemKey, attributeID)`.
-3. `:1591-1598`: when neither `itemKey` nor `ownerID` is the session character,
-   return if there is no session character, otherwise log a traceback ("Got
-   moduleattributechange for object I do not own") and return.
+It drops a stale change (`_IsAttributeChangeRelevant`, `:1585`), remembers a set
+`wallclockTime` per `(itemKey, attributeID)` (`:1589`), and, when neither
+`itemKey` nor `ownerID` is the session character, logs "Got
+moduleattributechange for object I do not own" and returns (`:1591-1598`).
 
 So, `[V]`:
 
@@ -422,7 +411,7 @@ prepended by `AddCombatMessage` as raw markup (`uilog.py:574-584`) `[V]`:
 `AddCombatMessage` (`uilog.py:574-584`) `[V]` prepends a coloured damage figure
 when `damage` is set and `hitQuality > 0`: the damage is rounded to an integer
 and put in bold, in red (`0xffcc0000`) when `attackType` is not `me` and in cyan
-(`0xff00ffff`) otherwise.
+(`0xff00ffff`) otherwise (a missing `attackType` counts as `me`).
 
 so **incoming damage is red and outgoing is cyan, decided entirely by
 `attackType`**, and a `damage` of `0.0` with `hitQuality > 0` still prints
@@ -489,18 +478,13 @@ scope for a plain gun.
 `eveInflight/damageStateValue.CalculateCurrentDamageStateValues:7`, read in
 full `[V]`:
 
-The steps, by line `[V]`:
-
-1. `:10-11`: the shield entry is `damageState[0]`; it is extrapolated only when it
-   is a list or tuple.
-2. `:12-13`: `now` is the sim time, and `shieldHealth, tau` are its first two
-   items.
-3. `:14-17`: if `tau > 0`, with `sq = sqrt(shieldHealth)` and
-   `x = exp((time - now) / dgmTauConstant / tau)`, the shield health becomes
-   `(1 + (sq - 1) * x)^2`.
-4. `:18-20`: the result is appended; a non-list shield entry gives `None`.
-5. `:21`: the last two entries of `damageState` (armour and hull) are appended
-   as they are.
+The function `[V]` extrapolates the shield entry, `damageState[0]`, only when it
+is a list or tuple (`:10-13`). With `now` the sim time, `shieldHealth, tau` its
+first two items, `sq = sqrt(shieldHealth)` and
+`x = exp((time - now) / dgmTauConstant / tau)`, a `tau > 0` makes the shield
+health `(1 + (sq - 1) * x)^2` (`:14-17`); a non-list shield entry gives `None`
+(`:18-20`). The last two entries (armour and hull) are appended as they are
+(`:21`).
 
 with `dogma.const.dgmTauConstant = 10000` (`dogma/const.py:103`) `[V]`.
 `time` is the stamp the *client* wrote when it stored the entry (§1.1), so
@@ -530,7 +514,7 @@ Same formula, different plumbing. `StateManager.UpdateAttribute:2045` and
 
 `UpdateAttribute` (`godma.py:2049-2056`) defaults `time` to the current sim time
 and, when an item's attributes include both a tau attribute and a capacity
-attribute, calls `CreateChargedAttribute`. That function (`:2061-2063`) divides
+attribute (both non-zero; a zero value also skips it), calls `CreateChargedAttribute`. That function (`:2061-2063`) divides
 the tau attribute's value by 5.0, reads the capacity attribute, and stores
 `[value, time, tauValue, capValue]` in `chargedAttributesByItemAttribute` under
 the item and attribute.
@@ -776,13 +760,9 @@ returns without activating if that is false. `[V]`
 
 `consider.py:123-133` `[V]`:
 
-1. `:123`: if `IsAggressionBlockedInStarterSpace(targetID, effect)` holds, show a
-   message and return `False`.
-2. `:127`: ask `crimewatchSvc.GetSafetyLevelRestrictionForAttackingTarget` for
-   the required safety level.
-3. `:128`: if `SafetyCheckPasses(requiredSafetyLevel)` fails, return `False`.
-4. `:133`: otherwise return the result of
-   `ShowNPCAtttackConfirmationWindowIfAppropriate(requiredSafetyLevel, targetID)`.
+The result is `False` when starter space blocks the aggression (`:123`) or when
+the safety check against the required level fails (`:127-128`); otherwise it is
+whatever `ShowNPCAtttackConfirmationWindowIfAppropriate` returns (`:133`).
 
 `consider.SafetyCheckPasses:111` (`CheckUnsafe` at `:112`, `SafetyActivated` at
 `:114`) → `crimewatchSvc.CheckUnsafe:629`, which is one comparison at `:634`:
@@ -818,29 +798,17 @@ refuses an offensive module.** No engagement timers, no suspect flags, no
 It calls `securitySvc.get_modified_security_class`, which is a different
 number. `security/client/securitySvc.py`, read in full `[V]`:
 
-Its parts, by line `[V]`:
-
-- `calculate_pseudo_security(security)` (`:24-27`) returns `0.05` for a value
-  strictly between `0.0` and `0.05`, and the value unchanged otherwise.
-- `Initialize` (`:53-57`) asks the `securityMgr` remote service for
-  `get_modified_systems()` and keeps, per solar system id, a
-  `modified_security_level` built from `calculate_pseudo_security` of the row's
-  `modifiedSecurity`.
-- `OnSecurityModified(solar_system_id, modifier_amount, new_security)` (`:65`)
-  updates that table.
-- `get_modified_security_level(solar_system_id)` (`:73-76`) returns the stored
-  modified level when there is one, and `cfg.mapSystemCache[id].pseudoSecurity`
-  otherwise.
-- `get_modified_security_class(solar_system_id)` (`:85-86`) is
-  `SecurityClassFromLevel` of that level.
+Its parts `[V]`: `calculate_pseudo_security` (`:24-27`) returns `0.05` for a value
+strictly between `0.0` and `0.05` and the value otherwise. `Initialize`
+(`:53-57`) asks the `securityMgr` remote service for `get_modified_systems()` and
+keeps a per-system `modified_security_level`; `OnSecurityModified` (`:65`)
+updates it. `get_modified_security_level` (`:73-76`) returns the stored level, or
+`cfg.mapSystemCache[id].pseudoSecurity` when there is none, and
+`get_modified_security_class` (`:85-86`) is `SecurityClassFromLevel` of it.
 
 and `cfg.mapSystemCache` is a lazy property on `eveCfg.Config`,
-`eveCfg.py:795`, whose body at `:799` is
-
-```
-fsdBinaryLoader.LoadFSDDataForCFG('res:/staticdata/systems.static',
-                                  'res:/staticdata/systems.schema', optimize=False)
-```
+`eveCfg.py:795`, whose body at `:799` loads
+`res:/staticdata/systems.static` with its schema, without optimisation.
 
 **`mapSystemCache` is shipped client static data, not a server cache** `[V]`.
 `res:/staticdata/systems.static` has **8490 rows** and every one carries
