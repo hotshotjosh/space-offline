@@ -160,7 +160,7 @@ else
     echo "== accounts: in the world ${WORLD#"$REPO"/} ($naccounts so far); sign-up $( ((SIGNUP)) && echo on || echo off) on $HOST_IP:26000"
     if (( naccounts == 0 && ! SIGNUP )); then
         echo "   note: no account yet, and without --signup a new name is refused. The first run is:"
-        echo "         sudo -v && tools/up.sh --signup     (docs/guides/remote-clients.md, 'The owner')"
+        echo "         sudo -v && tools/up.sh --signup     (docs/guides/getting-started.md, step 5)"
     fi
     if (( RUN_CLIENT )) && [[ -z ${EVE_SSO_TOKEN+set} ]]; then
         # shellcheck source=tools/login-lib.sh

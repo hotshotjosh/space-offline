@@ -285,7 +285,6 @@ cat <<EOF
 
 Every jailed launch now uses this prefix (tools/run-client.sh, tools/up.sh,
 tools/client-ci.sh). Next:
-    tools/pin-client.sh                 # record or verify the copy's file hashes
     tools/client2-setup.sh              # only if you use a second client:
                                         # points its ResFiles at this copy
 The old client copy in the online prefix is no longer used; remove it when
