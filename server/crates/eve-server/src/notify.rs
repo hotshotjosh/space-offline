@@ -486,6 +486,37 @@ impl Push for InvalidateLocations {
     }
 }
 
+/// `OnDockingAccepted(stationID)` or `OnDockingFinished(stationID)`, to the
+/// pilot who docks. A live server sent the first straight after `CmdDock`
+/// and the second once the dock was done, each with the station's id
+/// **[V-TQ]** (a recorded session: `+0.00 s` and `+5.50 s`).
+/// `tacticalNavigationService` turns them into `OnClientEvent_DockingStarted`
+/// and `OnClientEvent_DockingFinished` **[V]**, which the node graphs'
+/// `Docking Accepted` (83) and `Docking Completed` (223) hear -- the AIR
+/// tutorial's task 2.1.06 waits on them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Docking {
+    pub to: i64,
+    pub station: i64,
+    /// `false`: accepted; `true`: finished.
+    pub finished: bool,
+}
+
+impl Push for Docking {
+    fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+        let name = if self.finished {
+            "OnDockingFinished"
+        } else {
+            "OnDockingAccepted"
+        };
+        (name, vec![PyValue::Int(self.station)])
+    }
+
+    fn audience(&self) -> Option<Vec<i64>> {
+        Some(vec![self.to])
+    }
+}
+
 /// `OnIndustryJob(jobID, ownerID, blueprintID, installerID, status,
 /// successfulRuns)` -- **six positional arguments**, no dict.
 ///
