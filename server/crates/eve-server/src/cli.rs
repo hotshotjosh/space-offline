@@ -249,6 +249,13 @@ usage: eve-server [options]
                      the X-Admin-Token header. Reads, plus token-guarded
                      actions (bots, broadcast, save, kick). Plain HTTP:
                      keep it on loopback or behind SSH.
+  --signups-per-hour N  with --world-accounts: at most N human sign-ups an
+                     hour, server-wide, and 3 an hour per IPv4 address or IPv6 /64
+                     (default 10; 0 is unlimited).
+                     Listeners with botnames=on are exempt.
+  --max-accounts N   with --world-accounts: a human sign-up is refused once
+                     the world holds N human accounts (default 500; 0 is
+                     unlimited). Listeners with botnames=on are exempt.
   --concord          CONCORD answers a high-sec crime: a squad, a warp
   --no-concord       refusal, a dock and gate refusal (the default), or
                      none of it (--no-concord, a CONCORD-free world).
@@ -424,6 +431,8 @@ pub const CORE_FLAGS: &[&str] = &[
     "--isk-scale",
     "--bot-control",
     "--admin",
+    "--signups-per-hour",
+    "--max-accounts",
     "--concord",
     "--no-concord",
     "--no-undock-invuln",
@@ -646,6 +655,10 @@ fn build(plan: &Assembled, args: Vec<String>) -> Result<Built, String> {
     let mut econ_flags: [Option<String>; 5] = Default::default();
     let mut bot_control: Option<PathBuf> = None;
     let mut admin: Option<std::net::SocketAddr> = None;
+    let mut signup_limits = (
+        crate::account_book::SIGNUPS_PER_HOUR,
+        crate::account_book::MAX_ACCOUNTS,
+    );
     let mut concord = true;
     let mut undock_invuln = true;
     let mut dev = false;
@@ -739,6 +752,16 @@ fn build(plan: &Assembled, args: Vec<String>) -> Result<Built, String> {
                     v.parse()
                         .map_err(|e| format!("--admin {v}: not an address ({e})"))?,
                 );
+            }
+            "--signups-per-hour" => {
+                let v = value("--signups-per-hour")?;
+                signup_limits.0 = v
+                    .parse()
+                    .map_err(|e| format!("--signups-per-hour {v}: {e}"))?;
+            }
+            "--max-accounts" => {
+                let v = value("--max-accounts")?;
+                signup_limits.1 = v.parse().map_err(|e| format!("--max-accounts {v}: {e}"))?;
             }
             "--concord" => concord = true,
             "--no-concord" => concord = false,
@@ -873,7 +896,8 @@ fn build(plan: &Assembled, args: Vec<String>) -> Result<Built, String> {
             builds_list(&hs.builds)
         );
         hs.accounts = Some(std::sync::Arc::new(crate::accounts::Accounts::in_world(
-            crate::account_book::Book::default(),
+            crate::account_book::Book::default()
+                .with_signup_limits(signup_limits.0, signup_limits.1),
         )));
     }
     // Accounts mode: the file, never beside a catch-all (account-spec §4.1).

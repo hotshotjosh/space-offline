@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (232 of 365) · **94% built** (342 of 365) · 1 parked, not counted.
+**63% proved** (232 of 366) · **94% built** (343 of 366) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -161,6 +161,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Client kit dry run end to end: *built-unproved*, #180 dry run in --network none containers on a synthetic install: kit built, unpacked, check and copy, remote listener up, probe login and sign-up; fixed the tunnel script mode, the recovery order (never advising rm of the only pinned copy) and the pin-failure output (the unpublished remote-clients note "Dry run (#180)"); the real client patch, tunnel, jail relay and a real client connecting are left for the owner
 - [ ] No-jail route for Windows remote players: *missing*, the always-jailed rule stands until a census proves it
 - [ ] Human check card brought up to date: *partial*, results stop at 2026-10-25
+- [ ] Operator safeguards: a public GM-ceiling listener is refused in an accounts mode unless gm-public=on, a plaintext warning for any non-loopback listener, sign-ups capped per hour (server-wide and per source) and in human accounts, failed logins locked per source address with a per-name backstop, chat tokens from the OS random source, a tainted world shown on the admin page and the [live] line: *built-unproved*, server.rs tests (accounts_relax_fail_closed_and_check_names_at_bind), account_book.rs tests (signups_are_rate_limited_and_capped, a_strangers_failures_do_not_lock_the_owner), chat.rs minted_tokens_are_distinct_32_hex, admin_web.rs status_says_when_the_world_is_tainted; defaults SIGNUPS_PER_HOUR 10, SIGNUPS_PER_SOURCE_PER_HOUR 3, MAX_ACCOUNTS 500 and FREE_FAILURES_NAME_BACKSTOP 50 are [A] (falsified by a real group turned away or an owner locked out); no live run
 - [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a connection that sends nothing after our first handshake message is logged as such, by address; a note names the expected /content/<build>/MANIFEST.tsv when a per-build directory is unusable: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, the deploy entrypoint test (maintainer side only); no deploy on a host yet
 - [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh swaps only tq-offline in both prefixes (old one kept as tq-<oldbuild>, own prefix settings kept, every refusal before the first write), pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet
 
@@ -200,7 +201,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
 | Missions and exploration | 37 | 7 | 0 | 0 | 0 |
-| Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
+| Tools and remote clients | 11 | 8 | 2 | 2 | 0 |
 | FW Conquests | 0 | 4 | 0 | 0 | 0 |
 | Live service | 0 | 1 | 0 | 0 | 0 |
 
@@ -656,7 +657,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Tools and remote clients</b>: 11 of 22 proved, 11 open</summary>
+<details><summary><b>Tools and remote clients</b>: 11 of 23 proved, 12 open</summary>
 
 - [x] The gate: lint, tests, clippy, push only on pass: *done*, tools/land.sh, tools/gate.sh
 - [x] The client regression runner, three clients at once: *done*, tools/client-ci-regress.sh
@@ -676,6 +677,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Hand-kept extracted values moved to the bundle: *partial*, CONCORD done in the concord-ids work; others remain; inventory: tools/hand-data.py (tools/test_hand_data.py); the issue is closed, a new one is needed
 - [ ] Admin web page: status, pilots, systems, map; bot, broadcast, save and kick actions (token, off by default): *built-unproved*, admin_web.rs tests; no scenario or human check yet; kick (admin_actions.rs tests, evicts like a second login); tools/test_admin_web.py live check (EVE_ADMIN_WEB_LIVE=1): page, every API path and action, 401 without the token; tick p50/p95/max per minute, per-system loads, slowest calls, /api/metrics (admin_web.rs, live_status.rs prof tests)
 - [ ] Admin metrics: per-minute tick quantiles, per-system balls and pilots, slowest handlers, Prometheus text endpoint (token or bearer): *built-unproved*, admin_web.rs and live_status.rs prof tests; tools/metrics_sample.py; no live run yet (tools/metrics_sample.py can run against the admin page). snapshot cost budget [A] < 1 ms at 400 pilots
+- [ ] Operator safeguards: a public GM-ceiling listener is refused in an accounts mode unless gm-public=on, a plaintext warning for any non-loopback listener, sign-ups capped per hour (server-wide and per source) and in human accounts, failed logins locked per source address with a per-name backstop, chat tokens from the OS random source, a tainted world shown on the admin page and the [live] line: *built-unproved*, server.rs tests (accounts_relax_fail_closed_and_check_names_at_bind), account_book.rs tests (signups_are_rate_limited_and_capped, a_strangers_failures_do_not_lock_the_owner), chat.rs minted_tokens_are_distinct_32_hex, admin_web.rs status_says_when_the_world_is_tainted; defaults SIGNUPS_PER_HOUR 10, SIGNUPS_PER_SOURCE_PER_HOUR 3, MAX_ACCOUNTS 500 and FREE_FAILURES_NAME_BACKSTOP 50 are [A] (falsified by a real group turned away or an owner locked out); no live run
 - [x] Fleet clean-room rewrite: *done*, b4150be (fleet.rs), aea9611 (service/fleet.rs); fleet and wing scenarios green (regress-fleet 2026-11-03)
 - [ ] The server, the bots and the image read the content bundle from /content/<reference build>/ when it holds a MANIFEST.tsv, else the flat /content; --reference-build prints the build; a connection that sends nothing after our first handshake message is logged as such, by address; a note names the expected /content/<build>/MANIFEST.tsv when a per-build directory is unusable: *built-unproved*, content.rs Bundle::resolve_dir tests, cli.rs reference_build_flag_ends_the_command_line, conn.rs a_peer_that_hangs_up_after_the_greeting_is_named, the deploy entrypoint test (maintainer side only); no deploy on a host yet
 - [ ] The friends' kit follows the served build: client-setup.sh check says up to date, refresh or wait, refresh swaps only tq-offline in both prefixes (old one kept as tq-<oldbuild>, own prefix settings kept, every refusal before the first write), pin-client.sh reads tools/pins/<build>.sha256: *built-unproved*, tools/test_client_setup.py on an invented install with stub helpers; tools/test_client_kit.py; no real refresh by a friend yet

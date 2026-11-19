@@ -161,7 +161,7 @@ sudo -v && tools/client-ci.sh run undock_distance
 
 | Flag | Default | Meaning | Example |
 |---|---|---|---|
-| `--bind LISTENER` | `127.0.0.1:26000` | a machoNet listener, repeatable: `ADDR[,ceiling=gm\|player][,cap=N][,account=UID][,chat=ADDR][,advertise=IP][,signup=on\|off][,capture=on\|off][,botnames=on\|off]` | `--bind 10.137.0.1:26000,ceiling=gm` |
+| `--bind LISTENER` | `127.0.0.1:26000` | a machoNet listener, repeatable: `ADDR[,ceiling=gm\|player][,cap=N][,account=UID][,chat=ADDR][,advertise=IP][,signup=on\|off][,capture=on\|off][,botnames=on\|off][,gm-public=on\|off]`; in an accounts mode a listener off loopback with the default `ceiling=gm` is refused unless it says `gm-public=on` (a GM password crosses plaintext) | `--bind 10.137.0.1:26000,ceiling=gm` |
 | `--client-build N[,M]` | every build `tools/builds.tsv` marks pinned or equivalent | the client builds this server answers | `--client-build 3662168` |
 | `--accounts FILE` | off | accounts mode from a token file (`sha256(token) user_id role name [start_character]`) | `--accounts $HOME/.config/eve-offline/accounts.tsv` |
 | `--world-accounts` | off | accounts live in the `--world` file; the client logs in with `/ssoToken=USER:PASSWORD` | `--world var/world.dat --world-accounts` |
@@ -220,6 +220,8 @@ What each scale and world setting changes, its range, and the numbers that have 
 | `--gateway-port N` | 8443 | the gateway's port | `--gateway-port 8444` |
 | `--bot-control DIR` | the world file's directory | where the eve-bots control link writes `bot-control.addr` and `.token` | `--bot-control var` |
 | `--admin ADDR` | off | the admin page and JSON API (pilots, systems (every live system, with `in_space` for pilots and `in_space_all` for all balls in space), map, `ticks` per-minute p50/p95/max (a minute is the minute a report window ended), `methods` slowest calls, `metrics` Prometheus text; the token as `X-Admin-Token` or, on GET, `Authorization: Bearer`; `tools/metrics_sample.py` polls it into a TSV) plus token-guarded actions `POST /api/action/` `bots`, `broadcast`, `save`, `kick`, each at most one a second and logged to `admin-actions.log`; token in `admin.token` | `--admin 127.0.0.1:8090` |
+| `--signups-per-hour N` | `10` | with `--world-accounts`: at most N human sign-ups an hour, server-wide (and 3 an hour per IPv4 address or IPv6 /64); `0` is unlimited; listeners with `botnames=on` are exempt | `--signups-per-hour 30` |
+| `--max-accounts N` | `500` | with `--world-accounts`: a human sign-up is refused once the world holds N human accounts (bot accounts do not count); `0` is unlimited | `--max-accounts 1000` |
 | `--status FILE` | `out/live/status.tsv` with `--world` | per-system TSV, rewritten every 10 s | `--status out/live/status.tsv` |
 | `--stop-file PATH` | `FILE.stop` with `--world` | stop cleanly when PATH appears | `--stop-file var/up-server.stop` |
 | `--capture DIR` | off | one `.evecap` per connection | `--capture captures` |

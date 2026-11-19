@@ -108,12 +108,82 @@ pub const BACKOFF_FIRST: Duration = Duration::from_secs(2);
 /// either.
 pub const BACKOFF_MAX: Duration = Duration::from_secs(300);
 
+/// Human sign-ups the server takes in any one hour, all listeners together
+/// (OS-7). [A] ten is more than a friend group signs up in an hour; falsified
+/// by a real group turned away at an event start (raise `--signups-per-hour`).
+/// Listeners with `botnames=on` (the loopback bot provisioner) are exempt.
+pub const SIGNUPS_PER_HOUR: u32 = 10;
+
+/// Accounts the world may hold before a human sign-up is refused (OS-7). [A]
+/// 500 is far above a friend server's players; falsified by a real community
+/// that reaches it (raise `--max-accounts`). Only human accounts count: bot
+/// accounts (the bot mark) neither count toward it nor are refused by it.
+pub const MAX_ACCOUNTS: usize = 500;
+
+/// Human sign-ups one source (an IPv4 address or an IPv6 /64) may make in an
+/// hour, under the server-wide [`SIGNUPS_PER_HOUR`]. [A] three: a household or
+/// a small NAT; falsified by a real group behind one address turned away (they
+/// can raise `--signups-per-hour`, or sign up through the tunnel, whose
+/// loopback source has only the global allowance).
+pub const SIGNUPS_PER_SOURCE_PER_HOUR: u32 = 3;
+
+/// Free failures for one name on one listener from all addresses together,
+/// the backstop under the per-address allowance (F3). [A] fifty: a distributed
+/// guesser gets 50 tries before the doubling backoff starts; falsified by a
+/// real owner locked out by typos alone (impossible below 50 from one address
+/// at 5 each) or by a guesser who spreads over more addresses than this.
+pub const FREE_FAILURES_NAME_BACKSTOP: u32 = 50;
+
+/// Most keys the failure map and the sign-up source map hold; past it the
+/// oldest per-source keys are evicted (the failure map) or new sources are
+/// refused a sign-up (the sign-up map).
+pub const BACKOFF_HARD_CAP: usize = 65_536;
+
+/// What a per-name backstop key starts with; eviction spares these.
+const BACKSTOP_PREFIX: &str = "namecap:";
+
+/// Sign-up counters: all, and by source.
+#[derive(Debug, Default)]
+struct Signups {
+    all: std::collections::VecDeque<Instant>,
+    by_source: HashMap<String, std::collections::VecDeque<Instant>>,
+}
+
+/// A source's bucket key: an IPv4 address as is, an IPv4-mapped IPv6 address
+/// as its IPv4 address, any other IPv6 address as its /64.
+fn source_bucket(ip: IpAddr) -> String {
+    match ip {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => {
+                let s = v6.segments();
+                format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+            }
+        },
+    }
+}
+
+/// Whether `ip` is loopback, an IPv4-mapped loopback included.
+fn is_loopback_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map_or(v6.is_loopback(), |v4| v4.is_loopback()),
+        v4 => v4.is_loopback(),
+    }
+}
+
 /// The in-memory half of world accounts: the hash cost and the backoff.
 /// Shared by every connection through `Accounts`.
 #[derive(Debug)]
 pub struct Book {
     iterations: u32,
     backoff: Mutex<Backoff>,
+    /// Instants of the sign-ups in the last hour, server-wide and by source.
+    signups: Mutex<Signups>,
+    signups_per_hour: u32,
+    max_accounts: usize,
 }
 
 impl Default for Book {
@@ -129,6 +199,68 @@ impl Book {
         Book {
             iterations: iterations.max(MIN_HUMAN_ITERATIONS),
             backoff: Mutex::default(),
+            signups: Mutex::default(),
+            signups_per_hour: SIGNUPS_PER_HOUR,
+            max_accounts: MAX_ACCOUNTS,
+        }
+    }
+
+    /// This book with its sign-up limits set; `0` is unlimited.
+    pub fn with_signup_limits(mut self, per_hour: u32, max_accounts: usize) -> Book {
+        self.signups_per_hour = per_hour;
+        self.max_accounts = max_accounts;
+        self
+    }
+
+    /// Whether a human sign-up from `source` (`None`: loopback, where every
+    /// tunnelled player arrives, so only the global allowance applies) may
+    /// go ahead now. Counts nothing: [`Book::record_signup`] does, once the
+    /// row exists, so a failed sign-up burns no slot (F5).
+    fn signup_allowed(&self, source: Option<&str>, now: Instant) -> Result<(), String> {
+        if self.signups_per_hour == 0 {
+            return Ok(());
+        }
+        let mut s = self.signups.lock().unwrap_or_else(|e| e.into_inner());
+        let hour = Duration::from_secs(3600);
+        while s
+            .all
+            .front()
+            .is_some_and(|t| now.duration_since(*t) >= hour)
+        {
+            s.all.pop_front();
+        }
+        let refused = || "this server is taking no more sign-ups for now; try later".to_owned();
+        if s.all.len() >= self.signups_per_hour as usize {
+            return Err(refused());
+        }
+        if let Some(src) = source {
+            if let Some(q) = s.by_source.get_mut(src) {
+                while q.front().is_some_and(|t| now.duration_since(*t) >= hour) {
+                    q.pop_front();
+                }
+                if q.len() >= SIGNUPS_PER_SOURCE_PER_HOUR as usize {
+                    return Err(refused());
+                }
+            } else if s.by_source.len() >= BACKOFF_HARD_CAP {
+                s.by_source
+                    .retain(|_, q| q.back().is_some_and(|t| now.duration_since(*t) < hour));
+                if s.by_source.len() >= BACKOFF_HARD_CAP {
+                    return Err(refused());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Count a sign-up that made an account.
+    fn record_signup(&self, source: Option<&str>, now: Instant) {
+        let mut s = self.signups.lock().unwrap_or_else(|e| e.into_inner());
+        s.all.push_back(now);
+        if let Some(src) = source {
+            s.by_source
+                .entry(src.to_owned())
+                .or_default()
+                .push_back(now);
         }
     }
 
@@ -142,9 +274,14 @@ impl Book {
 #[derive(Debug, Default)]
 struct Backoff {
     by_key: HashMap<String, (u32, Instant, Instant)>,
+    /// The last prune, at most one a second (F4).
+    pruned: Option<Instant>,
 }
 
 impl Backoff {
+    /// Whether a login under `key` is refused unread: its own backoff only.
+    /// A full map never blocks a key (a sprayer could otherwise lock everyone
+    /// out); [`Backoff::fail`] makes room instead.
     fn blocked(&self, key: &str, now: Instant) -> bool {
         self.by_key
             .get(key)
@@ -152,9 +289,20 @@ impl Backoff {
     }
 
     fn fail(&mut self, key: String, free: u32, now: Instant) {
-        if self.by_key.len() > 4096 {
+        if self.by_key.len() > 4096
+            && self
+                .pruned
+                .is_none_or(|p| now.duration_since(p) >= Duration::from_secs(1))
+        {
+            self.pruned = Some(now);
             self.by_key
                 .retain(|_, (_, last, _)| now.duration_since(*last) < BACKOFF_MAX);
+        }
+        if self.by_key.len() >= BACKOFF_HARD_CAP && !self.by_key.contains_key(&key) {
+            self.make_room(now);
+            if self.by_key.len() >= BACKOFF_HARD_CAP {
+                return;
+            }
         }
         let e = self.by_key.entry(key).or_insert((0, now, now));
         e.0 += 1;
@@ -162,6 +310,35 @@ impl Backoff {
         if e.0 > free {
             let doublings = (e.0 - free - 1).min(16);
             e.2 = now + (BACKOFF_FIRST * 2u32.pow(doublings)).min(BACKOFF_MAX);
+        }
+    }
+
+    /// Evict the oldest eighth of the per-source and per-name keys. The
+    /// per-name backstop keys are kept (they limit a guesser who spreads over
+    /// addresses); one is evicted only when nothing else is left and its
+    /// backoff has ended.
+    fn make_room(&mut self, now: Instant) {
+        let mut old: Vec<(Instant, String)> = self
+            .by_key
+            .iter()
+            .filter(|(k, _)| !k.starts_with(BACKSTOP_PREFIX))
+            .map(|(k, (_, last, _))| (*last, k.clone()))
+            .collect();
+        old.sort();
+        for (_, k) in old.into_iter().take(BACKOFF_HARD_CAP / 8) {
+            self.by_key.remove(&k);
+        }
+        if self.by_key.len() >= BACKOFF_HARD_CAP {
+            let idle: Vec<String> = self
+                .by_key
+                .iter()
+                .filter(|(_, (_, _, until))| now >= *until)
+                .map(|(k, _)| k.clone())
+                .take(BACKOFF_HARD_CAP / 8)
+                .collect();
+            for k in idle {
+                self.by_key.remove(&k);
+            }
         }
     }
 
@@ -486,23 +663,43 @@ pub fn login(
     if name.is_empty() || password.is_empty() || password.len() > MAX_PASSWORD_LEN {
         return Err(Refused::NotUserPassword);
     }
-    // Per listener: behind the tunnel a remote player's bad logins on 26001 must not
-    // lock the owner's own name out of 26002.
-    let name_key = format!("name:{}:{}", listener.addr, name.to_ascii_lowercase());
     // No peer key for loopback: behind the tunnel it is every remote player at once.
-    let peer_key = peer
-        .filter(|p| !p.is_loopback())
-        .map(|p| format!("peer:{p}"));
+    // An IPv6 peer is its /64 and an IPv4-mapped one its IPv4 address, so a
+    // block of addresses is one source (F3).
+    let bucket = peer.map(source_bucket);
+    let source = if peer.is_some_and(|p| !is_loopback_ip(p)) {
+        bucket.as_deref()
+    } else {
+        None
+    };
+    let peer_key = source.map(|b| format!("peer:{b}"));
+    // Per listener and per source (OS-7): a stranger who knows a name and
+    // nothing else can lock only their own address out of it, never the
+    // owner's. Behind the tunnel every player shares loopback, so there the
+    // key is the listener and the name, as before. The backstop key counts
+    // the name's failures from every address on the listener, with a larger
+    // allowance, so rotating addresses does not make guessing free.
+    let lname = name.to_ascii_lowercase();
+    let name_key = format!(
+        "name:{}:{}:{lname}",
+        listener.addr,
+        bucket.as_deref().unwrap_or("-")
+    );
+    let backstop_key = format!("{BACKSTOP_PREFIX}{}:{lname}", listener.addr);
     let now = crate::game_clock::clock::wall();
     {
         let b = book.backoff();
-        if b.blocked(&name_key, now) || peer_key.as_ref().is_some_and(|k| b.blocked(k, now)) {
+        if b.blocked(&name_key, now)
+            || b.blocked(&backstop_key, now)
+            || peer_key.as_ref().is_some_and(|k| b.blocked(k, now))
+        {
             return Err(Refused::Backoff);
         }
     }
     let fail = |why: Refused| {
         let mut b = book.backoff();
         b.fail(name_key.clone(), FREE_FAILURES_PER_NAME, now);
+        b.fail(backstop_key.clone(), FREE_FAILURES_NAME_BACKSTOP, now);
         if let Some(k) = &peer_key {
             b.fail(k.clone(), FREE_FAILURES_PER_PEER, now);
         }
@@ -522,13 +719,14 @@ pub fn login(
             row
         }
         None if !listener.signup => return fail(Refused::NoSuchUser),
-        None => match sign_up(book, name, password, world, listener.bot_names) {
+        None => match sign_up(book, name, password, world, listener.bot_names, source, now) {
             Ok(row) => row,
             Err(why) => return fail(why),
         },
     };
     let mut b = book.backoff();
     b.clear(&name_key);
+    b.clear(&backstop_key);
     if let Some(k) = &peer_key {
         b.clear(k);
     }
@@ -547,9 +745,26 @@ fn sign_up(
     password: &str,
     world: &RwLock<Registry>,
     bot_names: bool,
+    source: Option<&str>,
+    now: Instant,
 ) -> Result<Row, Refused> {
     check_name(name).map_err(Refused::SignupRefused)?;
     check_password(name, password).map_err(Refused::SignupRefused)?;
+    // OS-7: the total cap and the hourly rate, for human sign-ups only.
+    if !bot_names {
+        if book.max_accounts > 0
+            && rows(crate::service::world_read_timed(world, "signup_cap").deltas())
+                .filter(|r| !r.bot)
+                .count()
+                >= book.max_accounts
+        {
+            return Err(Refused::SignupRefused(
+                "this server holds as many accounts as it allows".to_owned(),
+            ));
+        }
+        book.signup_allowed(source, now)
+            .map_err(Refused::SignupRefused)?;
+    }
     let salt = urandom_salt().map_err(|e| {
         crate::errln!("[accounts] os random: {e}");
         Refused::SignupRefused("the server could not make a salt".to_owned())
@@ -584,6 +799,9 @@ fn sign_up(
         name.to_owned()
     };
     let character_id = w.create_owned_character(row.user_id, character_name.clone());
+    if !bot_names {
+        book.record_signup(source, now);
+    }
     crate::outln!(
         "[accounts] signed up {name:?}: user {} (player), character {character_id} {character_name:?}",
         row.user_id
@@ -871,6 +1089,170 @@ mod tests {
         )
         .unwrap();
         assert_eq!(roster(&w, plain.user_id), vec!["invbotb1".to_owned()]);
+    }
+
+    /// OS-7: the hourly allowance and the total cap refuse a human sign-up;
+    /// an existing account still logs in, and a botnames listener is exempt.
+    #[test]
+    fn signups_are_rate_limited_and_capped() {
+        let w = world();
+        let b = Book::with_iterations(2).with_signup_limits(2, 3);
+        let l = listener(true, Ceiling::Player);
+        try_login(&b, &l, &w, "invsu-one", "pw-invented-1x").unwrap();
+        try_login(&b, &l, &w, "invsu-two", "pw-invented-2x").unwrap();
+        let err = try_login(&b, &l, &w, "invsu-three", "pw-invented-3x").unwrap_err();
+        assert!(matches!(err, Refused::SignupRefused(_)), "{err:?}");
+        // Logging in to an existing account is not a sign-up.
+        try_login(&b, &l, &w, "invsu-one", "pw-invented-1x").unwrap();
+        // A bot provisioner is exempt from both.
+        let bots = Listener {
+            bot_names: true,
+            ..l.clone()
+        };
+        try_login(&b, &bots, &w, "invsu-bot1", "pw-invented-4x").unwrap();
+        // The cap: three accounts now exist, a human sign-up is refused even
+        // with the rate unlimited.
+        let b2 = Book::with_iterations(2).with_signup_limits(0, 3);
+        let err = try_login(&b2, &l, &w, "invsu-four", "pw-invented-5x").unwrap_err();
+        assert!(matches!(err, Refused::SignupRefused(_)), "{err:?}");
+        let b3 = Book::with_iterations(2).with_signup_limits(0, 0);
+        try_login(&b3, &l, &w, "invsu-four", "pw-invented-5x").unwrap();
+    }
+
+    /// F2: bot accounts do not count toward the human cap.
+    #[test]
+    fn bot_accounts_do_not_fill_the_human_cap() {
+        let w = world();
+        {
+            let mut g = w.write().unwrap();
+            let bots: Vec<(String, String, Vec<u8>)> = (0..5)
+                .map(|i| {
+                    (
+                        format!("invbot-{i}"),
+                        "pw-invented-bot".to_owned(),
+                        vec![1; 16],
+                    )
+                })
+                .collect();
+            let refs: Vec<(&str, &str, Vec<u8>)> = bots
+                .iter()
+                .map(|(n, p, s)| (n.as_str(), p.as_str(), s.clone()))
+                .collect();
+            ensure_bot_accounts(g.deltas_mut(), &refs, 1).unwrap();
+        }
+        let b = Book::with_iterations(2).with_signup_limits(0, 2);
+        let l = listener(true, Ceiling::Player);
+        try_login(&b, &l, &w, "invcap-one", "pw-invented-1x").unwrap();
+        try_login(&b, &l, &w, "invcap-two", "pw-invented-2x").unwrap();
+        assert!(try_login(&b, &l, &w, "invcap-three", "pw-invented-3x").is_err());
+    }
+
+    /// F5: a source has its own hourly allowance under the global one, and a
+    /// sign-up that fails burns no slot.
+    #[test]
+    fn a_source_has_its_own_signup_allowance_and_failures_burn_none() {
+        let (b, w) = (book(), world());
+        let l = listener(true, Ceiling::Player);
+        let a: IpAddr = "192.0.2.50".parse().unwrap();
+        let other: IpAddr = "192.0.2.51".parse().unwrap();
+        let go = |ip, name: &str| login(&b, &l, Some(ip), Some(&token(name, "pw-invented-1x")), &w);
+        // Refused sign-ups (a name that is too short) use no slot.
+        for _ in 0..(SIGNUPS_PER_SOURCE_PER_HOUR + 2) {
+            assert!(go(a, "x").is_err());
+        }
+        for i in 0..SIGNUPS_PER_SOURCE_PER_HOUR {
+            go(a, &format!("invsrc-a{i}")).unwrap();
+        }
+        assert!(matches!(
+            go(a, "invsrc-a-over"),
+            Err(Refused::SignupRefused(_))
+        ));
+        go(other, "invsrc-b0").expect("another source is not affected");
+    }
+
+    /// F3: addresses of one IPv6 /64 are one source, an IPv4-mapped address is
+    /// its IPv4 address, and the per-name backstop stops address rotation.
+    #[test]
+    fn rotating_addresses_does_not_make_guessing_free() {
+        assert_eq!(
+            source_bucket("2001:db8:1:2:aaaa::1".parse().unwrap()),
+            source_bucket("2001:db8:1:2:bbbb::9".parse().unwrap())
+        );
+        assert_eq!(
+            source_bucket("::ffff:192.0.2.7".parse().unwrap()),
+            source_bucket("192.0.2.7".parse().unwrap())
+        );
+        assert!(is_loopback_ip("::ffff:127.0.0.1".parse().unwrap()));
+        let (b, w) = (book(), world());
+        let l = listener(true, Ceiling::Player);
+        login(&b, &l, None, Some(&token(ANN, ANN_PW)), &w).unwrap();
+        let from = |i: u32, pw: &str| {
+            let ip: IpAddr = format!("2001:db8:{i:x}::1").parse().unwrap();
+            login(&b, &l, Some(ip), Some(&token(ANN, pw)), &w)
+        };
+        for i in 0..60 {
+            let _ = from(i, "acc2-wrong-password");
+        }
+        assert!(matches!(from(61, ANN_PW), Err(Refused::Backoff)));
+    }
+
+    /// F4: a full failure map evicts old per-source keys, never blocks a
+    /// fresh source, and keeps the per-name backstop.
+    #[test]
+    fn a_full_failure_map_evicts_and_never_locks_everyone_out() {
+        let (b, w) = (book(), world());
+        let l = listener(true, Ceiling::Player);
+        login(&b, &l, None, Some(&token(ANN, ANN_PW)), &w).unwrap();
+        let now = Instant::now();
+        {
+            let mut m = b.backoff();
+            for i in 0..BACKOFF_HARD_CAP {
+                m.by_key.insert(format!("peer:k{i}"), (1, now, now));
+            }
+        }
+        let fresh: IpAddr = "192.0.2.77".parse().unwrap();
+        let go = |pw: &str| login(&b, &l, Some(fresh), Some(&token(ANN, pw)), &w);
+        assert!(matches!(
+            go("acc2-wrong-password"),
+            Err(Refused::WrongPassword { .. })
+        ));
+        assert!(b.backoff().by_key.len() <= BACKOFF_HARD_CAP);
+        go(ANN_PW).expect("a fresh source still logs in with a full map");
+        // The backstop survives eviction and still refuses after 50 failures.
+        let key = format!("{BACKSTOP_PREFIX}{}:{}", l.addr, ANN.to_ascii_lowercase());
+        {
+            let mut m = b.backoff();
+            for _ in 0..=FREE_FAILURES_NAME_BACKSTOP {
+                m.fail(key.clone(), FREE_FAILURES_NAME_BACKSTOP, now);
+            }
+            for i in 0..BACKOFF_HARD_CAP {
+                m.fail(format!("peer:z{i}"), 5, now);
+            }
+            assert!(m.by_key.contains_key(&key), "eviction spares the backstop");
+            assert!(m.blocked(&key, now));
+        }
+        let other: IpAddr = "192.0.2.78".parse().unwrap();
+        assert!(matches!(
+            login(&b, &l, Some(other), Some(&token(ANN, ANN_PW)), &w),
+            Err(Refused::Backoff)
+        ));
+    }
+
+    /// OS-7: a stranger's wrong passwords for a known name lock only their
+    /// own address out of it.
+    #[test]
+    fn a_strangers_failures_do_not_lock_the_owner() {
+        let (b, w) = (book(), world());
+        let l = listener(true, Ceiling::Player);
+        let owner: IpAddr = "192.0.2.10".parse().unwrap();
+        let stranger: IpAddr = "192.0.2.99".parse().unwrap();
+        let login_as = |ip, pw: &str| login(&b, &l, Some(ip), Some(&token(ANN, pw)), &w);
+        login_as(owner, ANN_PW).unwrap();
+        for _ in 0..=FREE_FAILURES_PER_NAME + 2 {
+            let _ = login_as(stranger, "acc2-wrong-password");
+        }
+        assert!(matches!(login_as(stranger, ANN_PW), Err(Refused::Backoff)));
+        login_as(owner, ANN_PW).expect("the owner is not locked out");
     }
 
     #[test]
@@ -1248,7 +1630,16 @@ mod tests {
         assert!(Book::default().iterations > BOT_SPAWN_ITERATIONS);
         let w = world();
         let b = Book::with_iterations(1);
-        let row = sign_up(&b, "Invented Hal", "acc2-invented-pass-9", &w, false).expect("sign-up");
+        let row = sign_up(
+            &b,
+            "Invented Hal",
+            "acc2-invented-pass-9",
+            &w,
+            false,
+            None,
+            Instant::now(),
+        )
+        .expect("sign-up");
         assert!(row.iterations > BOT_SPAWN_ITERATIONS);
         assert!(row.verify(b"acc2-invented-pass-9"));
     }
