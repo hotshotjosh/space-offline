@@ -1601,8 +1601,15 @@ fn fit_astero(reg: &mut Registry, c: i64, ship: i64, owner: i64) {
     if let Err(e) = reg.apply_items(&assemble) {
         eprintln!("[airnpe] char {c}: Astero modules not assembled: {e:?}");
     }
+    // **Every module online, skills or not** [V-TQ]: a live server's loaner
+    // Astero had all five online -- the two Civilian Gatling Pulse Lasers,
+    // the afterburner, the web and the Multispectral ECM a new pilot has no
+    // skill for -- until the scripted death took them offline together. Run
+    // through `modules::on_fitted`'s skill and CPU/powergrid gate, the guns
+    // came up offline and scene 1.2's "engage the frigate" had nothing to
+    // fire.
     for &m in &modules {
-        crate::modules::on_fitted(reg, ship, ASTERO_TYPE, m);
+        crate::modules::set_online_kept(reg, m, true);
     }
 }
 
