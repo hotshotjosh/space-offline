@@ -34,7 +34,8 @@
 //! - **Rewards.** ISK is paid as journal ref 198,
 //!   `refAchievementMilestoneReward` **[V]** (`appConst`), with no tax skim
 //!   (no `derivedTransactionParentMapping` pair). An item lands in the
-//!   pilot's current station ([`give_item`]), as the Claim All tooltip says.
+//!   active ship's cargo when the pilot is in space, and in the current
+//!   station when docked ([`give_item`]).
 //!   **[A]** SP and title rewards are not paid yet: logged at the claim.
 //!
 //! **[A]** Achievements outside the table keep the gateway's empty answer,
@@ -47,6 +48,7 @@ use crate::delta::Deltas;
 use crate::gateway::{Ground, Reply, Target, get_bytes, get_uint, put_bytes, put_varint};
 use crate::mission_hooks::MissionEvent;
 use crate::service::Registry;
+use eve_marshal::PyValue;
 
 /// The delta kind (`delta_kinds::KINDS`, owner `achievements`).
 pub const KIND: &str = "ach";
@@ -499,8 +501,8 @@ pub fn on_complete(reg: &mut Registry, ev: &MissionEvent) {
 
 // ---- rewards ------------------------------------------------------------------------
 
-/// Pay milestone `m` of `a` to `ch`: ISK as ref 198, an item into the
-/// current station. `false` when it is not reached or already claimed.
+/// Pay milestone `m` of `a` to `ch`: ISK as ref 198, an item where
+/// [`give_item`] puts it. `false` when it is not reached or already claimed.
 pub fn claim(reg: &mut Registry, ch: i64, a: &[u8], m: &[u8]) -> bool {
     use crate::service::corp_wallet::{self, Via};
     let t = defs(reg);
@@ -547,17 +549,30 @@ pub fn claim(reg: &mut Registry, ch: i64, a: &[u8], m: &[u8]) -> bool {
     true
 }
 
-/// An item reward lands in the pilot's current station hangar: "Your items
-/// will go to your current station", the Claim All button's tooltip
-/// **[V client]**. Spawned as a mission reward's item is
-/// (`mission_rewards::pay`), its pushes on the clock: a gateway call has no
-/// machoNet reply to ride. **[A]** a pilot in space gets it in the station
-/// they last docked in. Falsified by a claim in space that delivers nowhere
-/// or somewhere else.
+/// Where an item reward lands.
+///
+/// - **In space: the active ship's cargo** **[V-TQ]**, recording
+///   20261119_160210 / 20261119_160229_pg (19NOV2026, build 3720952, a new
+///   pilot claiming nine rewards in space in a Thrasher): each item arrived
+///   as an `OnItemChange` with `{ixLocationID: 0}`, the ship's id as its
+///   location, flag 5, and `('Ship', shipID, 'ShipCargo')` as the third
+///   argument.
+/// - **Docked: the current station's hangar** **[V client]**, "Your items
+///   will go to your current station", the Claim All button's tooltip. Not
+///   yet seen on the wire; falsified by a docked claim that lands it in the
+///   ship.
+///
+/// Its pushes go on the clock: a gateway call has no machoNet reply to ride.
+/// **[A]** nothing is delivered if the cargo refuses it (full); the
+/// milestone stays claimed, and the log says so.
 fn give_item(reg: &mut Registry, ch: i64, type_id: i64, qty: i64) -> Vec<i64> {
-    let Some(station) = reg.character(ch).and_then(|c| c.station_id) else {
-        return Vec::new();
-    };
+    match reg.docked_station(ch) {
+        Some(station) => into_station(reg, ch, station, type_id, qty),
+        None => into_cargo(reg, ch, type_id, qty),
+    }
+}
+
+fn into_station(reg: &mut Registry, ch: i64, station: i64, type_id: i64, qty: i64) -> Vec<i64> {
     let Ok((ids, _)) = reg.spawn_items(&type_id.to_string(), qty, ch, station) else {
         return Vec::new();
     };
@@ -575,6 +590,58 @@ fn give_item(reg: &mut Registry, ch: i64, type_id: i64, qty: i64) -> Vec<i64> {
         std::time::Duration::ZERO,
         crate::notify::InvalidateLocations {
             location_ids: vec![station],
+        },
+    );
+    ids
+}
+
+fn into_cargo(reg: &mut Registry, ch: i64, type_id: i64, qty: i64) -> Vec<i64> {
+    use crate::item::{Change, Edit, Slot};
+    let Some(c) = reg.character(ch).cloned() else {
+        return Vec::new();
+    };
+    let ship = crate::fitting::active_ship_of(reg.store(), &c).map_or(c.ship_id, |s| s.0);
+    let to = Slot::new(ch, ship, crate::fitting::FLAG_CARGO);
+    let changes = match reg.apply_items_quiet(&[Edit::Create {
+        type_id,
+        quantity: qty,
+        to,
+    }]) {
+        Ok(c) => c,
+        Err(e) => {
+            crate::outln!(
+                "[achievements] {ch}: {qty}x {type_id} not delivered to ship {ship}: {e:?}"
+            );
+            return Vec::new();
+        }
+    };
+    let cargo = PyValue::Tuple(vec![
+        PyValue::Bytes(b"Ship".to_vec()),
+        PyValue::Int(ship),
+        PyValue::Bytes(b"ShipCargo".to_vec()),
+    ]);
+    let mut ids = Vec::new();
+    for ch_ in &changes {
+        let id = ch_.item_id();
+        let Some(item) = reg.item(id).cloned() else {
+            continue;
+        };
+        let row = reg.item_row_value(&item);
+        let push = match ch_ {
+            Change::Created { .. } => crate::notify::ItemChange::spawned(row),
+            other => crate::notify::ItemChange {
+                row,
+                change: other.previous_columns(),
+                location: PyValue::None,
+            },
+        };
+        reg.schedule(std::time::Duration::ZERO, push.with_location(cargo.clone()));
+        ids.push(id);
+    }
+    reg.schedule(
+        std::time::Duration::ZERO,
+        crate::notify::InvalidateLocations {
+            location_ids: vec![ship],
         },
     );
     ids
@@ -889,6 +956,29 @@ mod tests {
         assert_eq!(
             (item.type_id, item.owner_id, item.location_id),
             (VELDSPAR, ch, station)
+        );
+    }
+
+    /// In space, an item reward lands in the active ship's cargo, flag 5.
+    #[test]
+    fn in_space_an_item_reward_lands_in_the_ships_cargo() {
+        let ch = 90_000_005;
+        let mut w = world_with(ch);
+        let ship = w.character(ch).expect("pilot").ship_id;
+        w.roster_mut()
+            .arrive(crate::space_state::Presence::arriving(
+                ch,
+                ship,
+                30_000_142,
+                crate::space_state::Motion::arrived([0.0, 0.0, 0.0], [0.0; 3]),
+            ));
+        assert_eq!(w.docked_station(ch), None);
+        let ids = give_item(&mut w, ch, VELDSPAR, 1);
+        assert_eq!(ids.len(), 1);
+        let item = w.item(ids[0]).expect("spawned");
+        assert_eq!(
+            (item.type_id, item.owner_id, item.location_id, item.flag_id),
+            (VELDSPAR, ch, ship, crate::fitting::FLAG_CARGO)
         );
     }
 
