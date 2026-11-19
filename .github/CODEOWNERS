@@ -17,6 +17,10 @@
 /containers/                        @thewhitekidney
 /.github/                           @thewhitekidney
 /server/deps.allow                  @thewhitekidney
+/server/deps.digest                 @thewhitekidney
+/server/THIRD-PARTY.txt             @thewhitekidney
+/tools/check_deps.py                @thewhitekidney
+/tools/dep-notices.py               @thewhitekidney
 /server/Cargo.lock                  @thewhitekidney
 Cargo.toml                          @thewhitekidney
 build.rs                            @thewhitekidney

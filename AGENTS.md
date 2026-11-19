@@ -10,8 +10,13 @@ only way a change gets in.
 
 - **No extracted client data in git, tests included.** Tests use invented ids and rows;
   real values go in `out/` (gitignored).
-- **No dependencies (`server/deps.allow` stays empty) and no `unsafe`.** The whole server
-  is code one person can read.
+- **Crates only through the allowlist, and no `unsafe` in our code.** A crate comes in by
+  an owner decision, listed with every crate it pulls in in `server/deps.allow`, from the
+  build image's apt registry. `tools/check_deps.py` checks the table in the gate, and its
+  `--registry` mode checks the crates' bytes against `server/deps.digest` before any build
+  runs (gate and deploy build). Our crates keep `unsafe_code = "forbid"`; a dependency may
+  contain `unsafe`. Each crate is named from one wrapper module only, and listed in that one
+  crate's manifest. Criteria and licences: `docs/reference/dependencies.md`.
 - **`[A]` marks an assumption, with what would falsify it.** An `[A]` value never goes into
   a test.
 - **EvEJS is AGPL: facts only, verified against the client.** Never copy its code or prose.

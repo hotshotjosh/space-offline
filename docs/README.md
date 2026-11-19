@@ -69,6 +69,7 @@ findings/                 generated censuses (TSV and text), cited by the docs
 
 | doc | role | status | covers |
 |---|---|---|---|
+| `docs/reference/dependencies.md` | REFERENCE | current | The crate policy: how crates reach the build, the `server/deps.allow` table, what `tools/check_deps.py` enforces, admission criteria, accepted licences. |
 | `docs/reference/phone-home.md` | REFERENCE | current | Every path by which the client phones home (native, Python, Wine), when it fires, what it sends, what closes it; what goes to our server by design. The pinned build in `tools/builds.tsv`. |
 | `docs/reference/server.md` | REFERENCE | stale-in-part | What `eve-server` does; §§1-7 are the 2026-10-19..22 state (status note at the top), §8 lists services, flags and GM commands. |
 | `docs/reference/world-state.md` | REFERENCE | current | Durable world state: STORE_FORMAT, delta kinds, the backup, the upgrade policy (the rest of the file is history). |

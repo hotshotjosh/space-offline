@@ -366,6 +366,13 @@ echo "== dependency allowlist"
 python3 tools/check_deps.py
 took
 
+# **The crates' bytes before anything builds**: the registry mode checks each allowlisted
+# crate in the image against server/deps.digest (licence, build script, tree digest) and
+# that THIRD-PARTY.txt is current, so a changed build.rs never runs unchecked.
+echo "== dependency registry (bytes, licences, notices)"
+tools/dev.sh python3 -I /repo/tools/check_deps.py --registry /usr/share/cargo/registry
+took
+
 # **Every shell script parses** (review V4 G3). A typo in `client-ci.sh` or
 # `up.sh` used to surface at the next unattended run, minutes in. `bash -n`
 # only, not shellcheck: shellcheck is a new image dependency.
