@@ -106,6 +106,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                     Some(PyValue::Int(id)) => Some(*id),
                     _ => None,
                 };
+                crate::mission::revive(reg, req.actor);
                 Ok(crate::mission::journal(reg, req.actor, only))
             }
             // The mission-details window (`agents.py:821,830`): a dict, or

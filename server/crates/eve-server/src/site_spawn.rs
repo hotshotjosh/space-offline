@@ -424,6 +424,17 @@ pub fn delay_arrival(w: &Registry, p: &mut Pocket, ft: BlueTime) {
     }
 }
 
+/// The stream parts of a site's squad draw: its id, except for a mission
+/// site, which draws the dungeon's one fixed fill (`&[]`), exactly what
+/// `mission_rewards` prices (`spawn_bounty_sums`).
+pub fn squad_parts(site_id: i64) -> Vec<u64> {
+    if crate::mission::is_mission_site(site_id) {
+        Vec::new()
+    } else {
+        vec![site_id as u64]
+    }
+}
+
 /// A new instance's pocket: its room's R5 squads, none spawned yet.
 pub fn open(w: &Registry, inst: &Instance) -> Pocket {
     let groups = (|| {
@@ -435,7 +446,7 @@ pub fn open(w: &Registry, inst: &Instance) -> Pocket {
             .get(&inst.dungeon_id)?;
         let data = w.content().try_get::<crate::npc_data::Table>()?;
         let squads =
-            crate::npc_gen::dungeon_squads(d, data, w.world().seed, &[inst.site_id as u64]);
+            crate::npc_gen::dungeon_squads(d, data, w.world().seed, &squad_parts(inst.site_id));
         let placed = |object: i64| {
             inst.objects
                 .iter()
@@ -474,8 +485,11 @@ fn step(w: &mut Registry, site_id: i64, ft: BlueTime) {
         let before = g.npcs.len();
         g.npcs.retain(|id| w.roster().get(*id).is_some());
         if before > 0 && g.npcs.is_empty() && g.phase == Phase::Live {
+            // [A] A mission's pocket never respawns a squad: the reward prices
+            // each squad once. Falsified by TQ mission rats that come back.
+            let respawns = !crate::mission::is_mission_site(site_id);
             g.phase = match (g.once, g.window, p.completed) {
-                (false, Some(win), None) => {
+                (false, Some(win), None) if respawns => {
                     let salt = salt(gi, g.rounds, 15, 0);
                     Phase::Respawn(respawn_at(win, ft, npc::roll(site_id, salt)))
                 }
@@ -613,7 +627,8 @@ fn add_room(w: &Registry, p: &mut Pocket, r: crate::combat_site::OpenRoom) {
             .dungeons
             .get(&inst.dungeon_id)?;
         let data = w.content().try_get::<crate::npc_data::Table>()?;
-        let squads = crate::npc_gen::dungeon_squads(d, data, w.world().seed, &[p.site_id as u64]);
+        let squads =
+            crate::npc_gen::dungeon_squads(d, data, w.world().seed, &squad_parts(p.site_id));
         let placed = |object: i64| {
             inst.objects
                 .iter()

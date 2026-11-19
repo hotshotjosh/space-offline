@@ -11,7 +11,8 @@ station with two level-1 kill-division basic agents, take the second, then:
 1. the agent offers a mission and the accept answers;
 2. undock, then `agentMgr.WarpToLocation('dungeon', ...)` on the mission's
    bookmark (`fci_fleet_mission`'s call, fleet flag off);
-3. the pocket's NPCs come on grid; their count is printed in the detail of
+3. the pocket's NPCs and the entry room's structures (which a ring of rats lacks) come on
+   grid; the NPC count is printed in the detail of
    `the pocket holds the dungeon's squads` and must be at least one.  The
    server logs `[mission] ... its own dungeon D as site S, N squads, M ships on
    arrival` (SERVER-EXPECT below); the coordinator compares M with the client's
@@ -1522,6 +1523,23 @@ def eoci_main(EOCI_NAME):
         check("the pocket holds the dungeon's squads (%d NPC(s) after %s ms)"
               % (n, text(waited)), bool(landed) and n >= 1,
               'compare %d with the server log line "ships on arrival"' % n)
+        # The ring of rats has no structures: the dungeon's entry room does.
+        # The pocket is 2.2 AU from anything else, so a non-pilot, non-entity
+        # ball within the pocket's grid is a room object [A].
+        def room_objects():
+            out = []
+            for b, s in slims_where(park, lambda s: not getattr_safe(s, 'charID')):
+                d = dist_to(park, b)
+                if b != ego and b not in before and d is not None and d <= POCKET_M \
+                        and getattr_safe(s, 'categoryID') != 11:
+                    out.append(b)
+            return out
+        objs = room_objects()
+        check("the entry room's structures are on grid, which a ring of rats has none of",
+              len(objs) >= 1, '%d object(s), %d NPC(s)' % (len(objs), n))
+        # leave the CI world clean
+        ok, v = safe(lambda: moniker.DoAction(QUIT_ACTION))
+        check('the mission is quit at the end', ok, text(v)[:200])
         no_new_tracebacks('mission dungeon', mark)
 
 
