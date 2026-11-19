@@ -12,7 +12,9 @@ Revision read: 114e89fa584f0e1a81eb0a679aabf41af8870072 (v3.1.1-37)
 Used in: server/crates/eve-server/src/space_state.rs (orbit_thrust,
   follow_velocity, the Evolve/Integrate test transcription, EvolveStop),
   server/crates/eve-server/src/orbit.rs (orbital_normal),
-  server/crates/eve-server/src/destiny/warp.rs (warp_trajectory).
+  server/crates/eve-server/src/destiny/warp.rs (warp_trajectory),
+  server/crates/eve-server/src/collision.rs (Ballpark::Potential, the pair
+  filter, CollideTwoSpheres and Quadratic, Integrate).
 Modified: translated from C++ to Rust and restructured.
 
 MIT License
