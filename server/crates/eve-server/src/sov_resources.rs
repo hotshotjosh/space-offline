@@ -1,6 +1,6 @@
 //! A system's power and workforce: what each planet and star gives, and what a
-//! sov hub reads back (`hub.api.GetResources`). SOV-RES, #78, lane L4 of
-//! `eve-offline-lanes/specs/parity-sov.md`; the wire is `docs/re/sov-gateway.md`
+//! sov hub reads back (`hub.api.GetResources`). SOV-RES, #78, item L4 of the
+//! sov parity spec (unpublished); the wire is `docs/re/sov-gateway.md`
 //! §2.3 and §2.5, the budget rule §5.1 and the spec's §1.3 item 5.
 //!
 //! **Two authored tables** (`content/sov/planet_resources.tsv`,

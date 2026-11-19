@@ -1,5 +1,5 @@
-//! Workforce transfer between sov hubs (SOV-WF, #219, lane L12 of
-//! `eve-offline-lanes/specs/parity-sov.md`; the wire is `docs/re/sov-gateway.md`
+//! Workforce transfer between sov hubs (SOV-WF, #219, item L12 of
+//! the sov parity spec (unpublished); the wire is `docs/re/sov-gateway.md`
 //! §2.4 and §2.8).
 //!
 //! **What it is.** A hub is in one of four modes (`workforce.proto`

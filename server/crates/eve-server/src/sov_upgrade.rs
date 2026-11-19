@@ -1,5 +1,5 @@
-//! Sov hub upgrades: install, online, offline and remove (SOV-UPG-1, #79, lane
-//! L6 of `eve-offline-lanes/specs/parity-sov.md`; the wire is
+//! Sov hub upgrades: install, online, offline and remove (SOV-UPG-1, #79, item
+//! L6 of the sov parity spec (unpublished); the wire is
 //! `docs/re/sov-gateway.md` §2.1 and §4, the state rule §5.2).
 //!
 //! **What an upgrade is here.** An item of one of the four upgrade groups

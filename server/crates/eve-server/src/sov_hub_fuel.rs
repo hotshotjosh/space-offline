@@ -1,6 +1,6 @@
 //! The sov hub's reagent bay: `hub.fuel.api` `Get` and `Add`, with a burn that
-//! runs on the wall clock (SOV-FUEL, #218, lane L5 of
-//! `eve-offline-lanes/specs/parity-sov.md`; the wire is `docs/re/sov-gateway.md`
+//! runs on the wall clock (SOV-FUEL, #218, item L5 of the
+//! sov parity spec (unpublished); the wire is `docs/re/sov-gateway.md`
 //! §2.2 and §5.3).
 //!
 //! **What a hub holds.** Colony reagents by type (the bay offers the two the
