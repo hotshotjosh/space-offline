@@ -360,7 +360,8 @@ pub fn wrap_structure(
             .iter()
             .map(|&(item_id, flag)| Edit::Move {
                 item_id,
-                to: Slot::new(owner, id, flag),
+                // A bay or slot item arrives as hangar stock (STR-CORE).
+                to: Slot::new(owner, id, crate::structure_bays::flag_after_wrap(flag)),
             })
             .collect();
         if let Err(e) = reg.apply_items(&edits) {

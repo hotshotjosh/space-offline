@@ -296,6 +296,60 @@ fn a_structure_leaving_makes_one_wrap_per_owner() {
     assert_eq!(location_of(&reg, ship).0, HARBOUR);
 }
 
+/// A thing of `owner` held at `flag` of the structure (a slot, a bay, a rig).
+fn store_at_flag(reg: &mut Registry, owner: i64, at: i64, flag: i64) -> i64 {
+    let changes = reg
+        .apply_items(&[crate::item::Edit::Create {
+            type_id: crate::service::TYPE_CAPSULE,
+            quantity: 1,
+            to: Slot::new(owner, at, flag),
+        }])
+        .expect("created");
+    changes
+        .iter()
+        .find_map(|c| match c {
+            crate::item::Change::Created { item_id, .. } => Some(*item_id),
+            _ => None,
+        })
+        .expect("an id")
+}
+
+/// STR-CORE: what a structure holds in its bays and slots arrives in the
+/// wrap as hangar stock, and a rig is destroyed first.
+#[test]
+fn unanchor_wraps_bay_items_into_the_hangar_flag() {
+    let (mut reg, id, corp) = world();
+    let kept: Vec<i64> = [172, 180, 164, 171]
+        .into_iter()
+        .map(|flag| store_at_flag(&mut reg, corp, id, flag))
+        .collect();
+    let s = crate::structure::get(reg.deltas(), id).expect("the structure");
+    crate::structure_dock::evacuate(&mut reg, &s);
+    let w = wrap_of(&reg, corp);
+    for item in kept {
+        let i = reg.store().get(item).expect("kept");
+        assert_eq!(
+            (i.location_id, i.flag_id),
+            (w.id, crate::model::FLAG_HANGAR),
+            "{item}"
+        );
+    }
+}
+
+#[test]
+fn unanchor_destroys_rigs() {
+    let (mut reg, id, corp) = world();
+    let rig = store_at_flag(&mut reg, corp, id, 92);
+    let stock = store_at_flag(&mut reg, corp, id, crate::model::FLAG_HANGAR);
+    let s = crate::structure::get(reg.deltas(), id).expect("the structure");
+    crate::structure_dock::evacuate(&mut reg, &s);
+    assert!(reg.store().get(rig).is_none(), "the rig is gone");
+    assert_eq!(
+        reg.store().get(stock).map(|i| i.location_id),
+        Some(wrap_of(&reg, corp).id)
+    );
+}
+
 #[test]
 fn the_created_push_goes_to_the_owner_and_the_corporation() {
     let (mut reg, id, corp) = world();

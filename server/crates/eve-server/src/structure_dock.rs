@@ -864,6 +864,9 @@ pub fn evacuate(reg: &mut Registry, s: &Structure) {
     // the harbour (below); the rest goes into asset safety, one wrap per
     // owner, except in wormhole space, which has none and keeps the older
     // move to the harbour.
+    // Rigs do not leave with their hull (STR-CORE); bay and slot items are
+    // wrapped as hangar stock.
+    crate::structure_bays::destroy_rigs(reg, s.id);
     let now = crate::pyutil::filetime_now();
     let ships: BTreeSet<i64> = reg.config().characters.iter().map(|c| c.ship_id).collect();
     crate::asset_safety::wrap_structure(reg, s, now, &|item| ships.contains(&item));
@@ -882,7 +885,11 @@ pub fn evacuate(reg: &mut Registry, s: &Structure) {
             );
             continue;
         };
-        let slot = Slot::new(owner, to.station_id, flag);
+        let slot = Slot::new(
+            owner,
+            to.station_id,
+            crate::structure_bays::flag_after_wrap(flag),
+        );
         if let Err(e) = reg.apply_items(&[Edit::Move { item_id, to: slot }]) {
             crate::errln!("[structure] moving {item_id} out of {}: {e}", s.id);
         }

@@ -81,6 +81,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
     {
         return Ok(PyValue::List(rows));
     }
+    // **The deed and fuel bays take items** (STR-CORE, `crate::structure_bays`):
+    // an `Add` into either, and an `Add` out of either, at the controls.
+    if let Some(answer) = crate::structure_bays::inventory_call(reg, req) {
+        return answer;
+    }
     // **Fit and unfit a service module at a structure's controls** (#41,
     // `crate::structure_services`): `Add(itemID, source, qty, flag=164..171)`
     // on the structure's inventory fits, and `Add(moduleID, structure,

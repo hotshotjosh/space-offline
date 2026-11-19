@@ -332,6 +332,7 @@ pub mod sov_hub;
 pub mod sov_proto;
 // U1-UPWELL: the Upwell structure model (states, timers, upkeep, deployment check).
 pub mod structure;
+pub mod structure_bays;
 pub mod structure_combat;
 pub mod structure_dock;
 pub mod structure_notify;

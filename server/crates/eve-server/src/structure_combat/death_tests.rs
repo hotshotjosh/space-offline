@@ -472,6 +472,44 @@ fn a_structure_dead_in_wormhole_space_drops_its_hangar_in_the_wreck() {
     );
 }
 
+/// STR-CORE: a dead structure takes its bays, slots and rigs with it, so
+/// asset safety never receives them; the hangar stock is still wrapped.
+#[test]
+fn destruction_destroys_bay_and_slot_items_before_asset_safety() {
+    let (mut reg, id) = world();
+    let held: Vec<i64> = [172, 180, 164, 171, 92, 94]
+        .into_iter()
+        .map(|flag| {
+            reg.apply_items(&[crate::item::Edit::Create {
+                type_id: crate::service::TYPE_CAPSULE,
+                quantity: 1,
+                to: crate::item::Slot::new(CORP, id, flag),
+            }])
+            .expect("created");
+            reg.store()
+                .contents_of(id)
+                .find(|i| i.flag_id == flag)
+                .expect("held")
+                .item_id
+        })
+        .collect();
+    let spare = hangar_item(&mut reg, BOSS, id);
+    kill(&mut reg, id);
+    for item in held {
+        assert!(reg.store().get(item).is_none(), "{item} died with the hull");
+    }
+    let wraps = crate::asset_safety::of_owner(reg.deltas(), BOSS);
+    assert_eq!(wraps.len(), 1, "the hangar stock is wrapped");
+    assert_eq!(
+        reg.store().get(spare).map(|i| i.location_id),
+        Some(wraps[0].id)
+    );
+    assert!(
+        crate::asset_safety::of_owner(reg.deltas(), CORP).is_empty(),
+        "nothing of the corporation's was left to wrap"
+    );
+}
+
 #[test]
 fn a_flying_ship_whose_item_is_in_the_hangar_does_not_drop() {
     let (mut reg, id) = world();

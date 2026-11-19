@@ -64,6 +64,12 @@ pub struct Rules {
     /// The fee on delivery, in percent of the wrap's estimated value
     /// (`asset_safety::fee_of`). **[A]** 15, retail's recovery tax.
     pub safety_fee_pct: f64,
+    /// Whether an Upwell structure needs its hull's quantum core in the deed
+    /// bay to finish onlining (`structure_bays`; `/world corerule`). **[A]**
+    /// on (owner decision D4 of `structures-spec.md`); falsifier: the owner
+    /// decides D4 otherwise. Off, a structure waiting in state 102 finishes
+    /// onlining on the next tick.
+    pub structure_core_required: bool,
 }
 
 /// The defaults of the asset safety timers and fee. **[A]**, falsifier: the
@@ -108,6 +114,7 @@ impl Default for Rules {
             safety_manual_secs: DEFAULT_SAFETY_MANUAL_SECS,
             safety_auto_secs: DEFAULT_SAFETY_AUTO_SECS,
             safety_fee_pct: DEFAULT_SAFETY_FEE_PCT,
+            structure_core_required: true,
         }
     }
 }
@@ -252,6 +259,8 @@ mod tests {
         assert_eq!(r.upwell_anchor_secs, 3_600);
         // New in #41: both on, which is the behaviour before service modules.
         assert!(r.upwell_free_clone && r.upwell_free_upkeep);
+        // STR-CORE, [A] owner decision D4: a core is required.
+        assert!(r.structure_core_required);
         for bad in [0, 59, 604_801, -5] {
             let r = Rules {
                 upwell_anchor_secs: bad,

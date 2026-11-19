@@ -587,7 +587,7 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     let bays: Vec<Edit> = w
         .store()
         .contents_of(s.id)
-        .filter(|i| crate::structure_dock::control::is_bay_flag(i.flag_id))
+        .filter(|i| crate::structure_bays::dies_with_hull(i.flag_id))
         .map(|i| Edit::Destroy { item_id: i.item_id })
         .collect();
     let refused = if bays.is_empty() {

@@ -414,6 +414,26 @@ fn the_upwell_switches_default_on_and_take_zero_or_one() {
 }
 
 #[test]
+fn the_core_rule_is_live_and_a_switch() {
+    let mut reg = world();
+    settings::startup(&mut reg).expect("starts");
+    assert!(reg.config().rules.structure_core_required);
+    info(slash(&mut reg, GM, "/world corerule 0"));
+    assert!(!reg.config().rules.structure_core_required);
+    assert_eq!(stored(&reg, "corerule").as_deref(), Some("0"));
+    for line in [
+        "/world corerule 2",
+        "/world corerule 0.5",
+        "/world corerule -1",
+    ] {
+        info(slash(&mut reg, GM, line));
+        assert!(!reg.config().rules.structure_core_required, "{line}");
+    }
+    info(slash(&mut reg, GM, "/world corerule 1"));
+    assert!(reg.config().rules.structure_core_required);
+}
+
+#[test]
 fn the_delete_wait_is_live_and_bounded() {
     let mut reg = world();
     settings::startup(&mut reg).expect("starts");

@@ -552,6 +552,8 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
         return;
     }
     let now = ft;
+    // A structure waiting in 102 for a core it does not need (STR-CORE).
+    crate::structure_bays::waive_cores(reg, now);
     let fallback = env(reg, now);
     let envs: BTreeMap<i64, structure::Env> = structure::all(reg.deltas())
         .iter()

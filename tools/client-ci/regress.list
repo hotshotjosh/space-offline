@@ -247,6 +247,8 @@ fci_board_eject --with-second --serial -- --no-concord --character Alice --chara
 fci_upwell_dock
 # u6c (#115): take the controls of a structure (shipid becomes the structure, the tree gets the fuel and deed bays, an undock is refused), release them, and leave; the plain server
 fci_upwell_control
+# str-core (#42): a structure anchored the client's own way waits in state 102; its hull's core type reads from the client's dogma; a core moved into the deed bay finishes onlining, a fuel block into the deed bay and a non-fuel item into the fuel bay are refused with the client's keys, fuel lands in the fuel bay owned by the corporation, the core cannot be taken out; the plain server (written, not yet run on a client)
+fci_upwell_core
 # u4-upwell-dock (#64): Enter Structure (a live park whose ego is the structure), Undock from that view (no re-bind), then structure view -> hangar -> Undock (the re-bind inside the window); the plain server
 fci_upwell_view
 # u4-upwell-dock (#64): log off docked in a structure and select the character again (the docked login, the hangar, an Undock); the plain server. A server restart in between is the Rust test's

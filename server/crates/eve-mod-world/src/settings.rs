@@ -112,6 +112,20 @@ pub const SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        name: "corerule",
+        usage: "1 when an Upwell structure needs its quantum core in the deed bay to finish onlining, 0 when it does not (owner decision D4); a structure already waiting finishes on the next tick",
+        kind: Kind::Live,
+        get: |r| f64::from(u8::from(r.structure_core_required)),
+        set: |r, v| {
+            r.structure_core_required = match whole(v)? {
+                0 => false,
+                1 => true,
+                _ => return Err(format!("{v} is not 0 or 1")),
+            };
+            Ok(())
+        },
+    },
+    Setting {
         name: "deletetime",
         usage: "seconds a character waits between asking to be deleted and the delete (whole number, 0 to 2592000); applies from the next ask",
         kind: Kind::Live,
