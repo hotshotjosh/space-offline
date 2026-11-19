@@ -413,11 +413,8 @@ impl Push for Addressed {
 /// **The cheapest inventory push there is**, and the reason it is the one we
 /// send first. The handler is two lines --
 ///
-/// ```python
-/// def OnInvalidateCacheForLocations(self, locationIDs):
-///     for locID in locationIDs:
-///         self.InvalidateLocationCache(locID)
-/// ```
+/// `OnInvalidateCacheForLocations` (`[V]`) calls
+/// `InvalidateLocationCache` for each location id it is given.
 ///
 /// -- and `InvalidateLocationCache` drops `self.inventories[(locID, None)]`
 /// inside `except KeyError: pass`. So it needs no `DBRow`, no descriptor and

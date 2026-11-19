@@ -211,16 +211,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // And a 4-tuple of `None` is *also* wrong, which is why the
             // arity is not the whole answer:
             //
-            // ```text
-            // parentCategoryDict, childCategoryDict, descriptionDict, \
-            //     self.billingCategories = ...GetCategoryHierarchicalInfo()
-            // for parentID, catAndLanguage in parentCategoryDict.iteritems():
-            // for childGroupID, childGroupDict in childCategoryDict.iteritems():
-            // ...
-            // if (result['subCategory'][0], catCountry) in self.billingCategories:
-            // ...
-            // text = self.descriptions[category][0]
-            // ```
+            // The window unpacks the answer of `GetCategoryHierarchicalInfo`
+            // into parent, child and description dicts plus a billing-category
+            // collection; it iterates the first two with `iteritems()`, tests
+            // membership of the billing categories by a (sub-category, country)
+            // pair, and indexes the descriptions by category.
             //
             // `.iteritems()` on the first two, `in` with a 2-tuple key on
             // the fourth, and subscript on the third -- four **dicts**.
@@ -247,15 +242,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The petition *service*'s own category list, a different
             // method and a different shape from the window's tree above.
             //
-            // ```text
-            // def GetCategories(self):
-            //     if self.categories is None:
-            //         self.categories = ...GetCategories()   # petition.py:666
-            //     return self.categories
-            // def GetCategory(self, id):
-            //     for each in self.GetCategories():          # :671
-            //         if each.categoryID == id:
-            // ```
+            // `petition.py:666-671` (`[V]`): `GetCategories` fetches once while its
+            // cache is `None` and returns it; `GetCategory` scans it for a
+            // matching `categoryID`.
             //
             // Iterated for `.categoryID` / `.displayName`, so `None` was
             // both a `TypeError` in every caller *and* a cache that
@@ -271,17 +260,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // The queue list has the identical shape:
             //
-            // ```text
-            // def GetQueues(self):
-            //     if self.queues is None:
-            //         if self.GetIsPetitionee():
-            //             queues = ...GetQueues()           # petition.py:659
-            //             self.queues = queues
-            //     return self.queues
-            // ...
-            // for each in self.GetQueues():                 # :239
-            //     tabs.append([each.queueName, ..., each.queueID])
-            // ```
+            // `petition.py:659` and `:239` (`[V]`): `GetQueues` fetches once while
+            // the cache is `None` and the user is a petitionee; the caller walks it
+            // and builds a tab per queue from its name and id.
             "GetCategories" | "GetQueues" => Ok(PyValue::List(vec![])),
             // The three petition lists and the two message lists. All five
             // are `GET_ITER` on the answer, reading `.petitionID`,
@@ -297,12 +278,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **`GetMyPetitionsEx` does not latch, and that is honest
             // rather than fixed.** Its cache is
             //
-            // ```text
-            // def GetMyPetitions(self):
-            //     if not self.mine:
-            //         self.mine = ...GetMyPetitionsEx()  # petition.py:265
-            //     return self.mine
-            // ```
+            // `petition.py:265` (`[V]`): `GetMyPetitions` refetches through
+            // `GetMyPetitionsEx` while its cache is empty.
             //
             // -- `if not`, so an empty list fails the guard and the call
             // re-issues. There is no truthy-but-empty answer short of
@@ -358,10 +335,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             // Read once, immediately, as half of a tuple key:
             //
-            // ```text
-            // catCountry = ...GetUserCatalogCountry()   # petitionWindow.py:208
-            // if (result['subCategory'][0], catCountry) in self.billingCategories:
-            // ```
+            // `petitionWindow.py:208` (`[V]`) reads the user's catalogue country
+            // and tests whether the pair of sub-category and country is in the
+            // billing categories.
             //
             // `billingCategories` is the empty dict we answer above, so no
             // key can match and the value is never otherwise used. `None`
@@ -372,14 +348,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **The refusal, and the one answer here that took a
             // decision.** `petitionWindow.py:232`, in `InputPetition`:
             //
-            // ```text
-            // can = ...MayPetition(categoryID, OocCharacterID)
-            // if can < 0:
-            //     if can == -1: prompt_player_fsd_dialog('CannotPostPetition', ...); return
-            //     if can == -2: ...  # -3, -4, -6, -7 likewise
-            //     return
-            // ... build the subject/body form and the Submit button ...
-            // ```
+            // `petitionWindow.py:232` (`[V]`), `InputPetition`: it asks
+            // `MayPetition` for the category and character; a negative answer
+            // shows a dialog for -1 (and others for the other negative codes) and
+            // returns, and otherwise the subject/body form and Submit button are
+            // built.
             //
             // We do not serve ticket *submission* -- `CreatePetition` is a
             // mutator whose result is discarded, so its effect could only
@@ -1051,15 +1024,8 @@ mod tests {
     ///
     /// `petition.py` holds both:
     ///
-    /// ```text
-    /// if self.categories is None:
-    ///     self.categories = sm.RemoteSvc('petitioner').GetCategories()
-    /// ...
-    /// if self.queues is None:
-    ///     if self.GetIsPetitionee():
-    ///         queues = sm.RemoteSvc('petitioner').GetQueues()
-    ///         self.queues = queues
-    /// ```
+    /// `petition.py` caches both lists behind an `is None` guard, the
+    /// queues only when the user is a petitionee.
     ///
     /// `None` stores successfully and is the one value its own guard
     /// rejects, so every read re-issues the call -- the

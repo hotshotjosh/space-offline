@@ -353,12 +353,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **A 2-tuple of numbers, unpacked before anything is
             // tested** -- the §4 third-row trap:
             //
-            //     asset_net_worth = None
-            //     try:
-            //         inv_container = reg.inv_cache.GetInventory(const.containerGlobal)
-            //         asset_worth, plex_worth = inv_container.GetAssetWorth()
-            //     ...
-            //     if asset_net_worth is not None:
+            // The client unpacks the answer into two numbers (asset worth and
+            // PLEX worth) inside a `try` block, and only afterwards tests the
+            // result; the `is not None` guard that follows does not help, because
+            // the unpack runs first (`charMgr` consumer, `[V]`, net-worth refresh
+            // in the character data service).
             //
             // The `is not None` guard four lines later is what makes
             // `None` look safe; `UNPACK_SEQUENCE 2` runs first.
@@ -387,12 +386,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `gameui._afk_timer_loop` (`gameui.py`, firstlineno 307) polls
             // once a second and, five minutes after the last UI event:
             //
-            //     if not reg._is_afk and dt_since_active > AFK_THRESHOLD:
-            //         reg._is_afk = True
-            //         ...
-            //         sm.RemoteSvc('charMgr').SetActivityStatus(
-            //             status=appConst.PLAYER_STATUS_AFK,
-            //             extraInfo=datetimeutils.datetime_to_filetime(...))
+            // The client loop (`gameui.py:307`, `[V]`) sets an AFK flag once the
+            // idle time passes the threshold and calls `charMgr.SetActivityStatus`
+            // with the status constant and a filetime as keyword arguments.
             //
             // with the mirror call on the way back to ACTIVE. The return
             // value is discarded at both call sites, so `None` is right
@@ -422,10 +418,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The home station, and **the call that was blocking the map.**
             // `mapView.py(605) ShowMyHomeStation`:
             //
-            //     homeStationRow = sm.GetService('charactersheet').GetHomeStationRow()
-            //     homeStationID = homeStationRow.stationID            # 606
-            //     if not homeStationID or self.destroyed: return      # 607
-            //     solarSystemID = homeStationRow.solarSystemID        # 610
+            // it reads the home-station row from the character sheet, then its
+            // `stationID` (line 606), returns when that is falsy or the window is
+            // destroyed (607), and reads its `solarSystemID` (610) `[V]`.
             //
             // `mapViewSolarSystem.py(656)`, `mapView.py(431)
             // LookAtHomeStation`, `mapFilterOreAnomalies.py(67)` and
@@ -509,13 +504,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // `invCache.py(963)`:
             //
-            // ```text
-            // realItems = self.moniker.ListIncludingContainers()
-            // for realItem in realItems:
-            //     self.cachedItemsAll[realItem.itemID] = realItem
-            // ...
-            // self.listedAll = 1
-            // ```
+            // `invCache.py:963` (`[V]`) fills one cache from
+            // `moniker.ListIncludingContainers()`, one entry per row under its
+            // `itemID`, and finally sets its listed-all flag.
             //
             // So: iterated, `.itemID` read as an **attribute**, and
             // `len()` taken one line later in
@@ -602,11 +593,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             )),
             // `bioPanel._AutoSaveBio` is
             //
-            //     try:
-            //         sm.RemoteSvc('charMgr').SetCharacterDescription(newbio)
-            //     except:
-            //         reg.ReloadBioFromServer()
-            //         raise
+            // `bioPanel._AutoSaveBio` calls `charMgr.SetCharacterDescription` with
+            // the new text; if the call raises, it reloads the bio from the server
+            // and re-raises `[V]`.
             //
             // with `POP_TOP` on the result: the value is discarded and the
             // whole contract is "do not raise". It fires from
@@ -624,11 +613,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The write and delete halves of `GetCharacterSettings` above
             // (`characterSettingsSvc.Save/Delete`, `crate::char_settings`):
             //
-            //     def Save(self, settingKey, value):
-            //         if value is None or value == '':
-            //             reg.Delete(settingKey)
-            //         ...
-            //         reg.charMgr.SaveCharacterSetting(settingKey, value)
+            // `characterSettingsSvc.Save` deletes the key when the value is
+            // `None` or empty, and otherwise calls
+            // `charMgr.SaveCharacterSetting(key, value)` `[V]`.
             //
             // The client calls Save even after an empty-value Delete, so an
             // empty or missing value here means delete. The return is
@@ -660,14 +647,12 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // numbers from the `.pyc`'s own lnotab via `tools/pyc27.py`,
             // not from uncompyle6, which prints 136 for this function):
             //
-            //     205  code, verified = Crypto.Verify(
-            //              sm.RemoteSvc('charMgr').GetSettingsInfo())
-            //     206  if not verified:
-            //     207      raise RuntimeError('Failed verifying blob')
-            //     208  SettingsInfo.__code__ = marshal.loads(code)
-            //     209  ret = SettingsInfo()
-            //     210  if len(ret) > 0:
-            //     211      sm.RemoteSvc('charMgr').LogSettings(ret)
+            // `UpdateSettingsStatistics` (`settingsSvc.py:205-211`, `[V]`, lines
+            // from the `.pyc`'s own line table) passes the answer of
+            // `charMgr.GetSettingsInfo` to `Crypto.Verify`, raises if the
+            // verdict is false, installs the unmarshalled code as the body of
+            // `SettingsInfo`, calls it, and reports a non-empty result back
+            // through `charMgr.LogSettings`.
             //
             // `Crypto.Verify` is `evecrypto/placebo.py(22)` for us
             // (`cryptoPack` is Placebo, see `up.sh`) and is one line:
@@ -755,8 +740,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // a rowset. `addressbookService.GetContacts` reads exactly
             // two things off it:
             //
-            //     for each in addressbook.addresses:
-            //     for each in addressbook.blocked:
+            // the lists `addresses` and `blocked`
             //
             // and nothing else in the file touches it.
             //
@@ -782,20 +766,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `addressbookService.py(1213/1217/1221)` keeps three separate
             // caches filled from the same method:
             //
-            // ```text
-            // def GetContactLabels(self, contactType, updateVarible=True):
-            //     uthread.Lock(self, 'labels')
-            //     try:
-            //         ...
-            //         if contactType == 'contact':
-            //             if self.labels is None:
-            //                 self.labels = self._GetSvcForContactType(contactType).GetLabels()
-            //             return self.labels
-            //         if contactType == 'corpcontact':
-            //             if self.corporateLabels is None: ...
-            //         if contactType == 'alliancecontact':
-            //             if self.allianceLabels is None: ...
-            // ```
+            // `addressbookService.GetContactLabels` (`addressbookService.py:1213`
+            // and neighbours, `[V]`) keeps one cache per contact type (personal,
+            // corp, alliance); each is filled once from the matching `GetLabels`
+            // call when it is still `None`, then returned.
             //
             // Only the first is ours: `_GetSvcForContactType` returns
             // `sm.RemoteSvc('charMgr')` for `'contact'` and the client-side
@@ -808,16 +782,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // and the bytecode is what settles that rather than the shape
             // of the source (`tools/pyc27.py`):
             //
-            // ```text
-            // 1212  52 LOAD_ATTR     labels
-            // 1212  55 LOAD_CONST    None
-            // 1212  58 COMPARE_OP    8              # `is`
-            // 1213  79 CALL_FUNCTION                # GetLabels()
-            // 1213  85 STORE_ATTR    labels         # <- fed straight from the call
-            // 1214  94 LOAD_ATTR     labels
-            // 1214  97 RETURN_VALUE
-            // ```
-            //
+            // The compiled form of that cache (`tools/pyc27.py`, `[V]`) stores
+            // the call's result straight into the cache attribute, with nothing
+            // between the call and the store that can raise.
             // Nothing between the call and the store can raise, so the
             // store **completes** and the cache holds the one value its own
             // `is None` guard rejects: the next read re-issues, forever, at
@@ -904,7 +871,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // The reason this one hid: `crimewatchSvc.GetMyBoosters` does
             //
-            //     if hasattr(myGodmaItem, 'boosters'):
+            // checks `hasattr(myGodmaItem, 'boosters')`
             //
             // and **Python 2's `hasattr` swallows every exception**, so
             // the `AttributeError` our `None` caused was eaten and the
@@ -981,9 +948,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // `GetTotalSkillPointsForCharacter` is two statements:
             //
-            //     trained = sum([s.trainedSkillPoints or 0
-            //                    for _, s in reg.GetSkillsIncludingLapsed().iteritems()])
-            //     unallocated = reg.GetFreeSkillPoints()
+            // the sum of each skill's trained points (0 when unset) over all
+            // skills including lapsed ones, plus the free skill points `[V]`
             //
             // backed by two separate `is None` caches over two separate
             // unserved calls. Answering only `GetAllSkills` moves the
@@ -1070,12 +1036,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // against `characterskills/client/purchase.py(98)`:
             //
-            // ```text
-            // def send_skill_purchase_request(self, skill_type_ids):
-            //     skills_purchased = self.skill_service.GetSkillHandler().PurchaseSkills(skill_type_ids)
-            //     self.skills_purchased.extend(skills_purchased)
-            //     return True
-            // ```
+            // `characterskills/client/purchase.py:98` (`[V]`) appends the
+            // answer of `PurchaseSkills` to its list of purchased skills with
+            // `list.extend` and returns true.
             //
             // `list.extend` on `None` is `TypeError: 'NoneType' object is
             // not iterable`, so the answer has to be **iterable**. It is
@@ -1090,17 +1053,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // please it**, and that is the part worth writing down.
             // `skillsvc.py(1242)`:
             //
-            // ```text
-            // def WaitUntilSkillsAreAvailable(self, skillTypeIDs):
-            //     skill_type_ids = set(skillTypeIDs)
-            //     seen = set()
-            //     while skill_type_ids != seen:
-            //         blue.pyos.BeNice()
-            //         for skill_type_id in skill_type_ids:
-            //             if self.GetSkillIncludingLapsed(skill_type_id) is None:
-            //                 break
-            //             seen.add(skill_type_id)
-            // ```
+            // `skillsvc.py:1242` (`[V]`): `WaitUntilSkillsAreAvailable` loops,
+            // yielding each pass, until every requested skill type is found by
+            // `GetSkillIncludingLapsed`.
             //
             // and `skills/client/util.py(28)` reaches it as
             // `bought_skills = skill_service.PurchaseSkills(...)` /
@@ -1219,15 +1174,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // purpose.** `clonejumpsvc.py(98)` caches it, and the guard is
             // truthiness rather than `is None`:
             //
-            // ```text
-            // def GetShipClones(self):
-            //     shipID = eveCfg.GetActiveShip()
-            //     if not self.shipJumpClones or shipID != self.shipJustClonesShipID:
-            //         lm = self.GetLM()
-            //         self.shipJustClonesShipID = shipID
-            //         self.shipJumpClones = lm.GetShipCloneState()
-            //     return self.shipJumpClones
-            // ```
+            // `GetShipClones` re-reads the clone state from the server whenever
+            // the cached value is falsy or the active ship changed `[V]`.
             //
             // `class CRowset(list)` -- **confirmed** in
             // `carbon/common/script/sys/crowset.pyc` -- so a rowset with no
@@ -1327,13 +1275,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // `InstallCloneBanner.update` is
             //
-            //     errors = reg.controller.validate_install_clone()
-            //     if errors:
-            //         reg.install_button.Disable()
-            //         reg.install_button.LoadTooltipPanel = functools.partial(
-            //             load_errors_tooltip, errors=errors)
-            //     else:
-            //         reg.install_button.Enable()
+            // Its update reads the controller's validation errors; with errors
+            // it disables the install button and sets a tooltip listing them,
+            // otherwise it enables the button.
             //
             // and `clonejumpsvc.ValidateInstallJumpClone` renders each
             // element with `GetByLabel(label)` for a `basestring`, or
@@ -1438,9 +1382,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // something calls `sm.GetService('standing')`. On the docked path
         // that is the station Lobby's Agents tab:
         //
-        //     def find_available_and_unavailable_agents(...):
-        //         epic_arc_status_service = sm.RemoteSvc('epicArcStatus')
-        //         standing_service = sm.GetService('standing')
+        // `find_available_and_unavailable_agents` obtains the `epicArcStatus`
+        // remote service and the `standing` service before its per-agent
+        // loop `[V]`
         //
         // which is unconditional and *before* the per-agent loop, so it
         // fires even though our `agentMgr.GetAgents` rowset is empty.
@@ -1451,17 +1395,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // first three methods below back to back on one tasklet --
         // so expect them in a single wave:
         //
-        //     def __RefreshStandings(self):
-        //         if not session.charid: return
-        //         standingsMgr = sm.RemoteSvc('standingMgr')
-        //         tmp = standingsMgr.GetNPCNPCStandings()
-        //         reg.npcnpcstandingsto = tmp.Filter('toID')
-        //         reg.npcnpcstandingsfrom = tmp.Filter('fromID')
-        //         if idCheckers.IsNPC(session.corpid):
-        //             reg.npccharstandings = standingsMgr.GetCharStandings()
-        //             reg.npccorpstandings = {}
-        //         else:
-        //             ret = uthread.parallel([...])
+        // `__RefreshStandings` returns when there is no character, then
+        // asks `standingMgr` for the NPC-to-NPC standings and splits them by
+        // `toID` and `fromID`. For an NPC corporation it takes the character
+        // standings from `GetCharStandings` and starts with no corp
+        // standings; otherwise it fetches several results in parallel `[V]`.
         //
         // `ProcessSessionChange` re-runs it whenever `charid` or `corpid`
         // changes, i.e. on every entry into the game.
@@ -1469,9 +1407,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // One trap that is not in this file: straight after the calls,
         // `__RefreshStandings` does
         //
-        //     for factionID in appConst.factions:
-        //         if factionID not in reg.npccharstandings and \
-        //            factionID == appConst.factionByRace[session.raceID]:
+        // the faction loop, which looks the character's race up in
+        // `factionByRace` by bare subscript when its own faction is missing
+        // from the standings
         //
         // -- a **bare subscript** on `factionByRace`, which has exactly
         // four keys (raceCaldari=1, raceMinmatar=2, raceAmarr=4,
@@ -1507,8 +1445,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // A **plain dict**, and uniquely for this project we can prove
             // a dict is wanted rather than infer it -- the caller says so:
             //
-            //     if not isinstance(reg.npccharstandings, types.DictType):
-            //         reg.npccharstandings = reg.npccharstandings.Index('fromID')
+            // it checks whether the standings are a dict and, if not, rebuilds
+            // them as an index by `fromID` `[V]`
             //
             // so a dict skips the rowset path entirely. Every later
             // consumer is dict-compatible (`in`, `[k]`, iteration,
@@ -1968,10 +1906,8 @@ mod tests {
     /// `charMgr.GetSettingsInfo` must answer the exact shape
     /// `evecrypto/placebo.py(22)` subscripts:
     ///
-    /// ```text
-    /// def verify(signedData):
-    ///     return (signedData[0], signedData[1] == 0)
-    /// ```
+    /// `verify(signedData)` returns a pair of the first element and
+    /// whether the second equals zero `[V]`.
     ///
     /// A `None` here was `TypeError: 'NoneType' object is not subscriptable`
     /// two frames below `settingsSvc.py(205)`, and we only learned that

@@ -218,13 +218,11 @@ pub struct CopyStart {
 /// `Invention.job_output_products`' arithmetic, for a product whose
 /// `quantity` is `per_copy` runs:
 ///
-/// ```text
-///     materialEfficiency = int(sum([m.amount * 100.0 for m in MaterialModifiers]))
-///     timeEfficiency     = int(sum([m.amount * 100.0 for m in TimeModifiers]))
-///     maxRuns            = sum([m.amount for m in MaxRunsModifiers])
-///     runsRemaining      = int(round(product.quantity + maxRuns))
-///     ME = INVENTION_MATERIAL_EFFICIENCY + materialEfficiency
-/// ```
+/// The material and time efficiencies are the integers of the sums of the
+/// matching modifiers times 100; max runs is the sum of the max-runs
+/// modifiers; the runs remaining are the product quantity plus that sum,
+/// rounded; ME is `INVENTION_MATERIAL_EFFICIENCY` plus the material
+/// efficiency.
 ///
 /// where a decryptor's `MaterialModifier.amount` is `attr / 100.0`. The
 /// division and multiplication are kept so a value like 0.07 truncates the

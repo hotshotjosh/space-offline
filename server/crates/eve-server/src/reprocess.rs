@@ -60,24 +60,15 @@
 //! in `out/pyc/` are CCP's own code for this, and they agree on one formula.
 //! `reprocessing/ui/util.GetTypeSkillBonuses` is the readable one:
 //!
-//! ```text
-//!     if TypeHasSpecialReprocessingSkillBonuses(typeID):
-//!         ret  = [GetAttributeSkillBonusFromTypeID(typeID)]   # the ore skill
-//!         ret += GetSpecialReprocessingSkillBonuses()         # 3385, then 3389
-//!     else:
-//!         ret  = GetScrapMetalReprocessingSkillBonuses()      # 12196 alone
-//! ```
+//! For a type with special reprocessing bonuses the list holds the
+//! ore skill's bonus followed by the special skills (3385, then 3389);
+//! otherwise it holds the scrap-metal skill (12196) alone.
 //!
 //! and `efficiencyCalculator.CalculateTheoreticalEfficiency` folds it:
 //!
-//! ```text
-//!     totalSkillBonus = 1.0
-//!     for (_, bonus) in skillBonuses:
-//!         totalSkillBonus *= 1 + bonus / 100
-//!     totalImplantBonus = GetImplantBonus(typeID, getTypeAttribute)
-//!     ...
-//!     return min(1.0, efficiency * (100 + avgBonus) / 100)
-//! ```
+//! The total skill bonus is the product of `1 + bonus/100` over the
+//! list; the implant bonus is read from the type's attributes, and the
+//! efficiency is capped at 1.0 after scaling by `(100 + avgBonus)/100`.
 //!
 //! with `GetImplantBonus` returning `1.0` unless
 //! `TypeHasSpecialReprocessingSkillBonuses(typeID)` -- **implants do not help
@@ -1008,9 +999,8 @@ pub fn pilot<'a>(
 ///
 /// `reprocessing/util._GetEfficiency`, exactly:
 ///
-/// ```text
-///     efficiency = min(stationEfficiency * GetCharRefiningYieldPercentageForType(...), 1.0)
-/// ```
+/// The efficiency is the station efficiency times the character's
+/// refining yield for the type, capped at 1.0.
 ///
 /// The cap is at the top only. A station efficiency of 0 is a station that
 /// refines nothing, and no amount of skill lifts it -- which is correct, and

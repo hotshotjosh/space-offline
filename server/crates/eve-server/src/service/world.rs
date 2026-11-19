@@ -212,11 +212,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **An empty list, and the row type is unobservable.**
             // `mapViewData.py(109) GetAllianceSolarSystems` is
             //
-            //     allianceSolarSystems = {}                               # 110
-            //     allianceSystemCache = \
-            //         sm.RemoteSvc('stationSvc').GetAllianceSystems()     # 111
-            //     for x in allianceSystemCache:                           # 112
-            //         allianceSolarSystems[x.solarSystemID] = x.allianceID   # 113
+            // `GetAllianceSolarSystems` (`mapViewData.py:109-113`, `[V]`) builds a
+            // dict of solar system id to alliance id from the rows of
+            // `stationSvc.GetAllianceSystems()`.
             //
             // so the only property the client can observe is *iterable*.
             // With no rows the body never runs and `[]` is the complete
@@ -471,11 +469,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // A **dict keyed by `ResultType`**, and here `None` really
             // does throw. `searchUtil.GetResultsByGroupID`:
             //
-            //     resultsByType = searchMgr.Query(searchStr, groupIDList, exact=searchBy)
-            //     if resultsByType:
-            //         _PrimeResults(resultsByType)
-            //     _SortResults(resultsByType)        # <- NOT guarded
-            //     return resultsByType or {}
+            // `[V]` it queries `searchMgr` with the search string, group ids and
+            // the exact flag; when there are results it primes them, then sorts
+            // them without a guard, and returns the results or an empty dict.
             //
             // `_SortResults` does `.iteritems()` outside the `if`, so
             // `None` is an `AttributeError` -- and the `or {}` one line

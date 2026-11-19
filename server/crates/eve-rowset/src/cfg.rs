@@ -12,11 +12,9 @@
 //! **Confirmed** from the bytecode of `eveCfg.LoadEveOwners` and
 //! `eveCfg.LoadEveLocations`: before any remote call, the client pre-sets
 //!
-//! ```python
-//! self.eveowners.header    = ['ownerID', 'ownerName', 'typeID', 'gender', 'ownerNameID']
-//! self.evelocations.header = ['locationID', 'locationName', 'solarSystemID',
-//!                             'x', 'y', 'z', 'locationNameID']
-//! ```
+//! `self.eveowners.header` is set to ownerID, ownerName, typeID,
+//! gender, ownerNameID, and `self.evelocations.header` to locationID,
+//! locationName, solarSystemID, x, y, z, locationNameID.
 //!
 //! and fills `Recordset.data` with `blue.DBRow`s packed against
 //! `GetOwnersRowDescriptor()` / `GetLocationRowDescriptor()`, whose columns

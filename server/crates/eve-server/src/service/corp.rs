@@ -138,13 +138,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // The protocol here is exceptions, not return values:
         //
-        //     try:
-        //         reg._DoStandingCheckForServices(stationServiceID)
-        //         result = None
-        //     except Exception as e:
-        //         result = e
-        //     ...
-        //     if result is not None: raise result
+        // the client runs the standing check inside a `try`, keeps `None`
+        // on success or the caught exception otherwise, and raises the kept
+        // exception if there is one `[V]`
         //
         // The return value is discarded entirely; only a raised
         // `UserError` means anything. So `None` *is* "standing check
@@ -178,10 +174,8 @@ fn npc_corp_registry(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // had already opened.** A dict keyed by corporationID whose
         // values are lists of applications:
         //
-        //     def GetMyApplicationsWithStatus(self, status):
-        //         applications = reg.GetMyApplications()
-        //         if 0 == len(applications):
-        //             return applications
+        // `GetMyApplicationsWithStatus` reads `GetMyApplications()` and
+        // returns it unchanged when it has no entries `[V]`
         //
         // `len`, `in`, `__setitem__`, key iteration and subscript --
         // all satisfied by `{}`, and none of them by `None`.
@@ -195,7 +189,7 @@ fn npc_corp_registry(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // `ActivateView` through the `finally` and skips everything
         // after it -- including
         //
-        //     sm.ScatterEvent('OnClientReady', newInfo.name)
+        // the `OnClientReady` scatter event
         //
         // which is the event that wakes the rest of the client. So
         // this single `None` silently suppressed `OnClientReady`.
@@ -206,8 +200,8 @@ fn npc_corp_registry(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // **And it was a live lock as well as a `TypeError`**, which
         // the original note missed. `bco_applications.py(77) GetMyApplications` is
         //
-        //     if self.myApplications is None or forceUpdate:
-        //         self.myApplications = self.GetCorpRegistry().GetMyApplications()
+        // it fetches from the corp registry while the cache is `None` or an
+        // update is forced `[V]`
         //
         // -- the store completes, so `None` was written to the cache
         // that guards it with `is None` and *every* read re-issued the

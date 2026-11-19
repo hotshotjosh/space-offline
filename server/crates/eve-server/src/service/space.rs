@@ -445,11 +445,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // **This is the third live-lock variant**, and the one that breaks
         // the §4 tell. `scanSvc.GetScanMan`:
         //
-        // ```text
-        //     if self.remoteObject is None:
-        //         self.remoteObject = sm.RemoteSvc('scanMgr').GetSystemScanMgr()
-        //     return self.remoteObject
-        // ```
+        // `scanSvc.GetScanMan` (`[V]`) fetches `GetSystemScanMgr()` from the
+        // `scanMgr` remote service once and then returns the stored object.
         //
         // Our `None` is **successfully stored** -- the
         // `contractProxy.NumOutstandingContracts` mechanism, not the LP
@@ -484,12 +481,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // -- the real server-side implementation, shipped in the
             // client tree -- opens with
             //
-            // ```text
-            //     if is_sensor_overlay_suppressed(self.solarSystemID):
-            //         return ({}, {}, {}, {})
-            //     ...
-            //     return (anomalies, signatures, staticSites, structures)
-            // ```
+            // the method returns four empty dicts when the sensor overlay is
+            // suppressed for the system, and otherwise a four-tuple of anomalies,
+            // signatures, static sites and structures `[V]`
             //
             // so `({}, {}, {}, {})` is not a stub: it is the branch CCP's
             // own code takes for a system with no overlay, and the four
@@ -568,12 +562,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // seconds after every undock.
             // `insurgencyCampaignSvc.py(68)`:
             //
-            //     solarsystemID, campaignSnapshot = \
-            //         sm.RemoteSvc('insurgencySolarsystem').GetLocalCampaignClientSnapshot()
-            //     if solarsystemID != session.solarsystemid2:
-            //         solarsystemID, campaignSnapshot = ...   # retries ONCE
-            //     if solarsystemID == session.solarsystemid2:
-            //         reg._localCampaignSnapshot = campaignSnapshot
+            // it unpacks a (solar system id, campaign snapshot) pair from
+            // `insurgencySolarsystem.GetLocalCampaignClientSnapshot()`, retries
+            // once when the id differs from the session's, and stores the
+            // snapshot only when the ids match `[V]`
             //
             // Two elements, by `UNPACK_SEQUENCE`, so `None` is the §4
             // third row -- a `TypeError` before anything gets to test it.

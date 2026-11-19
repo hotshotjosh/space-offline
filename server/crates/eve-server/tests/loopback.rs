@@ -1767,9 +1767,8 @@ fn the_character_selection_call_returns_the_four_tuple_the_client_unpacks() {
     client.send(&call_req("charUnboundMgr", "GetCharacterSelectionData", 3));
     let result = expect_call_rsp(&client.recv());
 
-    // charselData does:
-    //   userDetails, trainingDetails, characterDetails, wars = <result>
-    //   self.userDetails = userDetails[0]
+    // charselData unpacks the answer into user details, training details,
+    // character details and wars, and reads element 0 of the first.
     let PyValue::Tuple(four) = &result else {
         panic!("must be a 4-tuple: {result:?}")
     };
@@ -1960,8 +1959,8 @@ fn the_standings_wave_is_answered_in_the_shapes_their_callers_demand() {
     );
 
     // A dict, which this caller uniquely *proves* rather than implies:
-    //   if not isinstance(self.npccharstandings, types.DictType):
-    //       self.npccharstandings = self.npccharstandings.Index('fromID')
+    // the client checks whether the standings are a dict and, if not,
+    // rebuilds them as an index by `fromID`
     client.send(&call_req("standingMgr", "GetCharStandings", 61));
     assert_eq!(expect_call_rsp(&client.recv()), PyValue::Dict(vec![]));
     client.send(&call_req("standingMgr", "GetCorpStandings", 62));

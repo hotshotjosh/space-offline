@@ -3,18 +3,10 @@
 //!
 //! **Confirmed** from `carbon/common/script/sys/row.pyc`:
 //!
-//! ```python
-//! class Row(object):
-//!     __guid__ = 'util.Row'
-//!     __slots__ = ('header', 'line')
-//!     def __init__(self, header=None, line=None):
-//!         if header and line and len(header) != len(line):
-//!             raise ValueError('header and line must be equal length lists')
-//!     def __getattr__(self, name):
-//!         return self.line[self.header.index(name)]
-//!     def __getstate__(self):  return (self.header, self.line)
-//!     def __setstate__(self, state):  self.header, self.line = state
-//! ```
+//! `util.Row` has two slots, `header` and `line`; its constructor
+//! rejects a header and line of different lengths, attribute reads look
+//! the name up in the header and answer the matching element of the
+//! line, and its pickle state is the pair of header and line.
 //!
 //! So `header` is a sequence of **column-name strings** that must support
 //! `.index(name)`, and `line` is the parallel sequence of values. A Python
@@ -93,20 +85,11 @@ impl Row {
 /// **Confirmed** from `cfg.Recordset._Prime`, which tests the reply in this
 /// order:
 ///
-/// ```python
-/// fk = fetch(list(keysToGet))
-/// if type(fk) == types.TupleType:          # <-- this branch
-///     self.header, data = fk
-/// elif hasattr(fk, '__columns__'):
-///     self.header = fk.__columns__; data = [list(fk)]
-/// elif hasattr(fk, 'columns'):
-///     self.header = fk.columns; data = fk
-/// ...
-/// if self.keyidx is None:
-///     self.keyidx = self.header.index(self.keycolumn)
-/// for i in data:
-///     self.data[i[ix]] = i
-/// ```
+/// `_Prime` tests the reply in this order: a tuple is taken as
+/// (header, rows); else an object with `__columns__` gives the header and
+/// one row; else an object with `columns` gives the header and the rows.
+/// If the key index is unset it is the header position of the key
+/// column, and rows are stored by that column's value.
 ///
 /// The tuple branch is tested **first** and with an exact `type ==`, so a
 /// 2-tuple of `(list-of-name, list-of-row)` is matched before anything else

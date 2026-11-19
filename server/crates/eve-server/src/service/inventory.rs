@@ -356,8 +356,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `invCacheContainer.__init__` keys itself on the container id
             // and takes a shortcut for ordinary containers:
             //
-            //     if key[0] not in containerIDs:
-            //         reg._itemID = key[0]
+            // for a key whose first element is not one of the container ids it
+            // takes that element as its item id `[V]`
             //
             // `containerIDs` is the nine magic ids -- `containerHangar`
             // (10004), `containerWallet`, `containerGlobal` and so on --
@@ -365,10 +365,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // is and never asks us. For the hangar it does not, and
             // `_SetItemData` has to go and get it:
             //
-            //     if reg._item is None and reg.moniker is not None:
-            //         reg._item = reg.moniker.GetSelfInvItem()
-            //         reg._itemID = reg._item.itemID
-            //         reg._typeID = reg._item.typeID
+            // it asks its moniker for the inventory's own item and copies the
+            // item id and type id from the result `[V]`
             //
             // There is no guard on that. Answering `None` made
             // `reg._item.itemID` an `AttributeError`, which the `itemID`
@@ -407,8 +405,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `.typeID` and `.item` properties also call `_SetItemData`,
             // and its body is
             //
-            //     if reg._item is None and reg.moniker is not None:
-            //         reg._item = reg.moniker.GetSelfInvItem()
+            // it asks the moniker for the container's own item when it has none
+            // yet `[V]`
             //
             // -- `reg._item` starts `None` for *every* container, magic
             // key or not. So the capsule's own inventory asks too, and
@@ -517,14 +515,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **Arguments 2 and 3 say where to look, not what to look
             // for.** `panelFitting.GetShipContents` builds them as
             //
-            // ```text
-            //     dockableLocationID = self.item.locationID
-            //     solarSystemID = None
-            //     if self.item.flagID in (const.flagCargo, const.flagShipHangar):
-            //         parentShipInfo = GetParentShipInfo(self.item)
-            //         if parentShipInfo:
-            //             dockableLocationID, solarSystemID = parentShipInfo
-            // ```
+            // `panelFitting.GetShipContents` starts from the item's location id;
+            // when the item sits in cargo or a ship hangar it asks for the parent
+            // ship's info and, if there is one, takes the docking location and
+            // solar system from it `[V]`.
             //
             // -- i.e. the dockable (or solar system) that holds the
             // container, so a real cluster can route the query to the node
@@ -703,10 +697,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // One saved fitting a crate is about to hand over, and it is
             // consumed by `UNPACK_SEQUENCE 4`:
             //
-            // ```text
-            //     name, icon, ship_type_id, insurance = \
-            //         sm.RemoteSvc('ship').GetShipFittingInfo(fitting_id)
-            // ```
+            // The client (`[V]`) unpacks the answer of `ship.GetShipFittingInfo`
+            // into name, icon, ship type id and insurance, four elements.
             //
             // at `eve/client/script/ui/crate/controller.py` lines 76 and
             // 252 -- both named `LoadSpecialLoot`, one on
@@ -722,18 +714,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // What each element is, from
             // `eve/client/script/ui/crate/lootItem.py` (lines 16 and 72):
             //
-            // ```text
-            //     class AbstractLootItem(object):
-            //         def __init__(self, icon=None):
-            //             self.icon = icon or self.ICON_PATH
-            //
-            //     class AbstractSpecialLootItem(AbstractLootItem):
-            //         def __init__(self, crateID, name, icon):
-            //             self.name = name
-            //             super(AbstractSpecialLootItem, self).__init__(icon)
-            //         def get_name(self):
-            //             return GetByLabel(self.name)
-            // ```
+            // `lootItem.py:16,72` (`[V]`): the base loot item stores an icon (a
+            // class default when none is passed); the special variant adds a name
+            // and answers `get_name` with the label for that name.
             //
             // - **`name` is a localization label path, not a display
             //   name.** `get_name` (lootItem.py:72) hands it to
@@ -827,11 +810,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         },
         // Fighters. **A 3-tuple, and the third element must be a dict.**
         //
-        //     fightersInTubes, fightersInSpace, abilityStates = \
-        //         reg.fightersSvc.GetFightersForShip()
-        //     for tubeFlagID, fighterItemID, fighterTypeID, squadronSize in fightersInTubes:
-        //     ...
-        //     for fighterID, abilitySlotStates in abilityStates.iteritems():
+        // `[V]` the client unpacks `fightersSvc.GetFightersForShip()` into
+        // three parts; the first is iterated as rows of tube flag, fighter
+        // item, fighter type and squadron size, and the third is walked with
+        // `iteritems()` as fighter id to ability slot states.
         //
         // Unpacked with no guard in front of it, which is why `None` was
         // `TypeError: 'NoneType' object is not iterable` out of
@@ -869,11 +851,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // structure rather than a stub. `godma.Prime` ends with an
         // **unconditional**
         //
-        //     char = reg.GetItem(session.charid)
-        //     for att in ['memory', 'perception', 'willpower',
-        //                 'charisma', 'intelligence']:
-        //         sm.ScatterEvent('OnAttribute', att, char,
-        //                         getattr(char, att))
+        // `[V]` the client reads the character item and fires `OnAttribute`
+        // for each of the five character attributes (memory, perception,
+        // willpower, charisma, intelligence).
         //
         // so the character must really be primed: a falsy `charInfo`
         // makes `GetItem` return None and `getattr(None, 'memory')`
@@ -1201,8 +1181,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             },
             // Both are **iterated**, in `godma.RefreshTargets`:
             //
-            //     for objectID in reg.GetDogmaLM().GetTargets():
-            //         sm.ScatterEvent('OnTarget', 'add', objectID)
+            // `[V]` it fires an `OnTarget` add event for each id in `GetTargets()`.
             //
             // so `None` is a `TypeError`, not an empty answer.
             //
@@ -2999,10 +2978,8 @@ mod tests {
     ///
     /// `eve/client/script/ui/crate/controller.py` lines 76 and 252:
     ///
-    /// ```text
-    ///     name, icon, ship_type_id, insurance = \
-    ///         sm.RemoteSvc('ship').GetShipFittingInfo(fitting_id)
-    /// ```
+    /// `crate/controller.py:76,252` (`[V]`) unpack the answer of
+    /// `ship.GetShipFittingInfo` into name, icon, ship type id and insurance
     ///
     /// with no guard in front of either, so the unpack happens before
     /// anything is tested and the arity is the entire contract. Four

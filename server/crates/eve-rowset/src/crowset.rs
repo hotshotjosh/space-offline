@@ -3,24 +3,13 @@
 //!
 //! **Confirmed** from `carbon/common/script/sys/crowset.pyc`:
 //!
-//! ```python
-//! class CRowset(list):
-//!     __guid__ = 'dbutil.CRowset'
-//!     __passbyvalue__ = 1
-//!     def __init__(self, header, rows):
-//!         list.__init__(self, rows)
-//!         self.header = header
-//!     @property
-//!     def columns(self):  return self.header.Keys()
-//!     def Index(self, columnName): ...        # header.Keys().index(columnName)
-//!     def InsertNew(self, listOfValues):  self.append(blue.DBRow(self.header, listOfValues))
-//!
-//! class CIndexedRowset(dict):
-//!     def __init__(self, header, columnName): ...
-//! class CFilterRowset(dict):
-//!     def __init__(self, header, columnName, indexName=None,
-//!                  allowDuplicateCompoundKeys=False, giveMeSets=False): ...
-//! ```
+//! `CRowset` is a `list` subclass (guid `dbutil.CRowset`, passed by
+//! value) built from a header and rows; it keeps the header, exposes
+//! `columns` as the header's keys, `Index(name)` as the position of a
+//! column, and `InsertNew(values)` appends a `blue.DBRow` made from the
+//! header and the values. `CIndexedRowset` and `CFilterRowset` are `dict`
+//! subclasses built from a header and a column name; the filter variant
+//! also takes an index name, a duplicate-key flag and a sets flag.
 //!
 //! Two things follow and are worth stating because they drive the API here:
 //!

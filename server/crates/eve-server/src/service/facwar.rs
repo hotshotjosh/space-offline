@@ -25,14 +25,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Factional warfare's occupation state: a **2-tuple whose first
         // element we do not get to choose**.
         //
-        //     solarsystemID, occupationState = sm.RemoteSvc(
-        //         'fwWarzoneSolarsystem').GetLocalOccupationState()
-        //     if solarsystemID != session.solarsystemid2:
-        //         solarsystemID, occupationState = <the same call again>
-        //     if solarsystemID == session.solarsystemid2:
-        //         reg._localOccupationSystemAndState = (...)
-        //     else:
-        //         raise RuntimeError(...)
+        // `[V]` the client unpacks a (solar system id, occupation state) pair
+        // from `fwWarzoneSolarsystem.GetLocalOccupationState()`, repeats the
+        // call once when the id differs from the session's, stores the pair
+        // when they then match, and raises otherwise.
         //
         // Three teeth, and all of them bite:
         //   1. `UNPACK_SEQUENCE 2` runs before any test, so `None` is a
@@ -71,12 +67,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `fwWarzoneSvc.GetAllOccupationStates` is a one-line
             // passthrough to us, and `mapViewData.py(116)` consumes it:
             //
-            //     for occupationStatesBySolarsystem in \
-            //             occupationStatesByWarzone.itervalues():      # 117
-            //         for solarsystemID, occupationState in \
-            //                 occupationStatesBySolarsystem.iteritems():  # 118
-            //             allianceSolarSystems[solarsystemID] = \
-            //                 occupationState.occupierID               # 119
+            // it walks the values of the outer (by warzone) dict and the items of
+            // each inner (by solar system) dict, and stores each state's
+            // `occupierID` per solar system (lines 117-119, `[V]`).
             //
             // Outer dict keyed by warzone, inner keyed by solar system,
             // values carrying `.occupierID`. `None` is an `AttributeError`

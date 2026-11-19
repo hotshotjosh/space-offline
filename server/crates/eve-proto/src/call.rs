@@ -27,11 +27,9 @@
 //!
 //! This is also what `ServiceCallGPCS.CallUp` reads first:
 //!
-//! ```text
-//! if not packet.payload[0]:          # a service call
-//!     packet.payload = packet.payload[1]   # materialise the substream
-//!     return self.ForwardCallUp(packet)    # re-enter with (1, method, ...)
-//! ```
+//! when the first payload element is falsy it is a service call: the
+//! client replaces the payload with the substream in element 1 and
+//! re-enters call forwarding with `(1, method, ...)`.
 //!
 //! so the outer `0` and the inner leading `1` are two different discriminators
 //! one level apart, which is easy to conflate and worth stating plainly.
@@ -141,14 +139,10 @@ pub fn pickled(v: &PyValue) -> PyValue {
 /// The one that forced this was `slash.SlashCmd('/')`: the client asks for the
 /// server's command list once, and reads the answer out of the *exception*:
 ///
-/// ```python
-/// try:
-///     sm.RemoteSvc('slash').SlashCmd('/')
-/// except UserError as e:
-///     msg = e.args[1]['reason']
-///     cmds = eval(msg.split(': ')[1])
-/// self.remoteCommandList = cmds          # <- not assigned on the happy path
-/// ```
+/// The client (`[V]`) calls `slash.SlashCmd('/')` inside a `try`; its
+/// handler takes the reason from `e.args[1]['reason']`, evaluates the
+/// text after the first `': '`, and the result becomes the command list,
+/// which is not set on the normal return path.
 ///
 /// `cmds` is bound only inside the handler, so returning normally is an
 /// `UnboundLocalError` and **every** slash command fails, including the ones
@@ -160,13 +154,9 @@ pub fn pickled(v: &PyValue) -> PyValue {
 /// `header[0](*header[1])` — it *calls* the class — and `UserError.__init__`
 /// has exactly the signature we want:
 ///
-/// ```python
-/// def __init__(self, msg=None, *args):
-///     ...
-///     if len(args) and type(args[0]) == type({}):
-///         self.dict = args[0]
-///         self.args = (self.msg, self.dict)
-/// ```
+/// `UserError.__init__(self, msg=None, *args)` takes a dict as its
+/// first extra argument, keeps it as `dict` and sets `args` to the pair
+/// of message and dict `[V]`.
 ///
 /// so `UserError(msg, dict)` populates `.msg`, `.dict` and `.args` itself and
 /// we send no state at all. `eveexceptions.UserError` is in the client's

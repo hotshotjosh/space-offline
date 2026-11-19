@@ -3,12 +3,8 @@
 //!
 //! `dynamicResourceSvc.GetESSDataForCurrentSystem` is
 //!
-//! ```text
-//! if GetESSFeatureFlaggedOffline(self.machoNet):
-//!     return None
-//! else:
-//!     return sm.RemoteSvc('essMgr').GetDataForClientSolarSystem()
-//! ```
+//! answers nothing when the ESS feature is flagged offline, and
+//! otherwise the answer of `essMgr.GetDataForClientSolarSystem()`
 //!
 //! **[V]**, and the flag cannot be set from here (`machoNet.
 //! InitClientGlobalConfig` is not exported, port-tracker §41.10). So the

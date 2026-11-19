@@ -429,11 +429,9 @@ impl Statics {
     /// `SpaceportPin.GetImportTax(commodities, taxRate)` **[V]**
     /// (`spaceportPin.pyc:99-107`):
     ///
-    /// ```text
-    ///     importTaxRate = GetTypeAttribute(self.typeID, attributeImportTax)
-    ///     total = sum(qty * importTaxRate * GetTypeAttribute(t, attributeImportTaxMultiplier))
-    ///     return total * taxRate
-    /// ```
+    /// The import tax is, per commodity, quantity times the spaceport's
+    /// import-tax attribute times the commodity's import-tax multiplier,
+    /// summed and then scaled by the tax rate.
     pub fn import_tax(&self, pin_type_id: i64, commodities: &BTreeMap<i64, i64>, rate: f64) -> f64 {
         self.customs_tax(pin_type_id, attr::IMPORT_TAX, commodities, rate)
     }
@@ -1053,10 +1051,8 @@ impl SurfacePoint {
     /// The point as `BasePin.SetLatitude`/`SetLongitude` would store it.
     /// **[V]**
     ///
-    /// ```text
-    ///     self.latitude  = min(math.pi, max(-math.pi, latitude))
-    ///     self.longitude = abs(longitude % (2 * math.pi))
-    /// ```
+    /// Latitude is clamped to the range -pi..pi; longitude is reduced
+    /// modulo 2*pi and made non-negative with an absolute value.
     ///
     /// **The client normalises on store rather than refusing**, and this is
     /// the first thing a port gets wrong twice over:
@@ -1099,9 +1095,8 @@ impl SurfacePoint {
 
 /// `planetCommon.GetProgramLengthFromHeadRadius`. **[V]**
 ///
-/// ```text
-///     return (headRadius - RADIUS_DRILLAREAMIN) / RADIUS_DRILLAREADIFF * 335 + 1
-/// ```
+/// The program length is `(headRadius - RADIUS_DRILLAREAMIN) /
+/// RADIUS_DRILLAREADIFF * 335 + 1`.
 ///
 /// **In hours.** `RADIUS_DRILLAREADIFF` is `0.04`, so the minimum radius
 /// gives a one-hour program and the maximum gives 336 hours -- two weeks, the
@@ -1122,9 +1117,7 @@ pub fn program_length_from_head_radius(head_radius: f64) -> f64 {
 
 /// `planetCommon.GetCycleTimeFromProgramLength`, in **hours**. **[V]**
 ///
-/// ```text
-///     return 0.25 * 2 ** max(0, math.floor(math.log(programLength / 25.0, 2)) + 1)
-/// ```
+/// The cycle time in hours is `0.25 * 2^max(0, floor(log2(programLength / 25)) + 1)`.
 ///
 /// So a short program cycles every 15 minutes and each doubling of the
 /// program's length doubles the cycle: 0.25, 0.5, 1, 2, 4 hours. The `max(0,
@@ -1140,17 +1133,14 @@ pub fn cycle_time_from_program_length(program_length: f64) -> f64 {
 /// window draws it as a bar chart before they commit, so a divergent curve is
 /// visible on the first click.
 ///
-/// ```text
-///     timeDiff  = currentTime - startTime
-///     cycleNum  = max((timeDiff + const.SEC) / cycleTime - 1, 0)
-///     barWidth  = cycleTime / const.SEC / 900.0
-///     t         = (cycleNum + 0.5) * barWidth
-///     decayValue = baseValue / (1 + t * decayFactor)
-///     phaseShift = baseValue ** 0.7
-///     sinStuff  = max(0, (cos(phaseShift + t/12) + cos(phaseShift/2 + t/5) + cos(t/2)) / 3)
-///     barHeight = decayValue * (1 + noiseFactor * sinStuff)
-///     return int(barWidth * barHeight)
-/// ```
+/// In our own notation, with `t` the position in bar-widths: the cycle
+/// number is the elapsed time in cycles less one (floor 0), the bar
+/// width is the cycle time in seconds over 900, and `t = (cycleNum +
+/// 0.5) * barWidth`. The decayed value is `baseValue / (1 + t *
+/// decayFactor)`; a noise term is the clamped mean of three cosines
+/// (arguments built from `baseValue^0.7` and `t`) and the bar height is
+/// the decayed value times `1 + noiseFactor * noise`; the output is the
+/// integer of bar width times bar height `[V]`.
 ///
 /// Two Python-2 details a Rust port gets wrong by default, and both change
 /// the answer:
@@ -1207,10 +1197,8 @@ pub fn ecu_program_output(
 
 /// `EcuPin.GetMaxOutput(baseOutput, cycleTime)`. **[V]**
 ///
-/// ```text
-///     scalar = self.GetAttribute(attributeEcuNoiseFactor) + 1
-///     return int(scalar * baseOutput) * cycleTime / const.SEC / 900.0
-/// ```
+/// The maximum output is the integer of `(noiseFactor attribute + 1) *
+/// baseOutput`, times the cycle time in seconds, over 900.
 ///
 /// This is **not** the production figure -- it is the cap a route from an
 /// extractor may reserve, which is why `GetProductMaxOutput` and not
@@ -1703,14 +1691,9 @@ impl Pin {
         match self.kind(statics) {
             // `ProcessPin.CanActivate` **[V]**:
             //
-            // ```text
-            //     if self.activityState < STATE_IDLE: return False
-            //     if self.schematicID is None: return False
-            //     if self.IsActive(): return True
-            //     if self.hasReceivedInputs or self.receivedInputsLastCycle: return True
-            //     if not self.HasEnoughInputs(): return False
-            //     return True
-            // ```
+            // It answers false below the idle state or with no schematic, true
+            // when already active or when inputs were received this cycle or the
+            // last one, and otherwise whether there are enough inputs.
             //
             // The two flags short-circuit **before** the input check, which
             // is why a factory that was just delivered into is activatable
@@ -1752,10 +1735,8 @@ impl Pin {
     pub fn next_run_time(&self, statics: &Statics) -> Option<i64> {
         // `ProcessPin.GetNextRunTime` **[V]**:
         //
-        // ```text
-        //     if not self.IsActive() and self.HasEnoughInputs(): return None
-        //     return BasePin.GetNextRunTime(self)
-        // ```
+        // It answers nothing when the pin is idle and has enough inputs;
+        // otherwise it defers to the base pin.
         //
         // **This is the kick-start path, and `None` here means "now".** An
         // idle factory that has just been given a full batch returns `None`,
@@ -1785,19 +1766,10 @@ impl Pin {
     /// `BasePin.CanRun(runTime)`, with `ProcessPin` and `StoragePin`'s
     /// overrides. **[V]**
     ///
-    /// ```text
-    ///     # BasePin
-    ///     if not self.CanActivate(): return False
-    ///     nextRunTime = self.GetNextRunTime()
-    ///     return nextRunTime is None or nextRunTime <= rt
-    ///
-    ///     # ProcessPin
-    ///     if not self.IsActive() and not self.CanActivate(): return False
-    ///     ... same tail ...
-    ///
-    ///     # StoragePin
-    ///     return False
-    /// ```
+    /// For the base pin: false unless `CanActivate`, then true when the
+    /// next run time is unset or due. A process pin first requires that it
+    /// is active or can activate, then applies the same tail. A storage pin
+    /// never runs.
     ///
     /// Two things to keep:
     ///
@@ -1856,16 +1828,9 @@ impl Pin {
         match self.kind(statics) {
             // `EcuPin.Run` **[V]**:
             //
-            // ```text
-            //     self.lastRunTime = runTime
-            //     if self.programType is None: return {}
-            //     products = {}
-            //     if self.IsActive():
-            //         products[self.programType] = self.GetProgramOutput(runTime)
-            //         if self.expiryTime <= runTime:
-            //             self.SetState(STATE_IDLE)
-            //     return products
-            // ```
+            // It records the run time and returns nothing without a program. When
+            // active it yields the program output for that time and, once the
+            // expiry has passed, goes idle.
             //
             // Two orderings that are the whole behaviour:
             //
@@ -1923,19 +1888,10 @@ impl Pin {
             // `ProcessPin.Run` **[V]**: produce-then-consume, with exactly
             // one cycle of latency.
             //
-            // ```text
-            //     products = self.products.copy() if self.IsActive() else {}
-            //     canConsume = all(contents[t] >= demands[t] for t in demands)
-            //     if canConsume:
-            //         for t, q in demands: self.RemoveCommodity(t, q)
-            //         self.SetState(STATE_ACTIVE)
-            //     else:
-            //         self.SetState(STATE_IDLE)
-            //     self.receivedInputsLastCycle = self.hasReceivedInputs
-            //     self.hasReceivedInputs = False
-            //     self.lastRunTime = runTime
-            //     return products
-            // ```
+            // The pin yields its products when active. It consumes the demanded
+            // commodities and stays active when it holds enough of every one, and
+            // goes idle otherwise. It then shifts the received-inputs flags, stores
+            // the run time and returns the products.
             //
             // The output belongs to the cycle that is *ending* -- it is paid
             // because the pin was already active on entry -- and the inputs
@@ -2532,9 +2488,8 @@ impl Colony {
 
     /// `planetCommon.GetExpeditedTransferTime`. **[V]**
     ///
-    /// ```text
-    ///     long(ceil(max(5 * const.MIN, float(volume) / linkBandwidth * const.HOUR)))
-    /// ```
+    /// The time in seconds is the larger of five minutes and the volume
+    /// over the link bandwidth times an hour, ceiled to a whole number.
     ///
     /// Five minutes minimum, however small the shipment. EvEJS agrees
     /// (`planetRuntimeStore.js:35`).
@@ -2623,19 +2578,10 @@ impl Colony {
 
     /// `BaseColony.SchedulePin`. **[V]**
     ///
-    /// ```text
-    ///     nextRunTime = pin.GetNextRunTime()
-    ///     for (evalTime, evalPinID) in self.simQueue:
-    ///         if evalPinID == pin.id:
-    ///             if nextRunTime is None or nextRunTime < evalTime:
-    ///                 self.simQueue.remove((evalTime, evalPinID))
-    ///             else:
-    ///                 return
-    ///     if nextRunTime is None or nextRunTime < self.currentSimTime:
-    ///         self.AddTimer(pin.id, self.currentSimTime)
-    ///     else:
-    ///         self.AddTimer(pin.id, nextRunTime)
-    /// ```
+    /// Scheduling looks up the pin's queue entry: an entry that is later
+    /// than the new next run time is removed, an equal-or-earlier one ends
+    /// the call. The pin is then queued at the current sim time when its
+    /// next run time is unset or in the past, else at that run time.
     ///
     /// Two things worth not losing:
     ///
@@ -2670,20 +2616,12 @@ impl Colony {
     /// `BaseColony.RunSimulation(runSimUntil)` -- advance the colony to
     /// `sim_end_time`. **[V]**, ported from `baseColony.pyc` offset 246.
     ///
-    /// ```text
-    ///     if self.currentSimTime is None: self.RecalculateCurrentSimTime()
-    ///     self.PrimeSimulation(simEndTime)
-    ///     while len(self.simQueue) > 0:
-    ///         (simTime, simPinID) = heapq.heappop(self.simQueue)
-    ///         if simTime > simEndTime: break
-    ///         self.currentSimTime = simTime
-    ///         simPin = self.GetPin(simPinID)
-    ///         if simPin is None: LogTraceback; continue
-    ///         if simPin.IsExtractor() and (cycleTime is None or cycleTime <= 0): break
-    ///         if not simPin.CanRun(self.currentSimTime): continue
-    ///         self.EvaluatePin(simPin)
-    ///     self.currentSimTime = simEndTime
-    /// ```
+    /// Sets the current sim time if it is unset, primes the simulation,
+    /// then pops the queue in time order until an entry passes the end
+    /// time. For each entry it sets the current time, skips a missing pin
+    /// (logging it), stops at an extractor when the cycle time is unset or
+    /// not positive, skips a pin that cannot run, and evaluates the rest.
+    /// It ends with the sim time at the end time.
     ///
     /// Four details that are easy to get wrong and all four change the
     /// result:
@@ -2760,14 +2698,10 @@ impl Colony {
 
     /// `BaseColony.EvaluatePin`. **[V]**
     ///
-    /// ```text
-    ///     if not pin.CanActivate() and not pin.IsActive(): return
-    ///     commodities = pin.Run(self.currentSimTime)
-    ///     if pin.IsConsumer(): self.RouteCommodityInput(pin)
-    ///     if pin.IsActive() or pin.CanActivate(): self.SchedulePin(pin)
-    ///     if len(commodities) == 0: return
-    ///     self.RouteCommodityOutput(pin, commodities)
-    /// ```
+    /// It returns when the pin can neither activate nor is active; it runs
+    /// the pin at the current sim time; a consumer has its input routed; a
+    /// pin that is active or can activate is scheduled again; and any
+    /// commodities produced are routed out.
     ///
     /// The input routing happens **after** the cycle and **before** the
     /// reschedule, which is the whole reason a well-fed factory never idles:
@@ -3021,14 +2955,11 @@ impl Colony {
 
     /// `BaseColony.TransferCommodities`. **[V]**
     ///
-    /// ```text
-    ///     amtToMove = min(commodities[typeID], qty)
-    ///     if maxAmount is not None: amtToMove = min(maxAmount, amtToMove)
-    ///     if amtToMove <= 0: return (0, 0)
-    ///     amtMoved = destPin.AddCommodity(typeID, amtToMove)
-    ///     if sourcePin.IsStorage(): sourcePin.RemoveCommodity(typeID, amtMoved)
-    ///     return (typeID, amtMoved)
-    /// ```
+    /// The amount moved is the smaller of the commodity's stock and the
+    /// requested quantity, and of the cap when one is given. Nothing moves
+    /// at zero or less (the answer is `(0, 0)`). The destination takes the
+    /// amount, a storage source gives it up, and the answer is the type id
+    /// with the amount actually moved.
     ///
     /// **The source is debited only if it is storage.** A factory's or an
     /// ECU's output was never in its contents -- `Run` returned it as a value
@@ -3185,9 +3116,7 @@ impl Command {
 /// **A temporary id is any tuple.** `BaseColony.IsTemporaryID` is the whole
 /// of
 ///
-/// ```text
-///     return type(id) == types.TupleType
-/// ```
+/// the id is a tuple `[V]`
 ///
 /// -- no namespace, no range, no structure. The client mints one for every
 /// object it created in this edit session, submits the stream with those

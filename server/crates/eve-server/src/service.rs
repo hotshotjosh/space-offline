@@ -3429,11 +3429,9 @@ impl Registry {
     /// `CallReq` whose *return* is a live reference, which the client then
     /// calls methods on. `skillsvc.GetSkillHandler` is the model —
     ///
-    /// ```python
-    /// if not self.skillHandler:
-    ///     self.skillHandler = session.ConnectToRemoteService('skillMgr2').GetMySkillHandler()
-    /// return self.skillHandler
-    /// ```
+    /// it fetches `GetMySkillHandler()` through
+    /// `session.ConnectToRemoteService('skillMgr2')` once, caches it and
+    /// returns it `[V]`
     ///
     /// — and it then calls some twenty-five methods on the result. **No data
     /// value can stand in**: the client never reads an attribute off it, only
@@ -3479,12 +3477,8 @@ impl Registry {
         // (`eve/client/script/parklife/scanSvc.py`, the method body) is the
         // `skillMgr2` shape exactly:
         //
-        // ```text
-        //     def GetScanMan(self):
-        //         if self.remoteObject is None:
-        //             self.remoteObject = sm.RemoteSvc('scanMgr').GetSystemScanMgr()
-        //         return self.remoteObject
-        // ```
+        // `GetScanMan` fetches `GetSystemScanMgr()` from the `scanMgr` remote
+        // service once and keeps the object `[V]`
         //
         // The attribute is called `remoteObject`, and every one of the nine
         // uses in that module and in `sensorSuiteService.py` is an
@@ -3647,9 +3641,8 @@ impl Registry {
             //
             // `ccSvc._QAPickStarterSystem` opens
             //
-            //     system_ids = sorted(sm.RemoteSvc('charUnboundMgr').GetQAStarterSystemIDs())
-            //     if not system_ids:
-            //         return None
+            // the function sorts the ids from `charUnboundMgr.GetQAStarterSystemIDs()`
+            // and returns when the list is empty `[V]`
             //
             // with no `try/except` anywhere above it, so an unanswered call
             // hangs character creation outright. `sorted([])` is falsy and the
@@ -3722,10 +3715,9 @@ impl Registry {
     ///
     /// `eveSessions.IsUndockingSessionChange` is
     ///
-    /// ```python
-    /// goingFromStation = 'stationid'     in change and change['stationid'][0]
-    /// goingToSpace     = 'solarsystemid' in change and change['solarsystemid'][1]
-    /// ```
+    /// it is going from a station when `stationid` is in the change with a
+    /// truthy old value, and going to space when `solarsystemid` is in the
+    /// change with a truthy new value `[V]`
     ///
     /// so `stationid` must be present with a truthy *old* value and
     /// `solarsystemid` present with a truthy *new* one. `ComputeNotifySets`
@@ -3736,10 +3728,8 @@ impl Registry {
     /// **`locationid` is derived and must still not be sent.**
     /// `RecalculateDependantAttributesWithChanges` computes
     ///
-    /// ```python
-    /// new = changes.get('stationid', [None, None])[1] \
-    ///    or changes.get('solarsystemid', [None, None])[1]
-    /// ```
+    /// it takes the new `stationid` value, or else the new `solarsystemid`
+    /// value, with `[None, None]` as the default for a missing key `[V]`
     ///
     /// so `stationid`'s *new* value has to be `None` for `locationid` to pick
     /// up the system instead of staying on the station. And that derived
@@ -4347,13 +4337,9 @@ impl Registry {
                 "systemWideEffectsOnShip",
                 actor.map_or(PyValue::None, |a| crate::system_effect::info(self, a)),
             ),
-            // **`UNPACK_SEQUENCE 4`, unconditionally.** `_MakeShipActive`
-            // does
-            //
-            //     self.instanceCache, self.instanceFlagQuantityCache,
-            //     self.wbData, heatStates = shipState
-            //
-            // with no guard, so `None` is a `TypeError` -- and worse, the
+            // **A four-way unpack, unconditionally.** `_MakeShipActive`
+            // unpacks `shipState` into the instance cache, the flag-quantity
+            // cache, the weapon-bank data and the heat states `[V]`, with no guard, so `None` is a `TypeError` -- and worse, the
             // `shipState is None` branch *above* it fires a nested
             // `PerformSelectiveSessionChange('board', ...)` into
             // `ship.Board`, which mutates the session and sets an undock
@@ -4399,10 +4385,8 @@ impl Registry {
     /// `UpdateItem` has a gauntlet the pod has to pass, and one of its gates
     /// is easy to miss: **`singleton` must be truthy.** The test is
     ///
-    /// ```python
-    /// if (isSubLocation or not item.singleton) and (itemCategoryID != const.categoryCharge or ...):
-    ///     return
-    /// ```
+    /// the update returns early when the item is a sub-location or is not
+    /// a singleton, unless it is a charge `[V]`
     ///
     /// so a `singleton` of 0 drops the capsule at `Godma:UpdateItem.skip3`,
     /// silently, and it never gets attributes. `categoryShip` is in the
@@ -4527,11 +4511,8 @@ impl Registry {
     /// and `invbroker.GetContainerContents` -- and `invCache` merges their
     /// answers into one cache keyed by `realItem.itemID`:
     ///
-    /// ```text
-    ///     realItems = self.moniker.ListIncludingContainers()
-    ///     for realItem in realItems:
-    ///         self.cachedItemsAll[realItem.itemID] = realItem
-    /// ```
+    /// the cache is filled from `moniker.ListIncludingContainers()`, one
+    /// entry per row, under its `itemID` `[V]`
     ///
     /// So the rows must carry `itemID` **as an attribute**, which means
     /// `blue.DBRow` with the `item_columns()` layout, which is already what
@@ -4947,8 +4928,8 @@ impl Registry {
                 // the usual harmless gap. `cfg.evelocations` is a
                 // `cfg.Recordset`, and `Recordset.Get` **raises** on a miss:
                 //
-                //     if key in self.data: return self.rowclass(self, key)
-                //     raise KeyError('RecordNotFound', key)
+                // (it returns the row class for a key it holds and otherwise
+                // raises `KeyError('RecordNotFound', key)` `[V]`)
                 //
                 // The fitting window's `ConstructLayout` ends in
                 // `UpdateShipName` -> `GetFitName` -> `cfg.evelocations.Get
@@ -5058,19 +5039,9 @@ impl Registry {
 /// `eveAssets/assetSearching.GetFakeRowset`, which synthesises item rows for
 /// asset search:
 ///
-/// ```python
-/// blue.DBRowDescriptor((('itemID',     const.DBTYPE_I8),
-///                       ('typeID',     const.DBTYPE_I4),
-///                       ('ownerID',    const.DBTYPE_I4),
-///                       ('groupID',    const.DBTYPE_I4),
-///                       ('categoryID', const.DBTYPE_I4),
-///                       ('quantity',   const.DBTYPE_I4),
-///                       ('singleton',  const.DBTYPE_I4),
-///                       ('stacksize',  const.DBTYPE_I4),
-///                       ('locationID', const.DBTYPE_I8),
-///                       ('flagID',     const.DBTYPE_I2),
-///                       ('stationID',  const.DBTYPE_I8)))
-/// ```
+/// the descriptor holds itemID (I8), typeID (I4), ownerID (I4),
+/// groupID (I4), categoryID (I4), quantity (I4), singleton (I4),
+/// stacksize (I4), locationID (I8), flagID (I2) and stationID (I8).
 ///
 /// That is the best evidence available and it is the client's, not ours — but
 /// it is still **[I]**, not **[V]**: it is what the client builds when it
@@ -5570,11 +5541,8 @@ fn empty_price_histories(type_ids: &[i64]) -> PyValue {
 /// `Standing.__RefreshStandings` does nothing with this but call `.Filter`
 /// on it, twice, before any other statement:
 ///
-/// ```python
-/// tmp = standingsMgr.GetNPCNPCStandings()
-/// self.npcnpcstandingsto = tmp.Filter('toID')
-/// self.npcnpcstandingsfrom = tmp.Filter('fromID')
-/// ```
+/// it stores the answer of `GetNPCNPCStandings()` and calls `.Filter`
+/// on it for `toID` and for `fromID`.
 ///
 /// So this is the fourth row of the "empty is not one answer, it is four"
 /// table in `docs/guides/debugging-the-client.md`: it has to be an object with methods.
@@ -5696,14 +5664,9 @@ pub fn escalating_path_rowset() -> PyValue {
 /// `assetsWindow.Search_thread` groups the items it was given by station and
 /// then throws away every group whose station is not in here:
 ///
-/// ```text
-///     ownerStations = ...ListStations().Index('stationID')
-///     for stationID, stationItems in stations.iteritems():
-///         stationData = ownerStations.get(stationID, None)
-///         if stationData is None:
-///             continue
-///         sortlocations.append((stationData.solarSystemID, stationID, ...))
-/// ```
+/// It reads the owner's stations indexed by `stationID`, skips every
+/// station group without an entry, and builds a sort key from the
+/// station's solar system and id for the rest `[V]`.
 ///
 /// So an empty rowset here makes an answered `ListIncludingContainers`
 /// invisible: the items are sent, every one of them is dropped, and the window

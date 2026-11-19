@@ -115,22 +115,16 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                     // **This one must RAISE, and the "always answer with
                     // a value" default is wrong for it.**
                     //
-                    //     def FetchRemoteCommandList(self):
-                    //         try:
-                    //             sm.RemoteSvc('slash').SlashCmd('/')
-                    //         except UserError as e:
-                    //             msg = e.args[1]['reason']
-                    //             cmds = eval(msg.split(': ')[1])
-                    //             cmds.sort()
-                    //         ...
-                    //         reg.remoteCommandList = cmds
+                    // `FetchRemoteCommandList` (`[V]`) calls `slash.SlashCmd('/')` in a
+                    // `try`; the handler takes `e.args[1]['reason']`, evaluates the text
+                    // after the first `': '`, sorts it, and the result becomes the
+                    // remote command list.
                     //
                     // `cmds` is bound only inside the handler. Verified
-                    // from the bytecode rather than the decompiler's
-                    // indentation: the success path is
-                    // `119 JUMP_FORWARD -> 168 -> 178 JUMP_FORWARD -> 182
-                    // LOAD_FAST cmds`, and `STORE_FAST cmds` appears only
-                    // inside the two except blocks. So a normal return is
+                    // from the compiled code rather than the decompiler's
+                    // indentation: the success path jumps over both handlers
+                    // to the read of `cmds`, and the store to `cmds` appears
+                    // only inside the two except blocks. So a normal return is
                     // an `UnboundLocalError`, and because `_SlashCmd`
                     // calls this before matching anything, it breaks
                     // **every** slash command -- including `/whoami`,

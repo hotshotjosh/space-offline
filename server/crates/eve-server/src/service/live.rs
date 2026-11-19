@@ -128,10 +128,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // A bool, and a good illustration of why `None` is not free
             // even when nothing throws:
             //
-            //     def is_enabled(self):
-            //         if reg._is_enabled is None:
-            //             reg._is_enabled = reg.remote_service.is_enabled()
-            //         return reg._is_enabled
+            // `is_enabled` (`[V]`) fetches `remote_service.is_enabled()` while
+            // its cache is `None` and returns the cache.
             //
             // `None` is the cache's own "not fetched yet" marker, so
             // answering `None` means the cache never fills and every
@@ -146,11 +144,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         },
         // **`None` is exactly right here, and `[]` would be wrong.**
         //
-        //     season_data = reg.season_manager.get_season_data_for_character()
-        //     if season_data is None:
-        //         return
-        //     if isinstance(season_data, list):
-        //         reg.season_selection = season_data
+        // `[V]` the client reads the season data for the character, returns
+        // when it is `None`, and stores it as the season selection when it is
+        // a list.
         //
         // The method is polymorphic by design -- `None`, a list of
         // seasons, or one season -- and `None` is the author's own "no
@@ -192,10 +188,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Community tracks (the V24.02 Vanguard/Nemesis progress bar).
         // `[V]` communitytracks/client/repository.py `get_instance_attributes`:
         //
-        //     def_id, progress = RemoteSvc('communityTrackMgr')
-        //         .get_instance_attributes_public(instance_id.sequential)
-        //     if def_id is not None and progress is not None: ...
-        //     else: logger.error('could not find instance attributes ...')
+        // it unpacks a (definition id, progress) pair from
+        // `communityTrackMgr.get_instance_attributes_public(sequential)`, uses
+        // both when neither is `None`, and otherwise logs an error.
         //
         // The unpack is unconditional, so a bare `None` raises `TypeError:
         // 'NoneType' object is not iterable` (seen on 3707965 in

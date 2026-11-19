@@ -175,23 +175,17 @@ pub fn handshake_func() -> Vec<u8> {
 /// `carbonui/services/settingsSvc.py`, `UpdateSettingsStatistics`
 /// (code object `firstlineno` 198, first body line **205**):
 ///
-/// ```text
-/// code, verified = Crypto.Verify(sm.RemoteSvc('charMgr').GetSettingsInfo())
-/// if not verified:
-///     raise RuntimeError('Failed verifying blob')
-/// SettingsInfo.__code__ = marshal.loads(code)
-/// ret = SettingsInfo()
-/// if len(ret) > 0:
-///     sm.RemoteSvc('charMgr').LogSettings(ret)
-/// ```
+/// It takes the answer of `charMgr.GetSettingsInfo` through
+/// `Crypto.Verify`, raises when the verdict is false, installs the
+/// unmarshalled code as the body of `SettingsInfo`, calls it, and when
+/// the result is non-empty reports it through `charMgr.LogSettings`
+/// (`[V]`, `settingsSvc.py:205-211`).
 ///
 /// `Crypto.Verify` is `evecrypto/placebo.py(22)` for this build — `cryptoPack`
 /// is Placebo — and is the whole of `verify`:
 ///
-/// ```text
-/// def verify(signedData):
-///     return (signedData[0], signedData[1] == 0)
-/// ```
+/// `verify(signedData)` returns the first element and whether the
+/// second element equals zero `[V]`.
 ///
 /// So the answer must be a 2-sequence `(blob, 0)`: element 1 equal to `0`
 /// makes `verified` true, and element 0 is handed straight to
@@ -230,11 +224,9 @@ pub fn handshake_func() -> Vec<u8> {
 /// `SettingsInfo` (`settingsSvc.py` `firstlineno` 231, body `pass` on line
 /// 235), read out of the `.pyc` with `tools/pyc27.py`:
 ///
-/// ```text
-/// argcount 0  nlocals 0  stacksize 1  flags 0x43
-/// code     'd\x00\x00S'   (LOAD_CONST 0; RETURN_VALUE)
-/// consts   (None,)   names ()   varnames ()   freevars ()   cellvars ()
-/// ```
+/// The stock function has no arguments and no locals, stack size 1,
+/// flags `0x43`, a single constant `None`, and a body that loads that
+/// constant and returns it `[V]`.
 ///
 /// We match `argcount 0` (it is called as `SettingsInfo()`), `nlocals 0` and
 /// `flags 0x43`. The one field that is actually *enforced* is the free-variable
@@ -381,14 +373,10 @@ fn put_op(out: &mut Vec<u8>, opcode: u8, arg: u16) {
 ///
 /// The Python this hand-assembles, and the only Python it hand-assembles:
 ///
-/// ```text
-/// def SettingsInfo():
-///     try:
-///         execfile(r'c:\eve-logs\client-ci\<name>.py', globals())
-///     except:
-///         pass
-///     return {}
-/// ```
+/// Our one hand-assembled function, `SettingsInfo`, takes no
+/// arguments, runs a script file by `execfile` in the module globals
+/// inside a `try` whose handler does nothing, and returns an empty
+/// dict.
 ///
 /// ## Why this call site, and what it must still do
 ///
@@ -411,18 +399,13 @@ fn put_op(out: &mut Vec<u8>, opcode: u8, arg: u16) {
 /// The call site does swallow, but two frames up and at a cost. Read bottom
 /// up (all **[V]**, from `tools/dis.py` on this build's own `.pyc` files):
 ///
-/// ```text
-/// serviceManager.py(881)  uthread.worker(prefix + srvGuid,
-///                             self.MollycoddledUthread, srvGuid, eventid,
-///                             getattr(srv, eventid), args, keywords, ...)
-/// serviceManager.py(1013) MollycoddledUthread:
-///                             try: func(*args, **keywords)
-///                             except: self.LogError(...); log.LogException()
-///                                     sys.exc_clear()
-/// sessions.py(659)        sm.ScatterEvent('OnCharacterSessionChanged', ...)
-/// settingsSvc.py(215)     self.UpdateSettingsStatistics()
-/// settingsSvc.py(205-211) the code push, with **no** try/except of its own
-/// ```
+/// The chain, bottom up (`[V]`, read with `tools/dis.py` from this
+/// build's own files): `settingsSvc.py:205-211` is the code push, with
+/// no `try`/`except` of its own; `:215` calls it from the session-change
+/// handler; `sessions.py:659` scatters `OnCharacterSessionChanged`;
+/// `serviceManager.py:1013` runs the handler inside a bare `except` that
+/// logs the error and clears the exception state; and `:881` starts that
+/// wrapper on a worker tasklet.
 ///
 /// So `UpdateSettingsStatistics` itself catches nothing, and a throw from
 /// inside our code object unwinds into `MollycoddledUthread`'s bare `except`.

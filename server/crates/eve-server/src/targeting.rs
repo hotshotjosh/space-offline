@@ -1,14 +1,11 @@
 //! Who has a lock on whom.
 //!
 //! **A lock is confirmed by the return value of one remote call, and by
-//! nothing else `[V]`.** `targetMgr._LockTarget` (`targetMgr.py:1586`) is six
-//! lines of bytecode:
+//! nothing else `[V]`.** `targetMgr._LockTarget` (`targetMgr.py:1586`) is a
+//! short function:
 //!
-//! ```python
-//! flag, targetList = GetDogmaLM().AddTarget(tid)
-//! if not flag:
-//!     self.OnTargetAdded(tid)
-//! ```
+//! `_LockTarget` unpacks `(flag, targetList)` from `AddTarget(tid)` and
+//! calls `OnTargetAdded(tid)` when the flag is falsy.
 //!
 //! and `OnTargetAdded` (`:674`) *is* the whole visible lock -- the target box,
 //! the bracket, the sound stopping, the active target. `targetList` is stored

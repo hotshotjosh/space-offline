@@ -257,13 +257,9 @@ pub(crate) const CACHED_METHOD_CALL_RESULT: &str =
 /// `RefreshOrderCache` (marketsvc.py:846) re-fetches on every call but only
 /// *stores* when the version moved:
 ///
-/// ```text
-/// orders = self.GetMarketProxy().GetOrders(typeID)                         # 856
-/// version = objectCaching.GetCachedMethodCallVersion(None, 'marketProxy',
-///                                                    'GetOrders', (typeID,)) # 857
-/// if typeID in self.orderCache and self.orderCache[typeID][2] == version:   # 859-860
-///     return                                                                # 861
-/// ```
+/// `marketsvc.py:856-861` (`[V]`): the call fetches the orders, asks
+/// `objectCaching` for the cached call's version, and returns without
+/// storing when the type is already cached with that version.
 ///
 /// and `GetCachedMethodCallVersion` (objectCaching.py:527) is `0` for any
 /// call the server never marked cachable. A plain answer is therefore read

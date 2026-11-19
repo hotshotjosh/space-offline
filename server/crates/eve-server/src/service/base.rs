@@ -83,9 +83,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // (`:106-118` [V]) for the industry EIV and the reprocessing
             // value. CP31: the price oracle; `{}` with no bundle.
             "GetAverageMarketPrices" => Ok(crate::econ_prices::average_market_prices(reg)),
-            // `eveCfg._LoadOldStationsInfo` does
-            //     oldStations = GetConfigSvc().GetOldStationData()
-            //     if oldStations: <build a Recordset from .columns>
+            // `eveCfg._LoadOldStationsInfo` reads `GetOldStationData()` and
+            // builds a Recordset from its columns only when it is truthy `[V]`,
             // so a falsy return skips the whole block. There are no
             // stations in this sandbox yet, which makes None the true
             // answer rather than a stub.
@@ -234,11 +233,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // **This call is one we bring on ourselves.** `EvePhoto.GetPortrait`
         // only queues a scene portrait when the image-server portrait is
-        // missing *and* the session holds `ROLE_PROGRAMMER`:
-        //
-        //     136 LOAD_GLOBAL       ROLE_PROGRAMMER
-        //     139 BINARY_AND
-        //     140 POP_JUMP_IF_FALSE 295      -> skips _QueueScenePortrait
+        // missing *and* the session holds `ROLE_PROGRAMMER` (`[V]`: the role
+        // mask is tested and the scene-portrait queue is skipped when it
+        // is clear).
         //
         // We set that bit deliberately (see `docs/reference/session-roles.md`), so the
         // sandbox takes the developer path through the portrait code. The
@@ -336,11 +333,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // `characterSelection.TryEnterGame` does, on the click:
         //
-        //     populationCap = moniker.Moniker('populationCap',
-        //                                     (charID, groupCharacter))
-        //     locations = populationCap.GetCharacterLoadSlot(charID)
-        //     if len(locations) > 1:
-        //         ... AskForAlternativeSystems / MoveCharacterToNewSystem
+        // it binds a `populationCap` moniker on the character and group, asks
+        // for the character's load slot, and when more than one location comes
+        // back offers alternative systems or moves the character `[V]`
         //
         // which is two round trips: `MachoResolveObject(bindParams)` to
         // find the node, then `MachoBindObject(bindParams, call)` with the
@@ -366,7 +361,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // `localizationClient.OnCharacterSessionChanged` fires this once
         // per character login, under
         //
-        //     if session.role & ROLE_QA == ROLE_QA:
+        // a test of the role mask against `ROLE_QA`
         //
         // -- note the **all-of** form, `& X == X`, which is one of only
         // three ways the client tests the mask and the one that catches
@@ -479,12 +474,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // self-contradiction without it: `plexPanel.RefreshOmegaTime`
             // is
             //
-            //     if omegaTime:
-            //         header.SetText(... CurrentCloneStateOmega)
-            //         desc.SetText(GetByLabel('.../PilotLicense/DaysLeft',
-            //                                 expireDate=omegaTime))
-            //     else:
-            //         header.SetText(... CurrentCloneStateAlpha)
+            // `RefreshOmegaTime` shows the Omega header and a days-left line when
+            // a time is given, and the Alpha header otherwise `[V]`
             //
             // so `None` is survivable and merely *wrong* -- the Pilot
             // License tab reads **Alpha** while `GetCloneGrade` directly
@@ -525,22 +516,13 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // From `xmppchatclient/xmppchatsvc.py` (lines are `co_lnotab`'s):
         //
-        // ```text
-        // def _CreateConnection(self):                         # def @332
-        //     self.hostname = self.XmppChatMgr.Hostname()      # :333
-        //     self.ejabberd_address = self.get_ejabberd_address()  # :334
-        //     ...
-        //         if self.ejabberd_address is None:            # :341
-        //             self.send_honey_event(..., {'error': True})  # :344
-        //             return
-        //         self.xmppConnection = XmppConnection(...)
-        //
-        // def get_ejabberd_address(self):                      # def @370
-        //     address = GetEjabberdAddress(sm.GetService('machoNet'))
-        //     if address is not None and len(address) > 0:
-        //         return address
-        //     return self.XmppChatMgr.GetDeprecatedPrefsFallback()  # :375
-        // ```
+        // `xmppchatsvc.py` (`[V]`, line numbers from the code object's own
+        // table): `_CreateConnection` (`:332-344`) takes the hostname from the
+        // chat manager and the address from `get_ejabberd_address`; with no
+        // address it sends an error event and stops, otherwise it builds the
+        // connection. `get_ejabberd_address` (`:370-375`) returns the address
+        // from `GetEjabberdAddress` on the network service when it is
+        // non-empty, and otherwise the manager's deprecated-prefs fallback.
         //
         // **`GetDeprecatedPrefsFallback` is the whole lever**: its value
         // becomes `ejabberd_address` verbatim and the client then does

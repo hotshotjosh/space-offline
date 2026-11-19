@@ -125,16 +125,10 @@ impl MachoPacket {
     /// Mirrors `CoreBroadcastStuff.ScattercastWithoutTheStars`, which is the
     /// method the real server calls:
     ///
-    /// ```text
-    /// def ScattercastWithoutTheStars(self, idtype, ids, method, args):
-    ///     if not idtype.startswith('+'):
-    ///         idtype = '*%s' % idtype
-    ///     if ids:
-    ///         self.ForwardNotifyDown(machoNetPacket.Notification(
-    ///             destination=machoNetAddress.MachoAddress(
-    ///                 broadcastID=method, idtype=idtype, narrowcast=ids),
-    ///             payload=(1, args)))
-    /// ```
+    /// `ScattercastWithoutTheStars(idtype, ids, method, args)` prefixes the
+    /// id type with `*` unless it starts with `+`, and when there are ids
+    /// forwards a notification downwards addressed by broadcast id (the
+    /// method), id type and the ids as narrowcast, with payload `(1, args)`.
     ///
     /// so `id_type` is passed in **with** its `*` already on it --
     /// `"*clientID"` -- because it is that method and not the transport that
@@ -298,11 +292,9 @@ impl MachoPacket {
     /// `change` is `(0, {attr: (old, new)})`. Both of those are read straight
     /// off the server's own builder, `SessionChangeGPCS.SessionChanged`:
     ///
-    /// ```python
-    /// packet = machoNetPacket.SessionChangeNotification(
-    ///     destination=machoNetAddress.MachoAddress(clientID=clientID),
-    ///     sid=sid, change=(0, change), nodesOfInterest=nodesOfInterest)
-    /// ```
+    /// The server builds the packet with the client id as the destination,
+    /// the session id, the change as `(0, change)` and the nodes of
+    /// interest.
     ///
     /// The leading `0` is not read by the client at all — `SessionChange.NotifyUp`
     /// uses only `packet.change[1]` — but it is what the real server sends, and

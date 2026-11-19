@@ -219,14 +219,8 @@ pub struct Character {
     /// The type is load-bearing in a way that fails quietly.
     /// `localization.formatters.FormatDateTime` begins
     ///
-    /// ```python
-    /// if isinstance(value, long):
-    ///     ...
-    ///     blue.os.GetTimeParts(value)
-    /// else:
-    ///     logger.LogTraceback('datetime only accepts blue time ...')
-    ///     return
-    /// ```
+    /// `FormatDateTime` takes the time-parts branch only when the value is
+    /// a `long`; any other type logs a traceback and returns `[V]`.
     ///
     /// so anything that unmarshals as a Python 2 `int` rather than a `long`
     /// takes the `else` and returns `None` -- a `STACKTRACE` record and a
@@ -257,14 +251,9 @@ pub struct Character {
     /// The pod lives in the station hangar like any other ship. TQ's own
     /// session builder says so, walking *up* the location chain:
     ///
-    /// ```python
-    /// if item.categoryID == const.categoryShip:
-    ///     updateDict['shipid'] = itemID
-    /// elif item.groupID == const.groupStation:
-    ///     updateDict['stationid'] = itemID
-    /// ...
-    /// itemID = item.locationID
-    /// ```
+    /// The session builder walks up the location chain: a ship item sets
+    /// `shipid`, a station group sets `stationid`, and it continues with the
+    /// item's location `[V]`.
     ///
     /// so "the character is in a pod, the pod is in the hangar" is literally
     /// how `shipid` and `stationid` are derived. There is no separate

@@ -118,12 +118,9 @@ fn standing_row_descriptor() -> DbRowDescriptor {
 ///
 /// The caller (`standingsvc.py:129` then `:142-143`) is
 ///
-/// ```python
-/// self.npccharstandings = standingsMgr.GetCharStandings()
-/// ...
-/// if not isinstance(self.npccharstandings, types.DictType):
-///     self.npccharstandings = self.npccharstandings.Index('fromID')
-/// ```
+/// `standingsvc.py:129` and `:142-143` (`[V]`) store the answer of
+/// `GetCharStandings()` and, when it is not a dict, rebuild it as an
+/// index by `fromID`
 ///
 /// so a dict skips the rowset path entirely, and every later reader treats
 /// the values as rows with a `.standing` attribute that can be **assigned**
@@ -161,14 +158,11 @@ pub(crate) fn char_standings_value(reg: &Registry, actor: Option<i64>) -> PyValu
 ///
 /// **[V]** `standingUtil.py:92-99`:
 ///
-/// ```python
-/// if rawChange > 0.0:
-///     if currentStanding < MAX_STANDING:
-///         return min(MAX_STANDING, 10.0 * (1.0 - (1.0 - currentStanding / 10.0) * (1.0 - rawChange)))
-/// elif currentStanding > MIN_STANDING:
-///     return max(MIN_STANDING, 10.0 * (currentStanding / 10.0 + (1.0 + currentStanding / 10.0) * rawChange))
-/// return currentStanding
-/// ```
+/// `[V]` For a positive raw change below the maximum the result is
+/// `min(MAX, 10 * (1 - (1 - s/10) * (1 - r)))`; for a non-positive change
+/// above the minimum it is `max(MIN, 10 * (s/10 + (1 + s/10) * r))`,
+/// with `s` the current standing and `r` the raw change; otherwise the
+/// standing is unchanged.
 ///
 /// Kept here so that [`raw_change_for`] can be checked against the thing
 /// the client will actually run, rather than against its own algebra.

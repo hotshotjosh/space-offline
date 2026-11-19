@@ -81,11 +81,9 @@
 //! The one number an NPC station *does* carry is its tax, and the client has
 //! no table for it either. `Job._get_tax` is
 //!
-//! ```text
-//!     if self.facility and self.facility.tax is not None:  tax = self.facility.tax
-//!     elif self.activity and self.facility:                tax = self.activity.activity_tax(self.facility)
-//!     return int(round(self.base_cost * tax))
-//! ```
+//! `Job._get_tax` (`[V]`) uses the facility's own tax when it has
+//! one, otherwise asks the activity for its tax on that facility, and
+//! returns the rounded product of the base cost and the tax.
 //!
 //! and `Activity.activity_tax` falls through to
 //! `facility.serviceAccess.get(serviceID, 0) or 0` -- the *structure* path,
@@ -106,26 +104,23 @@
 //! Four formulas, and the operation order in each is the client's because
 //! each one ends in a rounding step that is not associative:
 //!
-//! ```text
-//!   materials   quantity = float(material.base)
-//!               for m in input_modifiers if MaterialModifier: quantity *= m.amount
-//!               quantity *= activity.job_material_runs(job)          # = job.runs
-//!               max(int(ceil(round(quantity, 2))), job.runs)
+//! Material: start from the base quantity, multiply by every material
+//! modifier, then by the run count, round to two places, take the
+//! ceiling, and floor the result at the run count.
 //!
-//!   time        seconds = activity.time * job.runs
-//!               for m in input_modifiers if TimeModifier: seconds *= m.amount
-//!               timedelta(seconds = long(round(seconds)))
+//! Time: the activity's one-run time times the run count, multiplied by
+//! every time modifier, rounded to whole seconds.
 //!
-//!   cost        base_cost = int(round(prices[blueprintTypeID] * float(job.runs)))
-//!               cost      = int(round(base_cost * prod(cost multipliers) + additive))
-//!               tax       = int(round(base_cost * facility tax))
-//!               scc       = int(round(base_cost * 0.04 * facility.sccTaxModifier))
-//!               sec tax   = int(round(base_cost * 0.05)) iff the system is safe-sec
-//!               total     = cost + tax + scc + sec tax
+//! Cost: the base cost is the blueprint's price times the run count,
+//! rounded. The job cost is the base cost times the product of the cost
+//! multipliers plus the additive part, rounded. The facility tax is the
+//! base cost times the facility's tax, the SCC fee is the base cost times
+//! 0.04 times the facility's SCC modifier, and a safe-security system adds
+//! the base cost times 0.05, each rounded; the total is the sum of the four.
 //!
-//!   max runs    min(int(ceil(2_592_000 / activity.time / prod(time mults))), MAX_RUNS)
-//!               for an original; min(blueprint.runsRemaining, MAX_RUNS) for a copy
-//! ```
+//! Max runs: for an original, the ceiling of 2,592,000 over the one-run
+//! time and the product of the time multipliers, capped at `MAX_RUNS`; for
+//! a copy, the runs remaining capped at `MAX_RUNS`.
 //!
 //! **The ME multiplier applies to the whole batch, not per run.** `base` is
 //! multiplied by the modifiers and *then* by the runs, and `round(.., 2)`
@@ -142,10 +137,10 @@
 //!
 //! `Manufacturing.job_modifiers` is
 //!
-//! ```text
-//!     if job.materialEfficiency: MaterialModifier(1.0 - job.materialEfficiency / 100.0, ...)
-//!     if job.timeEfficiency:     TimeModifier(1.0 - job.timeEfficiency / 100.0, ...)
-//! ```
+//! For the manufacturing modifiers, a material efficiency adds a
+//! material modifier of `1 - ME/100` and a time efficiency a time
+//! modifier of `1 - TE/100`, each only when the efficiency is non-zero
+//! `[V]`.
 //!
 //! -- guarded by truthiness, so ME 0 appends **no modifier at all** rather
 //! than a `1.0` one. The distinction is invisible for materials and visible
@@ -206,11 +201,9 @@
 //!
 //! **`READY` is derived, not stored**, and that is `industryCommon.JobStatus`:
 //!
-//! ```text
-//!     if data.status == STATUS_INSTALLED and data.endDate < now:      return STATUS_READY
-//!     if data.status == STATUS_PAUSED   and data.pauseDate > data.endDate: return STATUS_READY
-//!     return data.status
-//! ```
+//! `industryCommon.JobStatus` (`[V]`) answers ready for an installed
+//! job whose end date has passed, and for a paused job whose pause date
+//! is later than its end date; every other job keeps its stored status.
 //!
 //! [`Job::status_at`] is that function. A job we keep at `Installed` is shown
 //! as `Ready` by the client the moment its `end_date` passes, with no push
@@ -227,26 +220,28 @@
 //! from `industry/activities/{research_material,research_time,copying,
 //! invention}.pyc`, `activity.pyc` and `job.pyc`, read with `tools/dis.py`:
 //!
-//! ```text
-//!   research    level   = ME / 1  (TE / 2)              blueprint_level
-//!               levels  = [time * RESEARCH_TIMES[i] for i in range(10)]
-//!               time    = sum(levels[min(level + i, 9)] for i in range(runs))
-//!               cost    = prices[bp] * 0.02 * time / float(activity.time)
-//!               maxRuns = min(Activity.job_max_runs, (10 - ME) / 1)   ((20 - TE) / 2)
-//!               output  = ME = min(ME + 1 * runs, 10)   (TE = min(TE + 2 * runs, 20))
-//!               RESEARCH_LIMIT (39) when level < 0 or level >= 10
-//!   copying     time    = activity.time * licensedRuns * runs
-//!               cost    = prices[bp] * 0.02 * licensedRuns * runs
-//!               maxRuns = Activity.job_max_runs, MAX_RUNS 500
-//!               output  = `runs` copies, runsRemaining = licensedRuns, ME/TE of the original
-//!   invention   time    = activity.time * runs
-//!               cost    = prices[T2 blueprint] * 0.02 * runs
-//!               p       = mean(product.probability or 1.0 for every product)
-//!                         * (1 + sum(level(skill) * 1/30 or 1/40))  clamped to 0..1
-//!               maxRuns = min(copy.runsRemaining, Activity.job_max_runs), MAX_RUNS 500
-//!               output  = successfulRuns copies of the T2 blueprint, ME 2, TE 4,
-//!                         runsRemaining = round(product.quantity + 0)
-//! ```
+//! Research: the level is ME (or TE divided by 2). Each of ten level
+//! times is the activity time times a table entry; the job time sums
+//! those over the run count, starting at the current level and clamping
+//! at the last one. The cost is the blueprint's price times 0.02 times
+//! that time over the activity's one-run time. Max runs is the
+//! activity's bound capped by `10 - ME` (or `(20 - TE) / 2`). The
+//! output raises ME by `runs` up to 10 (TE by `2 * runs` up to 20), and
+//! a level below 0 or at 10 or above is `RESEARCH_LIMIT` (39).
+//!
+//! Copying: the time is the activity time times the licensed runs times
+//! the runs; the cost is the blueprint's price times 0.02 times the same
+//! factors; max runs is the activity's bound with `MAX_RUNS` 500. The
+//! output is `runs` copies with the licensed runs remaining and the
+//! original's ME and TE.
+//!
+//! Invention: the time is the activity time times the runs; the cost is
+//! the T2 blueprint's price times 0.02 times the runs. The chance is the
+//! mean probability over all products (1.0 when unset), times one plus a
+//! sum over the skills of level times 1/30 or 1/40, clamped to 0..1. Max
+//! runs is the copy's runs remaining capped by the activity's bound,
+//! `MAX_RUNS` 500. The output is the successful runs as T2 blueprint
+//! copies with ME 2, TE 4 and the product quantity as runs remaining.
 //!
 //! `prices` is `JobPrices(activityID)`, whose `GetBlueprintPrice` maps every
 //! science activity to **manufacturing** -- so every science cost is a
@@ -1020,12 +1015,9 @@ pub const DISTANCE_SKILL_FOR_ACTIVITY: [(i64, i64); 6] = [
 /// on EvEJS's word. **The module is in the bundle.** Its whole body is four
 /// constants, and `tools/dis.py` reads them directly:
 ///
-/// ```text
-/// line 3   MARKET_SECURITY_TAX_RATE        = 0.05
-/// line 5   NPC_BOUNTY_SECURITY_TAX_RATE    = 0.2
-/// line 7   INDUSTRY_SECURITY_TAX_RATE      = 0.05
-/// line 9   AGENT_MISSION_SECURITY_TAX_RATE = 0.2
-/// ```
+/// A job whose status is installed and whose end date has passed is
+/// ready, and so is a paused job whose pause date is later than its end
+/// date; every other job shows its stored status.
 ///
 /// EvEJS's value was right; the belief that no artefact existed was not. This
 /// is exactly the shape `docs/evejs/evejs-surprises.md` §5.2 names as rule zero --
@@ -1299,13 +1291,11 @@ pub fn missing_type(content: &crate::content::Content, bp: &Blueprint) -> Option
 ///
 /// `industryCommon.GetBlueprintPrice(blueprintTypeID, activityID)`:
 ///
-/// ```text
-///     blueprint = GetBlueprintType(typeID)          # cfg.blueprints[typeID]
-///     if activityID in SCIENCE_ACTIVITIES: activityID = MANUFACTURING
-///     materials = blueprint.activities[activityID].materials
-///     return sum(GetBlueprintPrice(m.typeID, activityID) * m.quantity for m in materials)
-///     # on KeyError / UserError: GetAdjustedAveragePrice(typeID)
-/// ```
+/// `industryCommon.GetBlueprintPrice(blueprintTypeID, activityID)`
+/// (`[V]`) maps the science activities to manufacturing, then sums, over
+/// the blueprint's materials for that activity, the price of each
+/// material (recursively) times its quantity; when the blueprint or
+/// activity is missing it falls back to `GetAdjustedAveragePrice`.
 ///
 /// **The recursion never recurses in practice, and that is a property of the
 /// table rather than of our subset.** `cfg.blueprints` is keyed by
@@ -1346,12 +1336,9 @@ fn round_to(x: f64, places: i32) -> f64 {
 ///
 /// `Job._get_materials`, exactly:
 ///
-/// ```text
-///     quantity = float(material.base)
-///     for modifier in input_modifiers if MaterialModifier: quantity *= modifier.amount
-///     quantity *= activity.job_material_runs(job)
-///     max(int(ceil(round(quantity, 2))), self.runs)
-/// ```
+/// The quantity is the base, times each material modifier, times the
+/// job's material runs; it is rounded to two places, ceiled, and floored
+/// at the run count.
 ///
 /// `base` is the blueprint's per-run quantity, `runs` is both a multiplier
 /// and the floor, and `facility_multiplier` is the product of every
@@ -1516,9 +1503,8 @@ pub fn job_seconds(
 ///
 /// `Activity.job_max_runs` for an original:
 ///
-/// ```text
-///     min(int(ceil(MAX_RUN_LENGTH / float(self.time) / reduce(mul, time_modifiers, 1.0))), MAX_RUNS)
-/// ```
+/// The bound is the ceiling of `MAX_RUN_LENGTH` over the activity's
+/// time and the product of the time modifiers, capped at `MAX_RUNS`.
 ///
 /// -- and `Manufacturing.job_max_runs` returns `min(runsRemaining, MAX_RUNS)`
 /// for a copy instead. `runs_remaining` is `-1` for an original, which is the
@@ -1714,10 +1700,9 @@ pub fn research_level(activity_id: i64, material_efficiency: i64, time_efficienc
 /// `blueprint_levels` and `job_time` of both research activities: the raw
 /// seconds of researching `runs` levels from `level`, before any modifier.
 ///
-/// ```text
-///     levels = [self.time * RESEARCH_TIMES[i] for i in range(10)]
-///     sum(levels[min(current + i, len(levels) - 1)] for i in range(runs))
-/// ```
+/// There are ten level times, each the activity time times a table
+/// entry; the sum runs over the runs, starting at the current level and
+/// clamping at the last.
 ///
 /// Summed left to right from zero, as Python's `sum` does, so the float is
 /// the client's. A level below zero is refused before this is reached
@@ -1791,9 +1776,8 @@ where
 
 /// `Activity.job_max_runs`, the generic bound every activity starts from:
 ///
-/// ```text
-///     min(int(ceil(MAX_RUN_LENGTH / float(self.time) / reduce(mul, time_modifiers, 1.0))), self.MAX_RUNS)
-/// ```
+/// The ceiling of `MAX_RUN_LENGTH` over the one-run time and the
+/// product of the time modifiers, capped at `MAX_RUNS`.
 ///
 /// `self.time` is the activity's **one-run** time even for copying, whose
 /// job time is also multiplied by the licensed runs -- the bound is CCP's
@@ -1818,11 +1802,10 @@ pub fn skill_probability(content: &crate::content::Content, skill_type_id: i64) 
 /// An invention job's chance per run: `Invention.job_probability` over the
 /// two `ProbabilityModifier`s `Invention.job_modifiers` appends.
 ///
-/// ```text
-///     base   = industry.mean([p.probability or 1.0 for p in self.products])
-///     amount = 1.0 + sum([job.skills.get(s.typeID, 0) * skill_probability(s.typeID) for s in self.skills])
-///     max(min(reduce(mul, [base, amount], 1), 1.0), 0.0)
-/// ```
+/// The base is the mean over all products of their probability (1.0
+/// when unset). The amount is one plus a sum over the skills of the
+/// job's level times the skill's probability factor. The chance is the
+/// product of the two, clamped to 0..1.
 ///
 /// **The mean is over every product, not the one chosen** -- the Rifter's
 /// two (Wolf and Jaguar) are both 0.30, so it does not show there, and it

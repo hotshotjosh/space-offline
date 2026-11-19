@@ -35,11 +35,8 @@
 //!
 //! `eveMoniker.GetReprocessingManager` is
 //!
-//! ```text
-//!     if session.structureid:  moniker = Moniker('reprocessingSvc', session.structureid)
-//!     elif session.stationid:  moniker = Moniker('reprocessingSvc', session.stationid)
-//!     else: raise RuntimeError('asked for reprocessing manager in a weird place')
-//! ```
+//! The moniker binds `reprocessingSvc` to the structure id when the
+//! session has one, else to the station id, and raises otherwise `[V]`.
 //!
 //! so the bind params are a bare station or structure id and not a tuple.
 //! Nothing here reads them: `MachoResolveObject` is answered generically in
@@ -113,9 +110,8 @@ fn int_keyed_dict(pairs: Vec<(i64, PyValue)>) -> PyValue {
 ///
 /// `quotes.Quotes.GetStationEfficiencyForType` is one line:
 ///
-/// ```text
-///     return self.stationEfficiency.get(typeID, self.stationEfficiency[None])
-/// ```
+/// The lookup answers the entry for the type id, or, as its default,
+/// the entry under the `None` key.
 ///
 /// Python evaluates a `.get` default **eagerly**, so `self.stationEfficiency[None]`
 /// is a `BINARY_SUBSCR` that runs on every call -- hit or miss. A dict with

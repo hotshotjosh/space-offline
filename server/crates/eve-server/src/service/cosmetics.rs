@@ -70,13 +70,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // `cosmetics/client/cosmeticsSvc.py:157`:
         //
-        // ```text
-        //     def GetLicensedSkins(self):
-        //         if self._licensedSkins is None:
-        //             shipCosmeticsMgr = sm.RemoteSvc('shipCosmeticsMgr')
-        //             self._licensedSkins = shipCosmeticsMgr.GetLicencedSkins()
-        //         return self._licensedSkins
-        // ```
+        // `GetLicensedSkins` fetches `GetLicencedSkins()` from
+        // `shipCosmeticsMgr` once, while its cache is `None`, and returns the
+        // cache `[V]`.
         //
         // 1. The guard is `is None` and the store-back **succeeds**,
         //    so `None` sets the cache to the one value that fails its
@@ -134,14 +130,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // `cosmeticsSvc.py:167`:
         //
-        // ```text
-        //     def _GetLicensedPersonalSkinsForType(self, typeID):
-        //         if typeID not in self._licensedSkinsByType:
-        //             licensedSkins = shipCosmeticsMgr \
-        //                 .GetLicencedSkinsForShipType(session.charid, typeID)
-        //             self._licensedSkinsByType[typeID] = licensedSkins
-        //         return self._licensedSkinsByType[typeID]
-        // ```
+        // `_GetLicensedPersonalSkinsForType` fetches
+        // `GetLicencedSkinsForShipType(charid, typeID)` the first time a type
+        // is seen, caches it per type and returns the cached value `[V]`.
         //
         // This cache is keyed on `typeID not in`, so a stored `None`
         // latches and does **not** live-lock -- which is why the

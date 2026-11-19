@@ -530,11 +530,8 @@ impl Table {
 ///
 /// CCP's body is exactly
 ///
-/// ```python
-/// try:    return GROUP_MAPPING[evetypes.GetGroupID(typeID)]
-/// except (KeyError, evetypes.TypeNotFoundException):
-///         return DEFAULT_MAPPING
-/// ```
+/// The class is the one mapped from the ship's group; a missing key or
+/// an unknown type gives the default class `[V]`.
 ///
 /// so both arms collapse to the same thing here: `item::find_in` returning
 /// `None` *is* `TypeNotFoundException`, and a group missing from
@@ -582,12 +579,10 @@ pub fn undock_directions(table: &Table, station_type_id: i64) -> Option<&[Locato
 ///
 /// CCP's body, with `random.choice` replaced by `pick`:
 ///
-/// ```python
-/// directions = GetUndockDirections(typeID)
-/// try:    return random.choice(directions[GetUndockCategoryByType(shipTypeID)])
-/// except KeyError:
-///         return random.choice(directions.get(None, [DEFAULT_DIRECTION]))
-/// ```
+/// It picks randomly from the directions listed for the ship's
+/// undock class; with no entry for that class it picks from the
+/// `None` bucket, or from the default direction when there is none
+/// `[V]` (with `random.choice` replaced by `pick`).
 ///
 /// **The `KeyError` arm is the one that carries every NPC station.** A
 /// Rifter maps to `undockPointSmall`, graphicLocationID 11 has only an
@@ -625,22 +620,12 @@ pub fn undock_direction<'t>(
 ///
 /// CCP's body, with the ballpark lookups replaced by arguments:
 ///
-/// ```python
-/// ballTypeID = ballpark.GetBallType(ballID)
-/// position, direction = GetUndockDirection(ballTypeID, typeID)
-/// rotation = ballpark.GetSlimItemField(ballID, 'dunRotation')
-/// if rotation:
-///     rotation = map(math.radians, rotation)
-///     quaternion = geo2.QuaternionRotationSetYawPitchRoll(*rotation)
-///     position = geo2.QuaternionTransformVector(quaternion, position)
-///     direction = geo2.QuaternionTransformVector(quaternion, direction)
-/// ball = ballpark.CheckBalls(ballID)
-/// position = [ball.x + position[0], ball.y + position[1], ball.z + position[2]]
-/// direction = geo2.Vec3Normalize(direction)
-/// if IsFlexStructure(ballTypeID):
-///     position = geo2.Vec3AddD(position, geo2.Vec3ScaleD(direction, ball.radius))
-/// return tuple(position), direction
-/// ```
+/// The mouth's position and direction come from the ball type and the
+/// station's undock direction; when the item has a `dunRotation` slim
+/// field, it is converted to radians and both vectors are rotated by it.
+/// The position is then offset by the ball's own coordinates, the
+/// direction is normalised, and for a flex structure the position also
+/// moves out along the direction by the ball's radius `[V]`.
 ///
 /// `rotation_degrees` is the station's `dunRotation`, which this server never
 /// sends -- see the module header for why there is nothing else it could be
@@ -741,15 +726,10 @@ pub fn undock_point(
 
 /// `docking.CanDock`. **Only meaningful for an Upwell structure.**
 ///
-/// ```python
-/// directions = GetUndockDirections(typeID)
-/// undockCategory = GetUndockCategoryByType(shipTypeID)
-/// if undockCategory not in directions:
-///     return False
-/// if evetypes.GetGroupID(shipTypeID) in EXCLUDED_DOCKS_BY_STRUCTURE_TYPE.get(typeID, []):
-///     return False
-/// return undockCategory not in ONE_WAY_UNDOCKS_BY_STRUCTURE_TYPE.get(typeID, [])
-/// ```
+/// Docking is refused when the structure has no directions entry for
+/// the ship's undock class, refused when the ship's group is excluded
+/// for that structure type, and otherwise allowed unless the class is
+/// one-way for that structure type `[V]`.
 ///
 /// The first test is on the *category* key, never the `None` bucket -- so for
 /// a station whose only mouth is `undockPoint` this returns `false` for every
@@ -789,11 +769,8 @@ pub fn can_dock(table: &Table, content: &Content, station_type_id: i64, ship_typ
 
 /// `structures.types.IsFlexStructure`.
 ///
-/// ```python
-/// if GetCategoryID(typeID) != invConst.categoryStructure:
-///     return False
-/// return GetStructureSize(typeID) == const.STRUCTURE_SIZE_FLEX
-/// ```
+/// `[V]` a type that is not in the structure category is never flex;
+/// otherwise it is flex when its size is `STRUCTURE_SIZE_FLEX`.
 ///
 /// **[V]**. `categoryStructure` is 65, and the size is
 /// `structures.STRUCTURE_SIZE_BY_TYPE`, which [`crate::structure::size_of_type`]
@@ -808,14 +785,9 @@ pub fn is_flex_structure(_content: &Content, type_id: i64) -> bool {
 
 /// `docking.ShipUndockDirection`: the per-ship jitter on the mouth's heading.
 ///
-/// ```python
-/// def ShipUndockDirection(direction, jitter = 0.25):
-///     yaw   = random.uniform(-jitter, jitter)
-///     pitch = random.uniform(-jitter, jitter)
-///     roll  = random.uniform(-jitter, jitter)
-///     quaternion = geo2.QuaternionRotationSetYawPitchRoll(yaw, pitch, roll)
-///     return geo2.QuaternionTransformVector(quaternion, direction)
-/// ```
+/// Each of yaw, pitch and roll is drawn uniformly from
+/// `-jitter..jitter` (default 0.25), and the heading is rotated by
+/// the resulting quaternion `[V]`.
 ///
 /// The angles are **radians**, so [`JITTER`] is about 14 degrees either way on
 /// each axis -- that is why two ships leaving the same mouth do not fly in
@@ -837,11 +809,9 @@ pub const VELOCITY_MAXIMUM: f64 = 700.0;
 
 /// `docking.ShipUndockVelocity`: how fast the ship leaves.
 ///
-/// ```python
-/// speed = min(VELOCITY_MULTIPLIER * dogma.GetAttributeValue(shipID, attributeMaxVelocity),
-///             VELOCITY_MAXIMUM)
-/// return geo2.Vec3ScaleD(geo2.Vec3Normalize(direction), speed)
-/// ```
+/// The speed is the smaller of `VELOCITY_MULTIPLIER` times the ship's
+/// `maxVelocity` attribute and `VELOCITY_MAXIMUM`, applied to the
+/// normalised direction `[V]`.
 ///
 /// **A ship undocks at 1.75x its own top speed, capped at 700 m/s** -- which
 /// is why you coast out of a station well above what the ship can sustain.

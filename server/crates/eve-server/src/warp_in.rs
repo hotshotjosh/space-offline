@@ -28,13 +28,9 @@
 //!
 //! `ballparkCommon/parkhelpers/__init__.py:14`-`17`, in full:
 //!
-//! ```text
-//! def HasWarpInPoint(item, radius):
-//!     if radius >= 90000 and item.categoryID == appConst.categoryCelestial \
-//!                        and item.groupID != appConst.groupWreck:
-//!         return True
-//!     return False
-//! ```
+//! `HasWarpInPoint(item, radius)` is true when the radius is at least
+//! 90000, the item is a celestial and its group is not a wreck, and
+//! false otherwise.
 //!
 //! Three conditions and no others. Note what is **absent**: there is no
 //! asteroid-belt case. A belt is excluded by the radius test alone (ours

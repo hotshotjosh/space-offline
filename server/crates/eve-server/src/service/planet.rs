@@ -550,15 +550,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `planetSvc._UpdateColonyPresence` does, at
             // `planetSvc.py:172-208`:
             //
-            // ```text
-            //     self.colonizationData = [c for c in self.colonizationData
-            //                              if c.planetID != planetID]
-            //     ...
-            //     newEntry = utillib.KeyVal(solarSystemID=..., planetID=...,
-            //                               typeID=..., numberOfPins=...,
-            //                               celestialIndex=...)
-            //     self.colonizationData.append(newEntry)
-            // ```
+            // The service drops the entries for that planet from its
+            // colonization list and appends a new key-value entry carrying the
+            // solar system, planet, type, pin count and celestial index `[V]`.
             //
             // So the container is iterated, its rows are read by attribute,
             // **and it is appended to** -- and a `dbutil.CRowset` has no

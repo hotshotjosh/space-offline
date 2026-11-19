@@ -43,8 +43,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // Epic-arc mission progress, as a **dict of dicts**.
             // `epicArcController.py(95) _GetMissionStatus` is
             //
-            //     status = self._missionStatusesByEpicArcID.get(epicArcID, {}) \
-            //                  .get(missionID, None)
+            // a lookup of the arc's dict by `epicArcID`, defaulting to an
+            // empty dict, and then of the mission id within it `[V]`
             //
             // so `None` is `AttributeError: 'NoneType' object has no attribute
             // 'get'`, raised inside `EpicArcController.__init__` -- which
@@ -541,9 +541,9 @@ pub fn agent_rowset(
                         // `standingsUIUtil._GetEpicArcThresholdIDs`
                         // (firstlineno 265) is
                         //
-                        //     for agentID in standingUIConst.EPIC_ARC_STARTER_AGENTS:
-                        //         agent = sm.GetService('agents').GetAgentByID(agentID)
-                        //         if ownerID in (agent.factionID, agent.corporationID):
+                        // it loops over the epic-arc starter agents, fetches each with
+                        // `agents.GetAgentByID`, and tests the owner against the agent's
+                        // faction and corporation `[V]`
                         //
                         // with no `is None` guard, and `agents.GetAgentByID`
                         // returns `None` for an id its index does not hold.

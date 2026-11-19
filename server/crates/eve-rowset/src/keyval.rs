@@ -3,13 +3,8 @@
 //!
 //! **Confirmed** from `packages/utillib/__init__.pyc`:
 //!
-//! ```python
-//! class KeyVal:
-//!     __passbyvalue__ = 1
-//!     def __init__(self, dictLikeObject=None, **kw):
-//!         self.__dict__ = kw
-//!         ...
-//! ```
+//! `KeyVal` is passed by value and its constructor installs the keyword
+//! arguments as the instance's attribute dict.
 //!
 //! An empty bases tuple makes it **old-style** in Python 2.7, so it goes on
 //! the wire as tag `0x17`: a dotted class-name string, then the state. It

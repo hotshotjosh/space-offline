@@ -39,10 +39,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // answered `None` (`docs/guides/debugging-the-client.md` §1), and
         // `fastcheckout/client/fastCheckoutClientService.py(75)` does
         //
-        //     self._is_china_funnel_enabled, \
-        //         self._fake_buy_plex_offer_url, \
-        //         self._use_shell_execute_to_buy_plex_offer = \
-        //             self.remote_service.GetTestingConfiguration()
+        // unpacks the answer of `GetTestingConfiguration()` into three
+        // fields (the China-funnel flag, a fake buy-offer URL and a
+        // shell-execute flag) `[V]`
         //
         // (`UNPACK_SEQUENCE 3` at offset 12). That is row three of the §4
         // "empty is not one answer" table: a 3-way unpack *before* anything
@@ -75,10 +74,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // the three assignments run, so the cache stays `None` and every
         // later read re-issues the call at UI refresh rate:
         //
-        //     def is_china_funnel(self):                      # line 86
-        //         if self._is_china_funnel_enabled is None:   # line 87
-        //             self._update_config()                   # line 88
-        //         return self._is_china_funnel_enabled        # line 89
+        // `is_china_funnel` (lines 86-89, `[V]`) calls `_update_config` when
+        // the flag is `None` and then returns it
         //
         // and the same shape at lines 92, 97 and 51. **So `None` for any
         // single element of the tuple re-opens the loop**, which is the
@@ -196,15 +193,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             ])),
             // `is_fast_checkout_enabled`:
             //
-            //     50: def is_fast_checkout_enabled(self):
-            //     51:     if self._is_fast_checkout_enabled is None:
-            //     52:         if is_client_launched_through_steam():
-            //     54:             self._is_fast_checkout_enabled = False
-            //     56:         else:
-            //                       self._is_fast_checkout_enabled = \
-            //                           self.remote_service \
-            //                               .IsFastCheckoutEnabledForUser()
-            //     57:     return self._is_fast_checkout_enabled
+            // `is_fast_checkout_enabled` (lines 50-57, `[V]`) fills its cache once:
+            // false when launched through Steam, otherwise the answer of
+            // `IsFastCheckoutEnabledForUser()`; it returns the cache.
             //
             // `False` is both honest and safe. Honest: the flag means "this
             // account has a stored payment token", and we have no payment
@@ -339,14 +330,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Every other "nothing here" in this file is a `{}` or a `[]`.
         // Here the client does
         //
-        //     if not reg.available:
-        //         raise StoreUnavailableError()            # line 43
-        //     offers = sm.RemoteSvc('storeManager').get_offers(store_id)
-        //     if not offers:
-        //         reg.available = False                   # line 46
-        //         raise StoreUnavailableError()            # line 47
-        //     return [create_offer_from_json(j) for j in offers
-        //             if 'products' in j and len(j['products'])]
+        // it raises `StoreUnavailableError` when the store is flagged
+        // unavailable (line 43); it then fetches `get_offers(store_id)` and,
+        // when the answer is falsy, flags the store unavailable and raises
+        // again (lines 46-47); otherwise it returns an offer object for each
+        // entry that has a non-empty `products` list `[V]`
         //
         // so `None`, `[]`, `()` and `{}` are all equally falsy and all
         // four **latch** `reg.available = False` for the rest of the
@@ -502,12 +490,9 @@ mod tests {
 
     /// **The arity is the fix.** `_update_config` is
     ///
-    /// ```text
-    /// # fastcheckout/client/fastCheckoutClientService.py(75)
-    /// self._is_china_funnel_enabled, self._fake_buy_plex_offer_url, \
-    ///     self._use_shell_execute_to_buy_plex_offer = \
-    ///         self.remote_service.GetTestingConfiguration()
-    /// ```
+    /// `fastCheckoutClientService.py:75` (`[V]`) unpacks the answer of
+    /// `GetTestingConfiguration()` into the China-funnel flag, a fake
+    /// buy-offer URL and a shell-execute flag
     ///
     /// which compiles to `UNPACK_SEQUENCE 3`. A 2-tuple or a 4-tuple raises
     /// the very same `TypeError` that `None` raised and leaves the same

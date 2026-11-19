@@ -43,11 +43,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // because the shape of the caller makes it a live lock the moment
         // the first ball arrives.
         //
-        //     if reg.myKillRights is not None:
-        //         return reg.myKillRights
-        //     killRights = sm.ProxySvc('bountyProxy').GetMyKillRights()
-        //     reg.myKillRights = killRights      # a None is STORED
-        //     return killRights
+        // `[V]` the client returns its cached kill rights when set, else
+        // asks `bountyProxy.GetMyKillRights()` and stores the answer, a `None`
+        // included.
         //
         // That is `contractProxy.NumOutstandingContracts` exactly: the
         // guard is `is not None`, the assignment *completes*, and the
@@ -199,8 +197,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // feature-flag branch that returns CCP's "DBS is not running"
         // value outright --
         //
-        //     if GetDynamicBountySystemEmergencyOffline(reg.machoNet):
-        //         return (1.0, False)
+        // `[V]` when the dynamic-bounty emergency-offline flag is set the
+        // client answers `(1.0, False)` outright
         //
         // -- which is still the answer with no actor, or an actor with no
         // system. Otherwise CP38 answers `(d, True)` for the actor's

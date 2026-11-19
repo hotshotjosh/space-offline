@@ -67,15 +67,9 @@ fn other_market_call(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // for its own 31 types. `marketsvc.GetPriceHistory`
         // (marketsvc.py:378) is
         //
-        // ```text
-        // if typeID == typePlex:                                      # 379
-        //     old = self.GetMarketProxy().GetPlexOldPriceHistory()     # 380
-        //     new = self.GetMarketProxy().GetPlexNewPriceHistory()     # 381
-        // else:
-        //     old = self.GetMarketProxy().GetOldPriceHistory(typeID)   # 383
-        //     new = self.GetMarketProxy().GetNewPriceHistory(typeID)   # 384
-        // history = self.GetHistoryRowList(old, new)                   # 385
-        // ```
+        // `marketsvc.py:379-385` (`[V]`): for PLEX the old and new price
+        // histories come from the dedicated PLEX calls, otherwise from the
+        // per-type calls; both are then merged by `GetHistoryRowList`.
         //
         // and `GetHistoryRowList`'s (marketsvc.py:388) *first* statement is
         // `dbutil.RowList((new.header, []))`, so `None` is
@@ -190,11 +184,9 @@ fn other_market_call(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // reason `GetPlexOrders` is: it needs `in` and `[]` --
         // `FilterItemsForGroupPage` (marketbase.py:2691) does
         //
-        // ```text
-        // plexAsks = self._GetPlexAsks()                       # 2717
-        // if typePlex in plexAsks:                              # 2718
-        //     self.asksForMyRange[typePlex] = plexAsks[typePlex] # 2719
-        // ```
+        // `marketbase.py:2717-2719` (`[V]`): it asks for the PLEX asks and,
+        // when the PLEX type is among them, copies that entry into its table
+        // for the range.
         //
         // so `None` is `TypeError: argument of type 'NoneType' is not
         // iterable`.
@@ -275,10 +267,9 @@ fn history_region(reg: &Registry, req: &Request<'_>) -> Option<i64> {
 /// `jumps` is the one that cannot be left out on the grounds that the server
 /// does not know it, because the client **writes** it:
 ///
-/// ```text
-/// for row in itertools.chain(asks, bids):
-///     row.jumps = getJumpCountFunc(row.solarSystemID)   # marketsvc.py:821
-/// ```
+/// `marketsvc.py:821` (`[V]`): for each ask and bid row it sets
+/// `row.jumps` from the jump-count function applied to the row's solar
+/// system.
 ///
 /// and a `blue.DBRow` only accepts an attribute its descriptor declares.
 /// That the real header carries a `jumps` column the server fills with a

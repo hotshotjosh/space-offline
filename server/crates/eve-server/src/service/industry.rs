@@ -401,19 +401,14 @@ fn industry_error(code: i64) -> PyValue {
 ///
 /// **Every link in the chain constrains the shape, and all four are [V]:**
 ///
-/// ```text
-/// submitButton.SubmitButton.ClickFunc(185)
-///     except UserError, e: if getattr(e, 'msg', None) == 'IndustryValidationError':
-///         self.tooltipErrors = e.args[1]['errors']
-/// industryTooltips.SubmitButtonTooltipPanel.Reconstruct(448)
-///     if not errors: return
-///     errors = {error[0].value: error for error in errors}.values()
-///     for error, errorArgs in errors:          # UNPACK_SEQUENCE 2
-///         AddErrorRow(panel, error, errorArgs)
-/// industryTooltips.AddErrorRow(164)
-///     text = industryCommon.GetErrorLabel(error, *errorArgs)   # CALL_FUNCTION_VAR
-///     if not text: text = error.name
-/// ```
+/// The chain, link by link (`[V]`): the submit button's click handler
+/// (`submitButton.py:185`) catches a `UserError` whose message is
+/// `IndustryValidationError` and keeps `args[1]['errors']` as its
+/// tooltip errors. The tooltip panel (`industryTooltips.py:448`) returns
+/// early when there are none, de-duplicates them by `error[0].value`, and
+/// unpacks each one into an error and an argument sequence. The row
+/// builder (`industryTooltips.py:164`) turns them into text with
+/// `GetErrorLabel(error, *errorArgs)` and falls back to `error.name`.
 ///
 /// So each element is a **2-sequence exactly** -- a bare member raises in the
 /// unpack and so does a 3-tuple -- element 0 must carry `.value` (and be
@@ -838,12 +833,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **The call that killed the industry tab for a whole session,
             // not just for one click.**
             //
-            // ```text
-            //     def Run(self, *args, **kwargs):
-            //         Service.Run(self, *args, **kwargs)
-            //         self.blueprintManager = sm.RemoteSvc('blueprintManager')
-            //         self.blueprintLimit = self.blueprintManager.GetLimits()['maxBlueprintResults']
-            // ```
+            // `blueprintSvc.Run` (`[V]`) binds the `blueprintManager` remote
+            // service and reads `maxBlueprintResults` out of the dict that
+            // `GetLimits()` returns.
             //
             // One key, read by name. Our `None` was
             // `TypeError: 'NoneType' object is not subscriptable` -- thrown
@@ -876,13 +868,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The blueprint list, and a **2-sequence whose halves are
             // different container families**. `blueprintSvc.py(183, 201)`:
             //
-            // ```text
-            //     bps, bpCounts = self.blueprintManager.GetBlueprintDataByOwner(ownerID, facilityID)
-            //     bps = self._AttachFacilities(bps)          # for data in blueprints:
-            //     ...
-            //     self.bpSummaries[ownerID] = bpCounts
-            //     return sum(n for n in bpCounts.itervalues())
-            // ```
+            // `blueprintSvc.py:183,201` (`[V]`): the by-owner fetch returns a pair
+            // of blueprints and per-container counts; the blueprints are given
+            // their facilities, the counts are stored per owner, and the
+            // method returns the sum of the counts.
             //
             // So `UNPACK_SEQUENCE 2` first -- arity is not negotiable and our
             // `None` raised there, before either half was ever looked at --
@@ -943,10 +932,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // One blueprint by item id, and **the honest answer is a
             // `UserError`**. `blueprintSvc.py(131)`:
             //
-            // ```text
-            //     def GetBlueprintItem(self, blueprintID):
-            //         return industryCommon.BlueprintInstance(self.blueprintManager.GetBlueprintData(blueprintID))
-            // ```
+            // `blueprintSvc.GetBlueprintItem` (`blueprintSvc.py:131`, `[V]`) wraps
+            // the answer of `GetBlueprintData` in a `BlueprintInstance`.
             //
             // `BlueprintInstance` opens with `cfg.blueprints[data.typeID]`,
             // so `None` is an `AttributeError` that no caller catches. What
@@ -985,17 +972,11 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         "facilityManager" => match req.method {
             // **A live lock, not an empty list.** `facilitySvc.py(167)`:
             //
-            // ```text
-            //     def _PrimeFacilities(self, force=False):
-            //         with self.loading:
-            //             if not force and self.loadedRegion == session.regionid:
-            //                 return
-            //             self.facilities.clear()
-            //             for data in self.facilityManager.GetFacilities():   # :167
-            //                 self._PrimeFacility(data)
-            //             ...
-            //             self.loadedRegion = session.regionid               # :175
-            // ```
+            // `facilitySvc._PrimeFacilities` (`facilitySvc.py:167`, `[V]`) runs
+            // under a loading lock and returns at once when the region is
+            // already loaded. Otherwise it clears its table, primes one facility
+            // for every row `GetFacilities()` returns, and only at the end
+            // (`:175`) records the region as loaded.
             //
             // The latch is the **last** statement in the function, so `None`
             // raising in the `for` means `loadedRegion` stays `None`, means
@@ -1050,11 +1031,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             // `facilitySvc.py(138)`, under `@Memoize(1)`:
             //
-            // ```text
-            //     locations = self.facilityManager.GetFacilityLocations(facilityID, ownerID)
-            //     cfg.evelocations.Prime(set([location.itemID for location in locations if location.typeID != typeOffice]))
-            //     return locations
-            // ```
+            // Under `@Memoize(1)` the service (`facilitySvc.py:138`, `[V]`) asks
+            // `GetFacilityLocations`, primes the location cache with every returned
+            // item that is not an office, and returns the answer.
             //
             // Iterated for `.itemID` / `.typeID`, then handed on as
             // `job.locations`, which `len()` is taken of and which
@@ -1068,11 +1047,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **Non-empty, and that is the other half of the unblock.**
             // `industrySvc.LoadLocations` is
             //
-            // ```text
-            //     job.locations = GetFacilityLocations(job.facilityID, job.ownerID)
-            //     if len(job.locations):
-            //         self._ApplyJobSettings(job)
-            // ```
+            // It stores the answer in `job.locations` and applies the job
+            // settings when the answer is non-empty `[V]`.
             //
             // so an empty list means `_ApplyJobSettings` never runs,
             // `inputLocation` and `outputLocation` stay `None`, and
@@ -1100,11 +1076,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **The one empty here that must not be `{}`.**
             // `facilitySvc.py(100)` is the textbook poisoned cache --
             //
-            // ```text
-            //     def InitMaxActivityModifiers(self):
-            //         if self.maxActivityModifiers is None:
-            //             self.maxActivityModifiers = self.facilityManager.GetMaxActivityModifiers()
-            // ```
+            // `InitMaxActivityModifiers` (`facilitySvc.py:100`, `[V]`) fetches
+            // once, guarded by `is None`.
             //
             // -- so `None` stores successfully, fails its own guard forever,
             // and then `GetMaxActivityModifier` raises
@@ -1113,12 +1086,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // But the reader has **two** branches:
             //
-            // ```text
-            //     if activityID:
-            //         return self.maxActivityModifiers.get(activityID, 1.0)
-            //     else:
-            //         return max(self.maxActivityModifiers.values()) or 1.0
-            // ```
+            // With an activity id the reader returns the modifier for that
+            // activity (default 1.0); without one it returns the maximum of all
+            // modifiers, or 1.0 when that is falsy `[V]`.
             //
             // and `max({}.values())` is `ValueError: max() arg is an empty
             // sequence`. An empty dict is therefore *almost* right: it
@@ -1144,9 +1114,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `facilitySvc.py(103)`, consumed one frame later by
             // `facilityTaxWindow.py(30)`:
             //
-            // ```text
-            //     self.taxRate = KeyVal(value=self.facilitySvc.GetFacilityTaxes(self.facilityID).taxCorporation)
-            // ```
+            // The tax window (`facilityTaxWindow.py:30`, `[V]`) reads the
+            // `taxCorporation` attribute of the `GetFacilityTaxes` answer.
             //
             // An **attribute** read, so a `KeyVal` and not a dict. The value
             // itself may be `None` and the window says so in as many words
@@ -1172,13 +1141,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // One facility by id, and the client is **written for the
             // exception**. Two of its three call sites catch it by name:
             //
-            // ```text
-            //     facilitySvc.py:57   try: self._PrimeFacility(self.facilityManager.GetFacility(facilityID))
-            //                         except UserError: pass
-            //     browserBlueprints.py:341
-            //                         try: facility = facilitySvc.GetFacility(facilityID)
-            //                         except UserError: pass
-            // ```
+            // `facilitySvc.py:57` and `browserBlueprints.py:341` (`[V]`) each
+            // call the facility lookup inside a `try` that swallows `UserError`.
             //
             // Returning a value is worse than raising twice over: `None`
             // reaches `industryCommon.Facility(data)` and dies on
@@ -1215,10 +1179,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         "industryManager" => match req.method {
             // The Jobs tab. `industrySvc.py(112)`, iterated:
             //
-            // ```text
-            //     for data in sm.RemoteSvc('industryManager').GetJobsByOwner(ownerID, includeCompleted):
-            //         job = self._JobInstance(data, fetchBlueprint=False)
-            // ```
+            // The service (`industrySvc.py:112`, `[V]`) iterates the rows of
+            // `industryManager.GetJobsByOwner(ownerID, includeCompleted)` and
+            // builds a job instance from each, without fetching its blueprint.
             //
             // `None` is a `TypeError` in the `for`, after
             // `self._ownerJobs[ownerID].clear()` has already run -- so the
@@ -1265,17 +1228,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `GetJobCountForActivity` (`industrySvc.py(562, 565)`) reads
             // it:
             //
-            // ```text
-            //     def _UpdateSlots_thread(self):
-            //         self.slots = sm.RemoteSvc('industryManager').GetJobCounts(session.charid)
-            //     ...
-            //     def GetJobCountForActivity(self, activityID):
-            //         if self.slots is None:
-            //             self._UpdateSlots()
-            //             return
-            //         else:
-            //             return self.slots.get(activityID, 0)
-            // ```
+            // The slot thread stores the answer of `GetJobCounts` for the
+            // character, and `GetJobCountForActivity` returns nothing and
+            // schedules a refresh while the store is `None`, else the count for
+            // the activity (default 0) `[V]`.
             //
             // `None` is stored, fails its own `is None` guard, and the reader
             // *re-arms the fetch and returns `None`* -- which `jobsStrip`
@@ -1557,11 +1513,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         "industryMonitor" => match req.method {
             // The job wizard's material monitor. `industrySvc.py(430)`:
             //
-            // ```text
-            //     def ConnectJob(self, job):
-            //         self.monitoring = weakref.ref(job)
-            //         job.monitorID, job.available = sm.RemoteSvc('industryMonitor').ConnectJob(job.dump())
-            // ```
+            // `ConnectJob` (`industrySvc.py:430`, `[V]`) keeps a weak reference to
+            // the job and sets its monitor id and available materials from the
+            // answer of `industryMonitor.ConnectJob(job.dump())`.
             //
             // Called whenever the job's input location changes (`on_input_location`).
             // `available` is `{typeID: quantity}`: every material does

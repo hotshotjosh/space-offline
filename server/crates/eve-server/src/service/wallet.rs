@@ -167,9 +167,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Loyalty points, and **the first answer of ours to cost frames
         // rather than correctness.**
         //
-        //     if reg._characterLPBalanceByIssuerCorpID is None:
-        //         loyaltyPoints = reg._GetRemoteLPService().GetAllMyCharacterWalletLPBalances()
-        //         reg._characterLPBalanceByIssuerCorpID = {row[0]: row[1] for row in loyaltyPoints}
+        // `[V]` the client fills its cache from
+        // `GetAllMyCharacterWalletLPBalances()` as a dict of first column to
+        // second column while the cache is `None`.
         //
         // Two failures compounding, and together they are a live lock.
         // `None` makes the dict comprehension raise `TypeError`, so the
@@ -460,10 +460,10 @@ fn contract_proxy(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Serv
         // The My Contracts tab. **Four positional arguments and two named
         // ones**, `contractPanels.py(551)`:
         //
-        //     _contracts = sm.ProxySvc('contractProxy').GetContractListForOwner(
-        //             ownerID, filtStatus, contractType, issuedBy,
-        //             num=RESULTS_PER_PAGE, startContractID=startContractID)
-        //     return _contracts.contracts, _contracts.items     # 555
+        // `contractPanels.py:551` (`[V]`) asks `contractProxy` for the
+        // contract list of the owner with the status, type and issuer filters
+        // and a page size and start id, and returns the answer's `contracts`
+        // and `items` (line 555).
         //
         // `filtStatus` only reaches us as 0, 1 or 4: RequiresAttention (-1)
         // and BidOnBy (10) branch to the two methods below. `issuedBy` is the

@@ -54,11 +54,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Escalating paths, and **the live lock with the biggest multiplier
         // we have found.** `journal.py(343) GetEscalations`:
         //
-        //     if self.escalationRowset is None or force:
-        //         self.escalationRowset = \
-        //             sm.RemoteSvc('dungeonExplorationMgr').GetMyEscalatingPathDetails()
-        //         sm.ScatterEvent('OnEscalationsDataUpdated')
-        //     return self.escalationRowset
+        // `GetEscalations` (`journal.py:343`, `[V]`) fetches
+        // `GetMyEscalatingPathDetails()` from `dungeonExplorationMgr` when the
+        // stored rowset is `None` or a refresh is forced, scatters
+        // `OnEscalationsDataUpdated`, and returns the stored rowset.
         //
         // The `contractProxy.NumOutstandingContracts` variant, not the LP
         // one: the assignment **completes** and stores the one value that
