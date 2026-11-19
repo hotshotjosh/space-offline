@@ -226,14 +226,11 @@ is there for exactly this reading.
 **4.2 One frame can carry many events.** `BroadcastStuff.NotifyUp` has a
 `__MultiEvent` branch:
 
-```python
-elif packet.destination.broadcastID == '__MultiEvent':
-    for broadcast in packet.payload[1]:
-        broadcastID, args = broadcast
-        if broadcastID.startswith('Process'):   sm.ChainEventWithoutTheStars(broadcastID, args)
-        elif broadcastID.startswith('Do'):      sm.SendEventWithoutTheStars(broadcastID, args)
-        else:                                   sm.ScatterEventWithoutTheStars(broadcastID, args)
-```
+1. The branch is taken when `packet.destination.broadcastID` is `'__MultiEvent'`.
+2. Each element of `packet.payload[1]` is unpacked as `(broadcastID, args)`.
+3. A `broadcastID` starting with `Process` goes to `ChainEventWithoutTheStars`,
+   one starting with `Do` to `SendEventWithoutTheStars`, and any other to
+   `ScatterEventWithoutTheStars`, each with `(broadcastID, args)`.
 
 So `broadcastID = '__MultiEvent'` with a payload of `(name, args)` pairs
 dispatches each by its own prefix rule. Each element is `UNPACK_SEQUENCE 2`d,
@@ -297,17 +294,13 @@ client calls us back because of something we pushed" — for free, and under the
 
 This is the group the brief asks about, and the answer has a shape worth
 stating plainly: **the inventory window is not a handler.** The push goes to
-`invCache`, and `invCache` fans it out *inside the client*:
+`invCache`, and `invCache` fans it out *inside the client*. The tail of `invCache.OnItemChange` runs, in a `finally`:
 
-```python
-# invCache.OnItemChange, tail, verbatim
-            finally:
-                sm.services['godma'].OnItemChange(item, change, location)
-                sm.services['inv'].OnItemChange(item, change, location)
-                sm.ScatterEvent('OnItemChanged', item, change, location)
-```
+1. `godma.OnItemChange(item, change, location)`;
+2. `inv.OnItemChange(item, change, location)`;
+3. `sm.ScatterEvent('OnItemChanged', item, change, location)`.
 
-and, per affected container, `invCacheContainer.OnItemChange` →
+In addition, per affected container, `invCacheContainer.OnItemChange` →
 `_ProcessItemChange` → `sm.ScatterEvent('OnItemChangeProcessed', item, change)`.
 That is why `Godma.OnItemChange`, `InventorySvc.OnItemChange`,
 `DogmaLocation.OnItemChange` and `invCacheContainer.OnItemChange` are **not**
@@ -392,12 +385,9 @@ pinned too.** Two independent places construct from it —
 `invCache.OnItemChange` (`oldItem = blue.DBRow(item)`) and
 `invCacheContainer._ProcessItemChange` (the same line) — and both then do:
 
-```python
-for k, v in change.iteritems():
-    if k in (const.ixStackSize, const.ixSingleton):
-        k = const.ixQuantity
-    oldItem[k] = v
-```
+1. For each `(k, v)` of `change`, a key of `const.ixStackSize` or
+   `const.ixSingleton` is renamed to `const.ixQuantity`.
+2. The value is stored into the old row by integer index: `oldItem[k] = v`.
 
 `oldItem[k]` with `k` an **integer** means `change` is keyed by column index
 and the row's columns must be in that order. The indices are const **[V]**:

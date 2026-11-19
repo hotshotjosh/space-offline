@@ -147,6 +147,12 @@ if ((push == 0)); then
 fi
 
 branch=$(git rev-parse --abbrev-ref HEAD)
+# Only a maintainer's checkout (it has private/post-land.sh) lands on main or
+# master. Anyone else opens a pull request (AGENTS.md): refuse the direct push.
+if [[ $branch == main || $branch == master ]] && [[ ! -x private/post-land.sh ]]; then
+    echo "land: refusing to push $branch: open a pull request instead (AGENTS.md)" >&2
+    exit 2
+fi
 if ((head)); then
     echo "land: pushing $sha (gated in a clean worktree) to $remote/$branch"
     git push "$remote" "$sha:refs/heads/$branch"

@@ -15,7 +15,7 @@
 # all: three of them are shell scripts in a user-writable directory, one is a
 # binary rebuilt from the repo on every run, and `ip netns exec` takes an
 # arbitrary command. Any one of those lets a process running as the invoking
-# user have root execute code of its choosing. See docs/unattended-root.md §3.
+# user have root execute code of its choosing.
 #
 # So: one root-owned file the user cannot modify, verbs that take **no
 # arguments** (which is what makes the sudoers match exact), and two rules
@@ -33,11 +33,12 @@
 #      human reads a diff. The repo's scripts remain the human-facing copies
 #      and the two are kept in step by hand, on purpose.
 #
-# What it still grants is written down in docs/unattended-root.md §5. The
+# What it still grants is written down in docs/guides/jail.md. The
 # short version: bring the jail up and down, bind one port on one address,
 # and launch the client inside a network that can reach nothing.
 set -euo pipefail
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
 umask 022
 
 # --- snapshot constants, written by the installer ---------------------------
@@ -48,6 +49,10 @@ NS_IF=eve-ns
 HOST_IP='@HOST_IP@'
 NS_IP='@NS_IP@'
 PREFIX=30
+# The installer validates these too; the root-owned copy checks again, because NS
+# reaches `rm -rf "/etc/netns/$NS"` and the addresses reach `ip` and nft.
+[[ $NS =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "bad namespace name: $NS (want [a-z0-9-], 1 to 32 characters)" >&2; exit 2; }
+[[ $HOST_IP =~ ^[0-9.]+$ && $NS_IP =~ ^[0-9.]+$ ]] || { echo "bad address in the helper" >&2; exit 2; }
 # 26000 machoNet, 5222 in-game chat (XMPP), 8443 the public gRPC gateway
 # (eve-server --gateway; without it the client waits 3 s per cosmetic or
 # mercenary-den request, UI-LAG); on HOST_IP only, like 53.

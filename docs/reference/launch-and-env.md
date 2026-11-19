@@ -74,30 +74,9 @@ Then, in game as a GM (`/bots help` lists them all):
 Or all at once: `tools/dev-world.sh world50` (a roster of 50 bots), or
 `tools/bots.sh --no-client 5`.
 
-**The container form**, built from `deploy/`. The image holds
-`eve-offline-server`, `eve-bots` and `content/`. The bundle is mounted from
-outside, because client data never goes into an image you might push:
-
-```sh
-docker build -t eve-offline:latest -f deploy/Dockerfile .
-mkdir -p "$HOME/eve-data"
-docker run -d --name eve-offline --cap-drop ALL --security-opt no-new-privileges:true \
-    -v "$HOME/eve-data:/data" -v "$PWD/out/content:/content:ro" \
-    -p 26000:26000 -p 5222:5222 -p 8443:8443 \
-    -e EVE_CHAT_ADVERTISE=192.0.2.10 \
-    eve-offline:latest server
-docker run -d --name eve-offline-bots --network container:eve-offline \
-    -v "$HOME/eve-data:/data:ro" -v "$PWD/out/content:/content:ro" \
-    eve-offline:latest bots
-docker logs -f eve-offline
-# ready: eve-server listening on 0.0.0.0:26000 ...
-```
-
-`deploy/stack.yml` is the same pair as a compose file. Replace its volume
-paths and published addresses with your own before you use it. `deploy/`
-is not part of the public export. In a checkout without it, run the same
-two commands (the server flags under "Server" above) in any image that holds
-the two release binaries and `content/`.
+**The container form.** Run the two release binaries and `content/` in any image you
+build; the server flags are under "Server" above. Mount the content bundle from outside,
+because client data never goes into an image you might push.
 `docker stop eve-offline` writes the world first.
 
 **With the common environment variables set**, for the container:
@@ -377,7 +356,6 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_NO_POST_LAND` | `tools/land.sh` | unset | set: skip the maintainer's after-push hook for this landing (a contributor has none) | `EVE_NO_POST_LAND=1` |
 | `EVE_LANES_DIR` | `tools/lanes-gc.sh` | `$HOME/code/eve-offline-lanes` | build copies ("lanes" is only a name for them) | `EVE_LANES_DIR=$HOME/lanes` |
 | `EVE_LANES_IDLE_MIN` | `tools/lanes-gc.sh` | 60 | idle minutes before a lane's target/ is removed | `EVE_LANES_IDLE_MIN=120` |
-| `EVE_PATCH_REAL_CLIENT` | `tools/test_eve_patch.py` | unset (skipped) | a real install for a read-only patcher test | `EVE_PATCH_REAL_CLIENT=$HOME/.../tq-offline` |
 | `EVE_TEST_DISPLAY_UP` | `tools/test_client_ci_parallel.py` | unset | test stub: display is up | test only |
 | `EVE_TEST_FAIL` | `tools/test_client_ci_parallel.py` | unset | test stub: rows that fail | test only |
 | `EVE_TEST_LIVE` | `tools/test_client_ci_parallel.py` | unset | test stub: live-process list | test only |
@@ -428,7 +406,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_LOG_WINDOWS` | `tools/run-client.sh` | `C:\eve-logs` | internal: client side of the log dir | internal |
 | `EVE_OFFLINE_ALLOW_REAL_CLIENT` | `tools/run-client.sh` | 0 | `1` allows launching the real `tq` install (do not) | |
 | `EVE_OFFLINE_STOCK_CRYPTO` | `tools/run-client.sh` | 0 | `1`: stock crypto pack, diagnostic only (`up.sh --stock-crypto`) | |
-| `EVE_CLIENT_SENTRY_DSN` | `tools/jail-client.sh`, `tools/patches/*.json` | `http://0@127.0.0.1:9/0` | client launch env: crash reports go nowhere | set by the patcher |
+| `EVE_CLIENT_SENTRY_DSN` | `tools/jail-client.sh` | `http://0@127.0.0.1:9/0` | client launch env: crash reports go nowhere | |
 | `EVE_SECOND_SRC_DIR` | `tools/client2-setup.sh` | `tq-offline` | source install for the second client | `EVE_SECOND_SRC_DIR=tq-offline` |
 | `EVE_SECOND_CLIENT_DIR` | `tools/client2-setup.sh`, `tools/client-ci.sh` | `tq-offline-2` | the second client's install dir | |
 | `EVE_SECOND_PREFIX_ID` | `tools/client-ci.sh` | `8501` | the second client's prefix id | |
@@ -550,7 +528,7 @@ rows as optional.
 | `EVE_WAIT_MS` | `tools/client-ci/scenarios/fci_prog_pve.py` | 15000 | constant in a scenario: wait budget | n/a |
 | `EVE_CENSUS` | `tools/client-ci.sh`, census scenarios | unset | `1` in a census run's launch env | set by `--census` |
 | `EVE_CENSUS_CONTROL` | `tools/client-ci.sh` | unset | `1`: census control copy | set by `--census-control` |
-| `EVE_CENSUS_NOENV` | `tools/client-ci.sh` | unset | `1`: census without patcher env | set by the launcher |
+| `EVE_CENSUS_NOENV` | `tools/client-ci.sh` | unset | `1`: census run in the no-extra-env role | set by the launcher |
 | `EVE_HEADLESS_DISPLAY` | `tools/client-headless.sh` | 99 | X display number | |
 | `EVE_HEADLESS_SCREEN` | `tools/client-headless.sh` | `1920x1080x24` | Xvfb screen | |
 | `EVE_HEADLESS_DESKTOP` | `tools/client-headless.sh` | `1600x900` | Wine desktop size | |

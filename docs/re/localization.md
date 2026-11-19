@@ -254,8 +254,8 @@ blueprint names, mission titles) and the ~18,600 long ones are *prose* (mission
 briefings, agent dialogue, item/corp/faction/bloodline descriptions), but which
 is which per row needs the FSD tables — `fsd-reader`'s lane. **A lower bound on
 agent/mission prose is 4,361 and the true number is larger**, since completion
-and failure lines frequently have no token at all ("Unfortunate. Your failure
-shows our enemies weakness.").
+and failure lines frequently have no token at all (a short one-sentence
+regret from the agent).
 
 The id space has three allocation blocks (`messageID >> 19`): 225,584 in
 `[0, 524287]`, 81,695 in `[524288, 1048575]`, 1,378 above. They are allocation
@@ -268,69 +268,54 @@ range.
 Every string below came out of `tools/loctable.py`. A handful, chosen to show
 one of each family — not a dump.
 
-**Mission briefing / offer text** (id 145165, unlabelled, 1,314 chars):
+**Mission briefing / offer text** (id 145165, unlabelled, 1,314 chars): a long
+agent monologue. It opens by greeting `{[character]player.name}`, tells the
+background in the agent's voice, names the system through
+`{[location]dungeonLocationID.name}`, and ends by asking for a first task. (Invented
+stand-in: "Welcome back, `{[character]player.name}`. Trouble has started in
+`{[location]dungeonLocationID.name}`. [...] I need you to scout it.")
 
-> So good to see you, `{[character]player.name}`. I've been on a pretty tight
-> schedule for the past two weeks, ever since we discovered the strange, and
-> increasing, Serpentis activity in the system. [...] Serpentis activity on this
-> scale in `{[location]dungeonLocationID.name}` is unheard of [...] The first
-> thing I want you to do is undertake a reconnaisance mission for us into an
-> area where we have witnessed most of the Serpentis activity.
+**Agent completion / failure / decline lines**, contiguous with it: ids 145167
+and 145168 are a farewell and a thanks, both addressed to
+`{[character]player.name}`; 137915 and 137918 are one-sentence failure and
+decline remarks with no token. (Invented stand-in:
+"Well done, `{[character]player.name}`. Report for your next assignment.")
 
-**Agent completion / failure / decline lines**, contiguous with it:
+**Objectives text** (115759-115767, a contiguous run): one-line goals, such as
+"explore and clear an area", "destroy a structure, then report back" and "collect
+captives, leave by the gate and hand them over". Ids 115759, 115761 and 115767 are
+examples.
 
-- 145167 "Watch your back out there, `{[character]player.name}`. And whatever
-  you do, don't let them take you prisoner [...]"
-- 145168 "You showed some class out there, `{[character]player.name}`. Take your
-  pay and report for your next assignment."
-- 137915 "Unfortunate. Your failure shows our enemies weakness."
-- 137918 "Hmph. I thought you'd jump to take this mission."
+**Mission titles** (55355-55365): short names, some with a series counter in
+parentheses such as "(1 of 2)"; one title takes three consecutive ids
+(55358-55360) and another five.
 
-**Objectives text** (115759-115767, a contiguous run):
-
-- 115759 "Explore the area, and eliminate any Serpentis vessels that you come
-  upon."
-- 115761 "Destroy the Workers' Quarters of the Serpentis construction site,
-  then report back to your agent. The Workers' Quarters are located in the last
-  area of the deadspace complex."
-- 115767 "Obtain the hostages from the holding cell, escape using the
-  acceleration gate, and deliver them safely to the CONCORD ship."
-
-**Mission titles** (55355-55365): "Next of Kin (1 of 2)", "Courier Gone Missing
-(2 of 2)", "King of the Hill (1 of 13)", "The Damsel In Distress" (three ids:
-55358-55360), "Cargo Delivery" (five).
-
-**Item / type descriptions**: 83284 and 93841 both carry the Rifter's
-description ("The Rifter is a very powerful combat frigate..."); 83097 carries
-Veldspar's, including its `<a href=showinfo:34>Tritanium</a>` link.
+**Item / type descriptions**: 83284 and 93841 both carry the description of one
+frigate hull, and 83097 that of one ore, including a
+`<a href=showinfo:...>` link to another type.
 
 **NPC corporation descriptions**: 61044 HZO Refinery, 61100 Ammatar Consulate,
 61104 Sisters of EVE, 61113 Food Relief — with the matching *names* in a
-separate run (61244 "Sarum Family", 61282 "Ammatar Consulate", 61286 "Sisters
-of EVE").
+separate run (ids 61244, 61282 and 61286).
 
-**Faction description**: 59588 "The Amarr Empire is the largest and oldest of
-the four empires..."
+**Faction description**: 59588, one paragraph of lore.
 
 **Bloodline / ancestry descriptions**: 59430-59432 (the Elders, the Unsullied,
 the Stasis People).
 
-**Dungeon object names**, in long contiguous runs: "Serpentis Guard Tower",
-"Thukker Heavy Missile Battery", "Barren Asteroid", "Gate Beacon", "Portal
-Beacon", "Partially Constructed Megathron", "Abandoned Ship Wreck",
-"Retrofitted Security Center", "Amarr Mining Station Ruins". The 8,403-id run
+**Dungeon object names**, in long contiguous runs: guard towers, missile
+batteries, asteroids, beacons, wrecks and ruins. The 8,403-id run
 at 267679-276081 and the 7,745-id run at 220807-228551 are of this kind.
 
 **`UserError` bodies** — see §4.2; 2,974 message keys, e.g.
-`ItemLocked` -> 259667 "Item `{item}` locked.", `JumpAttemptTooSoon` -> 259393
-"You have only recently engaged in a clone jump and need to wait for
-`{[numeric]hours}` hours and `{[numeric]minutes}` minutes before you can do so
-again."
+`ItemLocked` -> 259667, a short line carrying `{item}`; `JumpAttemptTooSoon` ->
+259393, a sentence with `{[numeric]hours}` and `{[numeric]minutes}` that says a
+clone jump was too recent.
 
 ### 3.3 Cross-language sanity check
 
-`de` has 305,231 messages and **does contain** id 145165 (the Serpentis
-briefing, in German: "Es tut gut, Sie zu sehen, `{[character]player.name}`...")
+`de` has 305,231 messages and **does contain** id 145165 (the long
+briefing above, in German, again opening with `{[character]player.name}`)
 and 59588. So CCP really does localise mission prose, and the corpus is the
 same id space across languages. `it` has only 7,452 messages — a partial
 translation — which explains its 1.7 MB. **[V]**
@@ -373,12 +358,9 @@ the `%100` path bucketing is why `main` has 4,168 distinct `FullPath` values.
 
 `eve/common/script/sys/eveCfg.py:1755`: **[V]**
 
-```python
-def _LoadMessagesFromFSD():
-    return fsdBinaryLoader.LoadFSDDataForCFG(
-        'res:/staticdata/dialogs.static', 'res:/staticdata/dialogs.schema',
-        optimize=False)
-```
+`_LoadMessagesFromFSD()` returns the result of `fsdBinaryLoader.LoadFSDDataForCFG`
+on `res:/staticdata/dialogs.static` with the schema `res:/staticdata/dialogs.schema`,
+with `optimize=False`.
 
 `cfg.messages` is keyed by the **message key string** (`ItemLocked`,
 `JumpAttemptTooSoon`, `CantJumpWhileCloaked`) and each row carries `titleID`,
@@ -503,8 +485,8 @@ entryTypeID 0..120**, and `59913` is an unrelated labelled UI string. The lane's
 warning that this does not extrapolate to the 170+/190+ ref types is correct for
 a concrete reason: **the run physically ends.** Treat the offset as a measured
 allocation, not a formula — immediately *below* it, 59737..59791 is a second,
-gappier block of entry-type **descriptions** ("Installation and runtime cost for
-a manufacturing job", "Sales tax paid to the SCC for any transaction") mixed
+gappier block of entry-type **descriptions** (one-line explanations of a job
+cost and of a sales tax) mixed
 with a set of `DUST - ...` names, and it has no clean offset against
 `entryTypeID`. The real mapping is two columns of
 `accountingentrytypes.fsdbinary`.

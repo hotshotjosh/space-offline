@@ -10,7 +10,7 @@ build, that friend cannot log in.
 
 This replaces the older "freeze and hold the build" stance. Evidence marks follow the repo: `[V]`
 is verified (with a file, row or line), `[I]` is inferred, `[A]` is assumed (with its falsifier).
-Sizes: S is under a lane-day, M one to three, L more.
+Sizes: S is under a day of work, M one to three, L more.
 
 **Which tools exist.** Today: `tools/import-build.sh`, `tools/new-build.sh`, `tools/build-delta.py`,
 `tools/port-surface.sh`, `tools/port-recheck.py`, `tools/bundle-diff.py`, `tools/re-pin.sh`,
@@ -78,12 +78,12 @@ revision:
 
 | step | who | what |
 |---|---|---|
-| 1 | coordinator | ask the maintainer to update the launcher: "TQ build N is out" |
+| 1 | anyone | tell the maintainer "TQ build N is out" |
 | 2 | **maintainer only** | run the launcher with "download all resources" on, then close EVE and the launcher. No one else runs the launcher |
-| 3 | coordinator | `tools/import-build.sh tq-<N> --check`, then `tools/import-build.sh tq-<N>` |
-| 4 | coordinator | `tools/new-build.sh tq-<N> --report`, then triage (section 3) and the tier's sequence |
-| 5 | lanes | the tier's work items in parallel, each from a build copy |
-| 6 | coordinator | the cut-over (section 4), then the intake issues (sections 5 and 6) |
+| 3 | maintainer | `tools/import-build.sh tq-<N> --check`, then `tools/import-build.sh tq-<N>` |
+| 4 | maintainer | `tools/new-build.sh tq-<N> --report`, then triage (section 3) and the tier's sequence |
+| 5 | contributors | the tier's work items in parallel, each from a build copy |
+| 6 | maintainer | the cut-over (section 4), then the intake issues (sections 5 and 6) |
 
 A contributor without the maintainer's installs can still help: read the triage counts on the
 patch-day issue (counts and names only) and take `tq-intake` issues.
@@ -106,14 +106,14 @@ higher tier's sequence includes the lower tiers' items:
 
 | tier | name | fires when (any of) |
 |---|---|---|
-| **T3** | native protocol change | `blue.dll`, `_destiny.dll`, `exefile.exe` or `python27.dll` is `code-differs` (not `signature-only`); `eveMachoNetVersion.machoVersion`, `__HANDSHAKE_SECRET_KEY` or `handShakePaddingLength` changed; a net, marshal, destiny, ballpark or michelle module changed in meaning; the gateway's `eve_public.gateway.*` strings changed; a patch rule that `eve_patch_author.py locate` cannot place |
+| **T3** | native protocol change | `blue.dll`, `_destiny.dll`, `exefile.exe` or `python27.dll` is `code-differs` (not `signature-only`); `eveMachoNetVersion.machoVersion`, `__HANDSHAKE_SECRET_KEY` or `handShakePaddingLength` changed; a net, marshal, destiny, ballpark or michelle module changed in meaning; the gateway's `eve_public.gateway.*` strings changed |
 | **T2** | new release line | `start.ini` `codename`, `version` or `region` differs |
 | **T1** | code change, same line | any module changed in meaning; port-surface exit 3; an answer-shapes `SERVED` row; a port-recheck `changed` or `gone` row |
 | **T0** | data only, same line | none of the above: resources, identical schema, static data, `recompiled` modules and signature-only natives |
 
 ### 3.1 The sequences
 
-Every sequence starts with **S0**, the read-only part, run by the coordinator:
+Every sequence starts with **S0**, the read-only part, run by the maintainer:
 
 ```sh
 tools/import-build.sh tq-<N> --check          # exit 0, or MISSING blobs: back to the launcher
@@ -122,17 +122,17 @@ tools/new-build.sh tq-<N> --report            # steps 1 to 9; stops with exit 10
 python3 -I tools/build-triage.py <N>          # exit 20..23 = T0..T3 (planned)
 ```
 
-The census control copy is made **straight after the import, before any patch**
+The census control copy is made **straight after the import, before any modification**
 (`docs/guides/build-compat.md` step 8; `tools/re-pin.sh` refuses without `tq-<N>-control`).
 
 **T0: data only, same line.** Target: provisional in 2 h, served on its own bundle the same day.
 
 | step | what | decision point | proof |
 |---|---|---|---|
-| T0.1 | patch manifest: `eve_patch_author.py locate /client --merge tools/patches/<pinned>.json` to `tools/patches/<N>.json` (`locate --merge` already sets `build`, `identify` and the comment from `start.ini`) | a rule refuses: T3 | `eve_patch_author.py check` exit 0; `tools/test_eve_patch.py` |
-| T0.2 | `eve_patch_author.py hosts /client` | a new host: read it. `*.mmdb` blobs are skipped, because the GeoLite databases hold string fragments that look like hosts | exit 0, or a human-read list |
+| T0.1 | import the build and make the census control copy (`build-compat.md` steps 1 and 8) | | the import exit code |
+| T0.2 | check that every host the new build contacts is in the reviewed list (skip `*.mmdb` blobs, whose string fragments look like hosts) | a new host: read it | a human-read list |
 | T0.3 | registry row, status `provisional` (section 4.2): `tools/builds.tsv` and `BUILDS` | none | `the_table_matches_tools_builds_tsv` |
-| T0.4 | land T0.1 and T0.3 together | a red gate: fix | the gate stamp |
+| T0.4 | land T0.3 | a red gate: fix | the gate stamp |
 | T0.5 | bundle: `content.py ... --build <N>`, then `--check --against out/content` | equal `data_hash`: record it and go to T0.7; differs: T0.6 | `content.py --check` exit 0 |
 | T0.6 | expected counts (`content_types.EXPECT_BY_BUILD`, `content_dungeons.EXPECT_BY_BUILD`); `bundle-diff.py OLD NEW --uses` | a `REMOVED` or `CLASS` flag on an id we use: it is T1 work | `--check` with no UNVERIFIED note |
 | T0.7 | row `provisional` to `equivalent`, with `data_hash`; land | the proof below passed | section 4.4 |
@@ -157,7 +157,7 @@ steps, plus:
 
 | step | what | decision point | proof |
 |---|---|---|---|
-| T2.1 | a new `ReleaseLine` const in `build.rs` (macho, version, codename, region, secret, padding, `codename_at_region`) from `start.ini` and the disassembly of `eveMachoNetVersion.pyc` and `GPS.pyc`; the `BUILDS` row is `unverified` | machoVersion, secret or padding moved: T3 | registry tests; a new `handshake.rs` test (H1 carries the new identity, H2 with the old one is refused) |
+| T2.1 | a new `ReleaseLine` const in `build.rs` (macho, version, codename, region, secret, padding, `codename_at_region`) from `start.ini` and the client's handshake modules; the `BUILDS` row is `unverified` | machoVersion, secret or padding moved: T3 | registry tests; a new `handshake.rs` test (H1 carries the new identity, H2 with the old one is refused) |
 | T2.2 | the probe and bots take the line from H1 (needed once, then permanent) | | the `TWO_LINES` fixture test |
 | T2.3 | must fixes land **before** the cut-over, written to serve both shapes where the client tells them apart (both key sets; arity-based branches) | a fix that cannot serve both waits for the cut-over commit | unit tests for both shapes |
 | T2.4 | the **cut-over commit** = the re-pin (section 4.3): `REFERENCE`, `REFERENCE_LINE`, statuses (new `pinned`, old `unverified`), `CFSD_REFERENCE_BUILD`, `tools/client-pin.sha256`, the `out/pyc` and `out/content` swap; then `tools/re-pin.sh tq-<N>` | | gate; `cutover.list` green on the new `tq-offline`; one jailed human login |
@@ -170,12 +170,11 @@ the time goes into the T1-class must items and the bundle.
 
 1. Announce on the patch-day issue: "server lags TQ; friends cannot log in until ...", and post an
    estimate after step 2.
-2. A research wave (several read-only lanes): `tools/dis.py` diffs of the changed native, the
+2. A research wave (several read-only lanes): diffs of the changed native, the
    GPS/machoNet handshake, and the unpublished login-path note, `framing.md` and
    `object-wrapper.md` against the new build. Each lane delivers an implementation spec.
-3. Patcher relocation by hand (`tools/client-patch-manifest.py`) for any rule `locate` refused.
-4. Wire implementation lanes, then the T2 steps.
-5. Proof: an `eve-probe` login against the new line, then `cutover.list`, then a human login.
+3. Wire implementation lanes, then the T2 steps.
+4. Proof: an `eve-probe` login against the new line, then `cutover.list`, then a human login.
 
 ### 3.2 Target latency, measured
 
@@ -197,19 +196,18 @@ page carries the "Tracking TQ" block.
 ### 4.1 Order of steps (every tier)
 
 1. **Registry and line:** the `builds.tsv` row, the `BUILDS` row, and for T2 the `ReleaseLine`.
-2. **Patches:** `tools/patches/<N>.json` (check and test).
-3. **Bundle:** extract, check, record `data_hash`; staged where the server will look.
-4. **Server code:** the must fixes, landed while still serving the old build (written for both
+2. **Bundle:** extract, check, record `data_hash`; staged where the server will look.
+3. **Server code:** the must fixes, landed while still serving the old build (written for both
    shapes).
-5. **Proof** (section 4.4) on a patched copy of the new build.
-6. **Cut-over commit:** the status flips (and the re-pin for T2), landed through `tools/land.sh`.
-7. **Deploy** follows the landing.
-8. **Players' copies:** the client kit and `client-setup.sh refresh` (section 4.5).
-9. **Second client and CI slots:** `client2-setup.sh --remove` then set up again;
-   `slot-prefix.sh remove all` (both are in `re-pin.sh`; for a same-line build, step 9 runs only if
+4. **Proof** (section 4.4) on a copy of the new build.
+5. **Cut-over commit:** the status flips (and the re-pin for T2), landed through `tools/land.sh`.
+6. **Deploy** follows the landing.
+7. **Players' copies:** the client kit and `client-setup.sh refresh` (section 4.5).
+8. **Second client and CI slots:** `client2-setup.sh --remove` then set up again;
+   `slot-prefix.sh remove all` (both are in `re-pin.sh`; for a same-line build, step 8 runs only if
    `tq-offline` changed).
-10. **RE corpus:** the re-pin (T2 always; T0 and T1 per section 7.1).
-11. **Retire the old build**, after the rollback window (section 4.6).
+9. **RE corpus:** the re-pin (T2 always; T0 and T1 per section 7.1).
+10. **Retire the old build**, after the rollback window (section 4.6).
 
 ### 4.2 Status `provisional`
 
@@ -252,7 +250,7 @@ EVE_CLIENT_DIR=tq-<N> tools/client-ci-regress.sh --list tools/client-ci/cutover.
 python3 -I tools/regress-compare.py var/regress-<last pinned run> var/regress-<this run>
 ```
 
-`tq-<N>` is a patched copy (`eve_patch.py apply --client`); `client-ci.sh` already picks
+`tq-<N>` is a prepared copy; `client-ci.sh` already picks
 `out/content-<N>` for a non-pinned build.
 
 | tier | the gate | `cutover.list` | full `regress.list` | jailed human login |
@@ -268,15 +266,14 @@ A friend lets the launcher update and then refreshes; nothing holds the build. T
 is the newest **served** build. `tools/client-setup.sh check` says one of three things: "up to
 date", "refresh: run `tools/client-setup.sh refresh`" (the install is a newer served build than
 the `tq-offline` copy), or "the server has not caught up with build N yet: wait, see the
-patch-day issue". `refresh` keeps the old `tq-offline` as `tq-<oldbuild>` and runs `copy` and
-`patch` again; it changes only `tq-offline`, refuses before it writes, and does nothing when the
+patch-day issue". `refresh` keeps the old `tq-offline` as `tq-<oldbuild>` and runs `copy` again; it changes only `tq-offline`, refuses before it writes, and does nothing when the
 install is not a served build. `tools/pin-client.sh` verifies against the committed
 `tools/pins/<build>.sha256` of the install's build (hashes only); add one per served build
 (`pin-client.sh --write`). See the unpublished remote-clients note for the player's side.
 
 ### 4.6 Retiring the old build, and rollback
 
-**Rollback window:** the previous build's install, patched copy, `out/pyc-<old>` and
+**Rollback window:** the previous build's install, copy, `out/pyc-<old>` and
 `out/content-<old>` stay until the **next** cut-over has passed its proof. Then
 `tools/retire-build.sh <old> [--dry-run]` prints build-compat "Retiring a build"
 steps 1 to 3 as edits and deletes the local copies (`tq-<old>`, `tq-<old>-control`,
@@ -385,7 +382,7 @@ in three passes:
   the new string constants of the code objects that held it as a candidate rename. [I, a
   local stdlib prototype on 3670638 to 3707965: of 2,115 server keys exactly three are gone, all in
   `service/structures/safety.rs`; no false positive.]
-- **C, consumer shapes at served call sites:** follow the result in the caller's bytecode
+- **C, consumer shapes at served call sites:** follow the result in the caller's code
   (unpack, iterate, constant subscript, attribute, `.get`) and diff the shape sets old to new:
   `SHAPE changed`, `KEY added`, `KEY gone`.
 
@@ -409,7 +406,7 @@ defensively, for example `row.get('daysUntilCanDeliver', row.get('daysUntilCanDe
 
 When port-recheck reports `changed` on a function we cite as behaviour (a formula, a timer, a
 constant), its `recheck.md` row is the work item. The lane re-derives the behaviour from the new
-bytecode, then updates the code, the test (invented values) and the `[V]` citation, or downgrades
+client, then updates the code, the test (invented values) and the `[V]` citation, or downgrades
 it (section 7.2).
 
 ## 7. Keeping `[V]` claims honest across builds
@@ -431,10 +428,9 @@ Re-pins at a new line, and the routine 30-day re-pin within a line, are standing
 | claim kind | re-verified by | when it moves |
 |---|---|---|
 | `path.py:N` citations in `server/crates` and fci scenarios | `port-recheck.py` citations | `shifts.sh` fixes lines in code that did not change; changed code goes to a reader |
-| table rows of `findings/port-recheck.tsv` | `port-recheck.py` table | `changed` or `gone` goes to the lane named in the row |
+| table rows of the unpublished port-recheck table | `port-recheck.py` table | `changed` or `gone` goes to the lane named in the row |
 | Rust consts against client consts and bundle rows | `port-recheck.py` constants | a reader |
 | wire facts (handshake, framing, marshal) | the build-delta protocol rows plus the T3 rules | T3 |
-| patch sites | `eve_patch_author.py check` and `locate` | relocation, or T3 |
 | content counts | `content.py --check` with `EXPECT_BY_BUILD` | the notes give new counts |
 | answer keys we emit | `answer-shapes.py` (planned) | `SERVED gone` is a must |
 | citations in docs (`docs/re/*.md`, `docs/reference/*.md`) | **not covered today**; planned: add them to port-recheck's citation roots (#290) | |
@@ -462,7 +458,7 @@ dates it against `builds.tsv`'s evidence column.
   names, counts and repo paths. It never names local machine paths, host names or maintainer-side
   cleanup.
 
-**Daily** (coordinator; cheap): `tq-watch` (planned; exit 3, 4 or 5 starts a patch day) and
+**Daily** (maintainer; cheap): `tq-watch` (planned; exit 3, 4 or 5 starts a patch day) and
 `python3 -I tools/tq-lag.py --check` (exit 3 when a build is over its tier target).
 
 **Patch day**, in order:

@@ -59,14 +59,9 @@ P    plen-(P-4)   where P = 4 + (bit28 ? 4 + oobLen : 0)
 
 ### Writer, `0x180382d70`
 
-```text
-0x180382dd4  mov  dword ptr [rdi + 4], esi ; word1 = oobLen
-0x180382dd7  bts  eax, 0x1c                ; set bit 28
-0x180382de2  mov  dword ptr [rdi], eax     ; word0
-...
-0x180382df1  mov  dword ptr [rdi], r14d    ; no-oob: word0 = dataLen, no flags
-0x180382df4  mov  esi, 4                   ; payload offset = 4
-```
+- With an out-of-band section, `word1` is `oobLen` and bit 28 is set in `word0`.
+- Without one, `word0` is the plain `dataLen` with no flags, and the payload starts at
+  offset 4.
 
 A zero-length oob takes the no-oob branch (`test esi, esi`), so bit 28 is never
 set with an empty section.
@@ -186,14 +181,11 @@ TCP stream
 **The encryption layer sits between the frame and the marshal blob.**
 `machoNet.get_gps_map()` maps `tcp:packet:server` to
 `SecureSocketPacketTransportFactory`, whose `Read`/`Write` are
-`EncryptedRead`/`EncryptedWrite`:
+`EncryptedRead`/`EncryptedWrite`.
 
-```python
-def EncryptedRead(self):
-    return self.cryptoContext.SymmetricDecryption(self.UnEncryptedRead())
-def EncryptedWrite(self, packet, header=None):
-    return self.UnEncryptedWrite(self.cryptoContext.SymmetricEncryption(packet), header)
-```
+`EncryptedRead` returns the symmetric decryption of what `UnEncryptedRead` reads;
+`EncryptedWrite` symmetrically encrypts the packet and hands it to `UnEncryptedWrite`
+with the optional header.
 
 Framing is unaffected — the prefix measures whatever bytes reach `sendpacket` —
 but the `}`/`~` discriminator applies to the **decrypted** payload. Under the

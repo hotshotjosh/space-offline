@@ -2,14 +2,32 @@
 
 ## What it is
 
-space-offline is an emulator for our favourite online space MMO, written in
-Rust, mostly with the standard library: a few allowlisted crates and no `unsafe`
-in our own code. It targets one client
-build: the `pinned` row of `tools/builds.tsv`. The goal is co-op and PvP with
-500 to 1,000 or more player-like bots that mine, fight, build and trade beside
-you. The build tools run in Docker and the client can run in a network jail, so
-nothing needs installing on the host. This project is not affiliated with or
-endorsed by CCP Games.
+space-offline is a private server for the EVE Online game client, written in
+Rust: mostly the standard library, a few allowlisted crates, and no `unsafe` in
+our own code. You bring your own client; the repository contains no file of
+the game client. It targets one client build at a time: the `pinned` row of
+`tools/builds.tsv`. The goal is co-op and PvP with friends, beside 500 to 1,000
+or more player-like bots that mine, fight, build and trade. The build tools run
+in Docker, so the build installs nothing on the host.
+
+**No money, ever.** It is free, and nobody may make or take money, or anything
+worth money, in connection with it: no sales, donations, ads or shared hosting
+costs ([Licence](#licence)).
+
+This project is not affiliated with, endorsed by or sponsored by CCP ehf., CCP
+Games or Fenris Creations. EVE Online and related names are their trademarks.
+
+**What works today.** Logging in, flying and warping, fitting, combat, the market
+and wallet, missions and exploration, mining and industry, fleets and
+corporations and Upwell structures have passed scripted tests against the real
+client. Bots, factional warfare and sovereignty are largely built, and only partly
+proved against a client. Feature by feature:
+[`docs/status/README.md`](docs/status/README.md).
+
+**Client build.** Steam always installs the current live build. When that is newer
+than the pinned build, the tools refuse it until the project catches up;
+[`docs/status/README.md`](docs/status/README.md) ("Tracking TQ") shows both
+numbers. Server-only work needs no client.
 
 The repository holds no client files and no copy of CCP's art, sound, game
 data files or published Static Data Export (SDE); we do not use the SDE. The
@@ -24,8 +42,7 @@ What the repository does hold is our own work: the server code, the tools,
 tables we authored for policy and tuning that no client file gives us
 (`content/`), and notes on how the client talks to a server, which is what
 interoperability needs. Those notes and the code comments describe the
-client's behaviour and cite where in the client it is found; some still carry
-short excerpts of it. A few small portions come from CCP's MIT-licensed
+client's behaviour in our own words and cite where in the client it is found. A few small portions come from CCP's MIT-licensed
 `carbonengine/destiny` and other permissively licensed sources; [`NOTICE`](NOTICE)
 lists each one. The rule for tests is invented ids and rows, never extracted
 values.
@@ -59,7 +76,8 @@ appreciated.
 - Linux with Docker, bash, coreutils and `python3` (standard library only, always `python3 -I`).
 - For the client: Steam with Proton, and `sudo` for the jail (optional, but
   strongly recommended; see [The jail](#the-jail)).
-- EVE Online installed through Steam at the pinned build, with every resource file downloaded.
+- EVE Online installed through Steam, with every resource file downloaded. The tools
+  accept only the pinned build (see "Client build" above).
 - About 12 GB free RAM for a build, and 8-11 GB of disk for `server/target`.
 
 ### 1. Build the server
@@ -81,13 +99,13 @@ never the install you play on.
 ```sh
 tools/offline-prefix.sh --link-resfiles
 tools/offline-prefix.sh --check
-python3 -I tools/eve_patch.py apply --client "$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline"
-python3 -I tools/eve_patch.py verify --client "$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline"
-tools/pin-client.sh
 ```
 
-Ready: `--check` lists the copy and its ResFiles, and `verify` and `pin-client.sh`
-exit 0. [Getting-started step 3](docs/guides/getting-started.md#3-make-the-offline-client-copy)
+Ready: `--check` lists the copy and its ResFiles. To play on this server the
+client must be patched. That is not part of this repository; the public guides are
+the [new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
+[blue_patcher](https://github.com/stschake/blue_patcher).
+[Getting-started step 3](docs/guides/getting-started.md#3-make-the-offline-client-copy)
 has the `cp -a` that makes the `tq-offline` copy.
 
 ### 3. Build the content bundle
@@ -171,11 +189,9 @@ form also launches your client. In game, a GM drives bots with `/bots help`,
 
 ## The jail
 
-The jail is optional, but we strongly recommend it. The client phones home: it
-has crash reporting that is always on (Sentry, and the Crashpad handler
-`eve_crashmon.exe`), it fetches resources from CCP's servers, and it may make
-other calls we have not found. Without the jail, any of that can reach CCP
-while you play on this server.
+The jail is optional, but we strongly recommend it. The client can contact CCP's
+servers (crash reporting, resource downloads, and possibly more). Without the
+jail, any of that can reach CCP while you play on this server.
 
 What the jail does: it starts the client in its own network namespace with no
 default route. The only address it can reach is the host end of a veth pair,
@@ -210,6 +226,9 @@ jail stays closed. Without root, use `tools/jail-rootless.sh`. Everything else:
 
 Point your agent at [`AGENTS.md`](AGENTS.md). It is a short guide: pick a task, check
 overlap, run the gate, and open a pull request that a maintainer imports.
+Pull requests are not merged on GitHub. A maintainer applies each one to the
+upstream repository, gates it there, and the change comes back here as a new
+commit; the PR is then closed with that commit's id, and your name stays on it.
 
 ```sh
 python3 -I tools/pr_overlap.py
@@ -261,7 +280,7 @@ own encryption.
 | `containers/` | Docker image definitions; the only place network access happens. |
 | `docs/` | Guides, reference, status and design notes. Index: `docs/README.md`. |
 | `findings/` | Inventories of the client's services and calls, in TSV and JSON. |
-| `captures/` | Kept recordings of a real client session, for regression tests. |
+| `captures/` | Recordings of a real client session. The regression captures are not published. |
 | `out/`, `var/`, `logs/` | Generated: content bundle, worlds, logs. Gitignored. |
 
 ## Docs map
@@ -310,5 +329,8 @@ share and run it for free, under the PolyForm Noncommercial License 1.0.0
   [`CONTRIBUTING-terms.md`](CONTRIBUTING-terms.md).
 - Some files carry third-party portions under MIT or zlib terms; see
   [`NOTICE`](NOTICE).
-- This project is not affiliated with, endorsed by or sponsored by CCP.
-- Releases before this change are under the No Money Share-Alike Licence 1.1.
+- This project is not affiliated with, endorsed by or sponsored by CCP ehf., CCP Games
+  or Fenris Creations; EVE Online and related names are their trademarks.
+- Commits before the licence change of 2026-11-09 (the commit that adds
+  `LICENSE-additions.md`) carry the No Money Share-Alike Licence 1.1 in their
+  `LICENSE.md`; from that commit on, the terms above apply.

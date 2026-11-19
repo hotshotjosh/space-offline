@@ -90,6 +90,7 @@ class LandingTools(unittest.TestCase):
             STUB_TEST_OUT=self.test_out,
             STUB_TEST_EXIT="0",
             STUB_ARGS=os.path.join(self.tmp, "stub-args"),
+            EVE_NO_POST_LAND="1",
         )
         self.env = env
         self.cargo_test(PASS)
@@ -103,6 +104,8 @@ class LandingTools(unittest.TestCase):
         self.write("tools/check_deps.py", "pass\n")
         self.write("server/crates/invented/Cargo.toml", "")
         self.write(".gitignore", "out/\nvar/\n")
+        # A maintainer's checkout: land.sh pushes main/master only with this present.
+        self.write("private/post-land.sh", "#!/bin/sh\nexit 0\n", exe=True)
         self.git("init", "-q", "-b", "master")
         self.git("remote", "add", "origin", self.remote)
         self.commit("base")
@@ -167,6 +170,19 @@ class LandingTools(unittest.TestCase):
         self.assertNotIn("land: pushed", r.stdout)
         self.assertEqual(self.remote_master(), self.base)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "out", "landed", self.head)))
+
+    def test_an_outside_clone_without_post_land_does_not_push_master(self) -> None:
+        self.git("rm", "-q", "private/post-land.sh")
+        self.git("commit", "-q", "-m", "no maintainer step")
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("land: refusing to push master", r.stderr)
+        self.assertNotIn("land: pushed", r.stdout)
+        self.assertEqual(self.remote_master(), self.base)
+        # A topic branch is not refused.
+        self.git("checkout", "-q", "-b", "topic")
+        r = self.run_tool("land.sh")
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_zero_tests_passed_is_refused(self) -> None:
         self.cargo_test("test result: ok. 0 passed; 0 failed\n")

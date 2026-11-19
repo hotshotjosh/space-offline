@@ -85,15 +85,15 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 | item | what the client expects | what is in the client | what we do today | kind | mark | issue |
 |---|---|---|---|---|---|---|
 | NPC stats, bounty, security gain, tackle and ewar chances, missiles | balls whose type the client knows; damage and FX pushes | per-type dogma (bounty, chase and attack-delay windows, scram and web chances, missile type) | `npc/types.tsv`, `npc/bounty.tsv`, `src/npc_data.rs` | derivable | [V] C6 §2.5 | |
-| Aggression thresholds, threat range, default AI name, spawner timing vocabulary | nothing on the wire | `spacecomponentsbytype` per type | `npc/components.tsv` | derivable | [V] C1 §2.6, `docs/re/npc-behaviors.md` §6.2 | |
-| Behaviour trees (CCP's AI data) | movement, lock and FX pushes, as for players | the engine and its task vocabulary; **no tree data** | our brain (`src/npc/brain.rs`) driven by the per-type numbers | design | [V] `docs/re/npc-behaviors.md` §1.4 | |
-| Group aggression, a drone's aggression counting as its owner's | locks and pushes | the rule, in the shipped `behaviors` code | followed | derivable | [V] `docs/re/npc-behaviors.md` §5.4 | |
+| Aggression thresholds, threat range, default AI name, spawner timing vocabulary | nothing on the wire | `spacecomponentsbytype` per type | `npc/components.tsv` | derivable | [V] C1 §2.6, the unpublished npc-behaviors note §6.2 | |
+| Behaviour trees (CCP's AI data) | movement, lock and FX pushes, as for players | the engine and its task vocabulary; **no tree data** | our brain (`src/npc/brain.rs`) driven by the per-type numbers | design | [V] the unpublished npc-behaviors note §1.4 | |
+| Group aggression, a drone's aggression counting as its owner's | locks and pushes | the rule, in the shipped `behaviors` code | followed | derivable | [V] the unpublished npc-behaviors note §5.4 | |
 | Belt rat composition | rat balls in belts | none of the client's spawner rows is a belt spawner; the NPC group-name grammar and bounty ladders are there | budget squads from the grammar, `src/npc_gen.rs`, `src/belts.rs` | design | [V] C6 §0 items 1-3, §2.3 | |
 | Which pirates own a region | rat faction in belts and sites | faction HQs; empire-to-pirate links in mission dungeons | `npc/regions.tsv` by rule, plus `content/npc/region-pirates.tsv` overrides | derivable | [I] from C6 §2.7 (HQs plus mission-dungeon factions); overrides are [A] | |
-| Squad behind a dungeon or mission spawn point (`npcGroupingID`) | the ships at that spawn point | the spawn point, its faction and an id that points outside the corpus | budget squads per entity, `npc_gen::dungeon_squads` (C6 R5) | capture-only | [V] `docs/re/dungeon-model.md` §5.5, C6 §2.4 | |
-| Dungeon spawn triggers (which event releases which wave) | waves arriving | two booleans (`triggerSpawn`, `objectTriggerSpawn`) and the trigger vocabulary; no trigger wiring | our trigger rule, `src/site_spawn.rs` | capture-only | [V] `docs/re/dungeon-model.md` §5.3 | |
+| Squad behind a dungeon or mission spawn point (`npcGroupingID`) | the ships at that spawn point | the spawn point, its faction and an id that points outside the corpus | budget squads per entity, `npc_gen::dungeon_squads` (C6 R5) | capture-only | [V] the unpublished dungeon-model note §5.5, C6 §2.4 | |
+| Dungeon spawn triggers (which event releases which wave) | waves arriving | two booleans (`triggerSpawn`, `objectTriggerSpawn`) and the trigger vocabulary; no trigger wiring | our trigger rule, `src/site_spawn.rs` | capture-only | [V] the unpublished dungeon-model note §5.3 | |
 | Live-event and warfare spawn tables (reactive spawners) | event and insurgency spawns | spawner parameters; table and fleet-template ids point outside the corpus | nothing (not built) | capture-only | [V] C6 §2.3 | |
-| In-site respawn delay, aggression range, orbit range | timing and behaviour | `guardCommand` on each dungeon object | read from `dungeons/spawns.tsv` | derivable | [V] `docs/re/npc-behaviors.md` §6.1 | |
+| In-site respawn delay, aggression range, orbit range | timing and behaviour | `guardCommand` on each dungeon object | read from `dungeons/spawns.tsv` | derivable | [V] the unpublished npc-behaviors note §6.1 | |
 | CONCORD response time and squad size | ships arriving | CONCORD's corporation id; nothing on timing | owner decision (1 s at 1.0 rising to 10 s), squads [A] (`src/concord.rs:122-132`) | design | [V] `concord.rs:122-127` (owner decision); [A] `:129-132` | |
 | Faction police, sentry guns: placement and targeting | ships and guns firing | the groups and the sentry switch delay; no placement or targeting rule | `npc/police.tsv`, `src/sentry.rs` | design | [V] `sentry.rs:1-10` | |
 
@@ -101,7 +101,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 
 | item | what the client expects | what is in the client | what we do today | kind | mark | issue |
 |---|---|---|---|---|---|---|
-| NPC wreck loot | wreck contents | references to loot-table ids from five tables; **no table of loot tables** | `npc/loot.tsv` pools by faction, size, tier and bounty; `src/npc/loot.rs` | design | [V] `docs/re/dungeon-model.md` §6; [A] the rates, `loot.rs:6-9` | |
+| NPC wreck loot | wreck contents | references to loot-table ids from five tables; **no table of loot tables** | `npc/loot.tsv` pools by faction, size, tier and bounty; `src/npc/loot.rs` | design | [V] the unpublished dungeon-model note §6; [A] the rates, `loot.rs:6-9` | |
 | Data and relic can loot | can contents after a hack | nothing | `explore/loot.tsv`, `src/hacking_loot.rs` | design | [V] `hacking_loot.rs` header | |
 | Combat site end cache | a wreck in the last room | a reference on a handful of objects that points at nothing | `explore/site-loot.tsv`, `src/combat_site.rs:64-70` | design | [V] `combat_site.rs:64-70` | |
 | Wreck type per hull | the wreck ball | the wreck type on each type | read from the type data | derivable | [V] C1 §2.6 | |
@@ -115,7 +115,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 |---|---|---|---|---|---|---|
 | Agents: where they sit, level, division, type | `GetAgents` rows | `npccharacters` | `agents/agents.tsv` | derivable | [V] C1 §2.7, C4 §1 | |
 | Which missions an agent offers | the offer | the pool was TQ server data, but the client holds enough to derive it (level, offering and enemy faction, division, chains) | `src/mission_pool.rs` | derivable | [V] C4 summary, §2-§3 | |
-| Mission content: briefing, objectives, pocket | the mission's message ids and dungeon | `missions`, `dungeons` | `agents/missions.tsv`, `agents/mission-messages.tsv` | derivable | [V] `docs/re/mission-model.md` §1-§2 | |
+| Mission content: briefing, objectives, pocket | the mission's message ids and dungeon | `missions`, `dungeons` | `agents/missions.tsv`, `agents/mission-messages.tsv` | derivable | [V] the unpublished mission-model note §1-§2 | |
 | Courier destinations, where a kill pocket is placed | bookmarks and locations | nothing | our placement rule | design | [V] C4 summary ("geography ... we still author") | |
 | Mission ISK, time bonus and LP | `normalRewards`, `bonusRewards`, `loyaltyPoints` in the offer | Basic missions carry no reward; a few carry their own | `content/agents/rewards.tsv` over a bounty-derived base, `src/mission_rewards.rs:16-25` | capture-only | [V] C4 §4, `src/mission_rewards.rs` | |
 | Standing gain on completion, the cost of declining | standings changes | the client's standing gates and caps; no gain values | our per-level gains, `agent_gain` and `corp_gain` in `content/agents/rewards.tsv` | capture-only | [A] the rewards table (ruling 9: our numbers); C4 §4 records EvEJS's figures, one of them from a single TQ capture | |
@@ -220,7 +220,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 
 | item | what the client expects | what is in the client | what we do today | kind | mark | issue |
 |---|---|---|---|---|---|---|
-| Wire shapes of populated answers | the shape its consumer reads | the consumer code (what it subscripts, unpacks or iterates) | answered as read (`docs/reference/client-call-surface.md`) | derivable | [V] client-call-surface.md §3 | |
+| Wire shapes of populated answers | the shape its consumer reads | the consumer code (what it subscripts, unpacks or iterates) | answered as read (the unpublished client-call-surface note) | derivable | [V] the same note §3 | |
 | Gateway message schemas | protobuf | the client's own `.proto` descriptors | `src/gateway.rs` | derivable | [V] `gateway.rs:12-18` | |
 | Downtime hour | the reset countdown | the client's countdown | 11:00 UTC by decision | design | [V] `src/rollover.rs:1` | |
 | Warfare links (command bursts) | buff values | `dbuffcollections` | `dbuffs/*.tsv`, `src/dbuff_data.rs` | derivable | [V] `dbuff_data.rs` header | |
@@ -229,7 +229,7 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 
 | # | item | what exactly is unknown | what a capture must contain | why the client cannot tell us | how much it matters |
 |---|---|---|---|---|---|
-| 1 | Squads behind dungeon and mission spawn points | which ships the server puts behind each `npcGroupingID` | the `AddBalls` of each pocket on first arrival, for many dungeons, ideally twice each to separate fixed squads from random ones | the id points outside the corpus (`docs/re/dungeon-model.md` §5.5) | **medium**: sites play with budget squads of the right faction and size; veterans would notice "the wrong ships". The most useful capture item, and it needs one capture per dungeon of interest. |
+| 1 | Squads behind dungeon and mission spawn points | which ships the server puts behind each `npcGroupingID` | the `AddBalls` of each pocket on first arrival, for many dungeons, ideally twice each to separate fixed squads from random ones | the id points outside the corpus (the unpublished dungeon-model note §5.5) | **medium**: sites play with budget squads of the right faction and size; veterans would notice "the wrong ships". The most useful capture item, and it needs one capture per dungeon of interest. |
 | 2 | Dungeon spawn triggers | which kill, timer or proximity releases which wave | a full run per dungeon: kill order and wave arrivals with timing | only two booleans ship (`dungeon-model.md` §5.3) | low to medium: wave pacing in missions and DED sites |
 | 3 | Live-event and warfare spawn tables | the tables and fleet templates behind the reactive spawners | event or insurgency spawns as they happen | ids point outside the corpus (C6 §2.3) | **none now**: that content is not being built |
 | 4 | Escalation pairing and chance | which site escalates to which, and how often | many completions of each site and the escalation notices | nothing links dungeons (`combat_site.rs:76-78`) | low: our ladder (same faction, one step harder) plays the same |
@@ -262,9 +262,9 @@ public issues, checked against the `issue` column of `docs/status/progress.tsv`.
 | NPC aggression, threat range, respawn timing and warp-in range are server AI data | per type in `spacecomponentsbytype`, and the spawn record on each dungeon object | [V] the unpublished EvEJS data note §4.1 ("the correction"), `npc-behaviors.md` §6.1 |
 | NPC behaviour has to be captured | the engine and role vocabulary ship; chase, attack delay, target switching, ewar and repair numbers are dogma on the type | [V] C6 §0 item 4, §2.5 |
 | The agent-to-mission pool is lost TQ data | it can be derived from the client's mission, dungeon and agent tables | [V] C4 summary |
-| Mission text needs a capture | every briefing resolves from the client's own message ids, with generic lines where a mission has none | [V] `docs/re/mission-model.md` §1.3, C4 §2.6 |
+| Mission text needs a capture | every briefing resolves from the client's own message ids, with generic lines where a mission has none | [V] the unpublished mission-model note §1.3, C4 §2.6 |
 | Site objectives need server logic | the chains run in the client from static data; the server sends three pushes | [V] `dungeon_tracking.rs:1-10` |
-| Dungeon layouts are server-side | about 5,500 dungeons with rooms, objects and spawn points ship | [V] `docs/re/dungeon-model.md` §1 |
+| Dungeon layouts are server-side | about 5,500 dungeons with rooms, objects and spawn points ship | [V] the unpublished dungeon-model note §1 |
 | Probe deviation for sites is a server secret | CCP's own signal tracker ships in the client | [V] `signal_tracker.rs:144` |
 | The FW warzone system list is server data | `warzonespositiondata` | [V] R-FW §0 item 1 |
 | Market taxes and broker fees are server-side | the client's own `marketutil` | [V] C5 §5.1 |

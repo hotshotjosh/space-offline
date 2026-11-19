@@ -132,14 +132,12 @@ are the only identity a field has.
 **[V]** A pointer field holds a payload-relative offset to the **first
 element**, with the `uint64` element count in the eight bytes **before** it.
 That is the same convention `fsd.CfsdTable.string` already uses. The generated
-sequence code is unambiguous:
+sequence code is unambiguous. For one list element it does four things:
 
-```
-mov rax, qword ptr [rcx + 0x10]     ; self->data
-mov rcx, qword ptr [rax]            ; p = the pointer field
-cmp rdx, qword ptr [rcx - 8]        ; index vs *(uint64*)(p - 8)  == count
-lea rbx, [rdx + rdx*2] ; shl rbx, 4 ; element = p + index * 48
-```
+1. it loads the record's data pointer;
+2. it loads the pointer field from it, `p`;
+3. it compares the index against the `uint64` stored at `p - 8`, the count;
+4. it computes the element address as `p + index * 48`.
 
 `fsd.cfsd_list` instead takes the slot to point at the *count*, with elements
 following at `+8`. The two read the same bytes only when `fsd`'s slot happens

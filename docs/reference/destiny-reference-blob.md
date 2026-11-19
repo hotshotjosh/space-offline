@@ -15,8 +15,8 @@ fire it, and what comes back.
 
 > **Nothing here modifies the client installation.** The script lives outside
 > it, in the Proton prefix beside the client's own log, and it is executed by a
-> command the client already ships. `/client` stays read-only and
-> `tools/client-prepare.sh` / `tools/client-patch-manifest.sh` are not involved.
+> command the client already ships. `/client` stays read-only and client preparation is
+> not involved.
 > Deploying is the owner's step, not an agent's — nothing in this repo copies
 > anything into a client.
 
@@ -89,14 +89,12 @@ tracking tag**, not an attribute name — it sits in the middle of
 `BlueMemStream.cpp`'s allocation strings (`"Couldn't alloc %d bytes."`,
 `"Couldn't grow a provided buffer."`, `"Cannot resize locked stream."`). The
 real Blue class registration is a few hundred bytes further on, at
-`0x180186d46`, and it passes exactly four strings:
+`0x180186d46`, and it passes exactly four strings, in this order.
 
-```
-0x180186d46  lea -> 'A memory stream'     ; the class doc
-0x180186e21  lea -> 'size'                ; attribute
-0x180186e7f  lea -> 'position'            ; attribute
-0x180186ed7  lea -> 'MemStream'           ; the class name
-```
+1. `0x180186d46` passes `'A memory stream'` (the class doc).
+2. `0x180186e21` passes `'size'` (attribute).
+3. `0x180186e7f` passes `'position'` (attribute).
+4. `0x180186ed7` passes `'MemStream'` (the class name).
 
 The stream *methods* come from the shared stream interface, registered at
 `0x180262717`..`0x180262912`, which binds six names — `Read`, `read`, `Write`,
@@ -126,39 +124,25 @@ read-back must seek — which is exactly what the chosen accessor does.
 
 ### 1.2 Where `Park.StoreState` can be called from — don't call it; call the writer
 
-`Park.StoreState` (michelle.py 1155) is the wrong entry point:
+`Park.StoreState` (michelle.py 1155) is the wrong entry point.
 
-```python
-def StoreState(self, midTick=False):
-    if self.dirty or not self.isRunning:
-        return
-    ms = blue.MemStream()
-    self.WriteFullStateToStream(ms)
-    self.states.append([ms, self.currentTime, midTick])
-```
+It (`StoreState(midTick=False)`) returns at once if the park is dirty or not running.
+Otherwise it makes a `blue.MemStream`, fills it with `WriteFullStateToStream`, and
+appends `[stream, currentTime, midTick]` to `self.states`.
 
-It returns silently unless the park is running and clean, it keeps the stream
+So it returns silently unless the park is running and clean, it keeps the stream
 in `self.states` rather than giving it to you, and it is reachable only from
 `FlushSimulationHistory` and the tick. Every bit of it is a guard between us
 and the two lines we actually want. The script calls
 `WriteFullStateToStream` directly on a ballpark of its own.
 
 **The trigger** is the real question, and the answer is a command the client
-already ships. `eve/devtools/script/svc_console.py`:
+already ships (`eve/devtools/script/svc_console.py`).
 
-```python
-class ConsoleService(Service):
-    __guid__ = 'svc.console'
-    __servicename__ = 'console'
-    __slashhook__ = True
-
-    def cmd_execfile(self, p):
-        if not (session and session.role & ROLE_PROGRAMMER):
-            raise slashError.Error('You are not authorized to use this command.')
-        filename, = p.Parse('s')
-        execfile(filename, globals())
-        return 'Ok'
-```
+The console service (`svc.console`, `__slashhook__ = True`) defines `cmd_execfile`.
+It raises `'You are not authorized to use this command.'` unless the session holds
+`ROLE_PROGRAMMER`, parses one string argument as a filename, runs that file with
+`execfile` in the service module's globals, and returns `'Ok'`.
 
 `SlashService._SlashCmd` (`svc_slash.py` 634) dispatches by scanning `svc.__dict__`
 for any class with `__slashhook__` and a matching `cmd_<name>`, then
@@ -195,15 +179,12 @@ Two smaller sharp edges in the dispatcher, both from reading `_SlashCmd`:
 **Five bytes.** Not "small": five. The full-state writer at `0x180096c70`, after
 the argument parse, does precisely this:
 
-```
-0x180096d3e  mov  ecx, [r14+0x1c]       ; ballpark.currentTime
-0x180096d42  mov  [rbp+0x38], ecx
-0x180096d45  mov  byte [rbp+0x30], 0    ; packet type 0
-0x180096d55  call [rax+0x10]            ; stream->Seek(0, 0)
-0x180096d6d  call [rax+8]  (len 1)      ; write the type byte
-0x180096d8c  call [rax+8]  (len 4)      ; write currentTime
-0x180096dd0  ... iterate ballpark.balls, writing one record each
-```
+1. It reads `ballpark.currentTime` from the object (`0x180096d3e`).
+2. It sets the packet type to 0 (`0x180096d45`).
+3. It seeks the stream to the start (`0x180096d55`).
+4. It writes the type byte, 1 byte (`0x180096d6d`), then `currentTime`, 4 bytes
+   (`0x180096d8c`).
+5. It iterates `ballpark.balls`, writing one record each (`0x180096dd0`).
 
 With no balls the loop body never runs. The output is `00` followed by the
 simulation tick as a `u32` LE, and nothing else. §6 says what that means for
@@ -236,27 +217,19 @@ and every ball in the park is written. The script tries
 
 **`AddBall`'s arity.** `Ballpark::AddBall` (`0x180091ca0`) opens with
 
-```
-0x180091cb3  cmp  byte [0x1800d42d1], 0
-0x180091cc0  je   0x180091edb
-0x180091cef  lea  rdx, 'Ldffiiiiiddddddffff'   ; 19 args
-0x180091f07  lea  rdx, 'Ldffiiiiiddddddff'     ; 17 args
-```
+1. It tests a module byte at `0x1800d42d1` (`0x180091cb3`).
+2. One branch parses the format `'Ldffiiiiiddddddffff'` (19 args, `0x180091cef`).
+3. The other parses `'Ldffiiiiiddddddff'` (17 args, `0x180091f07`).
 
 — two signatures, chosen by a module byte that is written by
 `destiny.settings.Configure` (the write at `0x18008e1ac` sits in the function
 that raises `"Argument 1 is not a SettingsConfiguration"`). Both of the
 client's own call sites pass 17 arguments:
 
-```python
-# michelle.py 1711, Park.AddClientSideBall
-ball = self.AddBall(self.clientBallNextID, 1.0, 0.0, 0, False, isGlobal,
-                    False, False, False, x, y, z, 0, 0, 0, 0, 0)
-# parklife/scenarioMgr.py, ReplaceObjectBall
-replacementBall = bp.AddBall(-ballID, 1.0, 0.0, 0, 0, 0, 0, 0, 0,
-                             targetBall.x, targetBall.y, targetBall.z,
-                             0, 0, 0, 0, 1.0)
-```
+- `Park.AddClientSideBall` (`michelle.py` 1711) passes the next client ball id,
+  mass 1.0, radius 0.0, then the flags, the position `x, y, z` and zero for the rest.
+- `ReplaceObjectBall` (`parklife/scenarioMgr.py`) passes the negated ball id, 1.0 and
+  0.0, zero flags, the target ball's `x, y, z`, four zeros and a final 1.0.
 
 so the short form is live on a stock client. The script tries 17 first, falls
 back to 19, and records which one the client accepted — which is also a
@@ -269,12 +242,9 @@ with it off will not line up. The script therefore prints all three
 `EO_TOUCH_DESTINY_SETTINGS` is `False` so a dump run cannot perturb the live
 simulation's idea of the format.
 
-Last trap, and it would have cost a whole run: the writer's ball loop begins
-
-```
-0x180096e17  cmp  qword [rbx+0x18], -0x40000000
-0x180096e1f  jl   <next ball>
-```
+Last trap, and it would have cost a whole run: the writer's ball loop begins here.
+At `0x180096e17` it compares a ball's id (at offset `0x18` of the ball record) with
+`-0x40000000` and skips the ball when the id is below it (`0x180096e1f`).
 
 **Balls with an id below `-0x40000000` are not serialised at all.** That is the
 client-side ball range `Park.AddClientSideBall` allocates from
@@ -508,8 +478,7 @@ different failure every time.
 (The same caveat applies to the unpublished session-flow note's plan of a loose
 `evecrypto/settings.py`: `evecrypto` is an archive package too, so a loose
 `evecrypto/` directory shadows the whole package, not one module in it. Worth
-knowing before that path is taken for `cryptoPack`; it is not this document's
-problem, because `tools/client-prepare.sh` solved `cryptoPack` another way.)
+knowing before that path is taken for `cryptoPack`; it is not this document's problem.)
 
 On top of that, it is unresolved whether the installation root is on `sys.path`
 at all. `sys.path` is built inside CCP's `python27.dll` fork via its own
@@ -593,15 +562,13 @@ Settled while building this, and not yet folded into that document:
 reader at `0x1800978c0` and reports its first `Read(4)`; that function is one
 level down. Its caller is the real `ReadFullStateFromStream` at `0x1800969d0`:
 
-```
-0x180096ae0  call [rax+0x10]          ; stream->Seek(0,0)
-0x180096af5  call [rax]    (len 1)    ; read the packet type
-0x180096b17  cmp  byte [rsp+0x80], 1
-0x180096b1f  ja   -> 'Unknown packet type'
-0x180096b4c  call 0x1800978c0         ; <- what §4.4 documents
-...          loop: read another type byte until Read returns 0
-0x180096b86  lea  rdx, 'Read %d bytes from stream'
-```
+1. It seeks the stream to the start (`0x180096ae0`).
+2. It reads a 1-byte packet type; a type above 1 logs `'Unknown packet type'`
+   (`0x180096b17`-`0x180096b1f`).
+3. It calls the balls reader at `0x1800978c0`, the function §4.4 documents
+   (`0x180096b4c`).
+4. It loops, reading another type byte, until a read returns 0 bytes, and then
+   logs `'Read %d bytes from stream'` (`0x180096b86`).
 
 So a blob is **a sequence of packets**, each `<u8 type><u32 tick><ball
 records…>`, read until end of stream. `WriteFullStateToStream` emits type `0`

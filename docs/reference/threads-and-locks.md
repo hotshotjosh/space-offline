@@ -450,7 +450,7 @@ function and not about reference-count timing.
 built.
 
 **Never ends, and no path exists that could tell it to.** That is the choice:
-`docs/reference/push-path.md` §1.3 and §1.4 argue it, and the short form is that a
+the unpublished push-path note §1.3 and §1.4 argue it, and the short form is that a
 per-connection ticker is a second lifetime that must be stopped on a path which
 includes a *panicking* connection thread. A process-lifetime daemon has no such
 path.

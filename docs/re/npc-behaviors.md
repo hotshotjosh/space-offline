@@ -541,15 +541,11 @@ other attribute returning `None` from `SlimItem.__getattr__`.
 
 The NPC test, in full **[V]**:
 
-```
-bracketVarious.py:435  def IsNpcObject(slimItem):
-             :436      if slimItem.categoryID == const.categoryEntity and slimItem.groupID == const.groupLargeCollidableObject:
-             :437          return False
-             :438      return not IsPlayerOwner(slimItem.ownerID)
-
-idCheckers.py:318      def IsPlayerOwner(ownerID):
-            :319          return minPlayerOwner <= ownerID <= maxPlayerOwner     # 90000000 .. 2147483647
-```
+- `IsNpcObject(slimItem)` (`bracketVarious.py:435-438`) returns `False` when the
+  item's `categoryID` is `categoryEntity` and its `groupID` is
+  `groupLargeCollidableObject`; otherwise it returns `not IsPlayerOwner(ownerID)`.
+- `IsPlayerOwner(ownerID)` (`idCheckers.py:318-319`) is
+  `minPlayerOwner <= ownerID <= maxPlayerOwner`, that is 90000000 to 2147483647.
 
 and the id ranges, from `inventorycommon/const.py` **[V]**:
 
@@ -653,13 +649,9 @@ ticker.
 And `cfg.Recordset._Prime:763` subtracts already-cached keys before fetching
 **[V]**:
 
-```
-777  keysIAlreadyHave = set()
-778  for key in keysToGet:
-779      if key in self.data: keysIAlreadyHave.add(key)
-...      keysToGet -= self.knownLuzers
-         keysToGet -= keysIAlreadyHave
-```
+`_Prime` (`cfg.py:777-781`) builds `keysIAlreadyHave` from the keys already in
+`self.data`, then removes from `keysToGet` both `knownLuzers` and
+`keysIAlreadyHave`.
 
 `Recordset.Hint:693` writes straight into `self.data` **[V]**, which is why
 `ProcessBallAdd:1635`'s location hint also costs no fetch.

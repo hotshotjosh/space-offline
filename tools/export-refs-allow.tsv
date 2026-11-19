@@ -67,7 +67,6 @@ tools/test_docs.py	docs/archive	fixture or skip text in a test: an invented tree
 tools/test_docs.py	docs/content/C5-economy.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/content/README.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/content/plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_docs.py	docs/guides/history-purge.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/lanes	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_docs.py	docs/packets.tsv	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path

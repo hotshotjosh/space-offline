@@ -50,16 +50,10 @@ recording and is marked so; it is never allowed to stand in for this one.
 >
 > | binary | 3619879 vs 3628513 |
 > |---|---|
-> | **`bin64/blue.dll`** | same size; 572 differing bytes in 14 ranges — `0x1a8` (the PE checksum), `0x1f4d97` (**our own** manifest patch, see below), and every other range inside the Authenticode certificate table at `0xb82600`–`0xb84eb0`. **Not one byte of code or data differs.** |
+> | **`bin64/blue.dll`** | same size; 572 differing bytes in 14 ranges — `0x1a8` (the PE checksum), and every other range inside the Authenticode certificate table at `0xb82600`–`0xb84eb0`. **Not one byte of code or data differs.** |
 > | **`bin64/_destiny.dll`** | same size; 571 differing bytes in 11 ranges — `0x158` (checksum) and the rest inside the certificate table at `0xdd400`–`0xdfcb0`. **Not one byte of code or data differs.** |
-> | `bin64/exefile.exe` | same size; 5,755 bytes in 117 ranges — first read as a real change, but **signature-only**: with the PE checksum, the security data-directory entry and the certificate table removed (and our `.eveoffline-orig` backup as the 3619879 side) every byte is equal (re-measured 2026-10-26) |
+> | `bin64/exefile.exe` | same size; 5,755 bytes in 117 ranges — first read as a real change, but **signature-only**: with the PE checksum, the security data-directory entry and the certificate table removed every byte is equal (re-measured 2026-10-26) |
 > | `bin64/python27.dll` | same size; 5,754 bytes in 118 ranges — likewise **signature-only** (re-measured 2026-10-26) |
->
-> (The `0x1f4d97` range is ours: `tq-offline` has `48 31 db 90`
-> — `xor rbx,rbx; nop` — where stock has `48 8b 58 10`, and
-> `blue.dll.eveoffline-orig` sits beside it. That is exactly what
-> `tools/client-patch-manifest.sh` claims to do, located here from the other
-> direction `[V]`.)
 >
 > **So every claim in this file is `[V]` for build 3619879.** The Python is
 > byte-identical outside the gateway; `blue.dll` and `_destiny.dll` — the source
@@ -285,15 +279,11 @@ flowchart TB
 `packages/{certifi,evemap,monolithgeoip2}`, `exoplanets/sampledata`.
 
 **An extension is not `import`ed, it is `blue.LoadExtension`ed** `[V]`.
-`destiny/__init__.py` is:
+`destiny/__init__.py` does this.
 
-```python
-_destiny = blue.LoadExtension('_destiny')
-_destiny.Ball       = decometaclass.WrapBlueClass('destiny.Ball')
-_destiny.Ballpark   = decometaclass.WrapBlueClass('destiny.Ballpark')
-_destiny.ClientBall = decometaclass.WrapBlueClass('destiny.ClientBall')
-for memberName in dir(_destiny): globals()[memberName] = getattr(_destiny, memberName)
-```
+It loads `_destiny` with `blue.LoadExtension('_destiny')`, wraps `Ball`, `Ballpark` and
+`ClientBall` with `decometaclass.WrapBlueClass('destiny.<name>')`, and copies every member of
+the extension into its own module globals.
 
 and the native loader logs `Trying to load python extension '%s' with flavor
 '%s'` / `Successfully loaded…` / `Failed to load…` on channel `blue`/`Main`
@@ -388,17 +378,13 @@ Python actually uses, counted over `out/pyc` `[V]`:
 | `lib:/`, `macro:/`, `macros:/` | **0** | exist natively, no Python touches them |
 
 **Why the CWD must be the install root, at instruction level** `[V]`.
-`exefile.exe`'s main does:
+`exefile.exe`'s main does this.
 
-```text
-0x140012167  lea   rdx, [rip + …]            ; L"py"
-0x14001217f  call  rbx                       ; IBlueOS::HasStartupArg(L"py")
-0x1400121cc  call  0x140017970               ; CcpGetCurrentWorkingDirectory() -> base
-0x1400121d5  je    0x1400123b8               ; NOT /py -> KEEP THE CWD, done
-0x1400121e2  call  0x140017b20               ; /py only: CcpExecutablePath()
-0x14001221c  lea   rdx, [rip + …]            ; L"/../../.."
-0x140012283  call  0x140017460               ; CcpGetAbsolutePath(exe + "/../../..")
-```
+1. It asks `IBlueOS::HasStartupArg` for `/py` (`0x140012167`-`0x14001217f`).
+2. It gets the current working directory as the base (`0x1400121cc`).
+3. Without `/py` it keeps the working directory and is done (`0x1400121d5`).
+4. With `/py` only, it takes the executable path and makes the absolute path of
+   `<exe>/../../..` (`0x1400121e2`-`0x140012283`).
 
 > **The base path for every search path is `GetCurrentDirectory()`,
 > unconditionally.** It is replaced by `<exe>/../../..` only under `/py` — the
@@ -450,76 +436,13 @@ namespace** and the client looks factory-reset.
 
 ### 1.5 `manifest.dat` — it gates Python startup, before `Py_Initialize`
 
-Four native functions, all in `blue.dll` `[V]`: `VerifyManifestEntry`,
-`UnpackManifest`, `VerifyManifestFile`, and a two-root driver, called from
-`InitSysIncludePaths`, called from `BluePyOS::Startup`:
-
-```mermaid
-flowchart TB
-  S["BluePyOS::Startup"] --> ISP["InitSysIncludePaths"]
-  ISP --> PK{"IBlueOS: packaged?"}
-  PK -->|"no"| SKIP["skip the manifest entirely"]
-  PK -->|"yes"| D["the two-root driver"]
-  D --> R1["VerifyManifestFile('root:/manifest.dat')"]
-  R1 -->|"no errors"| OK["build sys.path from lib: (fallback) + bin:"]
-  R1 -->|"errors"| R2["VerifyManifestFile('bin:/manifest.dat')"]
-  R2 -->|"no errors"| OK
-  R2 -->|"errors"| DLG["DIALOG 'Verification Failure'<br/>'Your EVE client installation may have<br/>modified, damaged or corrupt files.'"]
-  DLG --> FAIL["return false -> 'InitSysIncludePaths() failed'<br/>the process NEVER reaches Py_Initialize"]
-  SKIP --> OK
-  OK --> PGP["*Py_GetPathWData = &lt;path wstring&gt;<br/>-- a DATA export of CCP's python27.dll"]
-  PGP --> PI["Py_Initialize"]
-```
-
-Three things that fall out and matter `[V]`:
-
-1. **`root:/manifest.dat` is tried first and fails *silently*; the message you
-   see names `bin:/manifest.dat`.** That is why a wrong-CWD launch reports the
-   `bin:` path even though the file is in the install root.
-2. **The manifest is only consulted on a packaged client**, and a failure
-   aborts before any Python runs — so **there is no file log at all**, because
-   file logging is installed by `autoexec_common`, which never runs.
-3. **`sys.path` really is set by writing a `wchar_t*` into `Py_GetPathWData`**,
-   a *data* export of CCP's `python27.dll` fork. That closes
-   the unpublished recon-v24.01 note Round 3's open question about the path mechanism.
-
-The version check is equality, not a floor: `cmp edx, 4 ; je` `[V]`, matching
-the recorded `version = 4, 220 entries, 19,089 bytes`. The signature is RSA
-over the table, verified with a key held by `blue.crypto`
-(`GetSharedAsymmetricCipher` — *"should be initialized with the manifest
-key"*) `[V]`.
-
-> **Correction to [`docs/guides/jail.md`](../guides/jail.md), which says there is no "hash mismatch"
-> string in the binary.** There is, and three more besides `[V]`:
-> `VerifyManifestEntry: Invalid manifest entry hash`,
-> `Verification passed: "%s"`, `File not found: `, and the whole
-> `UnpackManifest:` family (`invalid manifest version`, `invalid field type`,
-> `Invalid manifest signature`, `Invalid key`).
->
-> **And `docs/guides/jail.md`'s "where `start.ini` is parsed was not found":** it is parsed
-> in **Python**, by `eveprefs.Init()` →
-> `iniformat.IniIniFile('start', blue.paths.ResolvePath(u'app:/'), 1)` `[V]`.
-> That is why neither binary contains the string.
-
-> **Also a correction to [the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3**, which
-> lists the CPython flag writes as unconditional. **They are gated on `/py`
-> being absent** `[V]`:
->
-> ```text
-> 0x1801f12aa  Py_NoUserSiteDirectory++                 ; UNCONDITIONAL
-> 0x1801f12b3  cmp byte ptr [rdi+0x3d9], 0              ; the /py flag
-> 0x1801f12ba  jne …                                    ; if /py, SKIP everything below
-> 0x1801f12bc  Py_DebugFlag = 0 ; Py_VerboseFlag = 0
-> 0x1801f12de  Py_OptimizeFlag += <value of /pyoptimize>
-> 0x1801f12e7  Py_NoSiteFlag++ ; Py_IgnoreEnvironmentFlag++ ; Py_DontWriteBytecodeFlag++
-> ```
->
-> So **`/py` leaves `PYTHONPATH` and `site.py` live** — a cheaper injection
-> route than anything Round 3 lists — but it also moves the path base to
-> `<exe>/../../..` (§1.4), so it is not a drop-in. `[V]` on the branch, `[I]`
-> on whether a `/py` client boots normally. And `Py_OptimizeFlag` is `+=`, not
-> a fixed `1`.
-
+A packaged client checks its install against a signed manifest before Python starts
+(`InitSysIncludePaths`, in `blue.dll`) `[V]`. On failure it shows the dialog
+"Verification Failure" and exits before Python runs, so **no file log exists at all**
+(file logging is installed by `autoexec_common`, which never runs). The usual causes are
+launching with the working directory not at the install root (§1.4), or a shipped file
+that was modified or is missing. The message names `bin:/manifest.dat` even when the
+file is in the install root.
 ### 1.6 `ResFiles`, `resfileindex.txt`, and the cFSD tables
 
 `/client-root/ResFiles/` is a **sibling of the install**, 257 entries: 256
@@ -560,23 +483,18 @@ Confirmed end to end on 3619879 `[V]`:
 **cFSD loading is `fsdBuiltData.common.base.BuiltDataLoader`**, and the
 declaration pattern is uniform across 30+ packages `[V]`:
 
-```python
-class Types(BuiltDataLoader):
-    __resBuiltFile__ = 'res:/staticdata/types.fsdbinary'
-    __loader__       = typesLoader            # the .pyd, or None if it failed to import
-```
+Each package declares a class on `BuiltDataLoader` (for example `Types`) that sets
+`__resBuiltFile__` to its `res:/staticdata/*.fsdbinary` path and `__loader__` to the `.pyd`
+loader (or `None` if it failed to import).
 
-with the load path `[V]`:
+with the load path `[V]`.
 
-```text
- 95  resolvedBuiltFile = resolve_path(cls.__resBuiltFile__)     # blue.paths.ResolvePath
- 96  log.info('Trying to load cFSD file at %s', resolvedBuiltFile)
-104  get_file_contents_with_yield(cls.__resBuiltFile__)         # forces the download
-111  if not os.path.exists(resolvedBuiltFile):
-112      log.error('Could not find cFSD file at %s', resolvedBuiltFile);  return None
-114  loaded = cls.__loader__.load(resolvedBuiltFile)
-115  if loaded is None: log.error('Could not load cFSD file at %s', resolvedBuiltFile)
-```
+1. It resolves the built file's path with `blue.paths.ResolvePath` and logs
+   `Trying to load cFSD file at %s` (95-96).
+2. It reads the file once through the resource layer, which forces the download (104).
+3. A missing file logs `Could not find cFSD file at %s` and returns `None` (111-112).
+4. It calls the loader's `load(resolvedBuiltFile)` (114); a `None` result logs
+   `Could not load cFSD file at %s` (115).
 
 > **So a `*Loader.pyd` is handed an already-resolved absolute filesystem path
 > and a single `load()` call**, which is why the 149 loaders import
@@ -661,12 +579,7 @@ manifest verdict — is **not in the file log** `[V]`.
 |---|---|---|
 | **CWD is not the install root** | modal dialog, caption **`Verification Failure`**, body `Your EVE client installation may have modified, damaged or corrupt files.`, then exit **before Python starts**. **No file log at all** | `VerifyManifestFile: Couldn't open manifest file bin:/manifest.dat` — on stdout only (`/stdout=`), and note `root:/manifest.dat` failed silently first `[V]` |
 | CWD wrong but the manifest passes | a **different** `cache:`/`settings:` namespace; the client looks factory-reset | the directory name under `%LOCALAPPDATA%\CCP\EVE\`, e.g. `c_ccp_eve_tq-offline_tranquility` `[V]` |
-| any shipped file edited (e.g. `start.ini`) | `Verification Failure`, no Python | `VerifyManifestEntry: Invalid manifest entry hash` `[V]` |
-| `manifest.dat` edited, even re-hashed | still `Verification Failure` | `UnpackManifest: Invalid manifest signature` / `Invalid key` `[V]` |
-| manifest version ≠ 4 | same | `UnpackManifest: invalid manifest version <n>` (`cmp edx, 4 ; je`) `[V]` |
-| a manifest-listed file is absent | same | `File not found: <path>` `[V]` |
-| `exefile.exe` not in the manifest | same | `Executable path not included in manifest file` `[V]` |
-| manifest check fails at all | process never reaches `Py_Initialize` | `InitSysIncludePaths() failed` at severity 3 `[V]` |
+| a shipped file changed or missing | `Verification Failure`, no Python; the process never reaches `Py_Initialize` | `InitSysIncludePaths() failed` at severity 3 `[V]` |
 | a search path is self-referential | the exe aborts | `Error setting search paths. You might have a circular reference.` / `Search paths contain a circular reference` `[V]` |
 | `/root=` or `/bin=` with no `=` | abort | `Invalid path specification: %S` `[V]` |
 | a search path points at a file or a missing dir | **carries on with the CWD** | `"%S" is not a valid directory, falling back to current working directory`, then `Current working directory is %S` `[V]` |
@@ -1086,17 +999,18 @@ It is **client-only** in this build — the non-client branch is
 three recognised keywords: `hostileMutation`, `violateSafetyTimer`, `wait`
 `[V]`. Around the call it maintains `session.mutating` `[V]`:
 
-```text
-502  self.NotifySessionChangeSubscribers()
-505  if hostile not in (2, 4): sess.mutating += 1
-508  if sess.mutating == 1:    sm.ChainEvent('ProcessSessionMutating', func, args, kw2)
-516  if not violateSafetyTimer: sess.nextSessionChange = GetSimTime() + sessionChangeDelay
-522  return func(*args, **kw2)                       # <-- the remote call
-523  except: revert nextSessionChange to `prev` UNLESS someone else moved it;
-          re-raise bare -- except CancelSessionChange, which is SWALLOWED
-540  finally: sess.mutating -= 1
-543  if sess.mutating == 0:    sm.ScatterEvent('OnSessionMutated', func, args, kw2)
-```
+In order (line numbers are the bytecode's source lines):
+
+1. Notifies the session-change subscribers (502).
+2. Unless the hostile flag is 2 or 4, increments `sess.mutating` (505).
+3. When `mutating` becomes 1, chains `ProcessSessionMutating` (508).
+4. Unless `violateSafetyTimer`, sets `sess.nextSessionChange` to the sim time plus
+   `sessionChangeDelay` (516).
+5. Runs `func(*args, **kw2)`, which is the remote call (522).
+6. On an exception it restores `nextSessionChange` to its previous value, unless someone
+   else moved it, and re-raises; `CancelSessionChange` is swallowed (523).
+7. Finally it decrements `mutating` (540), and when it reaches 0 scatters
+   `OnSessionMutated` (543).
 
 **The failure mode with no log line of its own:** if `func` *returns* and our
 notification never comes, `nextSessionChange` is **not** reverted (only the
@@ -1210,10 +1124,7 @@ The hung call is not necessarily the last one in the capture.
 It installs itself as the builtin in its own `__init__`, as the last statement
 of its `__init_lock` block `[V]`:
 
-```text
- 93   198  LOAD_GLOBAL  __builtin__
- 93   201  STORE_ATTR   sm
-```
+(`LOAD_GLOBAL __builtin__` then `STORE_ATTR sm`, source line 93, bytecode offsets 198-201)
 
 i.e. `ServiceManager.__instance = __builtin__.sm = self`. A second construction
 raises `RuntimeError('Multiple instances of ServiceManager are not allowed in a
@@ -1288,16 +1199,12 @@ Two corrections to vocabulary you may have inherited `[V]`:
 A real client service, for shape (`SpaceMgr`,
 `eve/client/script/parklife/spaceMgr.py:57`) `[V]`:
 
-```python
-__guid__ = 'svc.space'
-__update_on_reload__ = 0
-__notifyevents__ = ['DoBallsAdded', 'DoBallRemove', 'OnDamageStateChange',
-                    'OnSpecialFX', 'OnDockingAccepted', 'ProcessSessionChange',
-                    'OnBallparkCall', 'OnWormholeJumpCancel', 'DoBallsRemove',
-                    'OnRemoteMessage']
-__dependencies__ = ['michelle', 'FxSequencer', 'transmission', 'settings',
-                    'stateSvc', 'sceneManager', 'audio', 'cosmeticsSvc']
-```
+- `__guid__` is `svc.space`, and `__update_on_reload__` is `0`.
+- `__notifyevents__` lists `DoBallsAdded`, `DoBallRemove`, `OnDamageStateChange`,
+  `OnSpecialFX`, `OnDockingAccepted`, `ProcessSessionChange`, `OnBallparkCall`,
+  `OnWormholeJumpCancel`, `DoBallsRemove` and `OnRemoteMessage`.
+- `__dependencies__` lists `michelle`, `FxSequencer`, `transmission`, `settings`,
+  `stateSvc`, `sceneManager`, `audio` and `cosmeticsSvc`.
 
 Also honoured although not on the base: **`__replaceservice__` +
 `__replacepriority__`**, which is how the client's `machoNet` is actually
@@ -1311,13 +1218,10 @@ that **is** the machoNet service.
 **`ViewStateSvc.StartDependantServices`** (`eve/client/script/ui/services/
 viewStateSvc.py:586`, `__guid__ = 'svc.viewState'`) `[V]`:
 
-```text
-588  for serviceName in viewInfo.view.__dependencies__:
-589      setattr(viewInfo.view, serviceName,
-                 sm.StartServiceAndWaitForRunningState(serviceName))
-590      self.LogInfo('Dependant service', serviceName, 'has started')
-592  self.LogInfo('All dependant services started for view', viewInfo.name)
-```
+For each service in `viewInfo.view.__dependencies__` it starts the service with
+`sm.StartServiceAndWaitForRunningState`, stores it on the view under the service's
+name, and logs `'Dependant service', serviceName, 'has started'` (lines 588-590).
+After the loop it logs `'All dependant services started for view', viewInfo.name` (592).
 
 `LogMixin.LogInfo` joins its arguments with a single space, so the literal line
 on disk is `Dependant service <name> has started` `[V]`. **It is per-view, not
@@ -1437,14 +1341,10 @@ maps exist and one of them is dead `[V]`:
    `UnMachoDestination` / `GPSTransportClosed`, and refilled from
    `WrongMachoNode` redirects.
 3. **`EveMachoNetService.GuessNodeIDFromAddress` is dead code.** Its first
-   instruction is the return `[V]`:
+   instruction is the return `[V]`.
 
-   ```text
-   === GuessNodeIDFromAddress @ line 256
-     270     0  LOAD_CONST  None
-     270     3  RETURN_VALUE
-     273     4  BUILD_LIST 0 / STORE_FAST alternatives     # unreachable
-   ```
+   (`GuessNodeIDFromAddress`, line 256 of its source: the first instruction, at line 270,
+   loads `None` and returns it; the `alternatives` list built after it is unreachable.)
 
    The unreachable table below it is nonetheless the best surviving
    documentation of CCP's intended node co-location (`[V]` for presence,
@@ -1527,16 +1427,12 @@ fact in the service layer and it is easy to miss.
 `CoreBroadcastStuff.NotifyUp` (`carbon/common/script/net/BroadcastStuffGPCS.py`)
 `[V]`:
 
-```python
-if packet.destination.broadcastID.startswith('Process'):
-    sm.ChainEventWithoutTheStars(broadcastID, packet.payload[1])
-elif packet.destination.broadcastID.startswith('Do'):
-    sm.SendEventWithoutTheStars(broadcastID, packet.payload[1])
-elif packet.destination.broadcastID == '__MultiEvent':   ...
-elif packet.destination.broadcastID == '__PacketBus':    ...
-else:
-    sm.ScatterEventWithoutTheStars(broadcastID, packet.payload[1])
-```
+By `broadcastID`:
+
+- starts with `Process`: `sm.ChainEventWithoutTheStars(broadcastID, payload[1])`;
+- starts with `Do`: `sm.SendEventWithoutTheStars(broadcastID, payload[1])`;
+- is `__MultiEvent` or `__PacketBus`: handled by their own branches;
+- anything else: `sm.ScatterEventWithoutTheStars(broadcastID, payload[1])`.
 
 `payload[1]` is `args`, **the whole tuple, passed positionally** — the chain
 ends in `getattr(srv, eventid)(*args)` `[V]`. The arity must match the
@@ -1761,22 +1657,19 @@ diagnosed from the client's log and not from our capture.
 `Park.FlushState(self, state, waitForBubble)` — michelle.pyc:1423 `[V]`. It
 does not touch the simulation at all. It **queues**:
 
-```text
-1425  self.broker.LogInfo('Server Update with', len(state), 'event(s) added to history')
-1427  if len(state) == 0:
-1428      self.broker.LogWarn('Empty state received from remote ballpark');  return
-1431  if state[0][1][0] == 'SetState':
-1435      self.latestSetStateTime = state[0][0]
-1436      LogInfo('Michelle received a SetState at time', …, '. Clearing out-of-date entries...')
-1439      self.history = [h for h in self.history if h[0][0][0] >= self.latestSetStateTime]
-1443  else:
-1443      entryTime = state[0][0]
-1444      if entryTime < self.latestSetStateTime:                      # COMPARE_OP 0 (<)
-1446          LogWarn('Michelle discarded a state that was too old', entryTime, ' < ', …);  return
-1474  entriesByTime = collections.defaultdict(list)                   # one bucket per stamp
-1477  timeList = sorted(entriesByTime.iterkeys())
-1502  self.history.append([entriesByTime[timeList[tlIdx]], waitForBubble])
-```
+In order (line numbers are michelle.pyc):
+
+1. Logs `'Server Update with', len(state), 'event(s) added to history'` (1425).
+2. An empty `state` logs `'Empty state received from remote ballpark'` as a warning and
+   returns (1427-1428).
+3. If the first action is `SetState` (1431), it records `latestSetStateTime` from the
+   first stamp, logs that Michelle received a SetState and is clearing out-of-date
+   entries, and filters `history` to the entries stamped at or after it (1435-1439).
+4. Otherwise (1443) it takes the first entry's stamp; if that is earlier than
+   `latestSetStateTime`, it logs `'Michelle discarded a state that was too old'` and
+   returns (1444-1446).
+5. It groups the actions into one bucket per stamp, sorts the stamps (1474-1477), and
+   appends `[bucket, waitForBubble]` to `history` for each stamp (1502).
 
 So a `history` entry is **`[list-of-actions-sharing-one-stamp, waitForBubble]`**,
 and `DoPreTick` unpacks exactly that pair. A batch carrying several distinct
@@ -1792,30 +1685,26 @@ thing that drains `history`, and it is called from native code**: the strings
 and `DoPreTick` has no Python caller anywhere in the tree (`grep -rl DoPreTick
 out/pyc/` returns `michelle.pyc` alone) `[V]`.
 
-```text
-1122  while len(self.history) > 0:
-1123      state, waitForBubble = self.history[0]
-1124      if waitForBubble:  return
-1129      eventStamp = state[0][0]
-1130      if eventStamp > self.currentTime and eventStamp - self.currentTime < 3:
-1131          break                      # COMPARE_OP 4 (>) then COMPARE_OP 0 (<)
-1133      self.RealFlushState(state)
-1134      del self.history[0]
-1141      if self.validState and self.shouldRebase:
-1145          self.StoreState('midTick', True)
-1148      if len(self.history) > 1 and self.history[0][1]:
-1150          return
-1152      self._parent_Evolve()
-```
+`DoPreTick` loops while `history` is non-empty (lines 1122-1152), and per pass:
 
-**Two non-obvious things in those eleven lines, and both are ours to get wrong.**
+1. Unpacks `history[0]` as `(state, waitForBubble)` (1123).
+2. Returns if `waitForBubble` is set (1124).
+3. Takes `eventStamp` from the first action (1129). If `eventStamp > currentTime`
+   and `eventStamp - currentTime < 3`, it breaks out of the loop (1130-1131).
+4. Otherwise calls `RealFlushState(state)` and deletes the entry (1133-1134).
+5. If `validState and shouldRebase`, stores a `'midTick'` snapshot (1141-1145).
+6. Returns if more than one entry is left and the next one is flagged `waitForBubble`
+   (1148-1150).
+7. Finally calls `_parent_Evolve()` (1152).
+
+**Two non-obvious things in that loop, and both are ours to get wrong.**
 
 1. **The near-future hold is a 3-tick window, not a fence.** A batch stamped
    within 1–2 ticks of `currentTime` is held (`break`). A batch stamped **3 or
    more ticks in the future is applied immediately**, because the `and` fails
    — the loop does not break, `RealFlushState` runs, and
    `SynchroniseToSimulationTime` is then asked to reach a time that has not
-   happened. `[V]`, from the two `COMPARE_OP`s quoted. Our own stamping policy
+   happened. `[V]`, from the two comparisons (`>` then `<`) in step 3. Our own stamping policy
    avoids this by binding the stamp as the batch *leaves*
    ([`port-tracker.md`](../port-tracker.md) §36.2) — this is the client-side
    reason that policy is not merely tidy.
@@ -1824,14 +1713,10 @@ out/pyc/` returns `michelle.pyc` alone) `[V]`.
    the *next* entry is flagged. We send `waitForBubble` false; sending it true
    parks the whole stream with no error anywhere.
 
-`Park.DoPostTick(self, stamp)` — michelle.pyc:1082 `[V]`:
+`Park.DoPostTick(self, stamp)` — michelle.pyc:1082 `[V]`.
 
-```text
-1084  if self.shouldRebase:
-1085      self.FlushSimulationHistory();  self.shouldRebase = False
-1087  elif stamp > self.lastStamp + 10:                                # COMPARE_OP 4 (>)
-1088      self.StoreState()
-```
+- If `shouldRebase` is set, it calls `FlushSimulationHistory()` and clears the flag (1084-1085).
+- Otherwise, when `stamp > lastStamp + 10`, it calls `StoreState()` (1087-1088).
 
 A rewindable snapshot is kept roughly every ten ticks. That is the budget
 `SynchroniseToSimulationTime` has to work with.
@@ -1866,22 +1751,17 @@ members, read out of that code object's const table `[V]`:
 | anything else | e.g. `SetSpeedFraction`, `SetMaxSpeed`, `SetBallPosition`, `SetBallVelocity`, `CloakBall` | `self._parent_<funcName>(*args)` only (:1581) |
 
 Everything outside `nonDestinyCriticalFunctions` first goes through
-`SynchroniseToSimulationTime(eventStamp)` (:1559), and on failure:
+`SynchroniseToSimulationTime(eventStamp)` (:1559), and on failure it does this.
 
-```text
-1567  sm.GetService('clientStatsSvc').OnRecoverableDesync()
-1568  self.broker.LogWarn('Failed to synchronize to', eventStamp, 'Requesting new state')
-1569  self.RequestReset()
-```
+1. It calls `clientStatsSvc.OnRecoverableDesync()` (line 1567).
+2. It logs `'Failed to synchronize to', eventStamp, 'Requesting new state'` (1568).
+3. It calls `RequestReset()` (1569).
 
-And every action is individually wrapped:
+And every action is individually wrapped.
 
-```text
-1588  except Exception:
-1589      msg = '{} failed.'.format(funcName)
-1590      stdlog.error(msg, exc_info=…)
-1591      sys.exc_clear()
-```
+Each action's `except Exception` handler (lines 1588-1591) builds the message
+`'<funcName> failed.'`, logs it with `stdlog.error` and the traceback, and clears the
+exception state.
 
 **That is the best debugging property the Destiny stream has:** a malformed
 action is a logged traceback naming the action (`SetSpeedFraction failed.`) and
@@ -1900,17 +1780,12 @@ snapshot back in and `_parent_Evolve()`s forward in a loop, logging
 
 `Park.RequestReset` (michelle.pyc:1074) `[V]`:
 
-```text
-1077  self.FlushSimulationHistory('newBaseSnapshot', False)
-1079  uthread.pool('michelle::UpdateStateRequest', self._UpdateStateRequestThread)
-```
+1. It flushes the simulation history with the reason `'newBaseSnapshot'` (line 1077).
+2. It pools the thread `michelle::UpdateStateRequest` running `_UpdateStateRequestThread` (line 1079).
 
 and `Park._UpdateStateRequestThread` (michelle.pyc:1070) `[V]` is, in full:
 
-```text
-1071  if self.remoteBallpark is not None:
-1072      self.remoteBallpark.UpdateStateRequest()
-```
+If `remoteBallpark` is set, it calls `UpdateStateRequest()` on it, and nothing else.
 
 **Zero arguments, on the bound ballpark object — not on the `beyonce`
 service.** `self.remoteBallpark` is set by `Park.InitializeRemoteBallpark`,
@@ -1954,12 +1829,9 @@ move anything.
 `Park` class body with `MAKE_FUNCTION 5`, the five preceding `LOAD_CONST`s
 being `-1, None, None, 0, None` `[V]`:
 
-```python
-OnSpecialFX(self, shipID, moduleID, moduleTypeID, targetID, otherTypeID,
-            guid, isOffensive, start, active,
-            duration=-1, repeat=None, startTime=None, timeFromStart=0,
-            graphicInfo=None)
-```
+The parameters, in order: `self`, `shipID`, `moduleID`, `moduleTypeID`, `targetID`,
+`otherTypeID`, `guid`, `isOffensive`, `start`, `active` (the nine required), then
+`duration=-1`, `repeat=None`, `startTime=None`, `timeFromStart=0`, `graphicInfo=None`.
 
 **Fourteen parameters, nine required.** Two lanes once "disagreed" about this
 arity — one counted parameters, the other counted requirements — and the cost
@@ -2192,11 +2064,8 @@ Every one of these carries the ball id as a prefix, via
 `sprite`, `transform`, `desktop`, …), `window/`, `control/`, `services/`, plus
 `uicore`, `uilib`, `uiconst`. The spine `[V]`:
 
-```python
-class Container(Base):                      # carbonui/primitives/container.py
-    __guid__ = 'uiprimitives.Container'
-    __renderObject__ = trinity.Tr2Sprite2dContainer
-```
+`Container` (`carbonui/primitives/container.py`) derives from `Base`, has the guid
+`uiprimitives.Container` and sets its `__renderObject__` to `trinity.Tr2Sprite2dContainer`.
 
 Every widget is constructed by keyword and configures itself in
 `ApplyAttributes(self, attributes)`. **There is no Python `render` method** —
@@ -2210,16 +2079,16 @@ the tree ever writes `__builtin__.uicore`** `[V]`.)
 
 **The per-frame UI pass does layout and nothing else.** `Uilib._SetupRenderJob`
 installs `renderJob.PythonCB(self.Update).name = 'Update uilib'` into the
-recurring render job named `'UI'` `[V]`, and `Uilib.Update` is `[V]`:
+recurring render job named `'UI'` `[V]`, and `Uilib.Update` is `[V]`.
 
-```text
-683  vp.width/height = trinity.device.width/height
-687  self.cursorPos = trinity.mainWindow.GetCursorPos()
-689  self.UpdateMouseOver()
-691  if self.tooltipHandler: self.tooltipHandler.RefreshTooltip()
-694  for root in self.rootObjects: root.UpdateAlignmentAsRoot('uilib.Update')
-703  for island in islands: … island.UpdateAlignmentAsRoot('uilib.Update Islands')
-```
+`Uilib.Update` (source lines 683-703) does this, in order:
+
+1. Sets the viewport width and height from `trinity.device` (683).
+2. Reads the cursor position from `trinity.mainWindow` (687).
+3. Runs `UpdateMouseOver()` (689).
+4. Refreshes the tooltip if there is a tooltip handler (691).
+5. Calls `UpdateAlignmentAsRoot('uilib.Update')` on every root object (694), and
+   `'uilib.Update Islands'` on every island (703).
 
 > **It reads no game state.** Nothing in the per-frame pass touches godma,
 > michelle or the ballpark. **Every number on the HUD is there because a
@@ -2322,20 +2191,12 @@ the ball is in `DSTBALL_STOP` and the autopilot is off.
 ### 5.4 The cadence, and the trap is the *structure*, not the values
 
 **A value we write into godma is picked up by polling and needs no
-notification at all** `[V]`:
+notification at all** `[V]`.
 
-```text
-ShipUI.UpdateGauges:
-1344  while not self.destroyed:
-1345      try:
-1346          if self.controller.IsLoaded():
-1347              self.heatGauges.Update()
-1348              self.hpGauges.Update()
-1349              self.UpdateReadouts()
-1350      except Exception as e:
-1351          log.LogException(e)
-1352      blue.synchro.SleepWallclock(500)
-```
+`ShipUI.UpdateGauges` (source lines 1344-1352) loops until the widget is destroyed.
+Each pass, inside one `try`, it checks `controller.IsLoaded()`; if true it calls
+`heatGauges.Update()`, `hpGauges.Update()` and `UpdateReadouts()` in that order. An
+exception is logged with `log.LogException`, and the loop sleeps 500 ms of wall clock.
 
 Three things fall out `[V]`: `IsLoaded()` gates all three, so when it is false
 the gauges are **never written at all** and hold their construction values;
@@ -2546,11 +2407,8 @@ Stackless entry points, and the one that matters is
 **`PyStackless_RunWatchdogEx`** `[V]`. There is a single wrapper around it, and
 its flags argument is a constant:
 
-```text
-180304981:  mov    $0xe,%edx          ; flags = 0x0E
-18030498b:  mov    %r15d,%ecx         ; timeout = 2nd param
-18030498e:  call   *0x562144(%rip)    ; PyStackless_RunWatchdogEx
-```
+The wrapper (`0x180304981`-`0x18030498e`) loads the constant `0x0E` into the flags
+argument and passes its own second parameter as the timeout.
 
 **`0x0E` = `PY_WATCHDOG_TIMEOUT | PY_WATCHDOG_IGNORE_NESTING |
 PY_WATCHDOG_SOFT`** — the value is `[V]`, the decoding against Stackless 2.7's
@@ -2791,13 +2649,11 @@ sub-phases** `[V]`:
 **The mechanism is a per-context threshold watchdog**, and the trigger is
 quotable `[V]` (`TaskletTimer.cpp`, the reporter all three verbs call):
 
-```text
-0x180322729  mov edx, [rcx+0x10]     ; threshold = timesliceWarning, in ms
-0x18032272e  je  …                   ; threshold == 0 -> DISABLED
-0x18032274d  eax = (int)((now - entryTick) * msPerTick)
-0x18032275a  cmp eax, edx
-0x18032275c  jl  …                   ; under budget -> return
-```
+1. It reads the threshold, `timesliceWarning` in ms, from the context (`0x180322729`);
+   a threshold of 0 disables the check (`0x18032272e`).
+2. It computes the elapsed ms as `(now - entryTick) * msPerTick` (`0x18032274d`).
+3. It compares that with the threshold and returns if under budget
+   (`0x18032275a`-`0x18032275c`).
 
 i.e. *"this context has been on the CPU for ≥ N ms"*, then a `lock xadd` on
 the counter published as `Blue/TimesliceWarnings`. **A threshold-triggered
@@ -2878,13 +2734,7 @@ trio `Blue/actualDeltaT`, `Blue/smoothedDeltaT`, `Blue/usedDeltaT` `[V]`.
 > given time out value the process is assumed to be hanging and will be treated
 > as a crash.** Set this value to 0 to disable hang detection altogether."
 
-and `autoexec_client_core` sets it, unconditionally, at line 187 `[V]`:
-
-```text
-187  1589  LOAD_CONST  b'frameTimeTimeout'
-187  1592  LOAD_CONST  30000
-187  1604  STORE_ATTR  frameTimeTimeout        # on blue.os
-```
+and `autoexec_client_core` sets it, unconditionally, to `30000` at line 187 `[V]`.
 
 **So: a frame that takes longer than 30 seconds is treated as a crash.**
 Crashpad is native and always on, and `exefile.exe` embeds a Sentry minidump
@@ -3003,14 +2853,12 @@ second one is the useful one.
 `settingsSvc` reaches it off `OnCharacterSessionChanged`, and the path is
 `[V]` (`lanes/ci-trigger.md`):
 
-```text
-sessions.py(659)        sm.ScatterEvent('OnCharacterSessionChanged', old, new)
-serviceManager.py(881)  uthread.worker(prefix + srvGuid, self.MollycoddledUthread, …)
-                        -- the returned tasklet is POP_TOPped: nothing waits on us
-settingsSvc.py(215)     self.UpdateSettingsStatistics()      # only when old is None
-settingsSvc.py(205-211) Crypto.Verify -> marshal.loads ->
-                        SettingsInfo.__code__ = … -> ret = SettingsInfo()
-```
+1. `sessions.py:659` scatters `OnCharacterSessionChanged` with the old and new session.
+2. `serviceManager.py:881` runs the handler on a worker uthread
+   (`MollycoddledUthread`); the returned tasklet is discarded, so nothing waits on us.
+3. `settingsSvc.py:215` calls `UpdateSettingsStatistics()`, only when the old session is `None`.
+4. `settingsSvc.py:205-211` verifies the signature, unmarshals the code, installs it as
+   the `SettingsInfo` code object and calls `SettingsInfo()`.
 
 Why this moment and not H8: **H8 runs before services and the session exist**,
 so code evaluated there can only arm something. `GetSettingsInfo` runs *after
@@ -3059,18 +2907,17 @@ this build** — an earlier doc listed them and was wrong `[V]`.
 `/autoSelectCharacter:<slotOrCharID>` is the click nobody is there to make.
 `characterSelection._CheckAutoSelectCharacter` `[V]`:
 
-```text
-209  if not self.isInitialLogin: return False
-212  for arg in blue.pyos.GetArg()[1:]:
-213      if arg.startswith('/autoSelectCharacter:'):
-215          slotNum = int(arg.split(':')[1])
-216          slot = self.slotsByCharID.get(slotNum, None)
-217          if not slot: slot = self.slotsByIdx[slotNum]
-220          except: raise RuntimeError('Format of parameter incorrect, should be
-                 /autoSelectCharacter:slotID<int> (slotNum can characterID or
-                 index (0, 1 or 2)')
-221      self.EnterGameWithCharacter(slot)
-```
+Its steps, with the line numbers in `characterSelection.py`.
+
+1. It returns `False` unless `isInitialLogin` (209).
+2. It scans `blue.pyos.GetArg()[1:]` for an argument starting with
+   `/autoSelectCharacter:` (212-213).
+3. It takes the number after the colon as `slotNum`, looks it up in `slotsByCharID`,
+   and falls back to `slotsByIdx[slotNum]` (215-217).
+4. A malformed value raises a `RuntimeError` whose text says the format should be
+   `/autoSelectCharacter:slotID<int>`, with `slotNum` a character id or an index
+   (0, 1 or 2) (220).
+5. It calls `EnterGameWithCharacter(slot)` (221).
 
 So the value is tried as a **characterID first** and falls back to an **index**,
 and the client's own error string says the index range is 0–2. It is gated on
@@ -3249,8 +3096,6 @@ BlueResMain waiting for loads
 
 # ---- boot
 Verification Failure                             # dialog caption; nothing in any file log
-VerifyManifestEntry: Invalid manifest entry hash
-UnpackManifest: Invalid manifest signature
 InitSysIncludePaths() failed
 is not a valid directory, falling back to current working directory
 Could not find cFSD file at
@@ -3401,20 +3246,12 @@ because an `[I]` with no experiment beside it is just a shrug.
 - **Which severity word `CCP::LogType 2` prints** `[I]` — it is what prefixes
   a `!! timeslice` record.
 
-### 9.4 Two corrections this file makes to our own docs
+### 9.4 A correction this file makes to our own docs
 
 Recorded here because the next reader of those files should not have to find
 them again.
 
-1. **[`docs/guides/jail.md`](../guides/jail.md)** says there is no "hash mismatch" string in the
-   binary, and that where `start.ini` is parsed was not found. Both are wrong:
-   `VerifyManifestEntry: Invalid manifest entry hash` exists (along with
-   `Verification passed: "%s"`, `File not found: ` and the whole
-   `UnpackManifest:` family), and `start.ini` is parsed **in Python**, by
-   `eveprefs.Init()` → `iniformat.IniIniFile('start',
-   blue.paths.ResolvePath(u'app:/'), 1)` — which is exactly why neither binary
-   contains the string. `[V]` ([§1.5](#15-manifestdat--it-gates-python-startup-before-py_initialize))
-2. **[the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3** lists the CPython flag
+1. **[the unpublished recon-v24.01 note](../archive/recon-v24.01.md) Round 3** lists the CPython flag
    writes as unconditional; they are gated on `/py` being absent, and
    `Py_OptimizeFlag` is `+=` the `/pyoptimize=` value rather than a fixed
    increment. It also concludes `/path` has no consumer anywhere, and

@@ -105,13 +105,12 @@ single-node private server, returning our own node id is sufficient.
 
 ### 1.4 Step 2 — bind
 
-`Moniker.Bind(sess, call)` (`moniker.pyc`), remote case:
+`Moniker.Bind(sess, call)` (`moniker.pyc`), remote case, in order:
 
-```python
-remotesvc = sess.ConnectToRemoteService(self.__serviceName, self.__nodeID)
-self.boundObject, retval = remotesvc.MachoBindObject(self.__bindParams, call)
-self.boundObject.persistantObjectID = (self.__serviceName, self.__bindParams)
-```
+1. It connects to the remote service with `ConnectToRemoteService(serviceName, nodeID)`.
+2. It sends `MachoBindObject(bindParams, call)` on that service and gets back the
+   2-tuple `(boundObject, retval)`.
+3. It stores `(serviceName, bindParams)` on the bound object as `persistantObjectID`.
 
 - `call` is `None`, or the tuple `(methodName, args, keywords)` of the call that
   triggered the bind — i.e. **bind and first call are fused into one round
@@ -147,15 +146,16 @@ The reference is produced by the **marshal save callback**, not by a dedicated
 packet field. `ObjectCall.ToPickle` calls `blue.marshal.Save(value,
 self.GetObjectID)`; the native codec calls `GetObjectID` back for every
 old-style instance it cannot serialise by value
-(`ObjectCallGPCS.GetObjectID`, confirmed):
+(`ObjectCallGPCS.GetObjectID`, confirmed), which does this:
 
-```python
-objectID = basesession.GetObjectUUID(object)       # registers it in the session
-refID    = blue.os.GetWallclockTime()              # first time only
-pa = {k: getattr(object, k) for k in object.__publicattributes__ if hasattr(...)}
-return blue.marshal.Save((objectID, pa, refID), self.GetObjectID) if pa \
-  else blue.marshal.Save((objectID, refID), self.GetObjectID)
-```
+1. It asks `basesession.GetObjectUUID` for the object's id, which registers the
+   object in the session.
+2. On the first call only, it takes `refID` from the wall-clock time
+   (`blue.os.GetWallclockTime()`).
+3. It collects the object's `__publicattributes__` that exist into a dict `pa`.
+4. It returns the marshalled `(objectID, pa, refID)` when `pa` is non-empty,
+   else the marshalled `(objectID, refID)`; the nested save uses the same
+   `GetObjectID` callback.
 
 - **`objectID` is a string**, not an integer. `basesession.GetObjectUUID`:
   `'N=%s:%s' % (machoNet.GetNodeID(), counter)` on a server and
@@ -201,14 +201,11 @@ The unpublished wire-format note, `MachoAddress.__getstate__` for NODE is
 is empty, and the object is identified only by the `objectID` string inside the
 payload.
 
-`ObjectCall.ObjectCallWithoutTheStars` (`ObjectCallGPCS.pyc`) builds the body:
+`ObjectCall.ObjectCallWithoutTheStars` (`ObjectCallGPCS.pyc`) builds the body.
 
-```python
-payload = (1, self.ToPickle((objectID, method, args, kw2)))
-packet  = CallReq(destination=destination, payload=payload)      # blocking == 1
-# or
-packet  = Notification(destination=destination, payload=payload) # blocking == 0
-```
+It wraps the 4-tuple `(objectID, method, args, kw2)` in the pickle layer and
+puts it in a payload `(1, <pickled tuple>)`. That payload goes into a `CallReq`
+(blocking == 1) or, for a one-way call, a `Notification` (blocking == 0).
 
 and the service-call layer builds, for comparison
 (`CoreServiceCall.RemoteServiceCallWithoutTheStars` + `ObjectCall.CallDown`):

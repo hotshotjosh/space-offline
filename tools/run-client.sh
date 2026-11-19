@@ -136,9 +136,8 @@ eve_refuse_online run-client.sh "EVE_PREFIX=$EVE_PREFIX" "EVE_CLIENT=$EVE_CLIENT
 # We run a COPY, never the installation the owner plays on.
 #
 # Two reasons, and the second is the one that matters. First, we modify the
-# client (cryptoPack, and later possibly loose .py overrides or a patched
-# blue.dll); doing that to a live install means Steam can revalidate and
-# silently revert it mid-debug. Second, and more important: if the jail ever
+# client's files for our server; doing that to a live install means Steam can
+# revalidate and silently revert it mid-debug. Second, and more important: if the jail ever
 # leaked, whatever phoned home would be the client sitting next to the owner's
 # real EVE state. A copy keeps the two apart.
 #

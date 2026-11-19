@@ -25,9 +25,6 @@ Authenticode CRL/OCSP            crl3/crl4/ocsp.digicert.com, crl.comodoca.com, 
                                  cryptnet may fetch; only the census can say
 wpad.*                           blue's BlueRemoteStream (libcurl), IE config autodetect, on the first CDN transfer [V] site, [I] Wine default
 ftp://                           the minibrowser's urllib2 opener reads ftp_proxy, not HTTP(S)_PROXY [I]
-Tier C of tools/eve_patch.py closes the code.ccp constants for: the Sentry DSN, clientresources (x3), res.eveprobe, ipify, GA,
-ebr-service, vm-single and the gateway discovery suffix (docs/guides/patcher.md). The list of every host-like string in a
-build is `tools/eve_patch_author.py hosts`, diffed against out/census/known-hosts.txt.
 
 ## Telemetry — opt-in, off by default
 # autoexec gates the telemetry block on the "/enableTelemetry" argument.

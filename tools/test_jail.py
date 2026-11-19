@@ -1620,5 +1620,59 @@ class PipefailGrep(unittest.TestCase):
                     code, r"\|\s*grep\s+-q",
                     f"{name}:{n}: pipe into grep -q under pipefail: {line.strip()}")
 
+class NamespaceNameIsValidated(unittest.TestCase):
+    """EVE_JAIL_NS reaches `rm -rf "/etc/netns/$NS"` as root. Every probe here uses a
+    name that cannot exist, and `rm` and `ip` are stubs that record a call, so the
+    test is harmless even when the validation is missing."""
+
+    BAD = ("/nonexistent/probe", "../nonexistent/probe", "..", "UPPER", "-x", "--", "a b", "x" * 33, "a'b", "a|b")
+
+    def stubbed(self, td: str) -> dict[str, str]:
+        bindir = os.path.join(td, "bin")
+        os.mkdir(bindir)
+        calls = os.path.join(td, "calls")
+        for tool in ("rm", "ip", "nft", "ufw", "id", "mkdir"):
+            path = os.path.join(bindir, tool)
+            with open(path, "w") as f:
+                f.write(f"#!/bin/sh\necho {tool} \"$@\" >> {calls}\nexit 0\n")
+            os.chmod(path, 0o755)
+        env = dict(os.environ, PATH=bindir + ":" + os.environ["PATH"])
+        return env
+
+    def test_teardown_and_setup_refuse_a_bad_name_before_any_command(self) -> None:
+        if os.geteuid() == 0:
+            self.skipTest("as root a missing check would write under /etc")
+        for script in ("jail-teardown.sh", "jail-setup.sh"):
+            for bad in self.BAD:
+                with tempfile.TemporaryDirectory(prefix="eve-test-jail-ns-") as td:
+                    env = self.stubbed(td)
+                    env["EVE_JAIL_NS"] = bad
+                    r = subprocess.run(["bash", os.path.join(HERE, script)], env=env,
+                                       capture_output=True, text=True, timeout=30)
+                    self.assertEqual(r.returncode, 2, (script, bad, r.stderr))
+                    self.assertIn("bad namespace name", r.stderr)
+                    self.assertFalse(os.path.exists(os.path.join(td, "calls")), (script, bad))
+
+    def test_the_installer_refuses_a_bad_name_or_address(self) -> None:
+        for var, bad in (("EVE_JAIL_NS", "/nonexistent/probe"), ("EVE_JAIL_NS", "a|b"),
+                         ("EVE_JAIL_HOST_IP", "1.2.3.4;x"), ("EVE_JAIL_NS_IP", "a'b")):
+            env = dict(os.environ, **{var: bad})
+            r = subprocess.run(["bash", os.path.join(HERE, "install-jail-helper.sh"), "--print"],
+                               env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 2, (var, bad, r.stderr))
+            self.assertEqual(r.stdout, "")
+        ok = subprocess.run(["bash", os.path.join(HERE, "install-jail-helper.sh"), "--print"],
+                            capture_output=True, text=True, timeout=30)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+
+    def test_the_helper_template_checks_the_name_before_its_first_rm(self) -> None:
+        text = read(os.path.join(HERE, "eve-offline-jail.in"))
+        check = text.index("[[ $NS =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]")
+        for pattern in (r'^\s*rm -rf "/etc/netns/\$NS"', r"^\s*ns_exists \|\| ip netns add"):
+            m = re.search(pattern, text, re.M)
+            self.assertIsNotNone(m, pattern)
+            self.assertLess(check, m.start(), pattern)
+
+
 if __name__ == "__main__":
     unittest.main()

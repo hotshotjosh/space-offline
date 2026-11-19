@@ -22,8 +22,9 @@ What counts as a leak, in an exported file:
   - each regex in `private/export-scan.txt`, one per line: names, user names,
     host names. They live in the private folder so this script names nobody.
 
-`--out` also writes `tools/doc-private-prefixes.txt` (the `docs/` lines of the private
-list, so the exported doc lint knows which docs are absent on purpose) and drops the
+`--out` also writes `tools/doc-private-prefixes.txt` (one `sha256:<hex>` per `docs/` line of the
+private list, so the exported doc lint knows which docs are absent on purpose without the
+file naming them) and drops the
 private rows from the exported `docs/README.md`. `--check` lists every surviving
 prose mention (`docs/...` in a `.md` file) of a private doc as `mention:` lines; they
 do not change the exit code, because a mention is a dead link to fix, not a leak.
@@ -45,6 +46,7 @@ import argparse
 import os
 import re
 import shutil
+import hashlib
 import subprocess
 import sys
 import zlib
@@ -52,6 +54,8 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PRIVATE_DIR = "private/"
+DISASM_LINE = r"^\s*0x18[0-9a-f]{7}\s+(?:call|mov|lea|jmp|cmp|xor|test)\b"
+BYTECODE_LINE = r"^\s*(?:\d+\s+)*(?:LOAD_(?:FAST|ATTR|GLOBAL|CONST|NAME)|STORE_FAST|CALL_FUNCTION)\s+\d*\s*\w"
 BUILT_IN = [
     r"/home/(?!(?:alice|user|you|example)/)[a-z_][a-z0-9_-]*/",
     r"\b192\.168\.(?!122\.1\b)\d{1,3}\.\d{1,3}\b",
@@ -68,9 +72,18 @@ BUILT_IN = [
     r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
     r"\bAIza[0-9A-Za-z_-]{35}",
     r"\bptr_[A-Za-z0-9+/=]{40,}",
+    # Client-data shapes (shapes only; they cannot catch a paraphrase or a bare value).
+    r"(?i)c:/build" r"agent/work/",                                # the vendor's build-agent paths
+    DISASM_LINE,                                                   # a disassembly listing line
+    r"^\s*(?://[/!]?\s*)?def \w+\(self\b.*#\s*:?\d+\s*$",       # line-numbered client Python
+    BYTECODE_LINE,                                                 # a bytecode listing
+    r"SHAPE " r"ONLY, plus .* sample rows",                           # a dumped table's header
 ]
 # A fixture that must hold a credential-shaped string, per file: the patterns it may match.
 ALLOWED = {
+    # Listings of Python code that WE assemble ourselves (no client code): its tests and docs
+    # show the bytecode and the disassembly of that output.
+    "server/crates/eve-server/src/pycode.rs": [DISASM_LINE, BYTECODE_LINE],
     "tools/test_tunnel_config.py": [r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----"],
 }
 INFLATE_MAX = 64 << 20   # bytes inflated per capture file; more is not scanned, and is a hit
@@ -122,10 +135,16 @@ def read_text(path: str) -> str | None:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         text = data.decode("latin-1")
-    if path.endswith(".evecap"):
+    binary = b"\0" in data[:4096]
+    if path.endswith(".evecap") or binary:
         streams = inflated(data)
         if streams:
             text += "\n" + "\n".join(streams)
+    if data[:2] == b"\x1f\x8b":
+        text += "\n" + gunzipped(data)
+    if binary:
+        # UTF-16 text in a binary file reads as letters split by NULs in the lines above.
+        text += "\n" + data.decode("utf-16-le", "ignore") + "\n" + data[1:].decode("utf-16-le", "ignore")
     return text
 
 
@@ -179,6 +198,37 @@ def inflated(data: bytes) -> list[str]:
         total += len(raw)
         out.append(raw.decode("latin-1"))
         pos = m.start() + 1 if failed else (at - len(d.unused_data) if d.eof else len(data))
+
+
+def gunzipped(data: bytes) -> str:
+    """The text of every gzip member in `data` as latin-1, at most INFLATE_MAX bytes in all
+    (TooBig past that). What was decoded before an error is kept."""
+    out, total, pos = [], 0, 0
+    while data[pos:pos + 2] == b"\x1f\x8b":
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            for at in range(pos, len(data), CHUNK):
+                raw = d.decompress(data[at:at + CHUNK], INFLATE_MAX + 1 - total)
+                while True:
+                    total += len(raw)
+                    if total > INFLATE_MAX:
+                        raise TooBig
+                    out.append(raw.decode("latin-1"))
+                    if not d.unconsumed_tail:
+                        break
+                    raw = d.decompress(d.unconsumed_tail, INFLATE_MAX + 1 - total)
+                if d.eof:
+                    break
+        except zlib.error:
+            # A bad trailer or checksum loses the whole chunk; read the deflate body alone
+            # (the plain 10-byte header) so the text is still scanned.
+            parts, _, _ = _feed(zlib.decompressobj(-zlib.MAX_WBITS), memoryview(data), pos + 10, total)
+            out.extend(x.decode("latin-1") for x in parts)
+            break
+        if not d.eof:
+            break
+        pos = len(data) - len(d.unused_data)
+    return "\n".join(out)
 
 
 def leaks(root: str, files: list[str]) -> list[str]:
@@ -332,8 +382,8 @@ def main(argv: list[str]) -> int:
     dst = os.path.join(a.out, "tools", "doc-private-prefixes.txt")
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     with open(dst, "w", encoding="utf-8") as f:
-        f.write("# Docs the public export omits on purpose (written by tools/public-export.py --out).\n")
-        f.write("".join(p + "\n" for p in prefixes))
+        f.write("# Docs the public export omits on purpose, as sha256 of each path (written by tools/public-export.py --out).\n")
+        f.write("".join("sha256:" + hashlib.sha256(p.rstrip("/").encode()).hexdigest() + "\n" for p in prefixes))
     return 0
 
 

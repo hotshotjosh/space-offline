@@ -40,7 +40,7 @@ has no network and mounts the installs read-only.
    one): `build-delta.py` writes `findings/build-delta-<pinned>-<build>.tsv`.
    Exit 0 equivalent, 3 differs, 1 check mismatch, 2 not an install.
 4. If `differs`, read the reason rows: a protocol file means re-diff
-   `blue.dll`/`_destiny.dll` (`tools/dis.py`); call surface means compare
+   the native protocol libraries; call surface means compare
    `findings/client-calls.tsv`, `client-callable.tsv`, `push-events.tsv`,
    `session-keys.tsv` and implement the calls; schema means
    `tools/pyd_schema.py` against `docs/content/schema.md`. The script stops
@@ -61,15 +61,8 @@ has no network and mounts the installs read-only.
    before the data: `content-lib.sh` refuses an unregistered build.
 7. Data: `tools/content.py ... --build <build>`, then `--check --against`
    the old bundle. Equal `data_hash` lets the server open the old bundle.
-8. Patches: `tools/patches/<build>.json` comes from `eve_patch_author.py
-   locate /client --merge tools/patches/<pinned>.json`, then change `build`,
-   `identify.start_ini_build` and the comment, and read the diff
-   (the unpublished patcher note). Verify with `eve_patch_author.py check` and
-   `tools/test_eve_patch.py`. The script then runs `eve_patch_author.py hosts`
-   and stops on a host that is not in the reviewed list. **Make the census
-   control copy now**, from the stock files, before any patch (`apply --tier B
-   --only B0,P0` on a copy): once the install is patched there is no stock copy
-   short of `revert`.
+8. Hosts: check that every host the new build contacts is in the reviewed list. **Make the census control copy now**, from the stock files:
+   once the install is modified there is no stock copy.
 9. Gate: `EVE_MAX_JOBS=6 tools/dev.sh cargo test --locked --workspace`,
    clippy `-D warnings`, then `tools/land.sh --head`.
 
@@ -79,7 +72,7 @@ has no network and mounts the installs read-only.
 table rows, citations and constants that moved. Its `shifts.sh` is a comment-only
 list of `sed` lines for citations in code that did not change.
 
-Then the human check: launch a **patched copy** of the new build, jailed, log
+Then the human check: launch a copy of the new build, jailed, log
 in, undock, open the overview and a market window, compare with the pinned
 build.
 
@@ -93,8 +86,7 @@ build.
 | data_hash | a bundle `data_hash` proved equal for this build, or `-` |
 | evidence | how the status was earned (findings file, date) |
 
-Beside the row: `tools/patches/<build>.json` and
-`findings/build-delta-<pinned>-<build>.tsv`.
+Beside the row: `findings/build-delta-<pinned>-<build>.tsv`.
 
 ## Provisional builds
 
@@ -141,11 +133,10 @@ the **next** cut-over has passed its proof: until then the previous build is the
 
 1. Delete its row in `tools/builds.tsv` and its entry in
    `eve_marshal::build::BUILDS` together (the table test checks both).
-2. Delete `tools/patches/<build>.json`.
-3. Keep `findings/build-delta-*`: history; the gate skips a delta whose install is gone.
-4. Never retire the `pinned` build; re-pinning means moving the whole RE
+2. Keep `findings/build-delta-*`: history; the gate skips a delta whose install is gone.
+3. Never retire the `pinned` build; re-pinning means moving the whole RE
    corpus and is an owner decision. Nothing was retired at the 2026-10-31
-   re-pin: 3619879 and 3628513 became `unverified`, with their manifests and
+   re-pin: 3619879 and 3628513 became `unverified`, with their pins and
    deltas.
 
 ## Re-pinning
@@ -168,16 +159,12 @@ the re-pin. The coordinator's steps, in this order:
    with it.
 2. Swap the client copies (**check first that `tq-<old>` does not exist**: a
    `tq-3662168` dir exists in the prefix today, and `mv` would nest `tq-offline` inside it; rename that one aside): `tq-offline`
-   becomes `tq-<old>` and the new patched copy becomes `tq-offline` (renames only, never into compatdata/8500). The
+   becomes `tq-<old>` and the new copy becomes `tq-offline` (renames only, never into compatdata/8500). The
    scripts' default dir stays `tq-offline`, so nothing else is edited.
-3. `python3 -I tools/eve_patch.py apply --client <new tq-offline>`. The copy is
-   already patched, and `apply` skips patched files (`make_plan`); it writes only
-   the prefs keys that differ. The prefs live under the install name
-   (`c_ccp_eve_tq-offline_*`), so this restores them for the new copy.
+3. Prepare the new `tq-offline` copy the way the old one was.
 4. `tools/pin-client.sh --write`, then commit and land (`tools/land.sh --head`).
 5. `out/pyc` to `out/pyc-<old>`, then extract the new `code.ccp` into `out/pyc`
-   (from `code.ccp.eveoffline-orig` if tier C patched it, so no patched constant
-   enters a finding); `out/content` to `out/content-<old>`, then rebuild
+   (from the stock file, so no modified constant enters a finding); `out/content` to `out/content-<old>`, then rebuild
    `out/content` with `content.py` for the new build.
 6. The second client: `tools/client2-setup.sh --remove` and set it up again.
 
@@ -187,5 +174,5 @@ hand-curated cells), `scan_client_callable`, `scan_session_keys`,
 `scan_proto_messages`, `scan_bound` (with `--compare docs/reference/bound-objects.md`),
 `scan_remote`, `scan_services`, and `pyd_schema.py` for the changed loaders
 only. In `fsd.py` the new build's loader layout becomes the base
-`findings/pyd-schemas.tsv`; the old one moves to an overlay file
+the unpublished pyd-schemas table; the old one moves to an overlay file
 `pyd-schemas-<old>.tsv` and `CFSD_BUILD_LAYOUTS` swaps.

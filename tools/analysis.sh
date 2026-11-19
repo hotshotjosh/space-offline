@@ -6,7 +6,7 @@
 #   tools/analysis.sh uncompyle6 out/pyc/autoexec.pyc
 #   tools/analysis.sh shell                   # interactive
 #
-# The repo is mounted at /work. The client installation, if EVE_CLIENT is set,
+# The repo is mounted at /work, read-only except out/ and findings/. The client installation, if EVE_CLIENT is set,
 # is mounted read-only at /client. Containers get no network.
 set -euo pipefail
 
@@ -64,7 +64,12 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     build
 fi
 
-mounts=(-v "$REPO:/work")
+# The repo is read-only: this image runs third-party Python on hostile input, and
+# a writable repo would let it plant files (hooks, tools/*.py) the host runs later.
+# Only out/ (gitignored scratch) and findings/ (tracked data tables and text, no code:
+# build-delta.py, pyd_schema.py and scan_user_errors.py write there) are writable.
+mkdir -p "$REPO/out" "$REPO/findings"
+mounts=(-v "$REPO:/work:ro" -v "$REPO/out:/work/out:rw" -v "$REPO/findings:/work/findings:rw")
 if [[ -d "$EVE_CLIENT" ]]; then
     # Say which build is mounted, every time. The whole point of the note
     # above is that the wrong one is indistinguishable from the right one
@@ -99,6 +104,9 @@ fi
 
 exec docker run --rm "${tty_args[@]}" \
     --network none \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --read-only --tmpfs /tmp:exec,size=2g \
     --user "$(id -u):$(id -g)" \
     "${mounts[@]}" \
     -w /work \

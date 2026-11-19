@@ -74,26 +74,23 @@ Four consequences a Rust encoder must honour:
 Function bounds `0x1802de1c0-0x1802de424` (from `.pdata`; 612 bytes, so the
 leaf-function caveat in the unpublished marshal-tags note does not apply).
 
-```text
-0x1802de1e4  movzx r15d, r8b          ; r15 = shared flag, r12 = stream, r13 = ctx
-0x1802de1ee  test  r8b, r8b
-0x1802de1f8  call  0x1802dbdf0        ; RegisterShared(stream, 0) — RESERVE, before any child
-0x1802de21b  call  0x1802dd980        ; rsi = header = ReadObject()      <<< one child
-0x1802de239  call  [PyTuple_GetItem]  ; edx = 0  -> rdi = header[0]      = callable
-0x1802de253  call  [PyTuple_GetItem]  ; edx = 1  -> rax = header[1]      = args
-0x1802de268  call  [PyObject_CallObject]   ; rcx = rdi(callable), rdx = rax(args)
-0x1802de2b1  call  0x1802dbf30        ; commit the reserved shared slot with the new object
-0x1802de2be  cmp   qword [rsi + 0x10], 2   ; header->ob_size
-0x1802de2c3  jle   0x1802de36c              ; <= 2 -> no state
-0x1802de2c9  mov   r15, [rsi + 0x28]        ; header->ob_item[2] = state
-0x1802de2d4  call  [PyObject_GetAttr]       ; rdx = ctx[0x78] = "__setstate__"
-0x1802de2eb  call  [PyObject_CallFunctionObjArgs]   ; obj.__setstate__(state)
-0x1802de311  call  [PyErr_Clear]            ; (no __setstate__) ...
-0x1802de321  call  [PyObject_GetAttr]       ; rdx = ctx[0x80] = "__dict__"
-0x1802de335  call  [PyDict_Update]          ; obj.__dict__.update(state)
-0x1802de375  call  0x1802de6b0        ; list-append stream  (see §5)
-0x1802de387  call  0x1802de800        ; dict-setitem stream (see §5)
-```
+1. Remember the shared flag (`r15`), stream (`r12`) and context (`r13`) (`0x1802de1e4`).
+2. `RegisterShared(stream, 0)` (`0x1802dbdf0`) reserves the shared slot
+   **before any child is read** (`0x1802de1f8`).
+3. `ReadObject()` reads one child, the header (`0x1802de21b`).
+4. `callable = header[0]` and `args = header[1]`, both by `PyTuple_GetItem`
+   with index constants 0 and 1 (`0x1802de239`, `0x1802de253`).
+5. `PyObject_CallObject(callable, args)` builds the object (`0x1802de268`).
+6. The reserved shared slot is committed with the new object (`0x1802dbf30`,
+   call at `0x1802de2b1`).
+7. When `header->ob_size` is 2 or less there is no state (`0x1802de2be`);
+   otherwise `state = header->ob_item[2]` (`0x1802de2c9`).
+8. State goes in by `obj.__setstate__(state)` (name from `ctx[0x78]`,
+   `0x1802de2d4`, call at `0x1802de2eb`); when that attribute is missing the
+   error is cleared (`0x1802de311`) and `obj.__dict__.update(state)` runs
+   instead (name from `ctx[0x80]`, `0x1802de321`, `0x1802de335`).
+9. The list-append stream (`0x1802de6b0`) and then the dict-setitem stream
+   (`0x1802de800`) are read (`0x1802de375`, `0x1802de387`; see §5).
 
 `PyTupleObject` field offsets: `ob_refcnt 0x00, ob_type 0x08, ob_size 0x10,
 ob_item 0x18`, so `[rsi+0x10]` is the length and `[rsi+0x28]` is
@@ -112,22 +109,19 @@ ob_item 0x18`, so `[rsi+0x10]` is the length and `[rsi+0x28]` is
 
 Function bounds `0x1802de430-0x1802de6b0` (640 bytes).
 
-```text
-0x1802de468  call  0x1802dbdf0        ; RegisterShared reserve, before any child
-0x1802de48b  call  0x1802dd980        ; rbp = header = ReadObject()      <<< one child
-0x1802de4a9  call  [PyTuple_GetItem]  ; edx = 0 -> rdi = header[0]       = the args tuple
-0x1802de4c0  call  [PyTuple_GetItem]  ; edx = 0, rcx = rdi -> rax = header[0][0]  = cls
-0x1802de4cf  mov   rdx, [r15 + 0x88]  ; ctx[0x88] = "__new__"
-0x1802de4d9  call  [PyObject_GetAttr] ; r14 = cls.__new__
-0x1802de4f9  call  [PyObject_CallObject]   ; rcx = r14, rdx = rdi  ->  cls.__new__(*header[0])
-0x1802de51e  call  0x1802dbf30        ; commit the shared slot
-0x1802de52b  cmp   qword [rbp + 0x10], 1   ; header->ob_size
-0x1802de530  jle   0x1802de5d9              ; <= 1 -> no state
-0x1802de536  mov   r12, [rbp + 0x20]        ; header->ob_item[1] = state
-   ... identical __setstate__ / __dict__.update block as 0x22 ...
-0x1802de5e2  call  0x1802de6b0        ; list-append stream
-0x1802de5f4  call  0x1802de800        ; dict-setitem stream
-```
+1. `RegisterShared` reserves the slot before any child is read (`0x1802de468`).
+2. `ReadObject()` reads one child, the header (`0x1802de48b`).
+3. `argsTuple = header[0]`, then `cls = argsTuple[0]`, both by
+   `PyTuple_GetItem` with index 0 (`0x1802de4a9`, `0x1802de4c0`).
+4. `cls.__new__` is looked up with the name in `ctx[0x88]` (`0x1802de4cf`,
+   `0x1802de4d9`) and called with `*header[0]`, that is `cls.__new__(*argsTuple)`
+   (`0x1802de4f9`).
+5. The shared slot is committed (`0x1802de51e`).
+6. When `header->ob_size` is 1 or less there is no state (`0x1802de530`);
+   otherwise `state = header->ob_item[1]` (`0x1802de536`).
+7. State goes in by the same `__setstate__` / `__dict__.update` step as in
+   `0x22`, and the list-append and dict-setitem streams follow
+   (`0x1802de5e2`, `0x1802de5f4`).
 
 The key difference from `0x22`, and the thing easiest to get wrong:
 
@@ -144,9 +138,9 @@ The key difference from `0x22`, and the thing easiest to get wrong:
   `PyTuple_GetItem` index constant `0`, not a stream byte. **[V]**
 
 `ctx[0x88]` is `"__new__"`: the MarshalStream constructor at `0x1802d9b60`
-interns it there —
-`0x1802d9c4f lea rcx, [-> 0x18097cc40 "__new__"]; call PyString_FromString;
-0x1802d9c5c mov [rdi+0x88], rax`. **[V]**
+interns it there: the string at `0x18097cc40` goes through
+`PyString_FromString` (`0x1802d9c4f`) and is stored at `ctx+0x88`
+(`0x1802d9c5c`). **[V]**
 
 ### The constructor's string slots, in full **[V]**
 
@@ -170,22 +164,21 @@ The unpublished marshal-tags note.
 
 Function bounds `0x1802dde40-0x1802de1be` (894 bytes).
 
-```text
-0x1802dde74  call  0x1802dbdf0        ; RegisterShared reserve, before any child
-0x1802dde97  call  0x1802dd980        ; rbp = nameObj = ReadObject()     <<< child #1
-0x1802ddeb6  call  0x1802deb60        ; rsi = klass = ResolveGlobal(ctx, nameObj)
-0x1802ddecf  mov   rax, [PyClass_Type]
-0x1802dded6  cmp   [rsi + 8], rax     ; klass->ob_type must be PyClass_Type
-0x1802ddf20  lea   rdx, [-> "global object %s should be of class type but is of %s"]
-0x1802ddf93  call  0x1802e1e70        ; whitelist/audit hook, "ClassType: %s"
-0x1802ddfa8  call  [PyInstance_NewRaw]     ; rcx = klass, edx = 0 (no dict) -> rdi = inst
-0x1802ddfd0  call  0x1802dbf30        ; commit the shared slot
-0x1802ddfe3  call  0x1802dd980        ; r14 = state = ReadObject()       <<< child #2
-0x1802de000  call  [PyObject_HasAttr] ; rcx = rsi (the CLASS), rdx = ctx[0x78] "__setstate__"
-0x1802de04b  call  [PyObject_CallMethodObjArgs]  ; rcx = rdi (the INSTANCE) -> inst.__setstate__(state)
-0x1802de0d9  call  [PyObject_GetAttr] ; (no __setstate__) rdx = ctx[0x80] "__dict__"
-0x1802de0ed  call  [PyDict_Update]    ; inst.__dict__.update(state)
-```
+1. `RegisterShared` reserves the slot before any child is read (`0x1802dde74`).
+2. `ReadObject()` reads child 1, the class name object (`0x1802dde97`).
+3. `ResolveGlobal(ctx, nameObj)` (`0x1802deb60`) returns the class (`0x1802ddeb6`);
+   its `ob_type` must be `PyClass_Type` (`0x1802ddecf`, `0x1802dded6`),
+   otherwise the error is "global object %s should be of class type but is of
+   %s" (`0x1802ddf20`).
+4. A whitelist/audit hook (`0x1802e1e70`) is called with "ClassType: %s"
+   (`0x1802ddf93`).
+5. `PyInstance_NewRaw(klass, NULL)` makes the instance (`0x1802ddfa8`).
+6. The shared slot is committed (`0x1802ddfd0`).
+7. `ReadObject()` reads child 2, the state (`0x1802ddfe3`).
+8. `PyObject_HasAttr` probes the **class** for the `__setstate__` name in
+   `ctx[0x78]` (`0x1802de000`); if present, `PyObject_CallMethodObjArgs` calls
+   it on the **instance** (`0x1802de04b`).
+9. Otherwise `inst.__dict__.update(state)` (`0x1802de0d9`, `0x1802de0ed`).
 
 - **Exactly two children, in this order: the class name object, then the
   state.** Both are mandatory — a NULL from either `ReadObject` aborts.
@@ -211,22 +204,18 @@ by two dedicated helpers.
 
 ### List-append stream — `0x1802de6b0`
 
-```text
-loop:
-  if (stream[0x28] - stream[0x30]) < 1 -> RuntimeError
-      "Can't read %d elements of %d bytes, only have %Iu bytes left"
-  0x1802de6f9  movzx ecx, byte [rdx + rax]     ; PEEK the next byte
-  0x1802de6fd  mov   [rdi + 0x30], rdx         ; position written back UNCHANGED -> not consumed
-  0x1802de701  cmp   cl, 0x2d                  ; <<< the terminator test
-  0x1802de704  je    0x1802de76a
-  0x1802de70c  call  0x1802dd980               ; child = ReadObject()  (re-reads that byte as a tag)
-  0x1802de72d  call  [PyObject_CallMethodObjArgs]  ; rdx = ctx[0x98] "append" -> obj.append(child)
-  goto loop
-terminator:
-  0x1802de76a  inc   dword [ctx[0x108] + 0xb4] ; per-tag stats, 0xb4 = 0x2d * 4
-  0x1802de78c  stream[0x30] += 1               ; the 0x2D byte IS consumed here
-  return true
-```
+1. If no bytes are left (`stream[0x28] - stream[0x30] < 1`) the error is
+   "Can't read %d elements of %d bytes, only have %Iu bytes left".
+2. **Peek** the next byte (`0x1802de6f9`); the position is stored back
+   unchanged, so nothing is consumed (`0x1802de6fd`).
+3. If the byte equals `0x2d` (`0x1802de701`, `0x1802de704`) go to step 6.
+4. Otherwise `ReadObject()` reads a child, re-reading that byte as a tag
+   (`0x1802de70c`).
+5. Call `obj.append(child)` with the name in `ctx[0x98]` (`0x1802de72d`) and
+   go back to step 1.
+6. At the terminator the per-tag stats entry at offset `0xb4` (`0x2d * 4`) is
+   bumped (`0x1802de76a`), the position advances by one (`0x1802de78c`) so
+   the `0x2D` byte **is** consumed, and the helper returns true.
 
 The peek is a genuine peek: `[rdi+0x30]` is re-stored with the value just
 loaded from it. So a non-`0x2D` byte stays in the stream and `ReadObject`
@@ -243,16 +232,10 @@ Same peek/terminator structure (`0x1802de879 cmp cl, 0x2d`, stats at
 `+0xb4`, byte consumed at `0x1802e08a0`), but each iteration reads **two**
 objects:
 
-```text
-0x1802de8b1  call 0x1802dd980          ; rdi = FIRST  object
-0x1802de8d5  call 0x1802dd980          ; rbx = SECOND object
-0x1802de8e2  mov  [rsp+0x20], r15      ; arg3 = NULL sentinel
-0x1802de8e7  mov  r9, rax              ; arg2 = SECOND
-0x1802de8ea  mov  r8, rdi              ; arg1 = FIRST
-0x1802de8ed  mov  rdx, [rbp + 0xa0]    ; "__setitem__"
-0x1802de8f4  mov  rcx, r14             ; the object
-0x1802de8f7  call [PyObject_CallMethodObjArgs]
-```
+1. `ReadObject()` reads the FIRST object (`0x1802de8b1`).
+2. `ReadObject()` reads the SECOND object (`0x1802de8d5`).
+3. `PyObject_CallMethodObjArgs(obj, "__setitem__", FIRST, SECOND, NULL)`, with
+   the name taken from `ctx[0xa0]` (`0x1802de8ed`, `0x1802de8f7`).
 
 `PyObject_CallMethodObjArgs(o, name, a1, a2, NULL)` → `obj.__setitem__(FIRST,
 SECOND)` → `obj[FIRST] = SECOND`. **The first object read is the KEY.** **[V]**
@@ -353,17 +336,15 @@ blue.DBRow, blue.DBRowDescriptor
 
 `Marshal::WriteObject` = `0x1802dee00` (`0x1802dee00-0x1802dfbfc`).
 
-```text
-0x1802df23e  cmp  rdx, [PyInstance_Type]
-0x1802df245  jne  ...
-0x1802df254  call 0x1802dff60          ; -> the 0x17 writer
-...
-0x1802dfa13  call 0x1802db0f0          ; shared / back-reference test
-0x1802dfa36  call 0x1802e02a0          ; -> the ObjectEx writer (0x22 / 0x23), catch-all
-0x1802dfa3d  test al, al / cmp [rbp+0x40], 0
-0x1802dfa5f  lea  r9, [-> "defaulting to cPickle for object %p of type %s"]
-0x1802dfb2e  mov  r8d, 0x21            ; the cPickle fallback
-```
+1. An object whose type is `PyInstance_Type` goes to the `0x17` writer
+   (`0x1802dff60`, called at `0x1802df254`).
+2. After the other type tests, a shared / back-reference test runs
+   (`0x1802db0f0`, call at `0x1802dfa13`).
+3. Then the ObjectEx writer (`0x1802e02a0`, the `0x22`/`0x23` catch-all) is
+   tried (`0x1802dfa36`).
+4. If that declines, a message "defaulting to cPickle for object %p of type
+   %s" is formed (`0x1802dfa5f`) and the tag is `0x21`, the cPickle fallback
+   (`0x1802dfb2e`).
 
 So: **old-style instance → `0x17`; anything otherwise unrecognised → try
 `__reduce_ex__`/`__reduce__` → `0x22` or `0x23`; if that declines →
@@ -380,14 +361,11 @@ callable is encoded in practice, confirming `docs/reference/dbrow.md`'s
 
 `WriteTag` = `0x1802e2310`:
 
-```text
-0x1802e231a  mov   rax, [rcx + 0xf0]        ; save-side per-tag stats array (a POINTER)
-0x1802e232e  inc   dword [rax + r9*4]       ; r9 = tag & 0x3f
-0x1802e2332  mov   edi, [rdx + 0x60]        ; stream[0x60] = pending flag bits
-0x1802e2335  mov   dword [rdx + 0x60], 0    ; consumed
-0x1802e233c  or    edi, r8d                 ; flag | tag
-0x1802e2355  mov   [rcx + rax], dil         ; one byte
-```
+1. The save-side per-tag stats array (a pointer at `ctx[0xf0]`) is bumped at
+   index `tag & 0x3f` (`0x1802e231a`, `0x1802e232e`).
+2. The pending flag bits are read from `stream[0x60]` and cleared
+   (`0x1802e2332`, `0x1802e2335`).
+3. `flag | tag` is written as one byte (`0x1802e233c`, `0x1802e2355`).
 
 The shared bit is staged in `stream[0x60]` and OR'd into the *next* tag byte;
 `0x1802db0f0` sets `stream[0x60] = 0x40` (`0x1802db27f`) for a repeat object,
@@ -399,33 +377,24 @@ simply never use `0x1B`. **[V]**
 
 ### 7.3 The `0x17` writer — `0x1802dff60` **[V]**
 
-```text
-0x1802dff89  cmp  qword [r8], 1             ; obj->ob_refcnt > 1 ?
-0x1802dffa9  call 0x1802db0f0               ; ... if so, maybe emit 0x1B instead
-0x1802dffce  cmp  qword [rsi + 0x70], 0     ; the SAVE CALLBACK (stream[0x70])
-0x1802e0027  call [PyObject_CallObject]     ;   rbx = callback(obj)
-0x1802e0076  cmp  rbx, [_Py_NoneStruct]
-0x1802e007f  mov  r8d, 0x19                 ;   not None -> emit tag 0x19 + that object
-0x1802e008b  call 0x1802e2310
-0x1802e009d  call 0x1802dee00
-; --- otherwise, the real 0x17 ---
-0x1802e00da  mov  rax, [rbp + 0x10]         ; inst->in_class
-0x1802e00de  mov  rdx, [rdi + 0x60]         ; "__module__"
-0x1802e00e6  call [PyDict_GetItem]          ; klass->cl_dict["__module__"]
-0x1802e0104  lea  rdx, [-> "Instance %s has no __module__ attribute."]
-0x1802e0136  mov  r8, [rax + 0x20]          ; klass->cl_name
-0x1802e0142  lea  rcx, [-> "%s.%s"]
-0x1802e0149  call [PyString_FromFormat]     ; name = "module.ClassName"
-0x1802e015e  call [PyString_InternInPlace]
-0x1802e016c  mov  r8d, 0x17
-0x1802e0178  call 0x1802e2310               ; WriteTag(0x17)
-0x1802e018c  call 0x1802dee00               ; WriteObject(name)            <<< child #1
-0x1802e01c4  call [PyObject_HasAttr]        ; rdx = ctx[0x70] "__getstate__"
-0x1802e020c  call [PyObject_CallMethodObjArgs]   ; state = obj.__getstate__()
-0x1802e0250  call 0x1802dee00               ; WriteObject(state)           <<< child #2
-0x1802e0272  mov  r8, [rbp + 0x18]          ; (no __getstate__) inst->in_dict
-0x1802e027c  call 0x1802dee00               ; WriteObject(inst.__dict__)   <<< child #2
-```
+1. If `obj->ob_refcnt > 1` (`0x1802dff89`), the shared test (`0x1802db0f0`,
+   call at `0x1802dffa9`) may emit a `0x1B` back-reference instead.
+2. If the save callback (`stream[0x70]`) is set (`0x1802dffce`), it is called
+   with the object (`0x1802e0027`). A result that is not `None` is written as
+   tag `0x19` followed by that object (`0x1802e007f`, `0x1802e008b`,
+   `0x1802e009d`).
+3. Otherwise the real `0x17`: the class dict's `__module__` is fetched
+   (`0x1802e00da`..`0x1802e00e6`); if absent the error is "Instance %s has no
+   __module__ attribute." (`0x1802e0104`).
+4. The name is built as `"%s.%s"` of the module and the class's `cl_name`
+   (`0x1802e0136`..`0x1802e0149`) and interned (`0x1802e015e`).
+5. `WriteTag(0x17)` (`0x1802e016c`, `0x1802e0178`), then `WriteObject(name)`,
+   child 1 (`0x1802e018c`).
+6. If the instance has the `__getstate__` attribute (name in `ctx[0x70]`,
+   `0x1802e01c4`), `WriteObject(obj.__getstate__())` is child 2
+   (`0x1802e020c`, `0x1802e0250`).
+7. Otherwise `WriteObject(inst.__dict__)` is child 2 (`0x1802e0272`,
+   `0x1802e027c`).
 
 `PyInstanceObject{ob_refcnt 0, ob_type 8, in_class 0x10, in_dict 0x18}` and
 `PyClassObject{..., cl_dict 0x18, cl_name 0x20}`. **[V]**
@@ -446,76 +415,54 @@ home-slot spills at `0x1802e02a3..0x1802e02ab` and the reloads at
 `0x1802e0586` (`[rsp+0xc8]` → `*handled = 1`), `0x1802e0594`
 (`[rsp+0xd0]` → stream) and `0x1802e059f` (`[rsp+0xc0]` → ctx).
 
-```text
-0x1802e02d3  mov  byte [rdx], 0              ; *handled = false
-0x1802e02ed  call [PyObject_CallMethod]      ; r = obj.__reduce_ex__(2)     ("(i)", 2)
-0x1802e0313  call [PyObject_CallMethod]      ; on failure: PyErr_Clear(); r = obj.__reduce__()
-0x1802e034f  test dword [rax+0xa8], 0x4000000 ; r must be a tuple
-0x1802e035f  mov  rbx, [rdi + 0x10]          ; n = len(r)
-0x1802e0377  cmp  [rax], <None>              ; strip TRAILING Nones: while n and r[n-1] is None: n--
-0x1802e0386  lea  rax, [rbx - 2]
-0x1802e038a  cmp  rax, 3
-0x1802e038e  ja   bail                        ; require 2 <= n <= 5
-0x1802e0394  mov  rsi, [rdi + 0x18]          ; callable = r[0]
-0x1802e03a0  call [PyCallable_Check]
-0x1802e03ae  mov  r13, [rdi + 0x20]          ; args     = r[1]  (must be a tuple)
-0x1802e03d3  call [PyObject_GetAttr]         ; ctx[0x90] = "__name__" of the callable
-0x1802e040e  call 0x18081d285                ; strcmp(callable.__name__, "__newobj__")
-0x1802e0419  cmove r14d, esi                 ; useNewObj = (it matched)
-0x1802e0428  mov  r12, [rdi + 0x28]          ; state     = r[2]  if n>2, NULL if None
-0x1802e0445  mov  rsi, [rdi + 0x30]          ; listitems = r[3]  if n>3
-0x1802e0486  mov  rbp, [rdi + 0x38]          ; dictitems = r[4]  if n>4
-```
+1. Set `*handled = false` (`0x1802e02d3`).
+2. Call `obj.__reduce_ex__(2)` (`0x1802e02ed`); on failure clear the error and
+   call `obj.__reduce__()` instead (`0x1802e0313`).
+3. The result must be a tuple (`0x1802e034f`). Its length `n` is taken
+   (`0x1802e035f`) and trailing `None`s are stripped (`0x1802e0377`).
+4. Require `2 <= n <= 5`, else bail (`0x1802e0386`..`0x1802e038e`).
+5. `callable = r[0]` and it must pass `PyCallable_Check` (`0x1802e0394`,
+   `0x1802e03a0`); `args = r[1]`, which must be a tuple (`0x1802e03ae`).
+6. The callable's `__name__` (name in `ctx[0x90]`, `0x1802e03d3`) is compared
+   with `"__newobj__"` (`0x1802e040e`); a match sets `useNewObj`
+   (`0x1802e0419`).
+7. `state = r[2]` if `n > 2` (NULL if `None`) (`0x1802e0428`);
+   `listitems = r[3]` if `n > 3` (`0x1802e0445`); `dictitems = r[4]` if
+   `n > 4` (`0x1802e0486`).
 
 Header construction — the two branches:
 
-```text
-; useNewObj  ->  tag 0x23
-0x1802e04c4  mov  ebx, 0x23
-0x1802e04cf  inc  rcx                        ; PyTuple_New(1 + (state ? 1 : 0))
-0x1802e04df  mov  [rax + 0x18], r13          ; header[0] = args          (the whole (cls,*a) tuple)
-0x1802e04ec  mov  [rax + 0x20], r12          ; header[1] = state         (only if state)
-
-; otherwise  ->  tag 0x22
-0x1802e0510  mov  ebx, 0x22
-0x1802e051b  add  rcx, 2                     ; PyTuple_New(2 + (state ? 1 : 0))
-0x1802e0535  mov  [r14 + 0x18], rax          ; header[0] = callable
-0x1802e053d  mov  [r14 + 0x20], r13          ; header[1] = args
-0x1802e054a  mov  [r14 + 0x28], r12          ; header[2] = state         (only if state)
-```
+- `useNewObj`, tag `0x23` (`0x1802e04c4`): a tuple of size `1 + (state ? 1 : 0)`
+  (`0x1802e04cf`) with `header[0] = args` (the whole `(cls, *a)` tuple,
+  `0x1802e04df`) and `header[1] = state` only if there is state
+  (`0x1802e04ec`).
+- Otherwise, tag `0x22` (`0x1802e0510`): a tuple of size
+  `2 + (state ? 1 : 0)` (`0x1802e051b`) with `header[0] = callable`
+  (`0x1802e0535`), `header[1] = args` (`0x1802e053d`) and `header[2] = state`
+  only if there is state (`0x1802e054a`).
 
 Emission:
 
-```text
-0x1802e058e  mov  byte [rax], 1              ; *handled = true
-0x1802e05aa  call 0x1802e2310                ; WriteTag(0x22 or 0x23)
-0x1802e05c0  call 0x1802dee00                ; WriteObject(header)
-; --- list items ---
-0x1802e05e3  call [PyIter_Next]              ; iterate listitems, if present and not None
-0x1802e0606  call 0x1802dee00                ;   WriteObject(item)
-; --- terminator #1 ---
-0x1802e06b6  inc  dword [ctx[0xf0] + 0xb4]
-0x1802e06bc  mov  ebx, [r13 + 0x60]
-0x1802e06c0  or   ebx, 0x2d                  ; <<< the terminator byte
-0x1802e06c3  mov  dword [r13 + 0x60], 0
-0x1802e06e8  mov  [rcx + rax], bl            ; written unconditionally
-0x1802e06f8  call 0x1802e0840                ; dict items + terminator #2
-```
+1. Set `*handled = true` (`0x1802e058e`).
+2. `WriteTag(0x22 or 0x23)` (`0x1802e05aa`), then `WriteObject(header)`
+   (`0x1802e05c0`).
+3. If `listitems` is present and not `None`, iterate it (`PyIter_Next`,
+   `0x1802e05e3`) and `WriteObject(item)` for each (`0x1802e0606`).
+4. **Terminator #1:** bump the stats entry at `+0xb4` (`0x1802e06b6`), OR the
+   pending flag bits with `0x2d` (`0x1802e06c0`), clear the flag bits
+   (`0x1802e06c3`) and write the byte **unconditionally** (`0x1802e06e8`).
+5. Call the dict-items helper `0x1802e0840` for the dict items and
+   terminator #2 (`0x1802e06f8`).
 
 `0x1802e0840`:
 
-```text
-0x1802e0883  call [PyIter_Next]              ; iterate dictitems, if present and not None
-0x1802e089e  test dword [rax+0xa8], 0x4000000
-0x1802e08aa  cmp  qword [rbx + 0x10], 2      ; each item must be a 2-tuple
-0x1802e0918  lea  rdx, [-> "iterator should return 2-tuple"]
-0x1802e08b1  mov  r8, [rbx + 0x18]
-0x1802e08bb  call 0x1802dee00                ; WriteObject(item[0])   <<< KEY first
-0x1802e08c4  mov  r8, [rbx + 0x20]
-0x1802e08ce  call 0x1802dee00                ; WriteObject(item[1])   <<< VALUE second
-0x1802e0958  inc  dword [ctx[0xf0] + 0xb4]
-0x1802e0961  or   ebx, 0x2d                  ; terminator #2, also unconditional
-```
+1. If `dictitems` is present and not `None`, iterate it (`0x1802e0883`).
+2. Each item must be a 2-tuple (`0x1802e089e`, `0x1802e08aa`); otherwise the
+   error is "iterator should return 2-tuple" (`0x1802e0918`).
+3. `WriteObject(item[0])`, the KEY, first (`0x1802e08bb`), then
+   `WriteObject(item[1])`, the VALUE (`0x1802e08ce`).
+4. **Terminator #2**, also unconditional: bump the stats entry
+   (`0x1802e0958`) and write `0x2d` (`0x1802e0961`).
 
 Both terminators are written on every path through the function, reached
 whether or not the corresponding iterator exists. **[V]** That is the writer

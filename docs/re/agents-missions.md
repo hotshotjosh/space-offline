@@ -269,17 +269,14 @@ mechanism.
 string keys to integer ids.** **[V]**
 (`station/agents/agents.py:691`.)
 
-```python
-def PrimeMessageArguments(self, agentID, contentID, missionKeywords=None):
-    if contentID is not None:
-        if agentID is None:
-            raise RuntimeError(...)
-        if (agentID, contentID) not in self.missionArgs:          # :689
-            if not missionKeywords:
-                missionKeywords = self.GetAgentMoniker(agentID) \
-                                      .GetMissionKeywords(contentID)   # :691
-            self.missionArgs[(agentID, contentID)] = missionKeywords
-```
+`PrimeMessageArguments(agentID, contentID, missionKeywords=None)` in
+`station/agents/agents.py` (`:689`, `:691`) does the following: **[V]**
+
+1. If `contentID` is `None`, it does nothing.
+2. If `agentID` is `None` it raises `RuntimeError`.
+3. If `(agentID, contentID)` is not yet in `missionArgs` and no keywords were
+   passed, it asks the agent moniker for `GetMissionKeywords(contentID)`.
+4. It stores the result in `missionArgs` under `(agentID, contentID)`.
 
 Three consequences, in order of how much they cost to get wrong:
 
@@ -750,13 +747,13 @@ way:
 The family is forced from four directions, and no rowset satisfies all of
 them: **[V]**
 
-```python
-self.agentjournal = sm.RemoteSvc('agentMgr').GetMyJournalDetails()  # journal.py:413
-for mission in self.agentjournal[0]: ...                            # :414
-self.agentjournal[0].remove(mission)                                # :436
-for n in range(2): self.agentjournal[n].extend(parallelResults[i][n])  # :447
-for missionData in self.agentjournal[:1][0]: ...                    # :451
-```
+`journal.py` touches the value returned by `GetMyJournalDetails` in five ways
+(lines 413, 414, 436, 447 and 451): **[V]**
+
+- it indexes element `0` and iterates it;
+- it removes an entry from element `0` with `.remove()`;
+- it extends elements `0` and `1` with `.extend()` for each parallel result;
+- it takes the slice `[:1]` and then indexes it.
 
 `[0]`, `[1]`, a slice, `.remove()` and `.extend()`. So: **the outer value is
 a sliceable 2-sequence and each element is a `list`.** A `CRowset` would pass
@@ -797,12 +794,12 @@ wire.
 
 `bookmarks` is a list and **its elements must accept attribute assignment**:
 
-```python
-if getattr(b, 'originalHint', None) is None:
-    b.originalHint = b.hint          # journal.py:417, STORE_ATTR
-b.hint = GetByLabel(b.originalHint, location=b.locationID,
-                    index=b.locationNumber + 1)          # :418
-```
+`journal.py:417-418` does two things to each bookmark: **[V]**
+
+1. If `originalHint` is not yet set, it stores the current `hint` there. This is
+   a `STORE_ATTR`.
+2. It then replaces `hint` with the label lookup of `originalHint`, passing
+   `location=locationID` and `index=locationNumber + 1`.
 
 **That `STORE_ATTR` rules out a packed `DbRow`**, which refuses attribute
 assignment (`docs/reference/dbrow.md`). `bookmarkSvc.GetAgentBookmarks` then does
@@ -911,16 +908,14 @@ A mission's bookmarks are not a separate call. They ride in
 `GetMyJournalDetails`'s mission 10-tuple at index 6, and the client turns them
 into People & Places entries itself:
 
-```python
-agentMenu = sm.GetService('journal').GetMyAgentJournalBookmarks()   # bookmarkSvc.py:124
-for missionNameID, bms, agentID in agentMenu:
-    for bm in bms:
-        c = bm.copy()
-        ...
-        c.bookmarkID = ('agentmissions', c.agentID, c.locationType,
-                        c.locationNumber)                            # :131
-        bookmarks[c.bookmarkID] = c
-```
+The steps, from `bookmarkSvc.py:124`: **[V]**
+
+1. Ask the journal service for the agent bookmark menu, a list of
+   `(missionNameID, bookmarks, agentID)` triples.
+2. For each bookmark in each triple, copy it.
+3. Give the copy a `bookmarkID` of the tuple
+   `('agentmissions', agentID, locationType, locationNumber)` (`:131`) and file it
+   under that key.
 
 `GetAllBookmarks` is `GetBookmarks()` merged with `GetAgentBookmarks()`
 (`bookmarkSvc.py:140`). **[V]** So **mission bookmarks never touch the

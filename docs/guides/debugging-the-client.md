@@ -2,7 +2,7 @@
 
 This is the loop that M1 is being built by. It exists because the work changed
 character once a real client first connected: before that, every shape was
-read off the client's own bytecode and written into a doc; now the client
+read off the client and written into a doc; now the client
 tells us what is wrong, and the job is to *hear* it. The instruments below are
 the difference between that and guessing.
 
@@ -111,7 +111,7 @@ there complete long before anyone decides the run has failed.
 Separate question, same run: **did anything try to phone home?**
 
 The jail was always default-deny with no route out, so an outbound connection
-we missed while patching the client was already impossible. What was missing
+we missed while preparing the client was already impossible. What was missing
 is that it was *silent* — a leak that never happened and a leak that was
 blocked looked identical from outside, so "we found all the phone-home code"
 and "nothing tried" could not be told apart.
@@ -181,7 +181,7 @@ looking at, because the later ones may only have been reached thanks to the
 earlier fallback.
 
 `None` is not a fix and the line does not claim it is. A service still owes
-its real shape; see §4 for how to read one off the bytecode.
+its real shape; see §4.
 
 ### b. `evecap --calls` — the call table
 
@@ -285,9 +285,8 @@ tools/dev.sh cargo run -q -p eve-server --bin evecap -- /repo/captures/FILE --tr
 
 OURS -- machoNet. A call of ours is missing or wrong.
 
-   1x    15.7s  AttributeError: 'NoneType' object has no attribute 'clones'
-          /eve/client/script/ui/services/clonejumpsvc.py(94) GetCloneState
-          /eve/client/script/ui/services/clonejumpsvc.py(140) LastCloneJumpTime
+   1x    15.7s  AttributeError: 'NoneType' object has no attribute '<field>'
+          <client module>(<line>) <function>
    ...
 GATEWAY -- the protobuf gateway we do not serve. See 3c.
 ```
@@ -332,7 +331,7 @@ Godma:UpdateItem - Inserting item 90000001
 
 So for anything we send, the client will tell you **what it decoded it as**.
 That is the difference between "the client did not complain" and "the client
-read the row we meant": the second line above is what closed `docs/reference/dbrow.md`'s
+read the row we meant": the second line above is what closed the unpublished dbrow note's
 first gap, because a packed row whose offsets were wrong would have come back
 with the fields shuffled and been dropped by a category filter instead.
 
@@ -378,13 +377,12 @@ its own files.**
 The hangar stayed black with every call answered. The traceback said:
 
 ```
-hangarView.py LoadScene
+<hangar view> LoadScene
 TypeError: 'NoneType' object is not iterable
-  stationGraphicFile = 'res:/dx9/model/hangar/minmatar/MH1/MH1_scene.red'
+  stationGraphicFile = 'res:/<path to a hangar scene>'
 ```
 
-which is `scene, _ = self.sceneManager.LoadScene(stationGraphicFile, ...)`.
-`sceneManager.LoadScene` returns `None` for a file it cannot open, and the
+The scene loader returns `None` for a file it cannot open, and the caller's
 unpack raises — reading exactly like a 2-tuple we got wrong. It was not ours
 at all. **41% of the client's indexed resources were absent**: 50464 of
 122754 files, 17.5 GiB, including every byte of the hangar.
@@ -401,7 +399,7 @@ tools/check-resources.sh --prefix res:/dx9/model/hangar --missing
 
 **The tell** is a traceback whose locals name a `res:/` path, in a client
 module that loads or draws rather than one that unmarshals. When you see one,
-check the file before you re-read the bytecode.
+check the file before you re-read the client.
 
 **A red herring inside the red herring:** the error names a `.red` file, and
 there are **zero** `.red` entries in the index against ~18700 `.black` ones.
@@ -449,16 +447,11 @@ an ordinary `TypeError` or `AttributeError`, several seconds later, in a
 frame with nothing gateway-shaped about it at all. Achievements is the worked
 example:
 
-```python
-except ServiceUnavailableError as e:
-    logger.info('unable to cache unclaimed rewards - ServiceUnavailableError silenced', ...)
-except Exception as e:
-    logger.error('unable to cache unclaimed rewards', ...)
-```
+The achievements code catches both a service-unavailable error and any other error from its cache load, logs, and leaves the cache `None`.
 
 `self._unclaimed_rewards` stays `None`, `get_all_unclaimed_rewards` falls off
-its `if` and implicitly returns `None`, and the throw surfaces at
-`achievement_rewards, category_rewards = self.get_all_unclaimed_rewards()` —
+its `if` and implicitly returns `None`, and the throw surfaces where the
+caller unpacks that `None` into two names —
 the third row of the §4 table, except that the `None` is CCP's own, generated
 inside the client, and no answer of ours could have prevented it.
 
@@ -477,18 +470,15 @@ from a real one by any rule derived from the *transport*.
 The rule that does work is derived from the **package** instead. There is no
 machoNet client anywhere in `achievement_system/`:
 
-```sh
-grep -ra 'RemoteSvc\|ConnectToRemoteService\|RemoteServiceCall' out/pyc/achievement_system/ | wc -l
-0
-```
+Searching that package for any remote-service call finds none.
 
 A frame from a package that cannot call us is not ours, whatever the
 exception says. `--triage` carries that list as `GATEWAY_PACKAGES`, kept
 separate from the frame tells so that membership stays auditable: the test
-for adding a package is the grep above returning zero, and nothing else.
+for adding a package is that search finding nothing, and nothing else.
 `careergoals`, `campaigns`, `content`, `freelanceprojects` and `jobboard` all
 pass it too; `cosmetics` looks like a candidate and **fails** it, because
-`cosmetics/client/cosmeticsSvc.pyc` has a real machoNet client.
+the cosmetics package has a real machoNet client.
 
 ### Why they cannot be made to fail faster
 
@@ -506,13 +496,8 @@ outstanding. Treat them as noise until we serve the gateway.
 **The clock is local, which settles the question completely.** The wait is a
 deadline armed at send, not a network timeout:
 
-```python
-DEFAULT_TIMEOUT_SECONDS = 10
-class ResponseHandler:
-    def __init__(self, request, expected_response_class, timeout_seconds):
-        self.response_channel = uthread2.queue_channel()
-        self.deadline = time.time() + timeout_seconds
-```
+The client arms a ten-second deadline when it sends the request, and a broker
+loop in the client raises its timeout exception when the deadline passes.
 
 `RequestBroker.consume_responses` runs a tasklet at `uthread2.sleep(0.001)`
 and calls `handle_request_timeouts()` on every pass; that is what raises
@@ -552,16 +537,7 @@ is never retried — so an error answer should be 4xx if it is ever an error.
 
 `publicGateway/grpc/connectionConfig.py` resolves the endpoint like this:
 
-```python
-def get_address(self):
-    address = os.getenv('EVE_PUBLIC_GATEWAY_ADDRESS')
-    if address:
-        return (address, False)          # <- False means INSECURE: no TLS
-    return (self.discover_address(), True)
-
-def discover_address(self):
-    return '{}-public-gateway.{}'.format(self.tier, 'evetech.net')
-```
+The client reads an environment variable for the gateway address; when it is set, it connects to that address without TLS. Otherwise it derives a tier-specific public-gateway host name.
 
 Three things follow, and they are all in our favour:
 
@@ -614,13 +590,9 @@ Scope that feature as macho *plus* a gateway answer, not macho alone.
 
 ## 4. Finding out what a call must return
 
-The client is its own specification. The extracted bytecode tree is at
-`out/pyc/`.
-
-```sh
-grep -ra GetPaperDollDataBatch out/pyc/ | head
-tools/analysis.sh uncompyle6 /work/out/pyc/<path>.pyc
-```
+The client is its own specification: what it does with a reply tells you what
+the reply must be. Read the client's behaviour, then describe it in your own
+words in the note you write.
 
 **Read the CALLER, not the method name.** What matters is what the client
 *does* with the result: iterates it, subscripts it by id, unpacks a tuple,
@@ -657,7 +629,7 @@ it.
 `beyonce.GetFormations` is answered by `service.rs` and consumed by
 `destiny.Ballpark.LoadFormations` in `blue.dll`. `michelle.AddBallpark` gets
 our answer and passes it straight through. An empty **list** there raises
-`TypeError: must be tuple, not list` at `michelle.py(453)`, and the player
+`TypeError: must be tuple, not list`, and the player
 sees a **black screen** after undocking: the session change has applied, the
 station is gone, and no scene was ever built.
 
@@ -684,17 +656,12 @@ it as *"it seems to be looping over something and causing fps issues"*, and the
 server log said so in one line — the same two calls, 89 and 88 times:
 
 ```
-[svc] UNANSWERED LPSvc.GetAllMyCharacterWalletLPBalances/0 ...
-[svc] UNANSWERED charMgr.GetPrivateInfoOnCorpChange/1 ...
+[svc] UNANSWERED <service>.<method>/<n> ...
 ```
 
 The mechanism is **two failures compounding**:
 
-```python
-if self._characterLPBalanceByIssuerCorpID is None:              # 1. guard is `is None`
-    lp = self._GetRemoteLPService().GetAllMyCharacterWalletLPBalances()
-    self._characterLPBalanceByIssuerCorpID = {r[0]: r[1] for r in lp}   # 2. None throws HERE
-```
+The loyalty-point service asks the server only while its cache is `None`, and the code that fills the cache fails on a `None` answer, so the cache never fills.
 
 `None` raises inside the comprehension, so **the assignment never runs**, so
 the cache stays `None`, so the next read issues the call again — forever, at
@@ -718,19 +685,9 @@ The multiplier is what distinguishes them.
 
 `contractProxy.NumOutstandingContracts` is the same bug with **one more
 failure stacked on**, and it is the one to recognise, because it leaves no
-traceback at all. `createContractWnd.py(1545)`:
+traceback at all.
 
-```python
-n = 0
-try:
-    if getattr(self, 'numOutstandingContracts', None) is None:
-        self.numOutstandingContracts = \
-            sm.GetService('contracts').NumOutstandingContracts()
-    ...
-    n = self.numOutstandingContracts.myCharTotal
-finally:
-    return n, [maxNumContracts, cc.MAX_NUM_CONTRACTS][innerCorp]
-```
+The contract wizard caches the outstanding-contract count behind a `None` guard, reads a field of it afterwards inside a `try` whose `finally` returns a value.
 
 Three things go wrong instead of two:
 
@@ -764,12 +721,7 @@ visibility, and it is the one that **breaks the tell above**.
 `scanSvc.GetScanMan` is the poisoned-cache shape exactly — the guard is
 `is None`, and our `None` is successfully stored:
 
-```python
-def GetScanMan(self):
-    if self.remoteObject is None:
-        self.remoteObject = sm.RemoteSvc('scanMgr').GetSystemScanMgr()
-    return self.remoteObject
-```
+The scan service caches the manager it is handed, and the guard that decides whether to ask again is a `None` test, so our `None` is stored.
 
 But unlike `contractProxy` there is no `try`/`finally` around the
 dereference, because the dereference is in a **different function**:
@@ -779,8 +731,7 @@ mailed to us, and `--alerts` names it in one pass:
 
 ```text
 AttributeError: 'NoneType' object has no attribute 'GetFullState'
-  /packages/uthread2/debounce.py(170) invoke
-  /eve/client/script/parklife/sensorSuiteService.py(900) FullyUpdateSignalTrackerDebounced
+  <client module>(<line>) <debounced updater>
 ```
 
 **The part to carry forward is the cadence.** That method is
@@ -801,8 +752,8 @@ recognise in a stack.
 
 One more thing it has in common with the `dungeonExplorationMgr` case: **our
 own answers are the clock.** `evedungeons/client/anomalyTracker.get_sites`
-only reaches `if IsDocked(): sm.GetService('sensorSuite')
-.FullyUpdateSignalTrackerDebounced()` *because* we answer its nine
+only refreshes the signal tracker while docked
+(`FullyUpdateSignalTrackerDebounced`) *because* we answer its nine
 `dungeonInstanceCacheMgr` listings. Fixing one call can start a loop on
 another, and the loop is then driven at the Job Board's 3 s refresh — which
 also means this one fires **while docked**, not only after an undock.
@@ -819,14 +770,7 @@ not, and it is why **the rule is to look at the guard, not at the store**:
 | `scanSvc.GetScanMan` | as above, but loud, and too slow to show up as a count |
 | **`jumpCloneSvc.GetShipCloneState`** | the assignment runs and stores a **correct** value that is merely falsy |
 
-```python
-def GetShipClones(self):                                             # 98
-    shipID = eveCfg.GetActiveShip()                                  # 101
-    if not self.shipJumpClones or shipID != self.shipJustClonesShipID:  # 102
-        ...
-        self.shipJumpClones = lm.GetShipCloneState()                 # 105
-    return self.shipJumpClones                                       # 106
-```
+The jump-clone service asks again whenever its cached value is falsy, and an empty clone list is falsy, so an honest empty answer is never kept.
 
 **`class CRowset(list)`**, so a rowset with no rows is *falsy*. Our answer is
 right -- the character has no jump clones -- and the guard is truthiness, so
@@ -869,14 +813,7 @@ symptom.** Prefer the number even when nothing is visibly broken.
 
 **An empty answer can latch.** `vgs.client.vgsClient.get_offers` is
 
-```python
-if not self.available:
-    raise StoreUnavailableError()          # line 43
-offers = sm.RemoteSvc('storeManager').get_offers(store_id)
-if not offers:
-    self.available = False                 # line 46  <- the latch
-    raise StoreUnavailableError()          # line 47
-```
+The store client sets an "unavailable" flag when any offers answer is falsy, and from then on every later store call raises before it touches the wire.
 
 so every falsy answer disables the whole store — `get_categories` and
 `get_products` included — for the rest of the session, and every later call
@@ -901,14 +838,7 @@ stating plainly: §1 says answering with a value always beats silence, and for
 these calls that is false. `slash.SlashCmd('/')` is the known case —
 `FetchRemoteCommandList` binds its local only inside the handler:
 
-```python
-try:
-    sm.RemoteSvc('slash').SlashCmd('/')
-except UserError as e:
-    cmds = eval(e.args[1]['reason'].split(': ')[1])
-...
-self.remoteCommandList = cmds      # not assigned on the happy path
-```
+The slash-command loader only binds its command list inside the exception handler for that call, so a normal reply leaves it unbound.
 
 So a correct-looking `CallRsp` is an `UnboundLocalError`, and because
 `_SlashCmd` calls this before matching anything, it breaks **every** slash
@@ -947,82 +877,17 @@ Two shapes come up constantly:
 
 ### Tooling traps that have cost real time
 
-- **`grep -r` silently misses matches in `.pyc` files** because they are
-  binary. Always `grep -a` / `grep -ra`. This one has burned us twice.
-- **uncompyle6's output line numbers are not the client's line numbers.** It
-  emits its own reconstructed file, so `grep -n` or `sed -n` over its output
-  gives you an *output* line. Three lanes in one round cited decompiler-output
-  lines in source comments before one of them caught it; the citations then
-  disagreed with every traceback the client had ever sent us, which is exactly
-  the case where a line number is load-bearing.
-
-  The three sources of **real** line numbers:
-
-  | source | why it is right |
-  | --- | --- |
-  | `evecap --alerts` | the client prints its own `co_filename` and line |
-  | `findings/client-calls.tsv`, the `call_site` column | built from `co_lnotab` |
-  | `tools/pyc27.py` | decodes `co_lnotab` itself |
-
-  Rule of thumb: **cite a line only if a traceback or `co_lnotab` gave it to
-  you.** Decompiled output is for reading logic, not for locating it.
-- **uncompyle6 sometimes prints const-table *indices* instead of values.**
-  `godma.Prime` decompiles as
-
-  ```python
-  for att in [3, 4, 5, 6, 7]:
-      sm.ScatterEvent('OnAttribute', att, char, getattr(char, att))
-  ```
-
-  and the real loop is over
-  `['memory', 'perception', 'willpower', 'charisma', 'intelligence']` —
-  const-table slots 3 to 7. We wrote the wrong version into two documents
-  and a source comment before catching it.
-
-  The tell was available the whole time: `getattr(x, 3)` raises
-  `TypeError: attribute name must be string` unconditionally, so that loop
-  could never have run. **Any list of small integers in decompiled output is
-  suspect.** Four more instances have turned up since, all in the same shape
-  — a class-body list of names rendered as indices:
-
-  | decompiles as | really is |
-  | --- | --- |
-  | `cfg.eveowners.header = [1, 4, 5, 6, 7]` | `['ownerID', 'ownerName', 'typeID', 'gender', 'ownerNameID']` |
-  | `CrimewatchService.__dependencies__ = [1,2,3,4,5,6]` | `['michelle','godma','war','facwar','corp','securitySvc']` |
-  | `corp.__notifyevents__ = [1..11]` | the eleven event-name strings |
-  | `godma.Prime`'s `[3,4,5,6,7]` | the five attribute names above |
-
-  `__dependencies__`, `__notifyevents__` and `*.header` are the usual
-  victims, because they are lists of string constants in a class body.
-- **uncompyle6's line numbers are not source line numbers.** They count lines
-  of its own output, which drifts from the original by however much the
-  decompiler reflowed — about 50 lines by the middle of `uisvc.py`. Citing
-  one in a note sends the next reader to the wrong place. The real line is
-  the code object's `firstlineno`, which `tools/pyc27.py` exposes; quote that
-  or quote the function name.
-
-  Check it against the raw disassembly:
-
-  ```sh
-  tools/analysis.sh python3 -I -c "
-  import sys; sys.path.insert(0,'/work/tools')
-  from pyc27 import load_pyc, walk, dis
-  co = load_pyc('/work/out/pyc/<path>.pyc')
-  for c in walk(co):
-      if c.name == b'<function>':
-          print(c.consts)
-          for op in dis(c): print(op)
-  "
-  ```
-- **We recommend keeping the host clean.** Decompiling, disassembling and
-  anything Python goes through `tools/analysis.sh` (containerised, no
-  network, repo at `/work`, client read-only at `/client`), so third-party
-  Python never runs on your machine. Rust goes through
-  `tools/dev.sh` (containerised, no network, repo at `/repo`).
-- `marshalstrings.py` in the client tree is a **no-op** — it does not contain
-  the marshal string table. The real 195-entry table is a native array in
-  `blue.dll`; `tools/extract_string_table.py` reads it from there and refuses
-  to emit a table that does not put `machoVersion` at index 135.
+- **Cite a line only if a traceback or a call-site table gave it to you.**
+  Reconstructed source drifts from the original, so a line number read off a
+  reconstruction sends the next reader to the wrong place. `evecap --alerts`
+  prints the client's own file and line.
+- **A list of small integers where names belong is suspect.** A reconstruction
+  can show constant-table indices instead of the strings; check the real values
+  before you write one into a note.
+- **We recommend keeping the host clean.** Anything Python goes through
+  `tools/analysis.sh` (containerised, no network, repo at `/work`, client
+  read-only at `/client`), so third-party Python never runs on your machine.
+  Rust goes through `tools/dev.sh` (containerised, no network, repo at `/repo`).
 
 ## 5. Known false alarms
 
@@ -1035,8 +900,8 @@ These appear in the logs on a healthy run. Do not chase them.
 | `ValueError: 'proxy::writing' is not in list` | Our `PingRsp` was missing the proxy/server hop chain. **Fixed** — but if it returns, see the unpublished login-path note: the labels and their order are not a free choice. |
 | `unable to connect to server` | Usually the jail was torn down under a live client, not a server fault. Check for a stranded client process. |
 | `evecap --calls` printing `HANG ... <- NO ANSWER; the client is still waiting` for `slash.SlashCmd("/")` | **Was a bug in the tool**, now fixed. A raise comes back as an `ErrorResponse` (command 15), not a `CallRsp` (7), and `--calls` only paired the latter — so every deliberately-raised answer read as a hang. Raising is the *only* correct answer to `/`. Such calls now print as `RAISE`. |
-| `Info: TypeError: 'NoneType' object is not subscriptable` under `settingsSvc.UpdateSettingsStatistics` → `placebo.py(22) verify` | `charMgr.GetSettingsInfo` answered `None` **on purpose**. A real answer is a signed, marshalled Python 2.7 **code object** the client installs as a function body and runs; the only consequence of declining is that settings statistics are never logged, which is telemetry we do not want to work. See the comment on `GetSettingsInfo` in `service.rs`. |
-| `TypeError: 'NoneType' object is not iterable` under `achievement_system/.../repository.py(257) get_unclaimed_rewards_count` | The protobuf gateway, **despite having no `stacklesslib.util.receive` frame.** `_make_unclaimed_rewards_request` catches the `TimeoutException` itself and leaves its cache `None`, so the throw lands one stack later at `achievement_rewards, category_rewards = self.get_all_unclaimed_rewards()`. The way to tell is an earlier `ServiceUnavailableError` from the **same repository object** — in `1792431326-0002.evecap` they are tracebacks 4 and 5, 5.3 s apart, `0x32FC1CC0` owned by `0x32FC1C50`. §3c, not ours. |
+| `Info: TypeError: 'NoneType' object is not subscriptable` under `settingsSvc.UpdateSettingsStatistics`| `charMgr.GetSettingsInfo` answered `None` **on purpose**. A real answer is a signed, marshalled Python 2.7 **code object** the client installs as a function body and runs; the only consequence of declining is that settings statistics are never logged, which is telemetry we do not want to work. See the comment on `GetSettingsInfo` in `service.rs`. |
+| `TypeError: 'NoneType' object is not iterable` under `achievement_system/.../repository.py(257) get_unclaimed_rewards_count` | The protobuf gateway, **despite having no `stacklesslib.util.receive` frame.** `_make_unclaimed_rewards_request` catches the `TimeoutException` itself and leaves its cache `None`, so the throw lands one stack later, where the caller unpacks the result into two names. The way to tell is an earlier `ServiceUnavailableError` from the **same repository object** — in `1792431326-0002.evecap` they are tracebacks 4 and 5, 5.3 s apart, `0x32FC1CC0` owned by `0x32FC1C50`. §3c, not ours. |
 | `RuntimeError: Could not fetch owned ship cosmetic licenses` and **a fitting window that takes tens of seconds to open** | The Personalization tab runs `logos.FetchLogoData` inside a `loadingContainer._LoadContentThread`, which blocks on the protobuf **license** gateway (`shipcosmetics/client/licensegateway/quasar.py`) until it times out. Section 3c: not machoNet. The spinner is the timeout, not our latency. |
 
 The last of those is worth knowing before anyone goes looking for a slow server
@@ -1078,11 +943,11 @@ the list above that this particular run did not log an attempt against.
 ## 7. Adding a service method
 
 `eve-server/src/service.rs` is a flat `match` on service then method, and
-every arm carries a comment saying **why that value** — ideally quoting the
-client code that consumes it. Keep that; it is what makes the file reviewable
+every arm carries a comment saying **why that value** — ideally citing (file and line)
+the client code that consumes it and describing it in our own words. Keep that; it is what makes the file reviewable
 against the client rather than against itself.
 
-Mark anything not confirmed from bytecode with **[I]** (inferred) in the docs,
+Mark anything not confirmed against the client with **[I]** (inferred) in the docs,
 so a later run can go and settle it. `[V]` means verified against the real
 client.
 

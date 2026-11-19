@@ -43,15 +43,12 @@ The UI chain is `invCont.StationItems` / `invCont.StationShips`
 controller in `eve/client/script/environment/invControllers.py`. The
 controller is where the calls come from **[V]**:
 
-```text
-BaseInvContainer.GetItems         invControllers.py:124
-    -> filter(self.IsItemHere, self._GetItems())
-BaseInvContainer._GetItems        invControllers.py:135
-    -> self._GetInvCacheContainer().List(flag=self.locationFlag)
-StationItems._GetInvCacheContainer   invControllers.py:1337
-StationShips._GetInvCacheContainer   invControllers.py:1460
-    -> sm.GetService('invCache').GetInventory(const.containerHangar)
-```
+1. `BaseInvContainer.GetItems` (`invControllers.py:124`) filters `_GetItems()` through `IsItemHere`.
+2. `BaseInvContainer._GetItems` (`invControllers.py:135`) calls `List(flag=locationFlag)`
+   on the container returned by `_GetInvCacheContainer()`.
+3. `StationItems._GetInvCacheContainer` (`invControllers.py:1337`) and
+   `StationShips._GetInvCacheContainer` (`invControllers.py:1460`) both return
+   `invCache.GetInventory(const.containerHangar)`.
 
 `invCache.GetInventory` (`invCache.py:553`) routes `containerHangar` (10004)
 to `self.stationInventoryMgr` and mints an `invCacheContainer` keyed
@@ -75,15 +72,13 @@ In wire terms, one hangar draw is:
 (`invControllers.py:1331`) and `StationShips.IsItemHere`
 (`invControllers.py:1445`) differ in exactly one clause **[V]**:
 
-```python
-# StationItems.IsItemHere          invControllers.py:1331
-item.locationID == session.stationid and item.ownerID == session.charid \
-    and item.flagID == const.flagHangar and item.categoryID != const.categoryShip
-# StationShips.IsItemHere          invControllers.py:1445
-...                                and item.categoryID == const.categoryShip
-```
+- `StationItems.IsItemHere` (`invControllers.py:1331`) keeps an item when its location is
+  the session's station, its owner is the session's character, its flag is the
+  hangar flag, and its category is **not** ship.
+- `StationShips.IsItemHere` (`invControllers.py:1445`) has the same first three tests
+  and keeps the item when its category **is** ship.
 
-so there is no second server call for the Ship Hangar, and `categoryID` is
+There is therefore no second server call for the Ship Hangar, and `categoryID` is
 the whole partition. `invCache._GetShipsInHangarInventory`
 (`invCache.py:514`) and `_GetItemsInHangarInventory` (`invCache.py:521`) are
 the same split again, over `idCheckers.IsShip(item.categoryID)`, and
@@ -114,12 +109,8 @@ decides whether a ship model is drawn -- is a third copy of it.
 
 `assetsWindow.GetSubContent` (`assetsWindow.py:939`) does
 
-```python
-items = sm.GetService('invCache').GetInventory(const.containerGlobal) \
-            .ListStationItems(data.location.locationID)
-self.PrimeLocationNames(items)
-for each in items: ...
-```
+It reads the item list with `ListStationItems(locationID)` on the `containerGlobal`
+inventory, passes the result to `PrimeLocationNames`, and then iterates it;
 
 so `None` is a `TypeError`. `inv5MinCacheContainer.ListStationItems`
 (`invCache.py:914`) stores the answer as `(now, <answer>)` behind a five
@@ -378,14 +369,10 @@ truth. The failure mode is divergence, and it is silent.**
 `godma.StateManager.UpdateItem` (`godma.py:1858`) is the clearest case,
 because it uses *both* sources four lines apart **[V]**:
 
-```python
-if isSubLocation:
-    itemGroupID    = evetypes.GetGroupID(itemTypeID)        # FSD
-    itemCategoryID = evetypes.GetCategoryID(itemTypeID)     # FSD
-else:
-    itemTypeID, itemGroupID, itemCategoryID, itemFlag = \
-        (item.typeID, item.groupID, item.categoryID, item.flagID)   # godma.py:1869 -- OUR ROW
-```
+- When the item is in a sub-location, group and category come from the static type
+  data (`evetypes.GetGroupID` / `GetCategoryID` of the type id).
+- Otherwise type, group, category and flag are all taken from the item row we sent
+  (`godma.py:1869`).
 
 For an ordinary item the row wins, and what it wins is the gate that decides
 whether the item exists for dogma at all: `itemCategoryID not in (<eleven

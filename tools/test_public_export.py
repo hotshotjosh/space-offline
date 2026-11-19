@@ -118,7 +118,51 @@ class Credentials(unittest.TestCase):
         blob = b"EVEOFFLINECAP\n\x01" + zlib.compress(b"junk " + secret.encode()) + b"\x00tail"
         self.assertEqual(len(self.hits("c/a.evecap", blob)), 1)
         self.assertEqual(self.hits("c/b.evecap", b"EVEOFFLINECAP\n" + zlib.compress(b"clean")), [])
-        self.assertEqual(self.hits("c/c.bin", b"EVEOFFLINECAP\n" + zlib.compress(secret.encode())), [])
+        # A binary file of any name is inflated too (a zlib stream inside it is read).
+        self.assertEqual(len(self.hits("c/c.bin", b"\0EVEOFFLINECAP\n" + zlib.compress(secret.encode()))), 1)
+
+    def test_gzip_and_utf16_text_are_scanned(self):
+        import gzip
+        secret = "id " + "AK" + "IA" + "ABCDEFGHIJKLMNOP"
+        self.assertEqual(len(self.hits("c/e.dat", gzip.compress(secret.encode()))), 1)
+        self.assertEqual(self.hits("c/f.dat", gzip.compress(b"clean text")), [])
+        self.assertEqual(len(self.hits("c/g.bin", secret.encode("utf-16-le"))), 1)
+        self.assertEqual(len(self.hits("c/h.bin", b"x" + secret.encode("utf-16-le"))), 1)
+        self.assertEqual(self.hits("c/i.bin", "clean text".encode("utf-16-le")), [])
+        with mock.patch.object(pe, "INFLATE_MAX", 1 << 10):
+            self.assertEqual(self.hits("c/j.dat", gzip.compress(bytes(1 << 12))),
+                             ["c/j.dat: a zlib stream inflates past INFLATE_MAX bytes; not scanned"])
+
+    def test_gzip_keeps_text_before_a_bad_checksum_and_reads_every_member(self):
+        import gzip
+        secret = ("id " + "AK" + "IA" + "ABCDEFGHIJKLMNOP").encode()
+        good = gzip.compress(b"clean")
+        bad = bytearray(gzip.compress(secret))
+        bad[-8] ^= 0xFF   # corrupt the CRC after the text was produced
+        self.assertEqual(len(self.hits("c/k.dat", bytes(bad))), 1)
+        self.assertEqual(len(self.hits("c/l.dat", good + gzip.compress(secret))), 1)
+
+    def test_our_own_bytecode_assembler_may_hold_listings_and_nothing_else_may(self):
+        listing = "  12  LOAD" + "_FAST  0 (self)\n  0x18" + "0001234  mov rax, rbx\n"
+        self.assertEqual(self.hits("server/crates/eve-server/src/pycode.rs", listing), [])
+        self.assertEqual(len(self.hits("server/crates/eve-server/src/other.rs", listing)), 2)
+        self.assertEqual(len(self.hits("server/crates/eve-server/src/pycode.rs",
+                                       "at " + "C:/build" + "agent/work/x.py\n")), 1)
+
+    def test_client_data_shapes_are_refused_and_prose_is_not(self):
+        shapes = [
+            "at " + "C:/build" + "agent/work/abc123/x.py line 4",
+            "  0x18" + "0001234  mov rax, rbx",
+            "/// def Invented" + "Call(self, a, b):  # 123",
+            "  12  LOAD" + "_FAST  0 (self)",
+            "  LOAD" + "_ATTR 3 name",
+            "SHAPE " + "ONLY, plus 12 sample rows",
+        ]
+        for line in shapes:
+            self.assertEqual(len(self.hits("a.md", line + "\n")), 1, line)
+        for line in ("a def in prose: def f(self) is described here", "the load order is fine",
+                     "SHAPE ONLY is a word", "0x1 is a number"):
+            self.assertEqual(self.hits("a.md", line + "\n"), [], line)
 
     def test_two_streams_in_one_capture_are_both_read(self):
         a = "AK" + "IA" + "ABCDEFGHIJKLMNOP"
@@ -269,7 +313,9 @@ class Docs(unittest.TestCase):
                 self.assertNotIn("hidden", f.read())
             with open(os.path.join(out, "tools/doc-private-prefixes.txt")) as f:
                 lines = [l.strip() for l in f if not l.startswith("#") and l.strip()]
-            self.assertEqual(lines, ["docs/hidden.md"])
+            import hashlib
+            self.assertEqual(lines, ["sha256:" + hashlib.sha256(b"docs/hidden.md").hexdigest()])
+            self.assertNotIn("hidden", open(os.path.join(out, "tools/doc-private-prefixes.txt")).read())
         finally:
             shutil.rmtree(root)
 

@@ -120,25 +120,25 @@ Two notes that generalise, both **[V]**:
 
 ### 1.3 The prose, resolved
 
-All ten slots of `messages`, with the English text from
-`localization_fsd_en-us.pickle`. Tokens are shown as the corpus declares
-them; `{[character]agentID.name}` and `{[character]player.name}` are supplied
-by the *client* (`GetAgentArgs`, and `localization.Get`'s
+All ten slots of `messages`, described from `localization_fsd_en-us.pickle`
+(the text itself stays in the client data). Tokens are shown as the corpus
+declares them; `{[character]agentID.name}` and `{[character]player.name}` are
+supplied by the *client* (`GetAgentArgs`, and `localization.Get`'s
 `kwargs['player'] = session.charid` default), so the only token this server
 has to supply is `objectiveDestinationID`. **[V]**
 
-| slot | id | text |
+| slot | id | what it says |
 | --- | --- | --- |
-| `messages.mission.briefing` | 134916 | *"It is important to the Empire that we get a shipment of elite slaves to `{[location]objectiveDestinationID.name}` so that the workers there do not fall any further behind schedule. `<br><br>` `<font color = #EE3B3B>`Remember to move the slaves to your cargo hold before departure.`</font>`"* |
-| `messages.mission.offered.agentsays` | 134918 | *"Excellent. As you know, it is the duty of every citizen to demonstrate his or her loyalty to the state from time to time. … It seems that the construction works at `{[location]objectiveDestinationID.name}` are experiencing an unfortunate labor shortage, possibly brought on by their overly harsh personnel management methods. … Are you a loyal enough citizen to do this task and do it quickly? `<br><br>` I will upload a bookmark to your People & Places databank; use it to locate and reach your destination."* (903 characters) |
-| `messages.mission.accepted.agentsays` | 134919 | *"Well said, citizen. Good luck."* |
-| `messages.mission.declined.agentsays` | 134921 | *"The Empire is disappointed in you, `{[character]player.name}`."* |
-| `messages.mission.completed.agentsays` | 134920 | *"You have done well, citizen."* |
-| `messages.mission.extrainfo.header` | 134917 | *"Helpful Hints"* |
-| `messages.mission.extrainfo.body` | 134915 | *"The easiest way to travel to a destination station quickly is to use the Overview. Stargates are marked in the Overview settings panel under the "Celestial" group. …"* (1,165 characters of genuine new-player instruction, ending *"Once the slaves are delivered, return to your agent's home station … to collect your reward."*) |
-| `messages.mission.ask.charsays` | 134924 | *"Good day, `{[character]agentID.name}`. I am seeking employment."* |
-| `messages.mission.accept.charsays` | 134922 | *"I am a loyal citizen. I will deliver the cargo."* |
-| `messages.mission.complete.charsays` | 134923 | *"The slaves have been successfully delivered, `{[character]agentID.name}`."* |
+| `messages.mission.briefing` | 134916 | the briefing: a shipment of cargo has to reach `{[location]objectiveDestinationID.name}`; it ends with a line, in red markup, telling the player to move the cargo to the cargo hold before departure |
+| `messages.mission.offered.agentsays` | 134918 | the offer (903 characters): the agent talks about duty, says the work at `{[location]objectiveDestinationID.name}` is short-handed, asks whether the player can do it quickly, and says a bookmark will be uploaded to People & Places |
+| `messages.mission.accepted.agentsays` | 134919 | a one-line acknowledgement |
+| `messages.mission.declined.agentsays` | 134921 | a one-line disappointed reply naming `{[character]player.name}` |
+| `messages.mission.completed.agentsays` | 134920 | a one-line approval |
+| `messages.mission.extrainfo.header` | 134917 | a short heading for the hints panel |
+| `messages.mission.extrainfo.body` | 134915 | 1,165 characters of new-player instruction: use the Overview to find the destination station, where the stargate filter lives in the Overview settings, and a closing line to return to the agent's home station for the reward |
+| `messages.mission.ask.charsays` | 134924 | the player's opening line to `{[character]agentID.name}`, asking for work |
+| `messages.mission.accept.charsays` | 134922 | the player's line accepting the job |
+| `messages.mission.complete.charsays` | 134923 | the player's report of delivery, addressed to `{[character]agentID.name}` |
 
 That `extrainfo.body` is the reason this mission was chosen over the other
 237: **it is CCP's own level-1 tutorial text for how to fly a courier
@@ -163,10 +163,11 @@ All five are on `Moniker('agentMgr', 3010110)`. Shapes are
 `len(availableActions) == 1` or the agent is neither a locator nor a research
 agent. **[V]** (`agents-missions.md` §1 Step 4 gives the first three
 conditions and not the fourth.) Offering Accept first therefore costs **one**
-round trip and no invented greeting:
+round trip and no invented greeting. (The ids in the wire dicts of this section
+are invented stand-ins for the mission, stations, system and message of §1.1.)
 
 ```python
-(( (134918, 4832),              # agentSaysMsg = (messageID, contentID)
+(( (134998, 4899),              # agentSaysMsg = (messageID, contentID)
    [ (2, 3),                    # our actionID 2 -> button Accept  (3)
      (3, 9) ] ),                # our actionID 3 -> button Decline (9)
  { 'missionCompleted': 0, 'missionDeclined': 0,
@@ -191,7 +192,7 @@ Then: `DoAction(2)` → `((134919, 4832), [])` plus the
 module code: **[V]**
 
 ```python
-{ 'ContentID':           4832,     # subscripted whenever the dict is truthy
+{ 'ContentID':           4899,     # subscripted whenever the dict is truthy
   'Mission Title ID':    56901,    # subscripted
   'Mission Briefing ID': 134916,   # the briefing slot
   'Mission Keywords':    {'objectiveDestinationID': 60014437},
@@ -258,23 +259,23 @@ an accepted 4832:
   'missionState':     2,                       # accepted
   'objectives': [ ('transport',
                    (1000126,                                   # pickupOwnerID
-                    {'solarsystemID': 30000001, 'typeID': 2502,
-                     'locationID': 60012526},                   # pickupLocation
+                    {'solarsystemID': 30099001, 'typeID': 2599,
+                     'locationID': 60099001},                   # pickupLocation
                     1000163,                                    # dropoffOwnerID
-                    {'solarsystemID': 30000001, 'typeID': 2502,
+                    {'solarsystemID': 30099001, 'typeID': 2599,
                      'locationID': 60014437},                   # dropoffLocation
                     {'hasCargo': 1, 'quantity': 4,
                      'typeID': 2665, 'volume': 240.0})) ],
   'dungeons':       [],
-  'locations':      [30000001],                # solar system ids
-  'agentGift':      [],                        # initialAgentGift* absent on 4832
+  'locations':      [30099001],                # solar system ids
+  'agentGift':      [],                        # initialAgentGift* absent on 4899
   'normalRewards':  [(29, 15000, None)],       # typeID 29 = Credits; see below
   'loyaltyPoints':  0,
   'researchPoints': 0,
-  'bonusRewards':   [],                        # missionRewards absent on 4832
+  'bonusRewards':   [],                        # missionRewards absent on 4899
   'collateral':     [],
   'missionExtra':   (134917, 134915),           # extrainfo header, body
-  'contentID':      4832 }                      # required when missionExtra is set
+  'contentID':      4899 }                      # required when missionExtra is set
 ```
 
 - `'transport'` versus `'fetch'` is **[I]**. A classic courier's cargo
@@ -294,7 +295,7 @@ an accepted 4832:
 sends, and now provably right:
 
 ```python
-{'locationID': 60012526, 'typeID': 2502, 'solarsystemID': 30000001}
+{'locationID': 60099001, 'typeID': 2599, 'solarsystemID': 30099001}
 ```
 
 `locationType` stays omitted so the `LocationWrapper` branch whose
@@ -321,7 +322,7 @@ the localisation corpus.
 `BasicCourierMission`, is faction-free, carries an `expirationTime` of 10,080
 and **seventeen** message slots including the timeout and offer-expired
 emails, and **not one of its messages contains a single token**. Its briefing
-is *"Deliver the secure coded package for your agent."* If you want the first
+is a single sentence about delivering a coded package for the agent. If you want the first
 mission to need `GetMissionKeywords` to be literally `{}`, ship that one.
 **[V]**
 
@@ -588,7 +589,7 @@ undocks* — is **confirmed for 4832**, with one correction and one caveat.
 **Servable today, with nothing in space:** the lobby Agents tab with agent
 3010110 in it; the dialogue window's header, standing line, division name and
 LP; `DoAction(None)` → the 903-character offer with the destination
-substituted; the briefing, the *"Helpful Hints"* extra-info panel, the
+substituted; the briefing, the extra-info panel with its hints heading, the
 Accept/Decline buttons and the decline warning; accept, decline, quit and
 turn-in, all four being `DoAction`; the journal row and the mission journal
 window; the People & Places bookmark, named from
@@ -612,8 +613,8 @@ decides.
 
 **The caveat.** The courier *items* have to exist. Four `Group of Elite
 Slaves` (typeID 2665, 60 m3 each) must appear in the player's hangar at
-60012526 on accept, or the briefing's own red text — *"Remember to move the
-slaves to your cargo hold before departure"* — is a lie and
+60012526 on accept, or the briefing's own red closing line (move the cargo to
+the cargo hold before departure) is a lie and
 `CheckCourierCargo` has nothing to check. `item.rs` already spawns items into
 60012526 by name and quantity, so this is an existing capability, not a new
 one. It is still the one piece of *state* a courier mission needs that an
@@ -760,7 +761,7 @@ stated and not done.
 - **A mission's level.** There is no level column. `npccharacters.agent
   .agentLevel` is the only level in the client's data and it belongs to the
   agent. Which of the 238 `BasicCourierMission` rows were level 1 on TQ is
-  **[unknown]**; 4832 is argued to be one from its *"Helpful Hints"*
+  **[unknown]**; 4832 is argued to be one from its hints heading
   extra-info text and its 240 m3 of cargo, which is evidence, not proof.
 - **`expirationTime`'s and `bonusTimeInterval`'s units.** Minutes is **[I]**
   from the value sets (10,080 = 7 days, 43,200 = 30 days).

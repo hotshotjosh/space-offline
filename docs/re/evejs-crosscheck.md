@@ -25,7 +25,7 @@ survived, not a proof.
 
 ## 1. The verdict table
 
-`claim` is EvEJS's, as reported in the unpublished evejs-261018-reference note.
+`claim` is what EvEJS is reported to assume, restated in our words from the unpublished evejs-261018-reference note.
 `client says` is this build, with the address or `file.py:line` that settles
 it.
 
@@ -41,57 +41,57 @@ build's dispatch table, and theirs descends from EVEmu's Crucible-era work.
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 1 | frame is `[uint32 LE payloadLength][payload]` | `word0` = 28-bit length + 4 flag bits | both, and they are compatible: with all flags zero `word0` **is** the payload length | **partly agree** — true of every machoNet frame, false as a description of the field | `0x180388640`, `0x180388701`, `0x18038873e`: `and e{cx,di,ax}, 0xfffffff` |
+| 1 | frame is a 4-byte little-endian length followed by the payload | `word0` = 28-bit length + 4 flag bits | both, and they are compatible: with all flags zero `word0` **is** the payload length | **partly agree** — true of every machoNet frame, false as a description of the field | `0x180388640`, `0x180388701`, `0x18038873e`: `and e{cx,di,ax}, 0xfffffff` |
 | 2 | the prefix is 4 bytes, little-endian | same | same | **agree** | three mask sites above; `lea edi, [rax+4]` at `0x180388743` |
-| 3 | the prefix does not count itself | same | same: the cap compares `plen + 4` | **agree** | `0x180388743` → `0x180388768 cmp edi, r9d` |
-| 4 | "no OOB channel in the framing itself" | bit 28 = `OOB_PRESENT`, which machoNet never sets | an OOB section **exists and is decoded on receive**; machoNet never *sends* one | **disagree** on the field, **agree** on the traffic | `0x1803887aa test dword [rax], 0x10000000`; `machoNetTransport.py:493` is `self.transport.Write(thePickle)`, `CALL_FUNCTION 1` — no `header` arg |
-| 5 | cap is `payloadLength > 0 && <= 10_000_000` | `MAX_FRAME = 10_485_760` on `plen + 4` | **10,485,760**, and on the frame *including* the header | **disagree** — 10,000,000 is in neither this client nor ours | `SocketGPS.py:133` `self.MaxPacketSize = 10485760`; installed at `:202` (`Connect`) and `:277` (`Accept`); enforced at `0x180388761` |
-| 6 | a cap violation destroys the socket | we return `DeclaredTooLong` and refuse | **the two client paths differ**: carbonio *receive* logs `packet too large on [%p] [%d>%d]` and **discards and continues** (the stream desynchronises); the legacy path raises and `SocketGPS` closes | **disagree** as a description of the client | `0x180388a08`-`0x180388a26` (log, `[rax+8]=0`, continue); `0x180391ff0` owns *"too large a packet detected at %d bytes, max is %d"*, caught by substring at `SocketGPS.py:636` |
-| 7 | one accumulation buffer, frames drained strictly in order, partials buffered | same | same: `<4` bytes buffer and return, 1..3 header bytes take only the missing ones, incomplete body appends, complete body consumes and **loops** | **agree** | reader `0x1803885a0`; the three mask sites are the three resume points |
+| 3 | the length does not include the prefix | same | same: the cap compares `plen + 4` | **agree** | `0x180388743` → `0x180388768 cmp edi, r9d` |
+| 4 | the framing carries no out-of-band channel | bit 28 = `OOB_PRESENT`, which machoNet never sets | an OOB section **exists and is decoded on receive**; machoNet never *sends* one | **disagree** on the field, **agree** on the traffic | `0x1803887aa test dword [rax], 0x10000000`; `machoNetTransport.py:493` is `self.transport.Write(thePickle)`, `CALL_FUNCTION 1` — no `header` arg |
+| 5 | the length must be positive and at most ten million | `MAX_FRAME = 10_485_760` on `plen + 4` | **10,485,760**, and on the frame *including* the header | **disagree** — 10,000,000 is in neither this client nor ours | `SocketGPS.py:133` `self.MaxPacketSize = 10485760`; installed at `:202` (`Connect`) and `:277` (`Accept`); enforced at `0x180388761` |
+| 6 | a frame over the cap makes the server close the socket | we return `DeclaredTooLong` and refuse | **the two client paths differ**: carbonio *receive* logs `packet too large on [%p] [%d>%d]` and **discards and continues** (the stream desynchronises); the legacy path raises and `SocketGPS` closes | **disagree** as a description of the client | `0x180388a08`-`0x180388a26` (log, `[rax+8]=0`, continue); `0x180391ff0` owns *"too large a packet detected at %d bytes, max is %d"*, caught by substring at `SocketGPS.py:636` |
+| 7 | one accumulation buffer, frames drained in order, partial frames kept | same | same: `<4` bytes buffer and return, 1..3 header bytes take only the missing ones, incomplete body appends, complete body consumes and **loops** | **agree** | reader `0x1803885a0`; the three mask sites are the three resume points |
 
 ### Marshal — GAP 2
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 8 | payload is `[0x7E][u32 LE mapCount][value][mapCount × u32 LE shared ids]`, ids **after** the value | identical, including the tail position — which we had wrong once and corrected | identical: table pointer is `base + len - mapcount*4` | **agree**, and this is the one place EvEJS corroborates a correction of ours | `0x1802e17d9`-`0x1802e17ec`: `lea r14,[rcx*4]`; `rax = [rdi+0x20] - r14 + [rdi+0x18]`; `[rdi+0x50] = rax` |
-| 9 | it emits `0x7E` | we accept `0x7D` and `0x7E`, emit only `0x7E` | the client emits `0x7E` too, because `blue.marshal.Save`'s `version` defaults to 0 | **agree** | see §3 |
-| 10 | `OPCODE_MASK 0x3f` | `type = tag & 0x3F` | `and ecx, 0x3f` | **agree** | `0x1802ddab3` |
-| 11 | `SAVE_MASK 0x40` | `shared = tag & 0x40` | `shr eax, 6; and al, 1` | **agree** | `0x1802ddac3`-`0x1802ddac6` |
-| 12 | `UNKNOWN_MASK 0x80` | bit 7 is **discarded** | bit 7 is never tested anywhere in the dispatch | **partly agree** — the name is fair, but the client *ignores* the bit; a codec that *rejects* on it diverges from the client | `0x1802ddaa4`-`0x1802ddad2`, the whole dispatch: `movsx`, `and 0x3f`, `shr 6`, `and 1`, index |
-| 13 | opcodes span `PyNone 0x01` … `PyVarInteger 0x2f` | 42 valid codes in `0x01..0x2F`; `0x00, 0x0C, 0x18, 0x1D, 0x1E, 0x2D` are NULL slots | same range; a NULL slot gives *"Invalid type tag %d in stream."* | **agree** | table `0x180b015f0`; NULL path `0x1802ddafc` → `0x18098…`/`0x18097dd48` |
-| 14 | `PyPackedRow 0x2a` | DBRow is `0x2A`, proven from the writer's immediate | `0x2A` → `0x1802fe410` | **agree** | `docs/reference/dbrow.md`; `mov r8d, 0x2a` at `0x1802df84d` |
-| 15 | `PySubStream 0x2b` | `0x2B` is a length-prefixed nested marshal stream | shape confirmed; the *name* is ours by inference | **agree** | the unpublished marshal-tags note; tag `0x2B` → `0x1802db760` |
-| 16 | `PyObjectEx1/2 0x22/0x23` | object 2.2 / 2.3 forms | `0x1802de1c0` / `0x1802de430`, both reserve a shared slot before reading any child | **agree** | `docs/reference/object-wrapper.md` |
-| 17 | `cPicked 0x21` | `0x21` is a raw, self-delimiting cPickle payload | cached `cPickle.Unpickler` at `stream+0x70`, no length field | **agree** | handler `0x1802dcf60` |
-| 18 | `PySavedStreamElement 0x1b` | `0x1B` is the shared back-reference, 1-based, `1 <= i <= mapcount` | *"Invalid TY_REFERENCE in stream"* on a bad index | **agree** | handler `0x1802dce60` |
-| 19 | dicts are written **value before key** | same; `pyutil::pydict` exists to encode the inversion once | first `ReadObject` → `r8` (value), second → `rdx` (key), then `PyDict_SetItem(dict, key, value)` | **agree — and independently, which is the point** | `0x1802dd2c6` then `0x1802dd2e1`, then `0x1802dd2ee`-`0x1802dd2f7 call PyDict_SetItem` |
-| 20 | packed row is real bit-packing + RLE | size-class regions largest-first, a NULL bitmap region, nibble RLE | as `docs/reference/dbrow.md`, read off `0x1802fe410` | **agree** | `docs/reference/dbrow.md` |
-| 21 | object sharing is "restricted to `blue.DBRowDescriptor` by identity" | eleven handlers consume a table entry; no type restriction | the client restricts sharing to **no** type: `0x02, 0x0D, 0x13, 0x14, 0x15, 0x16, 0x17, 0x21, 0x22, 0x23, 0x2F` all consume an entry | **disagree** — that is their implementation's scope, not the client's contract | `RegisterShared 0x1802dbdf0`; per-handler, the unpublished marshal-tags note |
-| 22 | embedded pickle end is found by walking pickle opcodes | `0x21` is self-delimiting (no length); `0x1A` carries a length the client **discards** | same | **agree** | `0x1802dcf60` (`0x21`), `0x1802dd010` (`0x1A`) |
-| 31 | the rest of their opcode table (beyond the seven codes the handoff doc names) | 42 codes, 26 named from their handlers' C-API fingerprints | — | **unknown** — not compared; archive not extracted, and see the note above | — |
+| 8 | the payload is a header byte `0x7E`, a `u32` count, the value, then that many `u32` shared ids after the value | identical, including the tail position — which we had wrong once and corrected | identical: table pointer is `base + len - mapcount*4` | **agree**, and this is the one place EvEJS corroborates a correction of ours | `0x1802e17d9`-`0x1802e17ec`: `lea r14,[rcx*4]`; `rax = [rdi+0x20] - r14 + [rdi+0x18]`; `[rdi+0x50] = rax` |
+| 9 | the writer emits header byte `0x7E` | we accept `0x7D` and `0x7E`, emit only `0x7E` | the client emits `0x7E` too, because `blue.marshal.Save`'s `version` defaults to 0 | **agree** | see §3 |
+| 10 | the low six bits of a tag select the type | `type = tag & 0x3F` | `and ecx, 0x3f` | **agree** | `0x1802ddab3` |
+| 11 | bit 6 of a tag marks a shared object | `shared = tag & 0x40` | `shr eax, 6; and al, 1` | **agree** | `0x1802ddac3`-`0x1802ddac6` |
+| 12 | bit 7 of a tag is an unknown marker | bit 7 is **discarded** | bit 7 is never tested anywhere in the dispatch | **partly agree** — the name is fair, but the client *ignores* the bit; a codec that *rejects* on it diverges from the client | `0x1802ddaa4`-`0x1802ddad2`, the whole dispatch: `movsx`, `and 0x3f`, `shr 6`, `and 1`, index |
+| 13 | type tags run from `0x01` (none) to `0x2f` (variable-length integer) | 42 valid codes in `0x01..0x2F`; `0x00, 0x0C, 0x18, 0x1D, 0x1E, 0x2D` are NULL slots | same range; a NULL slot gives *"Invalid type tag %d in stream."* | **agree** | table `0x180b015f0`; NULL path `0x1802ddafc` → `0x18098…`/`0x18097dd48` |
+| 14 | tag `0x2a` is a packed row | DBRow is `0x2A`, proven from the writer's immediate | `0x2A` → `0x1802fe410` | **agree** | `docs/reference/dbrow.md`; `mov r8d, 0x2a` at `0x1802df84d` |
+| 15 | tag `0x2b` is a nested sub-stream | `0x2B` is a length-prefixed nested marshal stream | shape confirmed; the *name* is ours by inference | **agree** | the unpublished marshal-tags note; tag `0x2B` → `0x1802db760` |
+| 16 | tags `0x22` and `0x23` are the two extended-object forms | object 2.2 / 2.3 forms | `0x1802de1c0` / `0x1802de430`, both reserve a shared slot before reading any child | **agree** | `docs/reference/object-wrapper.md` |
+| 17 | tag `0x21` is an embedded pickle | `0x21` is a raw, self-delimiting cPickle payload | cached `cPickle.Unpickler` at `stream+0x70`, no length field | **agree** | handler `0x1802dcf60` |
+| 18 | tag `0x1b` is a back-reference to a shared element | `0x1B` is the shared back-reference, 1-based, `1 <= i <= mapcount` | *"Invalid TY_REFERENCE in stream"* on a bad index | **agree** | handler `0x1802dce60` |
+| 19 | dicts are written value first, then key | same; `pyutil::pydict` exists to encode the inversion once | first `ReadObject` → `r8` (value), second → `rdx` (key), then `PyDict_SetItem(dict, key, value)` | **agree — and independently, which is the point** | `0x1802dd2c6` then `0x1802dd2e1`, then `0x1802dd2ee`-`0x1802dd2f7 call PyDict_SetItem` |
+| 20 | a packed row is real bit-packing plus run-length coding | size-class regions largest-first, a NULL bitmap region, nibble RLE | as `docs/reference/dbrow.md`, read off `0x1802fe410` | **agree** | `docs/reference/dbrow.md` |
+| 21 | only the row-descriptor type is shared, by identity | eleven handlers consume a table entry; no type restriction | the client restricts sharing to **no** type: `0x02, 0x0D, 0x13, 0x14, 0x15, 0x16, 0x17, 0x21, 0x22, 0x23, 0x2F` all consume an entry | **disagree** — that is their implementation's scope, not the client's contract | `RegisterShared 0x1802dbdf0`; per-handler, the unpublished marshal-tags note |
+| 22 | the end of an embedded pickle is found by walking its opcodes | `0x21` is self-delimiting (no length); `0x1A` carries a length the client **discards** | same | **agree** | `0x1802dcf60` (`0x21`), `0x1802dd010` (`0x1A`) |
+| 31 | the rest of their opcode table (beyond the seven codes their handoff names) | 42 codes, 26 named from their handlers' C-API fingerprints | — | **unknown** — not compared; archive not extracted, and see the note above | — |
 
 ### `GetHandshakeFunc` — GAP 3
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 23 | the client accepts a plain marshaled string containing a Python expression | we wrote `marshal.dumps(<a py2.7 code object>)` | **both work.** `eval(func, globals(), context)` takes a `str` or a code object; the blob is **stdlib** `marshal`, not `blue.marshal` | **agree**, and their shape is the simpler one | `GPS.py:1014` `marshal.loads(marshaled)`; `GPS.py:1026` `eval(func, globals(), context)`; `marshal` is imported plain at `GPS.py:6`, while `blue.marshal` is spelled out at `:144` |
-| 24 | "the second element is the verification flag, hardcoded `false` (unsigned)" | we send `0` | the flag is **required**, not disabled: Placebo's `verify` returns `(signedData[0], signedData[1] == 0)`, and `__Execute` raises outside the `try` if that is falsy | **disagree on the reading** — `false` happens to work because `False == 0` in Python 2, but `True`, `1`, `None` or `''` would kill the handshake | `evecrypto/placebo.py:21`; `GPS.py:1010`-`1012` |
-| 25 | "an empty-but-valid expression should satisfy the client" | the GAP note already said a *failing* expression is acceptable | right, and smaller still is possible — see §4 | **agree** | `GPS.py:1024`-`1026`, the bare `except:` |
+| 23 | the client accepts a plain marshalled string holding a Python expression | we wrote `marshal.dumps(<a py2.7 code object>)` | **both work.** `eval(func, globals(), context)` takes a `str` or a code object; the blob is **stdlib** `marshal`, not `blue.marshal` | **agree**, and their shape is the simpler one | `GPS.py:1014` `marshal.loads(marshaled)`; `GPS.py:1026` `eval(func, globals(), context)`; `marshal` is imported plain at `GPS.py:6`, while `blue.marshal` is spelled out at `:144` |
+| 24 | the second element is the verification flag, fixed at false (unsigned) | we send `0` | the flag is **required**, not disabled: Placebo's `verify` returns `(signedData[0], signedData[1] == 0)`, and `__Execute` raises outside the `try` if that is falsy | **disagree on the reading** — `false` happens to work because `False == 0` in Python 2, but `True`, `1`, `None` or `''` would kill the handshake | `evecrypto/placebo.py:21`; `GPS.py:1010`-`1012` |
+| 25 | an empty but valid expression satisfies the client | the GAP note already said a *failing* expression is acceptable | right, and smaller still is possible — see §4 | **agree** | `GPS.py:1024`-`1026`, the bare `except:` |
 
 ### Bound objects (GAP 6) and service advertisement (the "Bonus")
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 28 | `machoNet.GetInitVals` returns a ~145-entry `serviceInfo` dict | we have no `GetInitVals` | **`GetInitVals` does not exist in this client.** Zero hits across all 12,774 `.pyc` files and zero in the native binaries. `serviceInfo` is the entire return value of a *separate* call, `machoNet.GetServiceInfo` | **disagree** — the call is from an older protocol generation | `grep -ra GetInitVals out/pyc/` → nothing (re-run independently in this lane); `machoNet.py:2028` is the real call |
-| 29 | `GetServiceInfo` returning a bare `{}` is "consistent with our note that it is only a node-id hint" | `{}` is safe | `{}` is safe and in fact **better** than the real thing — but the "node-id hint" framing is attached to the wrong mechanism | **partly agree** — right conclusion, wrong reason; §8 | `ServiceCallGPCS.py:256`-`260`, `:277` |
-| 30 | a call to a dead OID gets a synthetic `UnMachoDestination` so the client's Moniker rebinds and retries **once** | we had the mechanism as a gap | **confirmed**, with three corrections: the retry is only in `util.Moniker`, the exception usually arrives rewritten as `UserError('UnMachoDestination')`, and the class never needs to be named on the wire | **agree** | `moniker.py:256` and `:263` (two `Unresolve` sites in `MonikeredCall`); `cluster/__init__.py:88` `MACHONETERR_UNMACHODESTINATION = 0`; §7 |
+| 28 | `GetInitVals` returns a service table of about 145 entries | we have no `GetInitVals` | **`GetInitVals` does not exist in this client.** Zero hits across all 12,774 `.pyc` files and zero in the native binaries. `serviceInfo` is the entire return value of a *separate* call, `machoNet.GetServiceInfo` | **disagree** — the call is from an older protocol generation | `grep -ra GetInitVals out/pyc/` → nothing (re-run independently in this lane); `machoNet.py:2028` is the real call |
+| 29 | a bare empty dict from `GetServiceInfo` fits a node-id-hint reading | `{}` is safe | `{}` is safe and in fact **better** than the real thing — but the "node-id hint" framing is attached to the wrong mechanism | **partly agree** — right conclusion, wrong reason; §8 | `ServiceCallGPCS.py:256`-`260`, `:277` |
+| 30 | a call to a dead object id gets a synthetic unmachoDestination so the client rebinds and retries once | we had the mechanism as a gap | **confirmed**, with three corrections: the retry is only in `util.Moniker`, the exception usually arrives rewritten as `UserError('UnMachoDestination')`, and the class never needs to be named on the wire | **agree** | `moniker.py:256` and `:263` (two `Unresolve` sites in `MonikeredCall`); `cluster/__init__.py:88` `MACHONETERR_UNMACHODESTINATION = 0`; §7 |
 
 ### The reference document's own facts
 
 | # | claim | our reading | client says | verdict | citation |
 |---|---|---|---|---|---|
-| 26 | "client build 3396210 ← SAME TARGET AS OURS" | our build is **3619879** | — | **disagree** — §6 | the unpublished recon-v24.01 note |
-| 27 | content harvested from *newer* builds `3475087`, `3487903`, `3436472` | — | all three, and 3396210, are **older** than 3619879 | **disagree on direction** — newer than *their* target, older than ours | arithmetic |
+| 26 | their client build is the same as ours | our build is **3619879** | — | **disagree** — §6 | the unpublished recon-v24.01 note |
+| 27 | their content was harvested from newer builds `3475087`, `3487903` and `3436472` | — | all three, and 3396210, are **older** than 3619879 | **disagree on direction** — newer than *their* target, older than ours | arithmetic |
 
 ---
 
@@ -115,15 +115,15 @@ Re-verified in this lane, not taken from `docs/reference/framing.md`: the mask
 at `0x180382d70` stand on `docs/reference/framing.md`'s pass and were **not** re-read
 here.
 
-So EvEJS's `[uint32 LE payloadLength][payload]` is a correct description of
+So EvEJS's reading of the frame as a 4-byte little-endian length plus payload is a correct description of
 **every frame machoNet ever emits**, because machoNet never sets a flag:
 `machoNetTransport.py:493` is `self.transport.Write(thePickle)` with
 `CALL_FUNCTION 1` — one positional argument, no `header` — and `header` is the
 *only* way bit 28 gets set (`SocketGPS.py:555`, reached only
 `if header and usingIOCP`; the plain call is `:557`). **[V], read from the
 bytecode, not the decompiler.** It is not a correct description of the *field*,
-and "no OOB channel in the framing itself" is wrong: the receive side decodes
-one.
+and the claim that the framing has no out-of-band channel is wrong: the receive
+side decodes one.
 
 ### What the client does with high bits set
 
@@ -178,7 +178,7 @@ Three things follow.
 3. **Never emit an oversize frame.** Carbonio *receive* oversize does not
    close: it logs and resets `[pkt+8] = 0` and continues
    (`0x180388a08`-`0x180388a26`), so a bad length silently desynchronises the
-   stream and every later frame is garbage. EvEJS's "destroy the socket" is a
+   stream and every later frame is garbage. EvEJS's close-the-socket policy is a
    fine *server* policy — it is just not what the client does, and the failure
    mode to design against is the silent one.
 
@@ -211,33 +211,26 @@ callable")` (`0x18097dee8`).
 
 ### The writer, `0x1802da7b0`
 
-`version` arrives as the 4th argument; the branch on it is the whole answer:
+`version` arrives as the 4th argument; the branch on it (`0x1802da8f8`) is the whole answer `[V]`:
 
-```text
-0x1802da8f8  test r14d, r14d          ; r14d = version
-0x1802da8fb  jne  0x1802da92f
-0x1802da8fd  or   ebx, 0x7e           ; version == 0
-0x1802da915  mov  byte [rcx+rax], bl  ; emit 0x7E
-0x1802da91c  xor  edx, edx
-0x1802da921  call 0x1802e5da0         ; write u32 0 -- the mapcount placeholder
-...
-0x1802da92f  or   ebx, 0x7d           ; version != 0
-0x1802da947  mov  byte [rcx+rax], bl  ; emit 0x7D
-0x1802da94e  movzx edx, r14b
-0x1802da955  call 0x1802e5df0         ; write u8 version -- and NO mapcount word
-0x1802da962  test r15b, r15b          ; useChecksum
-0x1802da96f  call 0x1802daac0 (edx=0x1c) ; emit tag 0x1C, then a u32 CRC placeholder
-```
+- `version == 0`: emit tag `0x7E`, then a `u32` zero as the map-count
+  placeholder (`0x1802da8fd`-`0x1802da921`).
+- `version != 0`: emit tag `0x7D`, then the version as a `u8`, and **no** map-count
+  word (`0x1802da92f`-`0x1802da955`).
+- when `useChecksum` is set, emit tag `0x1C` followed by a `u32` CRC placeholder
+  (`0x1802da962`-`0x1802da96f`).
 
 ### The reader, `0x1802e1670` (`Marshal::Load`)
 
-```text
-0x1802e16de  cmp cl, 0x7e / je 0x1802e174c  -> extra := 0 (no byte consumed), read mapcount
-0x1802e16e3  cmp cl, 0x7d / je 0x1802e1703  -> consume one byte into [rdi+0x80]
-0x1802e16e8  else  ValueError "invalid marshal header"
-0x1802e1728  test cl, cl / je 0x1802e1754   -> extra == 0: read the mapcount
-0x1802e172c  mov [rdi+0x5c], 0              -> extra != 0: mapcount := 0, header ENDS, return
-```
+The reader's header handling, by address `[V]`:
+
+- `0x1802e16de`: tag `0x7e` leaves the extra byte at 0 (none consumed) and reads
+  the map count.
+- `0x1802e16e3`: tag `0x7d` consumes one byte into the object at offset `0x80`.
+- `0x1802e16e8`: any other tag raises `ValueError("invalid marshal header")`.
+- `0x1802e1728`: an extra byte of 0 goes on to read the map count.
+- `0x1802e172c`: a non-zero extra byte sets the map count to 0 and ends the
+  header there.
 
 ### So
 
@@ -303,37 +296,24 @@ writes one — so this is latent, not live.
 H8 is a 4-tuple; element 2 is `signedFunc` and element 3 is the `eval` locals
 dict (`GPS.py:962`):
 
-```python
-serverChallenge, signedFunc, context, response = macho.Loads(...)   # GPS.py:962
-...
-outputBuffer, funcResult = self.__Execute(signedFunc, context)      # GPS.py:977
+The execution path, by line (`GPS.py`): **[V]**
 
-def __Execute(self, signedFunc, context):                           # GPS.py:1009
-    marshaled, verified = Crypto.Verify(signedFunc)                 # :1010
-    if not verified:
-        raise RuntimeError('Failed to verify initial function blobs')  # :1012
-    func = marshal.loads(marshaled)                                 # :1014
-    ...
-    try:
-        try:
-            ...
-            funcResult = eval(func, globals(), context)             # :1026
-        except:
-            funcResult = {}
-            <traceback printed into the captured WriteBuffer>
-    finally:
-        <stdout/stderr restored>
-    return (output.buffer, funcResult)
-```
+1. `:962`: the unmarshalled H8 payload unpacks into four values:
+   `serverChallenge`, `signedFunc`, `context`, `response`.
+2. `:977`: the client calls `__Execute(signedFunc, context)` (defined at `:1009`)
+   and gets back an output buffer and a result.
+3. `:1010-1012`: `__Execute` passes `signedFunc` to `Crypto.Verify`, which
+   returns a pair of the marshalled bytes and a verified flag; when the flag is
+   false it raises `RuntimeError('Failed to verify initial function blobs')`.
+4. `:1014`: it unmarshals the bytes into a code object.
+5. `:1026`: it evaluates that object with the context dict as the locals. If
+   that raises, the result is an empty dict and the traceback goes to the
+   captured output.
+6. It restores stdout and stderr and returns the captured output and the result.
 
-Under the Placebo crypto pack — which is this install's default,
-`cryptoPack = boot.GetValue('cryptoPack', 'Placebo')` in
-`evecrypto/settings.py` — `Verify` is:
-
-```python
-def verify(signedData):
-    return (signedData[0], signedData[1] == 0)      # evecrypto/placebo.py:21
-```
+With the default crypto pack (`evecrypto/settings.py`), `Verify` returns the
+first element of `signedData` and a verified flag that is true when the second
+element is `0` (`evecrypto/placebo.py:21`).
 
 **[V]** on all of it.
 
@@ -348,9 +328,9 @@ So `signedFunc` is a 2-tuple `(blob, flag)` where:
 
 ### Correction to the unpublished evejs-261018-reference note §2 GAP 3
 
-The doc says the second element is *"the **verification flag, hardcoded
-`false`** (unsigned)"* and draws the conclusion *"the client accepts … with
-verification off."* **That reading is wrong, and it is the dangerous kind of
+The doc reads the second element as a verification flag fixed at false
+(unsigned) and concludes that the client accepts the call with verification
+off. **That reading is wrong, and it is the dangerous kind of
 wrong — the conclusion it reaches is right by accident.**
 
 There is no "off". `verified` is computed as `signedData[1] == 0`, and
@@ -405,8 +385,8 @@ does not). **[I]** on the exact `TYPE_STRING` byte layout, which was not read
 out of this client's `python27.dll`; **[V]** on everything the client's own
 Python does with the result.
 
-**Either way we never send a code object and never send a statement.** EvEJS's
-`'eval(compile("…","<tidi>","exec"))'` string exists because they want to run
+**Either way we never send a code object and never send a statement.** EvEJS wraps its payload in a compile step
+because it wants to run
 *statements*, which `eval` of an expression cannot do. We want to run nothing,
 so we need neither the `compile` nor the inner `eval`. The right design rule,
 and it is the doc's own: **the handshake function is a hole, and the only safe
@@ -512,8 +492,8 @@ Two corrections to §1 at once:
 Of 27 claims, 19 agreed. That is a high rate, and a high rate is exactly the
 condition under which the next claim gets waved through. Two of the six
 disagreements were found only because they were checked after a run of
-agreements: #21 (sharing "restricted to DBRowDescriptor") reads like a
-protocol fact and is an implementation detail, and #24 ("verification off")
+agreements: #21 (sharing limited to the row-descriptor type) reads like a
+protocol fact and is an implementation detail, and #24 (verification off)
 reads like a conclusion and is a misreading whose conclusion happens to hold.
 **Both would have been adopted by anyone who stopped checking once the pattern
 looked good.** Treat the 19 as hypotheses that survived.
@@ -789,13 +769,13 @@ the coordinator to fold in):
 
 | section | correction |
 |---|---|
-| §1 | *"client build 3396210 ← SAME TARGET AS OURS"* — ours is **3619879**. Same version, 223,669 builds earlier. |
-| §1 | *"Also harvested from **newer** clients"* — `3436472`, `3475087`, `3487903` are newer than **their** 3396210 and **all older than our 3619879**. Relative to us the risk is stale content, not post-24.01 content. |
-| §2 GAP 1 | *"no OOB channel in the framing itself"* — there is one, bit 28, and the client decodes it on receive (`0x1803887aa`). machoNet never *sets* it (`machoNetTransport.py:493`), which is why their framing works. |
+| §1 | The note says their client build is the same as ours; ours is **3619879**. Same version, 223,669 builds earlier. |
+| §1 | The note says content was also harvested from newer clients: `3436472`, `3475087`, `3487903` are newer than **their** 3396210 and **all older than our 3619879**. Relative to us the risk is stale content, not post-24.01 content. |
+| §2 GAP 1 | The note says the framing has no out-of-band channel; there is one, bit 28, and the client decodes it on receive (`0x1803887aa`). machoNet never *sets* it (`machoNetTransport.py:493`), which is why their framing works. |
 | §2 GAP 1 | the cap `10_000_000` is **not** the client's. The client's is **10,485,760 on `plen + 4`** (`SocketGPS.py:133`, enforced `0x180388761`). Their number is safe but invented. |
-| §2 GAP 1 | *"violation ⇒ destroy socket"* describes their server. The **client**, on carbonio receive, logs and **continues** (`0x180388a08`), silently desynchronising. |
-| §2 GAP 2 | *"object share … restricted to `blue.DBRowDescriptor` by identity"* is their implementation's scope. The client lets **eleven** tag handlers consume a shared-id entry. |
-| §2 GAP 3 | **the important one.** *"the verification flag, hardcoded `false`"* / *"with verification off"* is a misreading. Placebo's `verify` is `(signedData[0], signedData[1] == 0)` (`evecrypto/placebo.py:21`) and `GPS.py:1012` raises on a falsy result **outside** the try. The element is a **required** `0`-equal value, not a disabled check; `false` works only because `False == 0` in Python 2. Sending `True` would be fatal and inexplicable. |
+| §2 GAP 1 | The note's close-on-violation rule describes their server. The **client**, on carbonio receive, logs and **continues** (`0x180388a08`), silently desynchronising. |
+| §2 GAP 2 | The note's restriction of object sharing to the row-descriptor type is their implementation's scope. The client lets **eleven** tag handlers consume a shared-id entry. |
+| §2 GAP 3 | **the important one.** The note's reading of the flag as a fixed false, with verification off, is a misreading. Placebo's `verify` is `(signedData[0], signedData[1] == 0)` (`evecrypto/placebo.py:21`) and `GPS.py:1012` raises on a falsy result **outside** the try. The element is a **required** `0`-equal value, not a disabled check; `false` works only because `False == 0` in Python 2. Sending `True` would be fatal and inexplicable. |
 | §2 GAP 2 | add, as the one thing their codec told us that we did not have: **`0x7E` means marshal version 0** and `0x7D` version 1. They emit `0x7E`, which is what the client emits. |
 | §2 GAP 6 | the rebind claim is **confirmed** — add that the retry lives only in `util.Moniker` (a raw bound object gets none), that `code = 0` in an `ErrorResponse` is sufficient and the class name never needs to cross the wire, and that the rebind arrives as `MachoResolveObject` then `MachoBindObject(bindParams, call)` with the original call piggybacked. |
 | §2 Bonus | **`machoNet.GetInitVals` does not exist in V24.01** — zero hits in 12,774 `.pyc` files. `serviceInfo` is the whole return of `machoNet.GetServiceInfo` (`machoNet.py:2028`). The proposed "~145 vs our 175" cross-check compares three non-comparable populations and should be struck. |

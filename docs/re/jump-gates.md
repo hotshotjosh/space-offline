@@ -72,45 +72,39 @@ positional arguments, all integers:
 `[V]`, two independent call sites:
 
 - `out/pyc/stargate/client/gateJumpSvc.pyc`, `JumpThroughGate` **line 131**:
-  ```python
-  self.sessionMgr.PerformSessionChange(
-      localization.GetByLabel('UI/Inflight/Jump'),
-      remoteBallpark.CmdStargateJump, stargateID, beaconID, session.shipid)
-  ```
+  `PerformSessionChange` is called with the localised label `UI/Inflight/Jump`,
+  `remoteBallpark.CmdStargateJump`, `stargateID`, `beaconID` and `session.shipid`.
   `remoteBallpark` is `self.michelle.GetRemotePark()` (line 99), which is
   `michelle.__bp.remoteBallpark` — the bound object itself, no wrapper
   (`michelle.py:511-516`).
 - `out/pyc/eve/client/script/parklife/autopilot.pyc`, `Update` **lines 445-450**:
-  ```python
-  sm.GetService('sessionMgr').PerformSessionChange(
-      'autopilot',
-      sm.GetService('michelle').GetRemotePark().CmdStargateJump,
-      destID, theJump.toCelestialID, session.shipid)
-  ```
+  The autopilot calls the same `PerformSessionChange`, with the label
+  `'autopilot'`, the remote park's `CmdStargateJump`, `destID`,
+  `theJump.toCelestialID` and `session.shipid`.
 
 Signature `JumpThroughGate(self, stargateID, typeID, beaconID, solarSystemID)`,
 `argcount=5`, `out/pyc/stargate/client/gateJumpSvc.pyc` line 95 `[V]`.
 
 ### 2.2 The client-side call sites, in full
 
-```
-double-click or right-click a gate
-  movementFunctions.DockOrJumpOrActivateGate(itemID)         movementFunctions.py:393
-    item = bp.GetInvItem(itemID)                             michelle.py:2121 -> slimItems.get(id)
-    if item.groupID == const.groupStargate:                  groupStargate = 10
-        slimItem = bp.slimItems.get(itemID)
-        jump = slimItem.jumps[0]                             <-- IndexError if we omit `jumps`
-        menuSvc.StargateJump(itemID, item.typeID,
-                             jump.toCelestialID, jump.locationID)   movementFunctions.py:413
-  menusvc.StargateJump(stargateID, typeID, beaconID, solarSystemID) menusvc.py:3535
-    GetCloseAndTryCommand(stargateID, gatejump.JumpThroughGate,
-                          (stargateID, typeID, beaconID, solarSystemID),
-                          interactionRange=const.maxStargateJumpingDistance)  menusvc.py:3541
-  gatejump.JumpThroughGate(...)                              gateJumpSvc.py:95
-    sessionMgr.PerformSessionChange('<UI/Inflight/Jump>',
-                                    remoteBallpark.CmdStargateJump,
-                                    stargateID, beaconID, session.shipid)     gateJumpSvc.py:131
-```
+The client's call chain for a gate click, with its citations:
+
+1. Double-click or right-click a gate; `DockOrJumpOrActivateGate(itemID)`
+   (`movementFunctions.py:393`).
+2. It fetches the item with `bp.GetInvItem(itemID)` (`michelle.py:2121`, a
+   `slimItems` lookup).
+3. If the item's `groupID` is `groupStargate` (10), it takes the slim item from
+   `bp.slimItems` and its first `jumps` entry: **an `IndexError` if the server
+   omits `jumps`**.
+4. It calls `menuSvc.StargateJump(itemID, item.typeID, jump.toCelestialID,
+   jump.locationID)` (`movementFunctions.py:413`).
+5. `menusvc.StargateJump(stargateID, typeID, beaconID, solarSystemID)`
+   (`menusvc.py:3535`) calls `GetCloseAndTryCommand` with `JumpThroughGate`, the
+   same four arguments and `interactionRange = maxStargateJumpingDistance`
+   (`menusvc.py:3541`).
+6. `JumpThroughGate` (`gateJumpSvc.py:95`) calls `sessionMgr.PerformSessionChange`
+   with the label `UI/Inflight/Jump`, `remoteBallpark.CmdStargateJump`,
+   `stargateID`, `beaconID` and `session.shipid` (`gateJumpSvc.py:131`).
 
 All line numbers from `tools/dis.py`, i.e. the client's own `co_lnotab` `[V]`.
 
@@ -151,14 +145,11 @@ absent gateway gives us `[I]`.
 The autopilot adds `_IsSessionAndBpSafeToJump(bp, ship)`
 (`autopilot.py:505-523`), all five of which the server can break `[V]`:
 
-```python
-if ship.isCloaked:                                              return False   # :507
-if session.mutating:                                            return False   # :511
-if session.changing:                                            return False   # :514
-if bp.solarsystemID != session.solarsystemid:                   return False   # :517
-if michelle.GetRemotePark()._Moniker__bindParams != session.solarsystemid:
-                                                                return False   # :520
-```
+The five conditions, each returning `False` (`autopilot.py:507-520`): the ship
+is cloaked (`:507`); `session.mutating` (`:511`); `session.changing` (`:514`);
+the ballpark's `solarsystemID` differs from the session's (`:517`); or the
+remote park's bound-object parameter differs from the session's `solarsystemid`
+(`:520`).
 
 The last two are the client telling us, in its own code, that **after a jump
 the ballpark and the `beyonce` moniker must both be on the new system** — the
@@ -202,29 +193,20 @@ driven by an `OnSpecialFX` Destiny action whose `guid` is a travel effect.
 
 `out/pyc/eve/client/script/parklife/subwaySvc.pyc`, `OnSpecialFX` lines 450-475 `[V]`:
 
-```python
-def OnSpecialFX(self, shipID, moduleID, moduleTypeID, targetID, otherTypeID,
-                guid, isOffensive, start, active, duration, repeat, startTime,
-                timeFromStart, graphicInfo):
-    if self.ENABLED and IsTravelEffect(guid):               # :452
-        destinationSystem = None
-        if graphicInfo:
-            destinationSystem = graphicInfo[0]              # :455
-        guid = self.JUMP_EFFECT_OVERRIDE or guid            # :458
-        if shipID == session.shipid:                        # :459  <-- the jumper
-            self.shipID         = shipID
-            self.gateID         = targetID                  # :461
-            self.originSystemID = session.solarsystemid     # :462
-            self.destSystemID   = destinationSystem         # :463
-            try:
-                self.StartJump(shipID, targetID, guid, destinationSystem)   # :465
-            except Exception as e:
-                log.exception(...); PostJumpServiceCalls(self.gateID); self.Cleanup()
-            sm.GetService('space').PrioritizeLoadingForIDs(
-                GetPriorityLoads(self.gateID))              # :470
-        else:                                               # :472  <-- everyone else
-            self.StartJumpForAudience(shipID, guid, destinationSystem)      # :473
-```
+`OnSpecialFX` takes the 14 arguments listed below (`shipID` to `graphicInfo`).
+It does nothing unless `ENABLED` is set and `IsTravelEffect(guid)` holds
+(`:452`). Then `[V]`:
+
+1. `:455`: the destination system is `graphicInfo[0]` when `graphicInfo` is set.
+2. `:458`: `guid` is replaced by `JUMP_EFFECT_OVERRIDE` when that is set.
+3. `:459`: if `shipID` is the session's ship (the jumper), it records the ship,
+   the gate (`targetID`, `:461`), the origin system (`:462`) and the destination
+   system (`:463`), then calls `StartJump(shipID, targetID, guid,
+   destinationSystem)` (`:465`). If that raises, it logs, runs
+   `PostJumpServiceCalls` for the gate and cleans up. Finally it asks the `space`
+   service to prioritise loading for the gate's ids (`:470`).
+4. `:472-473`: for every other ship, it calls `StartJumpForAudience(shipID, guid,
+   destinationSystem)`.
 
 So the server must send, as one Destiny action in a batch addressed to
 **everyone in the origin system including the jumper**:
@@ -272,22 +254,18 @@ This is the headline and it decides the shape of the server's jump.
 **`michelle.UpdateBallpark`, lines 215-234, is the only caller of
 `RemoveBallpark` on the jump path** `[V]`:
 
-```python
-215  def UpdateBallpark(self):
-216      if session.solarsystemid and self.viewState.IsPrimaryViewActive('inflight', 'structure'):
-217          if self.__bp and self.__bp.solarsystemID != session.solarsystemid:
-218              self.RemoveBallpark()
-219          if self.__bp is None:
-223              sm.GetService('space')
-224              self.AddBallpark(session.solarsystemid)
-225          sm.ScatterEvent('OnEnterSpace')
-226      else:
-227          self.RemoveBallpark()
-231          if self.__bp is None:
-232              sm.GetService('sceneManager').UnregisterScene('default')
-233              sm.GetService('sceneManager').CleanupSpaceResources()
-234              blue.recycler.Clear()
-```
+The steps, by line (`michelle.py`): **[V]**
+
+1. `:216`: the whole body runs only when the session has a `solarsystemid` and
+   the primary view is `inflight` or `structure`; otherwise it takes the `else`
+   branch at `:226-227` and calls `RemoveBallpark()`.
+2. `:217-218`: if a ballpark exists and its `solarsystemID` differs from the
+   session's, call `RemoveBallpark()`.
+3. `:219-224`: if there is now no ballpark, touch the `space` service and call
+   `AddBallpark(session.solarsystemid)`.
+4. `:225`: scatter `OnEnterSpace`.
+5. `:231-234`: in the `else` branch, when the ballpark is gone, unregister the
+   `default` scene, clean up space resources and clear the recycler.
 
 Line 217 is the jump: **the ballpark whose `solarsystemID` disagrees with the
 session is destroyed**, and line 219 builds a fresh one for the new system.
@@ -312,14 +290,10 @@ coincide `[V]`.
 A second, independent witness: `subwaySvc.StartJump:579-584` locks the ship's
 and the gate's `spaceObject`s from release —
 
-```python
-557  self.lockedBalls = []
-558  for ballID in [targetID, shipID]:
-559      ball = GetBall(ballID)
-560      if ball and hasattr(ball, 'LockFromRelease'):
-561          self.lockedBalls.append(ball)
-562          ball.LockFromRelease()
-```
+`StartJump` (`subwaySvc.py:557-562`) empties `lockedBalls`, then for the gate
+and the ship, in that order, fetches the ball and, when it has a
+`LockFromRelease` method, appends it to `lockedBalls` and calls
+`LockFromRelease()` `[V]`.
 
 and `spaceObject._Release:818-825` returns without tearing down any model when
 `lockedFromRelease` is set `[V]`. That lock exists **because the balls are
@@ -398,15 +372,11 @@ undocking, and that is correct behaviour, not a bug.
 `out/pyc/ballparkCommon/jumpdelay.pyc` — **server-shared code that ships with
 the client** (rule zero) `[V]`:
 
-```python
-5   ABYSSAL_JUMP_DELAY_MS = 4000
-8   def GetStargateJumpDelayMilliseconds(solarSystemID):
-9       if IsTriglavianSystem(solarSystemID):
-10          return ABYSSAL_JUMP_DELAY_MS
-11      return invulnerabilityJumping                 # = 4000, appConst
-14  def GetStargateJumpDelayBlueTime(solarSystemID):
-15      return GetStargateJumpDelayMilliseconds(solarSystemID) * gametime.MSEC
-```
+`jumpdelay.py` defines `ABYSSAL_JUMP_DELAY_MS = 4000` (`:5`).
+`GetStargateJumpDelayMilliseconds(solarSystemID)` (`:8-11`) returns that value for a
+Triglavian system and `invulnerabilityJumping` (4000, from appConst) for every
+other. `GetStargateJumpDelayBlueTime` (`:14-15`) multiplies the result by
+`gametime.MSEC`.
 
 `const.invulnerabilityJumping = 4000` `[V]` (read out of
 `out/pyc/eve/common/lib/appConst.pyc`; the whole family is
@@ -433,24 +403,18 @@ a `push_later`.
 
 `gameui._HandleSessionChangeInSpace`, lines 762-780 `[V]`:
 
-```python
-765  bp = sm.GetService('michelle').GetBallpark()
-766  if 'solarsystemid' in change:
-768      oldSolarSystemID, newSolarSystemID = change['solarsystemid']
-769      if oldSolarSystemID:                              # <-- jump, not undock
-771          sm.GetService('FxSequencer').ClearAll()
-772          self.LogInfo('Cleared effects')
-773      if bp and session.shipid in bp.balls:
-774          self.LogNotice('GameUI::OnSessionChanged, Heading for inflight with a valid ego', ...)
-775          bp.ego = session.shipid
-776          self.wannaBeEgo = -1
-778      else:
-          self.LogNotice('GameUI::OnSessionChanged:%s - Activating space view '
-                         'without a ego ball properly inserted into a proper ballpark.' % (change,))
-779          self.wannaBeEgo = session.shipid
-780          uthread.pool('GameUI::ChangePrimaryView::inflight',
-                          self._GetActivateViewFunction(viewSvc), 'inflight', change=change)
-```
+The steps, by line (`gameui.py`): **[V]**
+
+1. `:765`: get the ballpark `bp`.
+2. `:766-768`: if `solarsystemid` is in the change, read the old and new values.
+3. `:769-772`: if the old value is truthy (a jump, not an undock), clear all
+   FX sequences and log "Cleared effects".
+4. `:773-776`: if `bp` exists and `session.shipid` is in `bp.balls`, log that it
+   is heading for inflight with a valid ego, set `bp.ego` to the ship and reset
+   `wannaBeEgo` to `-1`.
+5. `:778-780`: otherwise log that space is being activated without an ego ball,
+   set `wannaBeEgo = session.shipid`, and start the `inflight` view
+   activation in a pooled tasklet.
 
 Line 769 is `[V]` proof that the client distinguishes a jump
 (`oldSolarSystemID` truthy) from an undock (`None`) — it clears the FX
@@ -544,19 +508,10 @@ Three `[V]` facts, each of which independently rules out a reset hazard:
 3. **The one deferral window is two ticks wide and cannot swallow a far-future
    stamp.** `Park.DoPreTick`, `michelle.py:1130`, with the `COMPARE_OP`
    operands read out of the bytecode (`tools/dis.py` does not print them; this
-   lane re-derived them) `[V]`:
-
-   ```
-   1130    67  LOAD_FAST   eventStamp
-   1130    70  LOAD_ATTR   currentTime
-   1130    76  COMPARE_OP  >
-   1130    82  LOAD_FAST   eventStamp
-   1130    88  LOAD_ATTR   currentTime
-   1130    91  BINARY_SUBTRACT
-   1130    92  LOAD_CONST  3
-   1130    95  COMPARE_OP  <
-   1131   101  BREAK_LOOP
-   ```
+   lane re-derived them) `[V]`: the drain breaks out of its loop, deferring the entry, when
+   `eventStamp > self.currentTime` and `eventStamp - self.currentTime < 3`
+   (bytecode at `michelle.py:1130-1131`, a `COMPARE_OP >`, a subtraction of the
+   constant 3, a `COMPARE_OP <`, then `BREAK_LOOP`).
 
    i.e. `if eventStamp > self.currentTime and eventStamp - self.currentTime < 3: break`.
    The drain is deferred **only** when the stamp is 1 or 2 ticks ahead, and
@@ -610,13 +565,10 @@ There is **no client-side arrival position computation for a gate jump**. The
 only warp-in geometry in the client is `eveCfg.GetWarpInPoint(ballID, position,
 radius)` (`eveCfg.py:1892-1898`) `[V]`:
 
-```python
-offset = 5000000
-p = const.jumpRadiusFactor / 100.0                        # 130/100 = 1.3
-x = position[0] + (radius + offset) * math.cos(radius)
-y = position[1] + p * radius - 7500.0
-z = position[2] - (radius + offset) * math.sin(radius)
-```
+With `offset = 5,000,000` and `p = jumpRadiusFactor / 100 = 1.3`, the point is
+`x = position.x + (radius + offset) * cos(radius)`,
+`y = position.y + p * radius - 7500` and
+`z = position.z - (radius + offset) * sin(radius)`:
 
 which is the **warp** destination ring (5000 km out) for a celestial, used by
 `michelle.GetWarpinPoint` (`michelle.py:1904`). It is not the gate arrival.

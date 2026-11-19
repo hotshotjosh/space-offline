@@ -18,160 +18,160 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 </style>
 <rect width="480" height="208" rx="6" class="bg"/>
 <text x="16.0" y="18.0" class="t">3.1 Prove what landed</text>
-<rect x="234.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="270.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="274.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="278.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="282.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="286.8" y="13.5" width="3" height="3" class="built"/>
-<rect x="290.8" y="13.5" width="3" height="3" class="built"/>
-<text x="298.8" y="18.0" class="s xs">15</text>
-<text x="16.0" y="34.0" class="t">3.2 The 11-09 port</text>
-<rect x="234.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="29.5" width="3" height="3" class="built"/>
-<rect x="267.3" y="30.0" width="2" height="2" fill="none" class="missing"/>
-<text x="274.8" y="34.0" class="s xs">9</text>
+<rect x="246.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="278.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="282.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="286.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="290.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="294.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="298.0" y="13.5" width="3" height="3" class="built"/>
+<rect x="302.0" y="13.5" width="3" height="3" class="built"/>
+<text x="310.0" y="18.0" class="s xs">15</text>
+<text x="16.0" y="34.0" class="t">3.2 Client update to the 2026…</text>
+<rect x="246.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="29.5" width="3" height="3" class="built"/>
+<rect x="278.5" y="30.0" width="2" height="2" fill="none" class="missing"/>
+<text x="286.0" y="34.0" class="s xs">9</text>
 <text x="16.0" y="50.0" class="t">3.3 PvP</text>
-<rect x="234.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="45.5" width="3" height="3" class="built"/>
-<rect x="271.3" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.8" y="47.0" width="3" height="1.5" class="part-f"/>
-<text x="278.8" y="50.0" class="s xs">10</text>
+<rect x="246.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="278.0" y="45.5" width="3" height="3" class="built"/>
+<rect x="282.5" y="46.0" width="2" height="2" fill="none" class="part-o"/><rect x="282.0" y="47.0" width="3" height="1.5" class="part-f"/>
+<text x="290.0" y="50.0" class="s xs">10</text>
 <text x="16.0" y="66.0" class="t">3.4 Upwell</text>
-<rect x="234.8" y="61.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="61.5" width="3" height="3" class="built"/>
-<rect x="243.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="242.8" y="63.0" width="3" height="1.5" class="part-f"/>
-<rect x="247.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="246.8" y="63.0" width="3" height="1.5" class="part-f"/>
-<rect x="251.3" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.8" y="63.0" width="3" height="1.5" class="part-f"/>
-<rect x="255.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="259.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="263.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="267.3" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<text x="274.8" y="66.0" class="s xs">9</text>
+<rect x="246.0" y="61.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="61.5" width="3" height="3" class="built"/>
+<rect x="254.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="254.0" y="63.0" width="3" height="1.5" class="part-f"/>
+<rect x="258.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.0" y="63.0" width="3" height="1.5" class="part-f"/>
+<rect x="262.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.0" y="63.0" width="3" height="1.5" class="part-f"/>
+<rect x="266.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="270.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="274.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="278.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<text x="286.0" y="66.0" class="s xs">9</text>
 <text x="16.0" y="82.0" class="t">3.5 PvE</text>
-<rect x="234.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="270.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="274.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="278.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="282.8" y="77.5" width="3" height="3" class="built"/>
-<rect x="286.8" y="77.5" width="3" height="3" class="built"/>
-<text x="294.8" y="82.0" class="s xs">14</text>
+<rect x="246.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="278.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="282.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="286.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="290.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="294.0" y="77.5" width="3" height="3" class="built"/>
+<rect x="298.0" y="77.5" width="3" height="3" class="built"/>
+<text x="306.0" y="82.0" class="s xs">14</text>
 <text x="16.0" y="98.0" class="t">3.6 Factional warfare and sov</text>
-<rect x="234.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="270.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="274.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="278.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="282.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="286.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="290.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="294.8" y="93.5" width="3" height="3" class="built"/>
-<rect x="299.3" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="298.8" y="95.0" width="3" height="1.5" class="part-f"/>
-<rect x="303.3" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="302.8" y="95.0" width="3" height="1.5" class="part-f"/>
-<rect x="307.3" y="94.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="311.3" y="94.0" width="2" height="2" fill="none" class="missing"/>
-<text x="318.8" y="98.0" class="s xs">20</text>
+<rect x="246.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="278.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="282.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="286.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="290.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="294.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="298.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="302.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="306.0" y="93.5" width="3" height="3" class="built"/>
+<rect x="310.5" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="310.0" y="95.0" width="3" height="1.5" class="part-f"/>
+<rect x="314.5" y="94.0" width="2" height="2" fill="none" class="part-o"/><rect x="314.0" y="95.0" width="3" height="1.5" class="part-f"/>
+<rect x="318.5" y="94.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="322.5" y="94.0" width="2" height="2" fill="none" class="missing"/>
+<text x="330.0" y="98.0" class="s xs">20</text>
 <text x="16.0" y="114.0" class="t">3.7 Society, economy and bots</text>
-<rect x="234.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="258.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="262.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="266.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="270.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="274.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="278.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="282.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="286.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="290.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="294.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="298.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="302.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="306.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="310.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="314.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="318.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="322.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="326.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="330.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="334.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="338.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="342.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="346.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="350.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="354.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="358.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="362.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="366.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="370.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="374.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="378.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="382.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="386.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="390.8" y="109.5" width="3" height="3" class="built"/>
-<rect x="395.3" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="394.8" y="111.0" width="3" height="1.5" class="part-f"/>
-<rect x="398.8" y="109.5" width="3" height="3" class="unknown"/>
-<rect x="402.8" y="109.5" width="3" height="3" class="unknown"/>
-<text x="410.8" y="114.0" class="s xs">43</text>
+<rect x="246.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="270.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="274.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="278.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="282.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="286.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="290.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="294.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="298.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="302.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="306.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="310.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="314.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="318.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="322.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="326.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="330.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="334.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="338.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="342.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="346.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="350.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="354.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="358.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="362.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="366.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="370.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="374.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="378.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="382.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="386.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="390.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="394.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="398.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="402.0" y="109.5" width="3" height="3" class="built"/>
+<rect x="406.5" y="110.0" width="2" height="2" fill="none" class="part-o"/><rect x="406.0" y="111.0" width="3" height="1.5" class="part-f"/>
+<rect x="410.0" y="109.5" width="3" height="3" class="unknown"/>
+<rect x="414.0" y="109.5" width="3" height="3" class="unknown"/>
+<text x="422.0" y="114.0" class="s xs">43</text>
 <text x="16.0" y="130.0" class="t">3.8 Remote clients, hosting</text>
-<rect x="234.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="238.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="242.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="246.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="250.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="254.8" y="125.5" width="3" height="3" class="built"/>
-<rect x="259.3" y="126.0" width="2" height="2" fill="none" class="part-o"/><rect x="258.8" y="127.0" width="3" height="1.5" class="part-f"/>
-<rect x="263.3" y="126.0" width="2" height="2" fill="none" class="missing"/>
-<text x="270.8" y="130.0" class="s xs">8</text>
+<rect x="246.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="250.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="254.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="258.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="262.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="266.0" y="125.5" width="3" height="3" class="built"/>
+<rect x="270.5" y="126.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.0" y="127.0" width="3" height="1.5" class="part-f"/>
+<rect x="274.5" y="126.0" width="2" height="2" fill="none" class="missing"/>
+<text x="282.0" y="130.0" class="s xs">8</text>
 <text x="16.0" y="146.0" class="t">3.9 Corp and social depth</text>
-<rect x="235.3" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="234.8" y="143.0" width="3" height="1.5" class="part-f"/>
-<rect x="239.3" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="238.8" y="143.0" width="3" height="1.5" class="part-f"/>
-<text x="246.8" y="146.0" class="s xs">2</text>
+<rect x="246.5" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="246.0" y="143.0" width="3" height="1.5" class="part-f"/>
+<rect x="250.5" y="142.0" width="2" height="2" fill="none" class="part-o"/><rect x="250.0" y="143.0" width="3" height="1.5" class="part-f"/>
+<text x="258.0" y="146.0" class="s xs">2</text>
 <text x="16.0" y="162.0" class="t">3.10 Structure and debt</text>
-<rect x="235.3" y="158.0" width="2" height="2" fill="none" class="part-o"/><rect x="234.8" y="159.0" width="3" height="1.5" class="part-f"/>
-<text x="242.8" y="162.0" class="s xs">1</text>
+<rect x="246.5" y="158.0" width="2" height="2" fill="none" class="part-o"/><rect x="246.0" y="159.0" width="3" height="1.5" class="part-f"/>
+<text x="254.0" y="162.0" class="s xs">1</text>
 <text x="16.0" y="178.0" class="t">3.12 Not planned</text>
-<rect x="235.3" y="174.0" width="2" height="2" fill="none" class="missing"/>
-<rect x="239.3" y="174.0" width="2" height="2" fill="none" class="missing"/>
-<text x="246.8" y="178.0" class="s xs">2</text>
+<rect x="246.5" y="174.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="250.5" y="174.0" width="2" height="2" fill="none" class="missing"/>
+<text x="258.0" y="178.0" class="s xs">2</text>
 <rect x="16.0" y="190.0" width="9" height="9" class="built"/>
 <text x="30.0" y="198.0" class="s xs">Built</text>
 <rect x="72.4" y="190.5" width="8" height="8" fill="none" class="part-o"/><rect x="71.9" y="194.5" width="9" height="4.5" class="part-f"/>

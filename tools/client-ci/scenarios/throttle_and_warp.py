@@ -522,8 +522,8 @@ def eoci_main(EOCI_NAME):
         `GetBall().GetVectorDotAt(blue.os.GetSimTime()).Length()`
         (`activeShipController.pyc:167-170`) [V]:
 
-            LOAD_ATTR GetVectorDotAt / CALL_FUNCTION 1
-            LOAD_ATTR Length        / CALL_FUNCTION 0
+            in words: attribute GetVectorDotAt, called with one argument,
+            then attribute Length, called with none
 
         **The `.Length()` is not optional**, and this docstring claimed [V]
         without it. `GetVectorDotAt` returns a native vector, so `speed_of`

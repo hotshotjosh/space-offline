@@ -1,6 +1,6 @@
-# Themes of docs/plans/master-plan.md §3, one per line: 3.N<TAB>name. A test keeps them equal to the plan headings.
+# Themes, one per line: 3.N<TAB>name.
 3.1	Prove what landed
-3.2	The 11-09 port
+3.2	Client update to the 2026-11-09 build
 3.3	PvP
 3.4	Upwell
 3.5	PvE
@@ -9,5 +9,5 @@
 3.8	Remote clients, hosting
 3.9	Corp and social depth
 3.10	Structure and debt
-3.11	Parked by the owner
+3.11	Parked
 3.12	Not planned

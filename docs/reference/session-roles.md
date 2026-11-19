@@ -95,12 +95,9 @@ build** — the EVE attributes are added to `Session` inside Carbon itself.
 
 The client's session is created once at boot:
 
-```python
-# autoexec_client_core.pyc
-session = basesession.CreateSession(None, SESSION_TYPE_GAME)
-__builtin__.session = session
-__builtin__.charsession = session
-```
+`autoexec_client_core.pyc` creates the session once with
+`basesession.CreateSession(None, SESSION_TYPE_GAME)` and binds it to both
+`__builtin__.session` and `__builtin__.charsession`.
 
 `CreateSession(sid=None, sessionType=5, role=ROLE_LOGIN)` — so before any
 server packet, `session.role == ROLE_LOGIN` and `session.sessionType == 5`.
@@ -247,12 +244,10 @@ tree. Re-exported by `carbon/common/script/sys/service.pyc` (so client code
 says either `serviceConst.ROLE_X` or `service.ROLE_X`). `eveservices/roles.pyc`
 provides the helpers:
 
-```python
-def has_any_role(session, role):      return bool(session.role & role)
-def has_specific_role(session, role): return bool(session.role & role == role)
-def remove_role(role, role_to_remove): return role & (SERVICE_ALL ^ role_to_remove)
-def add_role(role, role_to_add):       return role | role_to_add
-```
+- `has_any_role(session, role)` is true when `session.role & role` is non-zero;
+- `has_specific_role(session, role)` is true when `session.role & role == role`;
+- `remove_role(role, role_to_remove)` is `role & (SERVICE_ALL ^ role_to_remove)`;
+- `add_role(role, role_to_add)` is `role | role_to_add`.
 
 `SERVICE_ALL = 18446744073709551615` (`cluster/__init__.pyc`). **[V]**
 
@@ -490,17 +485,11 @@ right-click menu or auto-opened at character select / Neocom construction.
 `Insider.Show` gates the window on `ROLEMASK_ELEVATEDPLAYER`, then builds the
 bar from this table, appending each entry whose role the session holds: **[V]**
 
-```python
-menus = MenuList([['Tools',      self.ToolMenu,       serviceConst.ROLE_GML],
-                  ['Macro',      self.MacroMenu,      serviceConst.ROLE_GML],
-                  ['Ship',       self.ShipMenu,       serviceConst.ROLE_GML],
-                  ['Charges',    self.ChargeMenu,     serviceConst.ROLE_GML],
-                  ['Drones',     self.DroneMenu,      serviceConst.ROLE_GML],
-                  ['Implants',   self.ImplantsMenu,   serviceConst.ROLE_GML],
-                  ['QA',         self.QAMenu,         serviceConst.ROLE_QA],
-                  ['UI',         self.UIMenu,         serviceConst.ROLE_QA],
-                  ['Tournament', self.TournamentMenu, serviceConst.ROLE_TOURNAMENT]])
-```
+| menu | role that shows it |
+|---|---|
+| Tools, Macro, Ship, Charges, Drones, Implants | `ROLE_GML` |
+| QA, UI | `ROLE_QA` |
+| Tournament | `ROLE_TOURNAMENT` |
 
 So with `ROLEMASK_ELEVATEDPLAYER` satisfied but **no `ROLE_GML`**, the Insider
 window opens with an **empty menu bar** unless `ROLE_QA` or `ROLE_TOURNAMENT`
@@ -547,12 +536,9 @@ the "never set" list: they win over DEVELOPER and GAME_MASTER.
    on a session-init or session-change notification it takes the write lock,
    then
 
-   ```python
-   if sess.role & ROLE_SERVICE:
-       sess.rwlock.Unlock()
-       sess.LogSessionError('SESSIONFUXUP', ...)
-       raise RuntimeError('Session map failure, attempting to run a session init or change in a service session context')
-   ```
+   - if `sess.role & ROLE_SERVICE` is non-zero it releases the session lock,
+     logs `SESSIONFUXUP`, and raises `RuntimeError('Session map failure,
+     attempting to run a session init or change in a service session context')`.
 
 2. `CoreSession.ApplyRemoteAttributeChanges`: same condition, `RuntimeError`.
 
@@ -619,14 +605,10 @@ a user action. That was wrong, and a real client run is what caught it.
 portrait is missing — which it always is here, we serve no image server — it
 checks the role before falling back:
 
-```text
-127 POP_JUMP_IF_FALSE 299
-136 LOAD_GLOBAL       ROLE_PROGRAMMER
-139 BINARY_AND
-140 POP_JUMP_IF_FALSE 295        -> skips _QueueScenePortrait entirely
-...
-273 LOAD_ATTR         _QueueScenePortrait
-```
+1. At bytecode offsets 127-140 the function tests `role & ROLE_PROGRAMMER`.
+2. When the bit is clear it jumps to offset 295, skipping
+   `_QueueScenePortrait` entirely.
+3. When the bit is set it reaches the `_QueueScenePortrait` call at offset 273.
 
 With the bit set, the client starts a `photo::ProcessScenePortraits` worker
 that calls `paperDollServer.GetPaperDollDataBatch`, then
@@ -690,12 +672,11 @@ So **the role mask is `body[2]['role']` for command 18**, and
 
 `carbon/common/script/net/SessionChangeGPCS.pyc SessionChange.NotifyUp`: **[V]**
 
-```python
-if packet.command == MACHONETMSG_TYPE_SESSIONCHANGENOTIFICATION:
-    session.ApplyRemoteAttributeChanges(packet.change[1], initialState=False)
-elif packet.command == MACHONETMSG_TYPE_SESSIONINITIALSTATENOTIFICATION:
-    session.ApplyRemoteAttributeChanges(packet.initialstate, initialState=True)
-```
+- a `MACHONETMSG_TYPE_SESSIONCHANGENOTIFICATION` calls
+  `session.ApplyRemoteAttributeChanges(packet.change[1], initialState=False)`;
+- a `MACHONETMSG_TYPE_SESSIONINITIALSTATENOTIFICATION` calls
+  `session.ApplyRemoteAttributeChanges(packet.initialstate, initialState=True)`.
+
 
 - **`initialstate` is a flat `{attr: value}` dict.** The proxy builds it as
   `{v: getattr(session, v) for v in session.GetDistributedProps(0)}` — only
@@ -706,14 +687,9 @@ elif packet.command == MACHONETMSG_TYPE_SESSIONINITIALSTATENOTIFICATION:
 - Example from the proxy's own rebroadcast path, which is the best available
   template for what a server should emit:
 
-```python
-machoNetPacket.SessionInitialStateNotification(
-    source      = MachoAddress(clientID=session.clientID),
-    destination = MachoAddress(nodeID=each),
-    sid         = session.sid,
-    sessionType = session.sessionType,
-    initialstate= sessionprops)
-```
+  A `SessionInitialStateNotification` carries `source` (a `MachoAddress` with
+  `clientID`), `destination` (a `MachoAddress` with `nodeID`), `sid`,
+  `sessionType` and `initialstate` (the property dict).
 
 ### 6.4 The `role` value itself
 

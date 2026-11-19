@@ -22,8 +22,7 @@ Every flag and `EVE_*` variable is in
   (`awk -F'\t' '$3=="pinned"{print $1}' tools/builds.tsv` prints it). The
   launcher always installs the current Tranquility build. When that build is
   not `pinned` or `equivalent`, the server refuses it until the registry
-  catches up ([build-compat.md](build-compat.md),
-  [tracking-tq.md](tracking-tq.md)). Server-only work (most issues) needs no
+  catches up ([tracking-tq.md](tracking-tq.md)). Server-only work (most issues) needs no
   client at all.
 - **The client comes from the human.** A person installs EVE Online through
   Steam, logs in once with the official launcher, and lets it download
@@ -86,22 +85,15 @@ tools/offline-prefix.sh --link-resfiles   # the offline prefix, ResFiles hard-li
 tools/offline-prefix.sh --check           # what is there; changes nothing
 ```
 
-A remote player uses `tools/client-setup.sh copy`, which does both
-([remote-clients.md](remote-clients.md)).
-
 The copy lands at
 `$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline`. That
-is the default `EVE_CLIENT`, and `ResFiles` sits beside it. Then patch the
-copy and record its pin:
+is the default `EVE_CLIENT`, and `ResFiles` sits beside it.
 
-```sh
-python3 -I tools/eve_patch.py apply --client "$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline"
-python3 -I tools/eve_patch.py verify --client "$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline"
-tools/pin-client.sh            # verify the copy against tools/client-pin.sha256
-```
-
-The patcher's tiers and exit codes are in [patcher.md](patcher.md). The pin
-is in [jail.md](jail.md#the-build-is-pinned-and-now-it-is-checked).
+To play on this server the client must be patched. That is not part of this
+repository; the public guides are the
+[new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
+[blue_patcher](https://github.com/stschake/blue_patcher). The server-only and
+content steps below need no patched client.
 
 ## 4. Build the content bundle
 
@@ -134,9 +126,9 @@ on a failure (`logs/content-check.log`).
 |---|---|
 | no `resfileindex.txt` | `EVE_CLIENT` is not an install; set it or `EVE_CLIENT_DIR` |
 | no ResFiles | set `EVE_RESFILES`, or make the copy with `--link-resfiles` |
-| the build is refused | the install is not the pinned build; see [build-compat.md](build-compat.md) |
+| the build is refused | the install is not the pinned build; see [tracking-tq.md](tracking-tq.md) |
 | the `wormholes` section fails | a name in `content/wormholes/combat-sites.tsv` matches no combat dungeon of this build; fix the name, see [content-bundle.md](content-bundle.md#inputs) |
-| a schema guard disagreement | the client changed under the extractor; see [build-compat.md](build-compat.md) |
+| a schema guard disagreement | the client changed under the extractor; see [tracking-tq.md](tracking-tq.md) |
 
 ## 5. Run the server locally
 
@@ -152,7 +144,7 @@ Expected: a `# DEV MODE` banner, then
 `var/dev/world.dat`. Wipe it with `rm -r var/dev`.
 
 **The normal world, accounts, and your GM grant**
-([remote-clients.md](remote-clients.md#the-owner)):
+(the grant is the GM flag in the account file):
 
 ```sh
 tools/account.sh login                    # pick your name and password (asks; mode 600)
@@ -163,7 +155,7 @@ sudo -v && tools/up.sh                    # log in again: /whoami says GM
 
 The world is `var/world.dat`. Services only, no client:
 `sudo -v && tools/up.sh --no-client`. To host it for others, use
-`tools/serve.sh` ([hosting.md](hosting.md)).
+`tools/serve.sh`.
 
 ## 6. Run the client against it
 
@@ -202,14 +194,12 @@ More copy-paste launches, each with its ready line, are in
 - one client-CI scenario.
 
 Without root, `tools/jail-rootless.sh` gives the same view
-([jail.md](jail.md)). The phone-home patcher and its DNS census are in
-[patcher.md](patcher.md) and [census.md](census.md). Client logs and
-debugging are in [debugging-the-client.md](debugging-the-client.md).
+([jail.md](jail.md)).
 
 | Symptom | Fix |
 |---|---|
 | `jail-verify` fails | do not launch; read [jail.md](jail.md#the-host-firewall-has-to-let-the-jail-reach-our-services) |
-| the client refuses the build | patch and pin the copy (step 3) |
+| the client refuses the build | the copy is not the pinned build or is not patched (step 3) |
 | login refused | sign up first (`--signup`), or check `tools/account.sh login` |
 | slow fitting window or menus | run the server with `--gateway` |
 

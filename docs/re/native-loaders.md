@@ -74,15 +74,13 @@ NUL-padded C strings in `.rdata`, referenced only by `lea reg, [rip+disp]`
 from inside that one function — which is exactly why `fsd_dump.py names` could
 scrape them but could not order or type them. Each arm is the same shape:
 
-```
-lea   rdx, [rip + N]                     ; N -> the attribute name
-call  <strcmp>                / or an inlined movzx/cmp byte loop
-jne   <next attribute>          ending in `cmp reg, len+1`
-test  byte ptr [BASE + F], MASK          ; optional fields only: presence bits
-je    <return Py_None>
-mov   ecx, dword ptr [BASE + K]          ; the value
-jmp   PyInt_FromLong                     ; the box
-```
+1. load the address of the attribute name (a `lea` of an `.rdata` string);
+2. compare it with the requested name (a `strcmp` call, or an inlined byte loop),
+   moving on to the next attribute on a mismatch;
+3. for an optional field, test its presence bit and return `None` when it is
+   clear;
+4. load the value from a fixed offset from the base pointer;
+5. box it (for an integer, `PyInt_FromLong`) and return.
 
 so the parser anchors on each name `lea`, then inside that arm takes the
 `test`-ed presence word, the last base-relative access that is not the
@@ -117,12 +115,9 @@ offsets in `tp_getattro` are *not* record offsets: the row object's
 `[self+0x10]` points past the record's `uint32` primary key, padded up to the
 first field's alignment. The factory states both numbers:
 
-```
-imul rbx, rcx, 0x98                 ; types: stride 152
-add  rbx, qword ptr [rax + rdx*8]   ; + the bucket base
-lea  rcx, [rbx + 8]                 ; types: delta 8
-mov  qword ptr [rax + 0x10], rcx
-```
+In the `types` factory, the code multiplies the index by `0x98` (a stride of
+152 bytes), adds the bucket base loaded from a table, adds 8 (the delta), and stores the
+result at `[object + 0x10]`.
 
 The stride is often folded into address arithmetic instead
 (`lea rcx,[rcx+rcx*4]` then `lea rbx,[rax+rcx*8]` is a multiply by 40), so it

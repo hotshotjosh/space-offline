@@ -27,15 +27,13 @@ re-verified independently before any code changed:
 (`0x1809813e0`).
 
 **[V]** Confirmed from the **writer**, re-verified here:
-`Marshal::WriteObject` is at `0x1802dee00`, and its DBRow branch is
+`Marshal::WriteObject` is at `0x1802dee00`, and its DBRow branch does this:
 
-```text
-0x1802df843  cmp  [r15+8], rax      ; obj->ob_type == blue.DBRow?
-0x1802df84d  mov  r8d, 0x2a         ; <<< the tag
-0x1802df859  call 0x1802e2310       ; WriteTag
-```
+1. At `0x1802df843` it compares the object's type with `blue.DBRow`.
+2. On a match it loads the tag `0x2a` (`0x1802df84d`).
+3. It calls `WriteTag` at `0x1802e2310`.
 
-with `mov r8d, 0x2b` at `0x1802df93a` for the other type, whose shape is one
+The other type gets tag `0x2b` at `0x1802df93a`; its shape is one
 length-prefixed byte blob with no descriptor and no sub-objects — a SubStream.
 (The *name* SubStream is **[I]**; the shape is **[V]**.)
 
@@ -66,13 +64,18 @@ does `callable = header[0]; args = header[1]; PyObject_CallObject(callable, args
 which is exactly that call. **[V]** The DBRow reader only type-checks the
 result, so re-emitting a full descriptor per row is legal (wasteful, but legal).
 
-Shape from the client's own Python (`eveCfg.GetOwnersRowDescriptor`):
 
-```python
-blue.DBRowDescriptor((('ownerID', const.DBTYPE_I4), ('ownerName', const.DBTYPE_WSTR),
-                      ('typeID', const.DBTYPE_I4), ('gender', const.DBTYPE_I2),
-                      ('ownerNameID', const.DBTYPE_I4)))
-```
+
+The owners row descriptor (`eveCfg.GetOwnersRowDescriptor`) is a `blue.DBRowDescriptor`
+over these columns, in this order:
+
+| # | column | type |
+|---|---|---|
+| 1 | `ownerID` | `DBTYPE_I4` |
+| 2 | `ownerName` | `DBTYPE_WSTR` |
+| 3 | `typeID` | `DBTYPE_I4` |
+| 4 | `gender` | `DBTYPE_I2` |
+| 5 | `ownerNameID` | `DBTYPE_I4` |
 
 > **Correction, and not a cosmetic one.** This example previously had
 > `ownerNameID` and `gender` the other way round. The real order — re-read

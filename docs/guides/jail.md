@@ -67,9 +67,8 @@ does: see [The client's view is an allowlist](#the-clients-view-is-an-allowlist)
 
 ## Server redirection without touching a client file
 
-`manifest.dat` is signed and covers `start.ini`, so editing the server address
-there trips the integrity check (enforcement unknown, but why find out). Instead
-the jail's `resolv.conf` points at a stub resolver on `10.137.0.1` which answers
+The client's install files carry integrity data, so we leave them alone to
+redirect the server address. Instead the jail's `resolv.conf` points at a stub resolver on `10.137.0.1` which answers
 only for the EVE hostnames — `*.servers.eveonline.com` → our server — and
 NXDOMAINs everything else.
 
@@ -82,14 +81,12 @@ resolves, the jail is broken.
 
 `eve-dns` (`server/crates/eve-dns`) is the stub: std-only, zero dependencies,
 UDP and TCP, answering `*.servers.eveonline.com` and NXDOMAIN for everything
-else. `docs/reference/server.md` has none of it; it is small enough to read.
+else. It is small enough to read.
 
-The hostname was confirmed from the client's own bytecode rather than assumed.
-`serverInfo._GetServerIP` formats `'{}.servers.eveonline.com'` with the server
-name for every region except China's `optic`/`serenity`, which get
-`{}.evepc.163.com` and `servers-{}.evepc.163.com`. `GetServerIP` looks the name
-up in `SERVERS` lowercased, and a stock `start.ini` says `server = Tranquility`.
-So the one name that has to resolve is:
+The hostname was confirmed against the client rather than assumed: it builds
+the server name into a `servers.eveonline.com` host name (China's regions use a
+different domain), and a stock install names Tranquility. So the one name that
+has to resolve is:
 
 ```
 tranquility.servers.eveonline.com  ->  10.137.0.1
@@ -118,84 +115,13 @@ The Singularity sandbox was **server-side** — the dev and GM tools came from
 the role mask the server granted, not from a flag the client reads. So there is
 nothing to unlock here; it has to come from us.
 
-## One client file does have to change
+## The client must be patched to play
 
-`cryptoPack`. A stock install says `CryptoAPI`, under which every packet after
-the handshake is encrypted against CCP's public key and `GPS.__Execute` demands
-a signature we cannot produce. `Placebo` makes `EncryptedRead`/`EncryptedWrite`
-the identity (the unpublished login-path note §3). There is no DNS-style trick for this
-one: the alternative is patching `blue.dll`.
-
-**This sits awkwardly with the section above**, which avoids editing `start.ini`
-because `manifest.dat` is signed and covers it. Both things are true, and the
-honest statement is: we avoid editing it where there is an alternative, and for
-`cryptoPack` there is not. Enforcement of the manifest check is still unknown —
-if it bites, the first symptom will be at launch, long before any traffic.
-
-**Do not edit `start.ini` by hand** — it is covered by the manifest (below), so
-a hand edit makes the client refuse to start. Use `tools/client-prepare.sh`,
-which sets `cryptoPack = Placebo` *and* updates the manifest hash to match, on
-the copy, reversibly.
-
-### The manifest does hash `start.ini`, and we now know exactly how
-
-`manifest.dat` (19,089 bytes, at the install root) is a flat table:
-
-```text
-u32 version = 4
-u32 count   = 220
-u32 0
-repeated:  u32 nameLen, name, u32 hashLen = 32, 32-byte hash, u32 flag
-...then a trailer, which is the signature
-```
-
-Entry 1 is `app:\start.ini` with hash
-`d30eaa39…6bf439e6`, and that is the **SHA-256 of the stock file** — confirmed
-by hashing it. Our `Placebo` copy hashes to `a1d7a658…66761166`, so it does not
-match and cannot be made to match without resigning the manifest.
-
-**But there may be nothing that checks it.** The only manifest strings in
-`blue.dll` are four branches of `VerifyManifestFile`, and **every one of them is
-an I/O error**:
-
-```text
-VerifyManifestFile: Couldn't open manifest file <path>
-VerifyManifestFile: Could not create IResFilePtr instance
-VerifyManifestFile: Read problem
-VerifyManifestFile: fileSize < 0
-```
-
-There is **no "hash mismatch" string anywhere in the binary** — the only
-hash-related strings are OpenSSL's own. So either a mismatch is reported
-through some generic path, or the manifest is consulted lazily per resource
-and `start.ini`, which is read very early, never goes through it. Unresolved,
-and cheap to settle by running the client.
-
-It **is** enforced: the controlled experiment settled it. A copy with stock
-`start.ini` launches; the same copy with `cryptoPack` hand-edited shows the
-dialog. So the manifest hash of `start.ini` is checked.
-
-`tools/client-prepare.sh` is the answer that touches the least. It does not
-disable the check or modify any binary — it recomputes the SHA-256 of the
-edited `start.ini` and rewrites the one manifest entry for `app:\start.ini`
-(exactly 32 bytes, verified contiguous), so the manifest tells the truth about
-the owner's own change. `--check` reports state, `--restore` undoes it byte for
-byte, and it refuses the live install.
-
-One question remains, and only a launch answers it: **is `manifest.dat` itself
-signature-checked?** The manifest ends in a ~256-byte trailer that may be an
-RSA signature over the table. If it is not verified, the re-hashed manifest is
-accepted and this is the whole fix. If it is, the client still refuses, and the
-next step is to set `cryptoPack` another way (the Python source-override route,
-The unpublished recon-v24.01 note Round 3, which touches no manifest-covered file) rather than
-to defeat the signature. The tool says this plainly rather than claiming the
-question is closed.
-
-We did look for a way to override it from the command line instead. `boot` is
-native, and neither `blue.dll` nor `exefile.exe` contains the strings
-`start.ini` or `cryptoPack` in ASCII or UTF-16, so where the file is parsed was
-not found and **whether an argv override exists is unresolved**. Editing the
-file is the known-good path.
+To play on this server the client must be patched. That is not part of this
+repository, and these pages do not describe it; the public guides are the
+[new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
+[blue_patcher](https://github.com/stschake/blue_patcher). Always patch the
+**copy** (below), never the install you play on.
 
 ## Use
 
@@ -288,64 +214,13 @@ construction, and no host firewall is involved. That is a cleaner end state and
 is noted here as a future option; the current design keeps the services on the
 host so their logs and captures land in the repo without a namespace hop.)
 
-## Getting Placebo past the manifest check
-
-The client refuses to start unless `start.ini` and `manifest.dat` match their
-recorded hashes, and setting `cryptoPack = Placebo` changes `start.ini`. This
-was established the hard way, by three launches of the copy:
-
-| start.ini | manifest.dat | result |
-|---|---|---|
-| stock | stock | launches |
-| Placebo | re-hashed so its entry is correct | fails |
-| Placebo | stock | fails |
-
-The second row is the decisive one: the manifest entry for `start.ini` was
-corrected, and the client *still* refused — so editing the manifest breaks a
-second, whole-manifest integrity check on top of the per-file hashes.
-Re-hashing alone cannot work, and the manifest cannot be re-signed without
-CCP's key.
-
-So the owner-authorised client modification is to neutralise that self-check on
-the **copy's** `blue.dll`. `tools/client-patch-manifest.sh` does it, surgically:
-it locates the check by the stable `root:/manifest.dat` string reference (not a
-fixed offset), confirms the exact instruction, and rewrites one 4-byte
-instruction right after the verify call —
-
-```text
-call   VerifyManifestFile        ; verify root:/manifest.dat
-mov    rbx, [rax+0x10]           ; rbx = error length   48 8b 58 10
-                                 ;   ->  xor rbx,rbx;nop 48 31 db 90
-...
-test   rbx, rbx
-je     success                   ; now always taken
-```
-
-— so the error length is forced to zero and the success branch is always taken.
-Nothing else in the binary changes. It backs `blue.dll` up first, verifies the
-result, has `--check` and `--restore`, refuses the live install, and **refuses
-rather than guesses** if the surrounding instructions are not exactly what this
-build has — a different build fails safe instead of being corrupted.
-
-Then set the crypto pack with the manifest left stock:
-
-```sh
-tools/client-patch-manifest.sh      # neutralise the check (copy's blue.dll)
-tools/client-prepare.sh --no-rehash # cryptoPack = Placebo, manifest untouched
-```
-
-Both are reversible with `--restore`, and the live install is never touched.
-Whether a further per-resource check catches `start.ini` later is not yet
-known; if it does, it is the next thing to neutralise, and the first client
-launch after this says so.
-
 ## The build is pinned, and now it is checked
 
 `tools/pin-client.sh` records a sha256 of every file in the jailed install and
 verifies it. **Why it matters more than it looks:** every `[V]` mark in this
 repository is measured against the pinned build — **3662168** since the re-pin
 of 2026-10-31 (issue #19; it was 3619879 before, and 3619879 stays on disk as
-`tq-3619879`). Every constant read out of CCP's bytecode, every wire layout,
+`tq-3619879`). Every constant read from the client, every wire layout,
 every formula is anchored to it. Steam moved its own copy once already (to
 3628513), and until 2026-10-24 nothing noticed that the two had diverged. The
 real build of 2026-11-09 will repeat the re-pin.
@@ -367,11 +242,8 @@ pointed at the second prefix it passes, because **`tq-offline-2` is
 byte-identical to `tq-offline` across all 232 files**, so one manifest covers
 both clients (after a re-pin, rebuild the second client with `client2-setup.sh`).
 
-Two things a failure here means, and the second is easy to miss. The obvious
-one is that the RE corpus no longer describes what we run. The other is that
-our own patching is gone: `start.ini` and `manifest.dat` are modified in
-place with `.eveoffline-orig` backups beside them, so whatever replaced the
-build also reverted the `cryptoPack` work of the section above.
+A failure here means the notes in this repository no longer describe what we
+run, or that the copy was replaced by a different build.
 
 ## What the jail helper grants
 
@@ -430,14 +302,13 @@ points at `.../tq`, unless `EVE_OFFLINE_ALLOW_REAL_CLIENT=1`.
 
 Two reasons, and the second is the one that matters:
 
-1. We modify the client — `cryptoPack` now, possibly loose `.py` overrides or a
-   patched `blue.dll` later. Doing that to a live install means Steam can
-   revalidate and silently revert it in the middle of a debugging session.
+1. The client has to be modified to play here. Doing that to a live install
+   means Steam can revalidate and silently revert it in the middle of a debugging session.
 2. **If the jail ever leaked, whatever phoned home would be the client sitting
    next to your real EVE state** — settings, cache, and whatever the prefix
    holds. A copy keeps the game directories apart.
 
-Only the copy has `cryptoPack = Placebo`. The real install is left stock.
+Only the copy is modified. The real install is left stock.
 
 Making the copy by hand is `cp -a .../CCP/EVE/tq .../CCP/EVE/tq-offline` inside
 the online prefix, with EVE closed, before `tools/offline-prefix.sh`. A remote player
@@ -471,7 +342,7 @@ tools/offline-prefix.sh --check          # what is there; changes nothing
 ```
 
 - It copies everything in `compatdata/8500` (bottle, registry, Wine user
-  profile, `tq-offline` with its `cryptoPack` and `blue.dll` patches, the
+  profile, `tq-offline`, the
   client's settings) **except** the online installs `CCP/EVE/tq` and
   `CCP/EVE/sisi`, which the offline client never runs.
 - It only reads 8500. Every write goes to `<dest>.partial`, which is renamed
@@ -494,7 +365,7 @@ tools/offline-prefix.sh --check          # what is there; changes nothing
 **Why an imported build is a real copy and its blobs are hard links.**
 `tools/import-build.sh` brings a later online
 build into the offline prefix. The install directory is a real copy: the
-client writes `cache:` inside it and the patcher rewrites its files, and a
+client writes `cache:` inside it and a
 hard-linked install would write through to the online one. The ResFiles blobs
 are hard links, because the store is 48G on a disk that cannot hold two. Only
 names matching `^[0-9a-f]{2}/[0-9a-f]{16}_[0-9a-f]{32}$` are linked, never over
@@ -508,8 +379,7 @@ too, so `--sweep` re-checks the md5 monthly. The tool never names the copy
 `client-ci.sh` (sudo and `--rootless`) and `client-headless.sh` default to
 it (`EVE_PREFIX_ID=offline`); `--second` is still prefix 8501, which
 `client2-setup.sh` now fills from the offline prefix and whose `ResFiles`
-symlink it repoints there. The tools that read the client (`pin-client.sh`,
-`client-prepare.sh`, `client-patch-manifest.sh`, `analysis.sh`,
+symlink it repoints there. The tools that read the client (`pin-client.sh`, `analysis.sh`,
 `check-resources.sh`, `client-log.sh`, `evidence.sh`, `destiny-ref.sh`) point
 at the copy too.
 
@@ -626,24 +496,16 @@ or belongs to another checkout, and `client-ci.sh` then refuses to run.
 
 *Corrected 2026-10-25.* This section used to say "There is no code
 execution", citing `debug.Eval` and `debug.Exec`. **That was wrong.** Those
-two do disarm themselves on a client (`debugSvc.py:115`, `:153`), but the
+two do disarm themselves on a client, but the
 server has two other ways to hand the client a code object that it runs,
 and our own server uses both:
 
-- **`charMgr.GetSettingsInfo`.** The client asks for it after login. It
-  answers with a marshalled CPython code object, which the client installs
-  as `SettingsInfo.__code__` and calls (`pycode.rs:173-190`,
-  `service/character.rs`). Ours returns an empty dict. The client-CI
-  trigger sends the same blob with `execfile(...)` added, which runs any
-  script we choose (`pycode.rs:77-82`, `:302`).
-- **Handshake H8 `signedFunc`.** The client runs it through `Crypto.Verify`,
-  then `marshal.loads`, then `eval` in `GPS.__Execute`
-  (`pycode.rs:1-12`, the unpublished login-path note §4). Under `cryptoPack = Placebo`
-  the verify passes for anything.
+- **A character-settings reply** after login, which the client treats as code.
+- **A handshake field**, which the client evaluates once its check is satisfied.
 
 So **a server, or anyone who can rewrite its traffic, can run arbitrary
-Python in the client.** It runs as the client user, inside the jail. Under
-Placebo the traffic is plaintext, so an on-path attacker can do this too.
+Python in the client.** It runs as the client user, inside the jail. On a
+patched client the traffic is not protected, so an on-path attacker can do this too.
 That is why we strongly recommend that a remote player reach a server only through the
 SSH tunnel, never over a raw internet path: this is a real security risk.
 
@@ -678,7 +540,7 @@ gone; `tools/jail-drops.sh` reads the counters and the resolver's log.
 "Nothing in `eve-dns.log`" therefore means "no name was looked up", not
 "nothing was attempted".
 
-The census (`docs/guides/census.md`) is what records the rest: for the length of a
+The census ([census.md](census.md)) is what records the rest: for the length of a
 run it gives the namespace default routes (v4 and v6) into `census0`, a TUN
 device read by a sink that opens no socket. A TUN device has no wire, so
 the jail still reaches nothing; every attempt becomes a recorded packet.
@@ -703,8 +565,8 @@ This section used to describe a design; it now reports a result.
   ok    blocked docker0 on this host (172.17.0.1:53)
   ok    blocked libvirt bridge (192.168.122.1:53)
 == the host's OTHER addresses must be unreachable
-  ok    blocked the host's LAN address (192.0.2.151:22)
-  ok    blocked the host's LAN address (192.0.2.151:26000)
+  ok    blocked the host's LAN address (192.0.2.20:22)
+  ok    blocked the host's LAN address (192.0.2.20:26000)
 == udp egress must be impossible too
   ok    blocked udp 10.137.0.1:123 (only 53 is allowed)
 == dns must not resolve anything outside our stub
@@ -719,7 +581,7 @@ JAIL OK - no egress path found.
 ```
 
 The host-address checks are the sharpest of these: the allowlist names exactly
-one address, and the host has several, so `192.0.2.151:22` being unreachable
+one address, and the host has several, so `192.0.2.20:22` being unreachable
 from inside while the namespace can still reach `10.137.0.1:26000` is the
 allowlist doing precisely what it claims. The UDP check matters separately —
 every TCP probe above fails at *routing*, while UDP to `10.137.0.1:123` is a

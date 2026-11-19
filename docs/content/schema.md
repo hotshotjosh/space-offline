@@ -1471,7 +1471,7 @@ Invented example row:
 99	990001	990101=3;990102=1	999001
 ```
 
-- Checked: `races` is a cFSD table with `skills` (a `dict` whose keys read as ints) and an optional `shipTypeID` [V, `findings/pyd-schemas.tsv`].
+- Checked: `races` is a cFSD table with `skills` (a `dict` whose keys read as ints) and an optional `shipTypeID` [V, the unpublished pyd-schemas table].
 
 ### `agents/bloodlines.tsv`
 
@@ -1497,7 +1497,7 @@ Invented example row:
 901	99	1999001	999011
 ```
 
-- Checked: `bloodlines` is a cFSD table with `charisma corporationID descriptionID iconID intelligence memory nameID perception raceID willpower` [V, `findings/pyd-schemas.tsv`]. Every row is written, the NPC-only bloodlines included; the client offers a race its player bloodlines only, so the server checks the race and nothing else.
+- Checked: `bloodlines` is a cFSD table with `charisma corporationID descriptionID iconID intelligence memory nameID perception raceID willpower` [V, the unpublished pyd-schemas table]. Every row is written, the NPC-only bloodlines included; the client offers a race its player bloodlines only, so the server checks the race and nothing else.
 
 ### `agents/npc-characters.tsv`
 
@@ -1819,7 +1819,7 @@ Invented example rows:
 
 ### `cosmetics/ship-licences.tsv` (#207, EM-3)
 
-- **Writer:** `tools/content_lp.py`, the `lp` section of `content.py`: one row per row of the client's `shipcosmeticlicenses` (`findings/pyd-schemas.tsv`), by `licence_id`.
+- **Writer:** `tools/content_lp.py`, the `lp` section of `content.py`: one row per row of the client's `shipcosmeticlicenses` (the unpublished pyd-schemas table), by `licence_id`.
 - **Readers:** `eve-server` `emblem::TABLE` (`emblem::Licences`). Optional: with none, no offer is a licence and the Paragon store hands out items as any other store. The server keeps only emblem rows (`cosmetic_type` 1 corporation logo, 2 alliance logo [V `shipcosmetics/common/const.py:11-12`]).
 - **Key:** `licence_id`; the server keys by `type_id`.
 - **Stable client ids and delta keys (ruling 4):** delta kind `emblem` keys by hull type and cosmetic type, `own char ship_type cosmetic_type -> 1` and `slot ship_item backend_slot -> cosmetic_type writer` (the slot lights only for the pilot who wrote it); no licence id and no licence type id is persisted.
@@ -1863,10 +1863,10 @@ The weights of what a geode holds are the authored `content/econ/geode-loot.tsv`
 
 ### `proving/match_types.tsv` and `proving/match_rewards.tsv` (#64 PG-1a)
 
-- **Writer:** `tools/content_proving.py`, the `proving` section of `content.py`. Input: the client's `pvpfilamentmatchtypes` (stride 96, `findings/pyd-schemas.tsv`) and `types`. `check` re-derives both files and fails on any `filamentTypeID` outside group 4050 (the filament group).
+- **Writer:** `tools/content_proving.py`, the `proving` section of `content.py`. Input: the client's `pvpfilamentmatchtypes` (stride 96, the unpublished pyd-schemas table) and `types`. `check` re-derives both files and fails on any `filamentTypeID` outside group 4050 (the filament group).
 - **Readers:** `proving::TABLE` (`proving::MatchType::parse_rows`, #64 PG-1d). Optional: a bundle without them leaves every event's match type blank. An empty cell is `None`; a short row, a bad number, a repeated match type or a reward of an unknown one is an error naming the file and line. The loader has no type names, so a schedule row with a `name_has` word is unserved.
 - **Key:** `match_type_id` (the client's table key). `match_rewards.tsv` has one row per `rewards` entry, in the client's list order.
-- **Empty fields:** an optional field whose presence bit the client row leaves clear is written empty (the client's getter returns `None`, `[V]` `findings/pyd-schemas.tsv` `optional(bit, word=+92)` and the `fsd.py` generic decoder). They are `min_queue_multiplier`, `max_of_ship_type`, `max_of_ship_group`, `meta_level_cap`, `banned_modules_list`, `limited_modules_list`, `limited_modules_count` and `loot_table_id`.
+- **Empty fields:** an optional field whose presence bit the client row leaves clear is written empty (the client's getter returns `None`, `[V]` the unpublished pyd-schemas table `optional(bit, word=+92)` and the `fsd.py` generic decoder). They are `min_queue_multiplier`, `max_of_ship_type`, `max_of_ship_group`, `meta_level_cap`, `banned_modules_list`, `limited_modules_list`, `limited_modules_count` and `loot_table_id`.
 
 ```
 #match_type_id	filament_type_id	fleets	fleet_size	min_queue_multiplier	ship_restrictions	max_of_ship_type	max_of_ship_group	meta_level_cap	banned_modules_list	limited_modules_list	limited_modules_count	loot_table_id	event_name_id	event_description_id	filament_description_id	restrictions_description_id	rewards_hint_id	rules_hint_id	ship_restrictions_hint_id
@@ -1883,7 +1883,7 @@ The weights of what a geode holds are the authored `content/econ/geode-loot.tsv`
 | `max_of_ship_type`, `max_of_ship_group` | `i64?` | most of one hull or group per team |
 | `meta_level_cap` | `i64?` | `moduleAndImplantMetaLevelRestrictions` |
 | `banned_modules_list`, `limited_modules_list`, `limited_modules_count` | `i64?` | type list ids and the limit |
-| `loot_table_id` | `i64?` | `provingGroundLootTableID`: a table the client does not ship `[V]` (`docs/re/proving-grounds.md` §3.3), carried as an id |
+| `loot_table_id` | `i64?` | `provingGroundLootTableID`: a table the client does not ship `[V]` (the unpublished proving-grounds note §3.3), carried as an id |
 | `*_id` (names, descriptions, hints) | `i64` | client message ids, not resolved |
 | `amount`, `type_id` | `i64` | one reward entry: a count of an item type |
 
@@ -2216,7 +2216,7 @@ Invented example rows:
 
 ### `mutators/ranges.tsv`
 
-- **Writer:** #222 MUTA-DATA (`content_mutators.py`), from `dynamicitemattributes.fsdbinary` (a cFSD table; layout `findings/pyd-schemas.tsv`).
+- **Writer:** #222 MUTA-DATA (`content_mutators.py`), from `dynamicitemattributes.fsdbinary` (a cFSD table; layout the unpublished pyd-schemas table).
 - **Readers:** #222 (`mutator_data.rs`, `Mutators::get`).
 - **Key:** `(mutator_type_id, attribute_id)`.
 - **Stable client ids and delta keys (ruling 4):** none. Every id is a client type or attribute id.
@@ -3077,7 +3077,7 @@ A listed system whose own `faction_id` is not a militia of its warzone is logged
 
 ### `facwar/max_lp.tsv` (#133, FW-KILLS)
 
-- **Writer:** `tools/content_facwar.py`, the `facwar` section of `content.py`. Input: the bytecode of `out/pyc/eve/common/lib/appConst.pyc` (`facwarMaxLPPayout`, a dict `group constant -> LP`) with the group ids of `out/pyc/inventorycommon/const.pyc`. With no `out/pyc` the file is not written. **Adding it needs a full bundle regeneration** (the manifest gains a file).
+- **Writer:** `tools/content_facwar.py`, the `facwar` section of `content.py`. Input: the client's faction-warfare LP payout constants (a map from group constant to LP) and its inventory group ids, read from the extracted client tree. With no extracted tree the file is not written. **Adding it needs a full bundle regeneration** (the manifest gains a file).
 - **Readers:** `facwar.rs` (`Table::max_lp_of`, read through the `facwar` table's `boxed_load`), `fw_lp::max_kill_lp`. Optional: with no file, or a hull group with no row, a kill is capped at `fw_lp::MAX_LP_UNKNOWN_GROUP` (`appConst.facwarMaxLPUnknownGroup`, a Rust const). `facwarMaxLPPayoutFactionOverwrites` is not applied [A].
 - **Key:** `group_id`; sorted ascending. 45 rows on build 3662168 [V-data].
 

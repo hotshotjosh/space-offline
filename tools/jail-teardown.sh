@@ -3,6 +3,8 @@
 #   sudo tools/jail-teardown.sh
 set -euo pipefail
 NS=${EVE_JAIL_NS:-eveoffline}
+# NS ends up in `rm -rf "/etc/netns/$NS"` as root: accept only a plain name.
+[[ $NS =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "bad namespace name: $NS (want [a-z0-9-], 1 to 32 characters)" >&2; exit 2; }
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 ip netns del "$NS" 2>/dev/null && echo "removed namespace $NS" || echo "no namespace $NS"
 ip link del eve-host 2>/dev/null && echo "removed veth eve-host" || true

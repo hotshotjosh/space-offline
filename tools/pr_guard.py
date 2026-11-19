@@ -21,7 +21,9 @@ import sys
 MAX_BYTES = 1024 * 1024
 GUARDED_EXACT = {
     "CLAUDE.md", "AGENTS.md", "LICENSE", "LICENSE.md", "LICENSE-additions.md", "CONTRIBUTING-terms.md", "NOTICE", "CODEOWNERS",
-    "docs/guides/public-export.md", "docs/guides/jail.md",
+    "docs/guides/public-export.md", "docs/guides/jail.md", "SECURITY.md",
+    "docs/guides/contributing.md", "docs/guides/getting-started.md",
+    "docs/guides/issue-tracking.md", "docs/guides/working-together.md",
     "docs/lanes/README.md",
     "tools/land.sh", "tools/gate.sh", "tools/dev.sh",
     "tools/flaky.tsv", "tools/gate_reds.py", "tools/test-parallel.sh",
@@ -30,10 +32,15 @@ GUARDED_EXACT = {
     "server/deps.allow", "server/deps.digest", "server/THIRD-PARTY.txt", "server/Cargo.lock", "Cargo.lock",
     "tools/check_deps.py", "tools/dep-notices.py",
     ".gitattributes", ".gitmodules",
+    # Code that runs as root or runs automatically on a contributor's machine.
+    "tools/eve-offline-jail.in", "tools/install-jail-helper.sh", "tools/jail-setup.sh",
+    "tools/jail-teardown.sh", "tools/jail-verify.sh", "tools/jail-client.sh",
+    "tools/jail-rootless.sh", "tools/run-client.sh", "tools/install-hooks.sh",
+    "tools/tracker.py", "tools/analysis.sh", "tools/pr_overlap.py", "tools/status-guard.py", "tools/test_gate.py",
 }
 GUARDED_PREFIX = (
     "deploy/", ".github/", ".for" + "gejo/", "private/", "containers/",
-    ".cargo/", "server/.cargo/",
+    ".cargo/", "server/.cargo/", "tools/hooks/",
 )
 GUARDED_GLOB = ("*/build.rs", "build.rs", "private/export-*.txt")
 DEP_SECTION = re.compile(r"^\s*\[(?:[^\]]*\.)?(?:dev-|build-)?dependencies(?:\.[^\]]*)?\]", re.I)

@@ -49,6 +49,7 @@ Run::
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -82,7 +83,6 @@ PLANNED = {
 # owner, so its doc paths predate DOCS-CLEAN's moves.
 _JAIL = "tools/eve-offline-jail.in"
 KNOWN_BROKEN: dict = {
-    (_JAIL, "docs/" + "unattended-root.md"): "now docs/reference/unattended-root.md",
     (_JAIL, "docs/" + "census.md"): "now docs/guides/census.md",
 }
 
@@ -117,7 +117,7 @@ def private_prefixes(root: str) -> list[str]:
         if os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 lines = [x.strip() for x in f if x.strip() and not x.lstrip().startswith("#")]
-            return [x for x in lines if x.startswith("docs/")]
+            return [x for x in lines if x.startswith(("docs/", "sha256:"))]
     return []
 
 
@@ -170,14 +170,22 @@ def stale_absent_ok(root: str, used: set) -> list[str]:
     return out
 
 
+def under_private(rel: str, prefixes: list[str]) -> bool:
+    """True when `rel` is one of `prefixes` or below one. An entry is a plain path, or (in an
+    exported tree, which must not name the withheld docs) `sha256:<hex>` of the path without a
+    trailing slash; `rel` is hashed whole and at each parent directory."""
+    parts = rel.split("/")
+    cands = ["/".join(parts[:i]) for i in range(1, len(parts) + 1)]
+    hashed = {"sha256:" + hashlib.sha256(c.encode()).hexdigest() for c in cands}
+    return any(p in hashed or rel == p or rel.startswith(p.rstrip("/") + "/") for p in prefixes)
+
+
 def absent_private(root: str, rel: str, prefixes: list[str] | None = None) -> bool:
     """True when `rel` is a private doc that this tree does not hold (an exported tree).
     A dead link to a public doc, or to a private doc in the private tree, still fails."""
     prefixes = private_prefixes(root) if prefixes is None else prefixes
     rel = os.path.normpath(rel).replace(os.sep, "/")
-    return not os.path.exists(os.path.join(root, rel)) and any(
-        rel == p or rel.startswith(p.rstrip("/") + "/") for p in prefixes
-    )
+    return not os.path.exists(os.path.join(root, rel)) and under_private(rel, prefixes)
 
 
 # ---------------------------------------------------------------- the tree
@@ -591,6 +599,20 @@ class Negatives(unittest.TestCase):
         self.put("tools/doc-private-prefixes.txt", D + "packets.tsv\n")
         self.assertEqual(check_packets(self.root), [])
 
+    def test_hashed_prefixes_hide_the_names_and_still_match_files_and_directories(self):
+        def h(path):
+            return "sha256:" + hashlib.sha256(path.encode()).hexdigest()
+        self.put("tools/doc-private-prefixes.txt", "# hashes\n" + h(D + "secret") + "\n" + h(D + "hidden.md") + "\n")
+        self.put(D + "a.md", f"see {D}secret/x/y.md and {D}hidden.md and {D}other.md\n")
+        self.assertEqual(check_cited_paths(self.root, self.files(), planned={}, known={}),
+                         [f"{D}a.md:1: cites {D}other.md, which does not exist"])
+
+    def test_a_hashed_entry_is_found_in_a_cited_line(self):
+        h = ["sha256:" + hashlib.sha256((D + "secret").encode()).hexdigest()]
+        self.assertTrue(cites_private(f"see `{D}secret/x.md`.", h))
+        self.assertTrue(cites_private(f"see {D}secret", h))
+        self.assertFalse(cites_private(f"see {D}public/x.md", h))
+
     def test_a_contributor_doc_citing_an_absent_private_doc_fails(self):
         self.put("tools/doc-private-prefixes.txt", D + "secret/\n")
         self.put("AGENTS.md", f"read {D}secret/x.md and [l]({D}secret/y.md)\n")
@@ -682,7 +704,7 @@ L9_DOCS = ["AGENTS.md", "CLAUDE.md", "docs/README.md", CONTRIBUTING]
 OWNER_PRIVATE = [
     "private/", "docs/lanes/", "docs/port-tracker.md", "docs/plans/",
     "docs/review/state-of-the-emulator.md", "docs/review/plan.md", "docs/packets.tsv",
-    "docs/guides/human-checks.md", "docs/guides/history-purge.md",
+    "docs/guides/human-checks.md",
 ]
 # Exported file -> why it may still cite a private path. May only shrink.
 KNOWN_PRIVATE_CITES: dict[str, str] = {}
@@ -709,6 +731,9 @@ def private_paths(root: str) -> list[str]:
 
 
 def cites_private(line: str, private: list[str]) -> bool:
+    hashed = [p for p in private if p.startswith("sha256:")]
+    if hashed and any(under_private(t.rstrip("."), hashed) for t in re.findall(r"docs/[\w./-]+", line)):
+        return True
     return any(re.search(r"(?<![\w./-])" + re.escape(p), line) for p in private)
 
 

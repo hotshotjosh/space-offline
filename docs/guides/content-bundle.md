@@ -86,7 +86,7 @@ researched blueprint passes at a lower markup.
 | `resfileindex.txt` | the client install | as above | CCP; read only | yes: maps `res:` paths to ResFiles and gives each file's md5 |
 | `res:/staticdata/*.static`, `*.fsdbinary` | ResFiles, through the index | as above (every resource downloaded) | CCP; read only, never committed | yes |
 | `res:/localizationfsd/localization_fsd_en-us.pickle` | ResFiles | as above | CCP; read only | yes: names and text |
-| `bin64/*Loader.pyd` | the client install | as above | CCP; only their schemas are re-derived and compared with our committed `findings/pyd-schemas.tsv` | yes: the schema guard |
+| `bin64/*Loader.pyd` | the client install | as above | CCP; only their schemas are re-derived and compared with a schema table we keep (not published) | yes: the schema guard |
 | `out/pyc/` (unpacked client code) | the client's `code.ccp` | our RE tools | CCP; local only | no: without it `facwar/max_lp.tsv` is not written |
 | `content/wormholes/combat-sites.tsv` | this repository | in the clone | ours (authored, `[A]`, public game knowledge) | yes, for the `wormholes` section: the combat anomalies' class by name |
 | `out/geode-picks.local.tsv` | a local file, gitignored | written by hand | local only | no |
@@ -126,7 +126,7 @@ facts, never for code or prose, so the AGPL does not reach this pipeline.
 `content.py` runs four built-in sections first, then every
 `tools/content_*.py` that exports `SECTION`, `DEPENDS`, `section(ctx)` and
 `check(ctx)`, in dependency order. Before each section, a schema guard
-checks the client's loader schemas against `findings/pyd-schemas.tsv`, and
+checks the client's loader schemas against the unpublished pyd-schemas table, and
 any disagreement stops the run. Later sections read earlier outputs from the
 bundle being built.
 
@@ -208,7 +208,7 @@ grep -c '^file' out/content/MANIFEST.tsv
 
 ## A new client build
 
-Full detail is in [build-compat.md](build-compat.md). In order:
+Full detail is in [tracking-tq.md](tracking-tq.md). In order:
 
 1. `tools/import-build.sh tq-<name>` copies the online install into the
    offline prefix, hard-linking the blobs.

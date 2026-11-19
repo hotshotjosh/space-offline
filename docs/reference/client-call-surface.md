@@ -353,15 +353,9 @@ awk -F'\t' '$8 ~ /stored back to the guarded name/ && $8 ~ /cached as @/' \
 **The counts are lower bounds.** The detector takes the *nearest* conditional
 jump that skips the call, so a compound condition hides half of itself.
 `jumpCloneSvc.GetShipCloneState` at `clonejumpsvc.py:105` reads `guard=none`,
-and the real code is
-
-```python
-if not self.shipJumpClones or shipID != self.shipJustClonesShipID:
-    ...
-    self.shipJumpClones = lm.GetShipCloneState()
-```
-
-— the nearest jump belongs to the `!=`, so the `if not` half is invisible. It is
+and the real guard is a compound: the call runs when the ship-clone cache is empty
+**or** the ship id differs from the one cached (`if not <cache> or shipID != <cachedShipID>`),
+so the `if not` half is invisible. It is
 the same live lock as its sibling two methods down. When a row says `none` and
 the method smells like a cache, read the caller.
 

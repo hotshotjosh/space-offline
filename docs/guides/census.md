@@ -1,11 +1,14 @@
-# The census: proving the patched client phones nobody
+# The census: proving the client phones nobody
 
 Packet CEN-1 built the recorders and the report; CEN-2 (helper verbs),
 CEN-3 (shim, rootless, orchestrator, eve-dns log fields) and CEN-4 (client
 scenarios) wire them into a run. The design is the research lane
 R-CENSUS (`out/research/R-CENSUS.md`, gitignored because it names client
-endpoints). The patcher it checks is the unpublished patcher note; the jail it extends
-is `docs/guides/jail.md`.
+endpoints). The jail it extends is `docs/guides/jail.md`.
+
+A run compares a **control** copy (the stock client, which shows every attempt
+it makes) with one or more **subject** copies (the client as prepared for this
+server). The subject passes only when it shows no attempt the control made.
 
 ## Why the jail alone cannot answer the question
 
@@ -28,7 +31,7 @@ a file, and nothing can leave: a TUN device has no wire.
 | R2 | `nft.json` | the `eve_census` nft table, dumped by the helper (CEN-2) | per-flow counters for every output packet, before the jail's drop: catches what goes to 10.137.0.1 or loopback, which R1 never sees |
 | R3 | `dns.log` | eve-dns, this run's slice (CEN-3 adds `peer=` and `t=`) | every name looked up |
 | R4a | `exec.log` | `tools/census/browser-shim` | every browser hand-off (`xdg-open`, Wine's `winebrowser` list), argv logged, exit 1 |
-| R4b | `proxy.jsonl` | `tools/census_proxy.py` on 127.0.0.1:9 | every request the patcher's Tier A sends to the dead proxy, named; answered 403 |
+| R4b | `proxy.jsonl` | `tools/census_proxy.py` on 127.0.0.1:9 | every request the client sends to the dead proxy, named; answered 403 |
 | — | `canary.jsonl` | `tools/census_canary.py` | the canary windows and the host canaries' results |
 | — | `crash.txt` | the orchestrator (CEN-3) | new crash-DB files since the run's mark |
 
@@ -75,9 +78,8 @@ parties fire them, each bracketing its rows with
 - `wine`: the orchestrator, through Proton: `ping.exe` (ICMP) and
   `ping.exe` with a name (Wine's resolver; GE-Proton10-34 has no `nslookup.exe`).
 - `client`: the `census_canary` scenario: the client's Python sockets and
-  resolver, `urllib2` and `requests` (through the proxy when patched,
-  direct in the control), WinHTTP, and `ShellExecute` (no launcher when
-  patched, `xdg-open` in the control).
+  resolver, `urllib2` and `requests` (through the dead proxy in the subject,
+  direct in the control), WinHTTP, and `ShellExecute`.
 
 A canary target seen outside every window is a LEAK. No known client path
 uses an IP literal, so the canaries are the only proof that R1 and R2 see;
@@ -88,7 +90,7 @@ the summary says so on every run.
 | class | events |
 |---|---|
 | ALLOWED | TCP to 10.137.0.1 on 26000 or 5222; DNS to 10.137.0.1; a lookup of the server name |
-| ABSORBED | any dead-proxy request (host listed); a connect to 127.0.0.1:9; TCP to 10.137.0.1:8443; a lookup under `.lndarkly.invalid` (B2 at work) or `.gateway.invalid` (tier C8 at work) |
+| ABSORBED | any dead-proxy request (host listed); a connect to 127.0.0.1:9; TCP to 10.137.0.1:8443; a lookup under `.lndarkly.invalid` or `.gateway.invalid` |
 | NOISE | kernel ICMPv6 (RS, NS, MLDv2: types 133, 135, 143) to `ff02::/16` |
 | CANARY | a canary target inside a canary window (R2 and old-format R3 lines carry no time, so a canary target there always counts) |
 | LOCAL | other loopback traffic. It cannot leave the netns, so it never fails V1; unjailed, loopback is the host's, so V2 requires none. This class is ours, not R-CENSUS's |
@@ -109,7 +111,7 @@ Per copy, by `census_report.py RUN --role control|subject`:
   each such path INCONCLUSIVE. With no valid control, every path is
   INCONCLUSIVE. If the crash path never fires under Wine, B1 stays [I],
   and the summary's second line says so.
-- **V1, patch verified (jailed)**: no LEAK at all, and every path exercised
+- **V1, verified (jailed)**: no LEAK at all, and every path exercised
   in the control.
 - **V2, eligible to run unjailed (strict)**: V1, plus no lookup at all but
   the server name (even an absorbed `.lndarkly.invalid` lookup would reach
@@ -118,7 +120,7 @@ Per copy, by `census_report.py RUN --role control|subject`:
   listens on port 9.
 
 The owner's criterion ("zero outbound attempts except to our server, for
-both patched builds, and the unpatched copy showing the attempts") is V1 on
+both subjects, and the control copy showing the attempts") is V1 on
 both subjects with a complete control. Whether the jail can go is V2 plus
 R-CENSUS §5, which a census cannot answer: any server the client talks to
 can push code into it.
@@ -196,9 +198,7 @@ tools/census.sh --all       # unattended, hours; ends with out/census/<utc>/SUMM
    it puts `tools/census/bin` first on `PATH`, sets `CENSUS_EXEC_LOG`, passes
    `EVE_CENSUS=1` to the client, fires the host canaries
    (`census_canary.py run`) and the Wine ones (`ping.exe` twice: an echo, and a name lookup
-   between `mark start|end wine`), then starts the client. The control also
-   loses the patcher's env and args, the winebrowser override and
-   `/noCrashReportUpload`;
+   between `mark start|end wine`), then starts the client;
 4. after the client: `census-dump` into `RUN/nft-SCEN.json`, `census-down`
    (SIGTERM, so each recorder writes its stop line), and `verify` again,
    which must pass;
@@ -241,20 +241,17 @@ Three scenarios beyond CEN-4's six, for the paths those never reach. All
 refuse outside a census, fire only invented `.invalid` names, and are in
 `census.sh`'s default list.
 
-| scenario | fires | control sees | subject (tier C on) |
+| scenario | fires | control sees | subject |
 |---|---|---|---|
-| `census_report_bug` | `BugReporter(<the client's own server constant>)`: `IsBugsServiceOnline`, then `SendBugReport` with invented text and no files | a lookup of the bug-report host | only a connect to `127.0.0.1:9` |
-| `census_urls` | `photo` and `browserImage` `GetTextureFromURL`; the minibrowser's `GetStringFromURL` for http, https and **ftp**; `ImageDownloader.fetch`; `Subtitles.LoadSubtitleFile`; `MMOSGateway.get_data_from_url`; `send_metrics_to_victoria_metrics` with its default URL | a lookup per invented name, and one for the metrics host | the same lookups (URLs are data: nothing to patch), except the metrics URL, which is a connect to `127.0.0.1:9` |
-| `census_cdn` | an invented index row for a `res:/` path no ResFiles holds, read through `blue.paths.GetFileContentsWithYield`, with the cache folder on an empty temp directory; it also logs `blue.remoteFileCache.server`, `.backupServer`, `.prefix` | lookups of the CDN names, perhaps `wpad` | only a connect to `127.0.0.1:9` |
+| `census_report_bug` | the client's bug-report call with invented text and no files | a lookup of the bug-report host | only a connect to `127.0.0.1:9` |
+| `census_urls` | the client's URL-fetching helpers (images, the in-game browser for http, https and **ftp**, subtitles, the gateway data helper, a metrics helper with its default URL) with invented names | a lookup per invented name, and one for the metrics host | the same lookups, except the metrics URL, which is a connect to `127.0.0.1:9` |
+| `census_cdn` | an invented index row for a `res:/` path no ResFiles holds, with the cache folder on an empty temp directory | lookups of the CDN names, perhaps `wpad` | only a connect to `127.0.0.1:9` |
 
-[A] for `census_cdn`: blue reads the cache folder, the servers and the index
+[A] for `census_cdn`: the client reads its cache folder, servers and index
 at call time, and a row added at run time is honoured. Falsifier: no event
-at all in the control. The three attributes are in the census log, so a
-changed constant shows up there.
+at all in the control.
 
-The ftp case is the Tier A gap: `ftp://` goes past `HTTP(S)_PROXY`, and no
-patch closes it yet (the launcher-env fix, G2, was not built; the no-jail
-research decides). Its name is a **known-open** row (class `OPEN`,
+The ftp case is an open gap: `ftp://` goes past the proxy settings. Its name is a **known-open** row (class `OPEN`,
 `KNOWN_OPEN` in `census_report.py`): not a LEAK, and never a pass. A subject
 that shows it reads INCONCLUSIVE with the note "known-open path(s)", and its
 path (P8b) has status OPEN.
@@ -270,32 +267,6 @@ are real too: a call that raised `ImportError`, `NameError` or `TypeError`
 never reached the network and fails the check; `census_cdn` also checks that
 the cache folder really moved, that the Remote file system is registered and
 that the invented index row was accepted.
-
-### The no-env run
-
-`tools/census.sh --copies tq-control:control,tq-3662168:noenv` (or
-`tools/client-ci.sh run SCEN --census RUN --census-noenv`) launches the
-patched copy with the patcher's **files** and **args** but none of its env
-(`EVE_CENSUS_NOENV=1` in the launch-env, refused outside a census exactly
-like `EVE_CENSUS_CONTROL`, and with it). Boot, character select and
-`census_cc` must show no `sentry`, public-IP, `*-public-gateway.*`, CDN or
-analytics name, and the gateway discovery name should appear under
-`.gateway.invalid`. The role has its own scenario list, `census_canary,
-census_idle,census_cc` (`--noenv-scenarios` changes it): every other
-scenario fires names the launcher's proxy absorbs, so without it they would
-be LEAKs by construction. Each scenario's `begin` stage records
-`noenv=true` (the launcher puts `EVE_CENSUS_NOENV=1` in the client's
-environment), `census_report.py --noenv` turns a missing or false one into
-INVALID, and the run directory holds `role.txt`: a report proves it was no-env. It is the only proof that tier C works without the
-launcher. The `noenv` copy is judged as a subject against the control, in
-its own `RUN-noenv` directory.
-
-A complete run is the control copy (`apply --tier B --only B0,P0`: `--only` does
-not limit the prefs tier, so `--tier B` is what keeps the control's prefs stock), the
-subject, the no-env subject, and every scenario above plus the six of CEN-4.
-`N12` (Streamline) cannot be exercised on a software GPU: `verify` proves the
-byte, and the owner reads `WINEDEBUG=+process` once on an NVIDIA machine for
-`nvngx_update`; report it INCONCLUSIVE, never passed.
 
 ### What is still an assumption
 

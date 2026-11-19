@@ -20,10 +20,8 @@ its entries are a different, longer, differently ordered set. Using it put
 WHERE THE REAL TABLE IS. `blue.dll` holds an array of pointers to
 NUL-terminated strings, and an initialisation loop walks it:
 
-    0x18018a971  inc   edi
-    0x18018a973  add   rsi, 8          ; next pointer
-    0x18018a977  cmp   edi, 0xc3       ; 195
-    0x18018a97d  jl    <loop top>
+    the loop advances a counter, steps a pointer by 8 bytes, compares the counter
+    with 195 and branches back to the top while it is below
 
 so the table is exactly 195 entries. The decoder bounds-checks the same way
 (`cmp eax, 0xc3; jb ok`). Both the array and the count are found here by

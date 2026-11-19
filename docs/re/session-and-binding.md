@@ -393,16 +393,15 @@ never raised one. **[V]**
 **The identity of a bound object, to the client, is the `objectID` string and
 nothing else.** `ObjectCall.ParseObjectID` (`ObjectCallGPCS.py:379`) does:
 
-```python
-t = blue.marshal.Load(objectID, self.ParseObjectID)   # (oid, refID) or (oid, pa, refID)
-if objectID not in session.machoObjectsByID:
-    nid, oid = objectID.split(':')
-    if nid != self.identifier:            # 'C=0' on a client
-        ...
-        return MachoObjectConnection(session.GetActualSession(), self, objectID, pa, refID)
-    raise RuntimeError('The specified object (%s) does not exist within this session (%s)')
-return weakref.proxy(session.machoObjectsByID[objectID][1])
-```
+The steps: **[V]**
+
+1. Unmarshal `objectID` into `(oid, refID)` or `(oid, pa, refID)`.
+2. If `objectID` is not in `session.machoObjectsByID`: split it at `:` into a
+   node id and an object id; when the node id is not this side's identifier
+   (`C=0` on a client), return a new `MachoObjectConnection` for the session,
+   `objectID`, `pa` and `refID`; otherwise raise `RuntimeError` ("The specified
+   object (%s) does not exist within this session (%s)").
+3. If it is known, return a weak proxy to the registered object.
 
 Three constraints on an id we mint, all **[V]**:
 
@@ -478,14 +477,14 @@ exactly right; the first half is stronger than the code requires.
 
 `machoNet.HandleMessage` (`machoNet.py:5053-5058`): **[V]**
 
-```python
-if theMessage.command % 2:                             # a response
-    if theMessage.destination.addressType in self.__aorb__:
-        srcTransport.Close('A response must be sent to a specific address, not a forking one')
-else:                                                  # a request or notification
-    if theMessage.source.addressType in self.__aorb__:
-        srcTransport.Close('A request must be sent from a specific address, not a forking one')
-```
+The check, by branch:
+
+- a response (odd command): if the destination's address type is in `__aorb__`,
+  close the transport with "A response must be sent to a specific address, not a
+  forking one";
+- a request or notification (even command): if the source's address type is in
+  `__aorb__`, close it with "A request must be sent from a specific address, not
+  a forking one".
 
 with `__aorb__ = (const.ADDRESS_TYPE_ANY, const.ADDRESS_TYPE_BROADCAST)`
 (`machoNet.py:5015`) and `__borc__ = (BROADCAST, CLIENT)` (`:5014`). The four

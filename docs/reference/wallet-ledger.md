@@ -144,12 +144,9 @@ and the first corp role we grant makes it reachable.
 rowset API — nothing calls `.Index()`, reads `.columns`, or subscripts the
 answer by id. It is `utillib.KeyVal`:
 
-```python
-def GetTransactionKeyVal(transaction):          # baseTransactionsPanel.py:17
-    keyVal = utillib.KeyVal(transaction)        # 18
-    keyVal.currency = appConst.creditsISK       # 19
-    keyVal.sortValue = transaction.transactionID  # 20
-```
+`GetTransactionKeyVal(transaction)` (`baseTransactionsPanel.py:17`) wraps the
+transaction in a `utillib.KeyVal` (18), sets `currency` to `creditsISK` (19)
+and sets `sortValue` to the `transactionID` (20).
 
 and `utillib.KeyVal.__init__` accepts a `dict`, a `blue.DBRow`
 (`utillib/__init__.py:18`) or another `KeyVal`, and **raises `TypeError` on
@@ -198,17 +195,14 @@ key *in* and never reads it back.
 **Container family: a plain `list` of `utillib.KeyVal`. [V]** Not a rowset of
 either family, and again the reason has nothing to do with reading:
 
-```python
-def GetStaticData(self, itemName, trCol=None, trID=None, *args):   # accountsvc.py:97
-    if itemName not in self.data:
-        data = getattr(account, itemName)(*args)                   # 99
-        for rec in data:
-            messageID = getattr(rec, trID, None)
-            translated = localization.GetByMessageID(messageID)
-            setattr(rec, trCol, translated)                        # <- writes to every row
-        self.data[itemName] = data
-    return self.data[itemName]
-```
+`GetStaticData(itemName, trCol, trID, *args)` (`accountsvc.py:97`):
+
+1. if `itemName` is not in `self.data`, it calls the account service's
+   `itemName` method with `*args` (99);
+2. for **every row** it takes the message id from the `trID` column,
+   translates it with `localization.GetByMessageID`, and **writes** the result
+   back to the row with `setattr(rec, trCol, ...)`;
+3. it stores the list in `self.data[itemName]` and returns it.
 
 `Row.__setattr__` goes through `header.index(key)` and raises
 `AttributeError` for an undeclared column; `blue.DBRow` is a fixed native
@@ -260,33 +254,23 @@ client-side** (`marketSvc.py:55-59`) and overwrite anything we send;
 `transactionsPanel.Transaction.__init__` is the whole per-row formatter
 (lines 40-62):
 
-```python
-self.amount = self.data.amount                                       # 41
-self.balance = self.data.balance                                     # 42
-refType = sm.GetService('account').GetRefTypeKeyByID(
-                                      self.data.entryTypeID)         # 44
-self.dateString = GetByLabel('UI/Wallet/WalletWindow/FmtWalletDate',
-                             dt=self.data.transactionDate)           # 46
-self.typeString = refType.entryTypeName                              # 45/47
-self.amountString  = FmtWalletCurrency(self.data.amount,  self.data.currency)   # 48
-self.balanceString = FmtWalletCurrency(self.data.balance, self.data.currency)   # 49
-self.descriptionString = FmtWalletEntry(self.data.entryTypeID,       # 51-57
-            self.data.ownerID1, self.data.ownerID2, self.data.referenceID,
-            amount=self.data.amount, reason=self.data.description)
-self.hint = GetTransactionHint(self.data)                            # 58
-```
+1. `amount` and `balance` are copied from the data (41-42).
+2. The ref type is looked up with `account.GetRefTypeKeyByID(entryTypeID)` (44).
+3. `dateString` is the `UI/Wallet/WalletWindow/FmtWalletDate` label with
+   `dt=transactionDate` (46); `typeString` is the ref type's `entryTypeName`
+   (45/47).
+4. `amountString` and `balanceString` are `FmtWalletCurrency(value, currency)`
+   (48-49).
+5. `descriptionString` is `FmtWalletEntry(entryTypeID, ownerID1, ownerID2,
+   referenceID, amount=..., reason=description)` (51-57).
+6. `hint` is `GetTransactionHint(data)` (58).
 
 and the caller wraps it in exactly one handler:
 
-```python
-for t in transactionKeyVals:                              # transactionsPanel.py:166
-    try:
-        transactions.append(Transaction(t))
-    except AttributeError as exc:                         # 170
-        log.LogWarn('Wallet Journal: failed to load data for entryType {}, '
-                    'error: {}'.format(t.entryTypeID, exc))   # 171-173
-        continue
-```
+For each key-val (`transactionsPanel.py:166`) the caller builds a
+`Transaction(t)` and appends it. An `AttributeError` (170) is logged as a
+warning, "Wallet Journal: failed to load data for entryType ..." (171-173),
+and the row is skipped.
 
 **That handler catches `AttributeError` and nothing else.** Every failure mode
 below is classified by whether it lands inside it.
@@ -349,13 +333,10 @@ time field would travel as a loose value rather than in a `FileTime` column:
 
 `FmtWalletCurrency(amt, currency, showFractions=None)` (`walletUtil.py:24`):
 
-```python
-if showFractions is None:
-    showFractions = GetSettingValue('walletShowCents')     # default False
-    if not showFractions and 1 < abs(amt) and abs(amt) < sys.maxint:
-        amt = int(amt)
-return FmtCurrency(amt, showFractionsAlways=showFractions, currency=currency)
-```
+When `showFractions` is `None` it is read from the `walletShowCents` setting
+(default False); if that is false and `1 < abs(amt) < sys.maxint`, `amt` is
+cut to an `int`. The result is `FmtCurrency(amt, showFractionsAlways=...,
+currency=currency)`.
 
 so `amount` and `balance` must be **numbers**: `abs()` and `int()` on `None`
 raise `TypeError`, which the `except AttributeError` does not catch. The
@@ -390,13 +371,12 @@ the client log. See §5.3 for the full unknown-id story.
 `FmtWalletEntry(entryTypeID, o1, o2, arg1, pretty=1, amount, reason)`
 (`eve/common/script/util/walletEntryFormat.py`):
 
-```python
-if entryTypeID not in MANUAL_WALLET_REFERENCES:
-    messageID = get_entry_format_localization_id(entryTypeID)
-    if messageID is not None:
-        return _FmtWalletEntryNormalized(messageID, GetName(o1), GetName(o2), arg1)
-return _FmtWalletEntryManual(entryTypeID, o1, o2, arg1, pretty, amount, reason)
-```
+1. If `entryTypeID` is not in `MANUAL_WALLET_REFERENCES`, the localization id
+   comes from `get_entry_format_localization_id(entryTypeID)`.
+2. When that id is not `None`, the result is
+   `_FmtWalletEntryNormalized(messageID, GetName(o1), GetName(o2), arg1)`.
+3. Otherwise the result is `_FmtWalletEntryManual(entryTypeID, o1, o2, arg1,
+   pretty, amount, reason)`.
 
 Three things follow, and all three are good news:
 
@@ -635,14 +615,8 @@ relog" problem permanently. **Do that rather than growing the list.**
 positional arguments in that order, from the disassembly of
 `accountsvc._GetPersonalTransactions` (`accountsvc.py:128`):
 
-```text
-LOAD_ATTR GetTransactions
-LOAD_GLOBAL appConst / LOAD_ATTR accountingKeyCash     -> 1000
-LOAD_FAST year
-LOAD_FAST month
-LOAD_GLOBAL False
-CALL_FUNCTION 4
-```
+The call has four positional arguments: the cash accounting key (1000), then
+`year`, then `month`, then `False` for `isCorp`.
 
 - **No row count, no `fromDate`, no id cursor.** The journal's only range
   argument is a calendar month.
@@ -679,14 +653,12 @@ always passes `None` (`marketTransactionsPanel.UpdateTransactions` sets
 store. Both guards on this path are *presence* checks on a dict, not
 truthiness and not `is None`:
 
-```python
-def GetPersonalTransactions(self, year=None, month=None):   # accountsvc.py:120
-    key = (year, month)
-    if key in self.transactionCache:                        # 122
-        return self.transactionCache[key]
-    self.transactionCache[key] = self._GetPersonalTransactions(year, month)   # 124
-    return self.transactionCache[key]                       # 125
-```
+`GetPersonalTransactions(year=None, month=None)` (`accountsvc.py:120`) keys
+its cache by `(year, month)`. If the key is in `transactionCache` (122) it
+returns the entry; otherwise it stores `_GetPersonalTransactions(year, month)`
+(124) and returns it (125).
+
+`GetStaticData` (`accountsvc.py:97`) has the same kind of guard:
 
 ```python
 def GetStaticData(self, itemName, trCol=None, trID=None, *args):   # accountsvc.py:97
@@ -743,15 +715,12 @@ handlers exist for it; `findings/push-events.tsv` lists all of them:
 
 and `_OnCharAccountChange` (`walletSvc.py:89`):
 
-```python
-if GetSettingValue('notifyAccountChange'):                      # 90
-    sm.GetService('neocom').Blink('wallet', ...)                 # 91
-    self.BlinkPersonalWallet(walletConst.PANEL_TRANSACTIONS)     # 92
-difference = newBalance - self.wealth
-sm.ScatterEvent('OnPersonalAccountChangedClient', newBalance, difference)   # 94
-self._wealth = newBalance
-walletSignals.on_personal_isk_balance_changed(newBalance, difference)
-```
+1. When the `notifyAccountChange` setting is on (90), the neocom wallet button
+   blinks (91) and `BlinkPersonalWallet(PANEL_TRANSACTIONS)` runs (92).
+2. `difference = newBalance - self.wealth`.
+3. `OnPersonalAccountChangedClient(newBalance, difference)` is scattered (94).
+4. `_wealth = newBalance`.
+5. `on_personal_isk_balance_changed(newBalance, difference)` fires.
 
 Two things to know:
 

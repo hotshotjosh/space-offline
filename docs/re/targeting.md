@@ -34,14 +34,9 @@ mandatory push, no destiny action, and no second message.** [V]
 dogmaIM.AddTarget(targetID)  ->  (0, [])     # the client draws the bracket itself
 ```
 
-`targetMgr._LockTarget` (`targetMgr.py:1586`) is six lines of bytecode:
-
-```python
-self.StartLockTarget(tid, autotargeting)              # 1587
-flag, targetList = self.GetDogmaLM().AddTarget(tid)   # 1589  UNPACK_SEQUENCE 2
-if not flag:                                          # 1590
-    self.OnTargetAdded(tid)                           # 1592
-```
+`targetMgr._LockTarget` (`targetMgr.py:1586`) is six lines of bytecode. It calls `StartLockTarget(tid, autotargeting)` (`:1587`), then
+`GetDogmaLM().AddTarget(tid)`, which returns `(flag, targetList)` (`:1589`), and
+calls `OnTargetAdded(tid)` when `flag` is falsy (`:1590-1592`).
 
 `OnTargetAdded` (`targetMgr.py:674`) is the whole visible effect of a lock: it
 stops the locking sound, sets `state.targeted`, builds the `TargetInBar`
@@ -109,17 +104,11 @@ disagree, and why `(0, [])` is still the right call for tonight.
 **It is not `beyonce`, not `tactical`, and not a ship object.** It is the
 `dogmaIM` bound object the client already holds, re-bound to the solar system.
 
-```python
-# eveMoniker.py:63  CharGetDogmaLocation
-def CharGetDogmaLocation():
-    moniker = Moniker('dogmaIM', GetLocationBindParams())
-    moniker.SetSessionCheck(GetLocationSessionCheck())
-    return moniker
-
-# eveMoniker.py:37  GetLocationBindParams
-if session.solarsystemid:  return (session.solarsystemid, const.groupSolarSystem)   # 5
-if session.stationid:      return (session.stationid,     const.groupStation)       # 15
-```
+`eveMoniker.py:63` `CharGetDogmaLocation` builds a `dogmaIM` moniker from
+`GetLocationBindParams()` and sets its session check from
+`GetLocationSessionCheck()`. `GetLocationBindParams` (`eveMoniker.py:37`) returns
+`(session.solarsystemid, groupSolarSystem)` when the session has a solar system,
+and `(session.stationid, groupStation)` when it has a station.
 
 **[V]** `groupSolarSystem = 5`, `groupStation = 15` (`inventorycommon/const.py:955,971`).
 
@@ -168,14 +157,12 @@ The client-facing `AddTarget` takes **one** argument. The server's own
 internal form takes two, and we know this because the NPC behaviour trees ship
 in the client and call it:
 
-```python
-# behaviors/actions/combattargets.py:424   AcquireTargetLock._LockTarget
-self.context.dogmaLM.AddTargetEx(self.context.myItemId, selectedTarget)
-# behaviors/utility/dogmatic.py:61         get_my_locked_targets
-return task.context.dogmaLM.GetTargets(task.context.myItemId)
-# behaviors/utility/dogmatic.py:191        remove_my_target
-task.context.dogmaLM.RemoveTarget(task.context.myItemId, target_id)
-```
+- `AcquireTargetLock._LockTarget` (`behaviors/actions/combattargets.py:424`)
+  calls `dogmaLM.AddTargetEx(myItemId, selectedTarget)`.
+- `get_my_locked_targets` (`behaviors/utility/dogmatic.py:61`) returns
+  `dogmaLM.GetTargets(myItemId)`.
+- `remove_my_target` (`behaviors/utility/dogmatic.py:191`) calls
+  `dogmaLM.RemoveTarget(myItemId, target_id)`.
 
 **[V]** So CCP's own model is `(subjectShipID, targetID)` throughout, and the
 bound object strips the subject and takes it from `session.shipid`. **Our
@@ -252,16 +239,9 @@ This is the trap. `OnTargets` is registered in `targetMgr.__notifyevents__`
 (`targetMgr.py:56`), so it *looks* sendable, but the only thing that produces
 it is the client itself, inside godma's batcher:
 
-```python
-# godma.py:274  Godma.OnMultiEvent_
-dastatedict = {..., 'OnTarget': target, ...}
-for ev in events:
-    dastatedict.get(ev[0], other).append(ev)
-...
-if target:
-    target = reduce(remDups, target, [target[0]])
-    sm.ScatterEvent(*('OnTargets', target))
-```
+`Godma.OnMultiEvent_` (`godma.py:274`) sorts the batched events into a state
+dict with an `OnTarget` bucket; after the loop, when the bucket is not empty, it
+removes duplicates and scatters `OnTargets` with the reduced list. `[V]`
 
 **[V]** `OnMultiEvent` (`godma.py:268`) is the real-server batch push; it
 groups `events` by `itemgetter(-1)` and hands `e[0]` of each to
@@ -276,16 +256,11 @@ is itself a reason to prefer `OnTarget`: `OnTarget` has exactly one subscriber
 in the build, `OnTargets` has two
 (`findings/push-events.tsv:2816,2821-2822`) **[V]**.
 
-```python
-# nodegraph/client/events/target.py, class TargetExploded
-def OnTargets(self, targets):
-    for target in targets:
-        event     = target[1] if len(target) > 1 else ''
-        target_id = target[2] if len(target) > 2 else ''
-        reason    = target[3] if len(target) > 3 else ''
-        if event == 'lost' and reason == 'Exploding':
-            self.invoke(item_id=target_id)
-```
+In `nodegraph/client/events/target.py`, class `TargetExploded` has an `OnTargets`
+handler. For each target tuple it reads the event from element 1, the target id
+from element 2 and the reason from element 3 (each empty when the tuple is too
+short), and invokes its node with `item_id` when the event is `lost` and the
+reason is `Exploding`. `[V]`
 
 **[V]** So: **send `OnTarget` directly.** `targetMgr` is the only subscriber to
 it in the whole build (`findings/push-events.tsv:2816`), its prefix is `On`
@@ -338,25 +313,21 @@ attributes, and animates it on a 50 ms timer with no server involvement.
 `bracketMgr.GetScanSpeed(source, target)` (`bracketMgr.py:1305`), read off the
 bytecode and transcribed instruction by instruction **[V]**:
 
-```python
-if source is None: source = session.shipid              # :1307-1308
-if not source:     return None                          # :1310
-myitem = sm.GetService('godma').GetItem(source)          # :1313
-scanSpeed = None                                         # :1314
-if myitem.scanResolution and target:                     # :1317
-    slimItem   = target
-    targetitem = sm.GetService('godma').GetType(slimItem.typeID)   # :1319  the TYPE
-    radius = targetitem.signatureRadius if targetitem.AttributeExists('signatureRadius') else 0  # :1325-1330
-    if radius <= 0.0:
-        radius = sm.GetService('michelle').GetBallpark().GetBall(slimItem.itemID).radius  # :1333-1334
-        if radius <= 0.0:
-            radius = evetypes.GetRadius(targetitem.typeID)         # :1336
-            if radius <= 0.0: radius = 1.0                         # :1338
-    scanSpeed = 40000000.0 / myitem.scanResolution / math.log(radius + math.sqrt(radius*radius + 1)) ** 2.0  # :1339
-if scanSpeed is None:                                    # :1341
-    scanSpeed = 2000                                     # :1342  + a LogWarn
-return min(scanSpeed, 180000)                            # :1346
-```
+The steps, by line (`bracketMgr.py`), with the signature radius taken from the
+*type* of the target: **[V]**
+
+1. `:1307-1310`: when `source` is `None` it becomes `session.shipid`; return
+   `None` when there is still no source.
+2. `:1313-1314`: fetch the source's godma item; `scanSpeed` starts as `None`.
+3. `:1317-1339`: when the item has a `scanResolution` and a target is given,
+   take the type's `signatureRadius` when the type has that attribute, else 0
+   (`:1325-1330`). If the radius is not positive, use the target ball's radius
+   from the ballpark (`:1333-1334`); if still not positive, the type's radius
+   (`:1336`); if still not positive, 1.0 (`:1338`). Then
+   `scanSpeed = 40,000,000 / scanResolution / ln(radius + sqrt(radius^2 + 1))^2`
+   (`:1339`).
+4. `:1341-1342`: when `scanSpeed` is still `None`, it is 2000, with a warning.
+5. `:1346`: return `min(scanSpeed, 180000)`.
 
 i.e. **`lockTime_ms = min(180000, 40_000_000 / scanResolution / asinh(signatureRadius)²)`**,
 since `ln(r + sqrt(r²+1))` is `asinh(r)`.
@@ -507,12 +478,8 @@ this call is a no-op — but it must still **answer**, not raise `NoSuchMethod`.
 `session.shipid and not session.stationid`, and `RefreshTargets`
 (`godma.py:2729`) is **[V]**:
 
-```python
-for objectID in self.GetDogmaLM().GetTargets():
-    sm.ScatterEvent('OnTarget', 'add', objectID)
-for objectID in self.GetDogmaLM().GetTargeters():
-    sm.ScatterEvent('OnTarget', 'otheradd', objectID)
-```
+It scatters `OnTarget('add', objectID)` for every id in `GetDogmaLM().GetTargets()`,
+then `OnTarget('otheradd', objectID)` for every id in `GetTargeters()`.
 
 So these two calls are how a lock **survives a reload, a view reopen, or a
 reconnect**, and they are the client's only way to rediscover who is targeting
@@ -621,15 +588,14 @@ answer agreeing.
 
 `_LockTarget`'s handler (`targetMgr.py:1593-1607`) **[V]**:
 
-```python
-except UserError as e:
-    self.FailLockTarget(tid)                                  # :1594
-    if autotargeting: sys.exc_clear(); return                 # :1596-1601
-    if e.msg in ('DeniedShipChanged', 'TargetingAttemptCancelled'):   # :1602
-        sys.exc_clear(); return                               # :1604-1605
-    prompt_player_fsd_dialog(e.msg, e.dict)                   # :1606
-    raise                                                     # :1607
-```
+On a `UserError` the handler does the following:
+
+1. fails the lock with `FailLockTarget(tid)` (`:1594`);
+2. for an auto-target, clears the exception and returns (`:1596-1601`);
+3. for the messages `DeniedShipChanged` and `TargetingAttemptCancelled`, clears the
+   exception and returns (`:1602-1605`);
+4. otherwise shows the dialog for `e.msg` and `e.dict` with
+   `prompt_player_fsd_dialog` (`:1606`) and re-raises (`:1607`).
 
 The `raise` is then swallowed by `LockTarget`'s bare
 `except Exception` (`targetMgr.py:1580-1583`), which calls `FailLockTarget`

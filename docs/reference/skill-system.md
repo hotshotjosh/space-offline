@@ -61,15 +61,11 @@ attributes 280 and 276, with 275 as the type-level rank.
 `godma.StateManager.UpdateItem` (`eve/client/script/environment/godma.py:1858`)
 opens with a category filter at **lines 1874–1886**:
 
-```python
-if itemCategoryID not in (categoryEntity, categoryStarbase,
-        categorySovereigntyStructure, categoryShip, categoryModule,
-        categoryCharge, categoryDrone, categorySubSystem, categoryFighter,
-        categoryStructure, categoryStructureModule) \
-        and itemGroupID != groupCharacter:
-    self.godma.LogTraceback('Godma location received unexpected and unwanted item')
-    return
-```
+The item is accepted only when its category is one of entity, starbase,
+sovereignty structure, ship, module, charge, drone, subsystem, fighter,
+structure or structure module, or its group is `groupCharacter`. Anything else
+is logged with `godma.LogTraceback('Godma location received unexpected and
+unwanted item')` and the function returns.
 
 `categorySkill` (16) is **not in that tuple**, and a skill's group is not
 `groupCharacter`. A skill row delivered through `dogmaIM.GetAllInfo`'s
@@ -127,12 +123,9 @@ nothing joins the two on the client.
 One service method and a bound object. `skillsvc.GetSkillHandler`
 (`skillsvc.py:152`) is:
 
-```python
-def GetSkillHandler(self):                                          # 152
-    if not self.skillHandler:                                       # 153
-        self.skillHandler = session.ConnectToRemoteService('skillMgr2').GetMySkillHandler()  # 155
-    return self.skillHandler                                        # 156
-```
+1. If `self.skillHandler` is unset (153), it is set to
+   `session.ConnectToRemoteService('skillMgr2').GetMySkillHandler()` (155).
+2. The handler is returned (156).
 
 `skillMgr2.GetMySkillHandler()` takes **no arguments** and must return a bound
 object. We already serve it as `skillMgr2::skillHandler`
@@ -222,13 +215,10 @@ is good evidence for what the real handler looks like internally and it is
 
 ### Two calls, two caches, and a naming trap that will cost someone a day
 
-```python
-def RefreshMySkills(self):                                           # 158
-    self.myskills = self.GetSkillHandler().GetSkills()               # 161
-
-def RefreshMySkillsIncludingLapsed(self):                            # 163
-    self.mySkillsIncludingLapsed = self.GetSkillHandler().GetAllSkills()  # 166
-```
+- `RefreshMySkills` (158) sets `self.myskills` from
+  `GetSkillHandler().GetSkills()` (161);
+- `RefreshMySkillsIncludingLapsed` (163) sets `self.mySkillsIncludingLapsed`
+  from `GetSkillHandler().GetAllSkills()` (166).
 
 - `GetSkills()` → the character's **injected, non-lapsed** skills.
 - `GetAllSkills()` → the same **plus lapsed ones** (alpha-state skills the
@@ -400,12 +390,11 @@ mechanism, **[I]** on "dead code".
      **`wallet.GetWealth()` covers the total** (`purchase.py:132`).
 6. **The one wire call:**
 
-   ```python
-   def send_skill_purchase_request(self, skill_type_ids):           # 95
-       skills_purchased = self.skill_service.GetSkillHandler().PurchaseSkills(skill_type_ids)  # 97
-       self.skills_purchased.extend(skills_purchased)               # 98
-       return True
-   ```
+   `send_skill_purchase_request(skill_type_ids)` (95) does three things:
+
+   1. it calls `GetSkillHandler().PurchaseSkills(skill_type_ids)` (97);
+   2. it extends `self.skills_purchased` with the result (98);
+   3. it returns `True`.
 
    One positional argument, a list of skill type ids. The capture has it:
    `PurchaseSkills([3340, 20342, 3327, 20527]) -> None`. `list.extend(None)`
@@ -417,20 +406,12 @@ A **flat list of the skill type ids actually purchased** — not an echo of the
 request, not a bool, not a rowset. The authority is CCP's own shared logic,
 `characterskills/purchase.purchase_skills`:
 
-```python
-def purchase_skills(context, skill_type_ids):
-    skill_type_ids = list(skill_type_ids)
-    context.validate(skill_type_ids)
-    skills_to_inject = []
-    try:
-        for skill_type_id in skill_type_ids:
-            context.pay_for_skill(skill_type_id)
-            skills_to_inject.append(skill_type_id)
-    finally:
-        if skills_to_inject:
-            context.inject_skills(skills_to_inject)
-    return skills_to_inject
-```
+1. Copy the ids into a list and run `context.validate` on it.
+2. For each id in order, `context.pay_for_skill(id)` and then add the id to
+   `skills_to_inject`.
+3. In a `finally`, if `skills_to_inject` is not empty,
+   `context.inject_skills(skills_to_inject)` runs.
+4. Return `skills_to_inject`.
 
 The `try/finally` is the contract: a purchase that runs out of ISK halfway
 still injects and still **returns the part that succeeded**. So a partial
@@ -439,29 +420,22 @@ returns.
 
 ### `seen`, and why no answer alone can satisfy it
 
-```python
-def WaitUntilSkillsAreAvailable(self, skillTypeIDs):          # 1242 (body 1250)
-    skill_type_ids = set(skillTypeIDs)                        # 1250
-    seen = set()                                              # 1251
-    while skill_type_ids != seen:                             # 1252
-        blue.pyos.BeNice()                                    # 1253
-        for skill_type_id in skill_type_ids:                  # 1254
-            if self.GetSkillIncludingLapsed(skill_type_id) is None:   # 1255
-                break                                         # 1256
-            seen.add(skill_type_id)                           # 1257
-    sm.ScatterEvent('OnSkillsAvailable', skillTypeIDs)        # 1258
-```
+`WaitUntilSkillsAreAvailable(skillTypeIDs)` (1242, body 1250):
+
+1. Make a set of the ids and an empty `seen` set (1250-1251).
+2. While the id set differs from `seen` (1252): call `blue.pyos.BeNice()`
+   (1253), then walk the ids (1254). For each id, if
+   `GetSkillIncludingLapsed(id)` is `None` (1255) stop the walk (1256);
+   otherwise add the id to `seen` (1257).
+3. Scatter `OnSkillsAvailable` with the ids (1258).
 
 **`seen` is populated from `self.mySkillsIncludingLapsed`, and from nothing
 else.** `GetSkillIncludingLapsed` is called at line 1255 **without `renew`**
 (`skillsvc.py:284`):
 
-```python
-def GetSkillIncludingLapsed(self, skillTypeID, renew=0):      # 284
-    if self.mySkillsIncludingLapsed is None or renew:         # 285
-        self.RefreshMySkillsIncludingLapsed()                 # 286
-    return self.mySkillsIncludingLapsed.get(skillTypeID, None) # 287
-```
+`GetSkillIncludingLapsed(skillTypeID, renew=0)` (284): when
+`mySkillsIncludingLapsed` is `None` or `renew` is set, it refreshes the cache
+(285-286); it then returns the cache entry for the id, or `None` (287).
 
 The cache is already non-`None` by the time the purchase runs (the Skills
 panel filled it at `skillQueuePanelNew.py:886` to decide the skill was
@@ -546,23 +520,15 @@ and breaks the fitting screen's "train required skills" as well.
 
 ### The wire form **[V]**
 
-```python
-def InjectSkillIntoBrain(self, skillX):                              # 892
-    skillIDList = [skill.itemID for skill in skillX]                 # 897
-    if not skillIDList: return
-    for skill in skillX:
-        if not evetypes.IsPublished(skill.typeID):
-            raise UserError('ItemNotASkill', {'skillName': skill.typeID})
-    try:
-        self.godma.GetDogmaLM().InjectSkillIntoBrain(skillIDList)    # 906
-    except UserError as e:
-        raise
-    else:
-        for skill in skillX:
-            sm.GetService('notificationSvc').MakeAndScatterNotification(
-                notificationTypeSkillInjected, data={'typeID': skill.typeID})
-        PlaySound(uiconst.SOUND_ADD_OR_USE)
-```
+`InjectSkillIntoBrain(skillX)` (892):
+
+1. Collect the item ids of the skills (897); return if there are none.
+2. For each skill that is not published (`evetypes.IsPublished`), raise
+   `UserError('ItemNotASkill', {'skillName': typeID})`.
+3. Call `godma.GetDogmaLM().InjectSkillIntoBrain(skillIDList)` (906). A
+   `UserError` is re-raised.
+4. On success, for each skill, make and scatter a `notificationTypeSkillInjected`
+   notification carrying `typeID`, then play `SOUND_ADD_OR_USE`.
 
 `godma.GetDogmaLM()` is `eveMoniker.CharGetDogmaLocation()` (`godma.py:1330`),
 which binds **`dogmaIM`** — `bindParams` `(solarsystemID, groupSolarSystem)` or
@@ -577,14 +543,13 @@ Entry points **[V]**:
 - The right-click **Train Now**: `invItemFunctions.TrainNow` (`:87`) — and this
   one is worth reading in full, because it tells us our deadline:
 
-  ```python
-  def TrainNow(invItems):                                      # 87
-      if len(invItems) > 1:
-          prompt_player_fsd_dialog('TrainMoreTheOne'); return
-      InjectSkillIntoBrain(invItems)                           # 91
-      blue.pyos.synchro.SleepWallclock(500)                     # 92
-      sm.GetService('skillqueue').TrainSkillNow(invItems[0].typeID, 1)  # 93
-  ```
+  `TrainNow(invItems)` (87):
+
+  1. with more than one item it shows the `TrainMoreTheOne` dialog and
+     returns;
+  2. it calls `InjectSkillIntoBrain(invItems)` (91);
+  3. it sleeps 500 ms of wall clock (92);
+  4. it calls `skillqueue.TrainSkillNow(invItems[0].typeID, 1)` (93).
 
   **CCP's own code sleeps 500 ms waiting for the push.** `TrainSkillNow`
   (`skillQueueSvc.py:1234`) goes through `CheckCanInsertSkillAtPosition`
@@ -668,12 +633,10 @@ say "training now".
 
 `skillQueueSvc.CommitTransaction` (`:201`):
 
-```python
-queueInfo = {idx: (x.trainingTypeID, x.trainingToLevel)
-             for idx, x in enumerate(self.skillQueue)}
-skillHandler = self.skills.GetSkillHandler()
-skillHandler.SaveNewQueue(queueInfo, activate=activate)              # 227
-```
+1. `queueInfo` is built from the local queue as `{index: (trainingTypeID,
+   trainingToLevel)}`.
+2. `skillHandler = self.skills.GetSkillHandler()`.
+3. `skillHandler.SaveNewQueue(queueInfo, activate=activate)` (227).
 
 - One positional argument: a **dict keyed by integer position**, values
   `(typeID, toLevel)` 2-tuples. Not a list.
@@ -693,13 +656,9 @@ skillHandler.SaveNewQueue(queueInfo, activate=activate)              # 227
 all. `OnNewSkillQueueSaved(newQueue)` (`skillQueueSvc.py:1228`) exists to
 replace it with the server's authoritative version:
 
-```python
-def OnNewSkillQueueSaved(self, newQueue):                            # 1228
-    if self.IsTransactionOpen():
-        self.cachedSkillQueue = newQueue
-    self.skillQueue = newQueue
-    sm.ScatterEvent('OnSkillQueueChanged')
-```
+`OnNewSkillQueueSaved(newQueue)` (1228): if a transaction is open it stores
+`newQueue` in `cachedSkillQueue`; it always sets `self.skillQueue = newQueue`
+and scatters `OnSkillQueueChanged`.
 
 Same row shape as the read. Optional for the owner's test; required for the
 queue to survive a second client.

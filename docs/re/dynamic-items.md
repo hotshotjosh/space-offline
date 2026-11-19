@@ -8,8 +8,7 @@ which this doc assumes did not move [A]; falsifier: that constant in `out/pyc` o
 `identical` (line 343), so the layout and counts below hold for both builds. Every other cited module is unchanged.
 
 Marks: **[V]** read in the client (`C:`) or in our server (`S:`), or counted in the 3670638 static table or the content
-bundle (**[V-data]**, a count or a set equality, never a value); **[V-batch]** read in the hotbatch tree
-(`eve-offline-lanes/hotbatch`, HEAD 1a57a9d8), whose code landed with MUTA-1 (#69) and MUTA-3 (#71)
+bundle (**[V-data]**, a count or a set equality, never a value); **[V-batch]** read in the MUTA batch, whose code landed with MUTA-1 (#69) and MUTA-3 (#71)
 (MUTA-DATA, #222, landed earlier, ca26120a) (state in section 6); **[I]** inferred; **[A]** assumed, with what
 would falsify it. `C:` = `out/research/_w/src/`, `S:` = `server/crates/eve-server/src/`,
 `T:` = `tools/client-ci/scenarios/`. No value from the client's table is written here, only counts.
@@ -125,8 +124,7 @@ type lists fewer effects than its source (it would not cycle).
 
 ### 3.1 How the server uses the roll once an item is fitted (MUTA-3, #71)
 
-All of this is [V-batch] from the MUTA-3 round-2 diff (`handback/muta3-71/coordinator-muta3-71-r2.diff`, applied
-on the hotbatch tree), and has landed.
+All of this is [V-batch] from the MUTA-3 round-2 diff (#71), and has landed.
 
 - A fitted mutated module's base values are the roll, not its type row: `dogma::Overrides` (ascending
   `(attribute, f64)`), `Eval::base` returns the override first, `all_of` adds its keys. The sheet cache key
@@ -140,7 +138,7 @@ on the hotbatch tree), and has landed.
   without going through `put`.
 - Fit checks (group, type restriction, volume) are meant to read the roll for the module's own type id through
   `fitting::plan_fit_for`, but that function is reached only by the **inventory caller diff**
-  (`handback/muta3-71/inventory-caller-muta3-71-r2.diff`), which is separate and not yet applied; without it the
+  (a separate MUTA-3 follow-up, #71), which is separate and not yet applied; without it the
   fit check still reads the type row. The load and power check reads the sheet. `module_info` serves the
   sheet's attribute list for a dynamic item so duration and capacitor need reach the HUD.
 - **Not yet routed (follow-up MUTA-3b):** these readers still go to the dynamic type's row, not the roll:
@@ -195,7 +193,7 @@ on the hotbatch tree), and has landed.
 
 ## 6. Build split
 
-| lane | issue | what | state in the batch tree |
+| work | issue | what | progress |
 |---|---|---|---|
 | MUTA-0 | #68 | this doc | this change |
 | MUTA-DATA | #222 | `tools/content_mutators.py`, `S:mutator_data.rs`, bundle format 1.7 | done |
@@ -207,7 +205,7 @@ on the hotbatch tree), and has landed.
 | MUTA-BOT | #223 | bots roll the mutaplasmids they hold, fly a good roll in place of its source, sell the rest by contract | open |
 | supply | #5 | the abyss caches must drop mutaplasmids by tier; nothing else does | open |
 
-The batch tree is `eve-offline-lanes/hotbatch`; everything marked [V-batch] landed with it, and this doc landed
+The MUTA batch (#69, #71): everything marked [V-batch] landed with it, and this doc landed
 in the same batch as MUTA-1. Order: data, then MUTA-1, MUTA-3, MUTA-2, then drones and bots. `dynamic_item.rs` is claimed sequentially.
 
 Planned for MUTA-2 [A until built]: `roll(world_seed, mutator_id, source_id, attribute_id)` uniform in [0, 1)

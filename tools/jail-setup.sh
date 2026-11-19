@@ -21,11 +21,13 @@
 set -euo pipefail
 
 NS=${EVE_JAIL_NS:-eveoffline}
+[[ $NS =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "bad namespace name: $NS (want [a-z0-9-], 1 to 32 characters)" >&2; exit 2; }
 HOST_IF=eve-host
 NS_IF=eve-ns
 HOST_IP=${EVE_JAIL_HOST_IP:-10.137.0.1}
 NS_IP=${EVE_JAIL_NS_IP:-10.137.0.2}
 PREFIX=30
+[[ $HOST_IP =~ ^[0-9.]+$ && $NS_IP =~ ^[0-9.]+$ ]] || { echo "bad EVE_JAIL_HOST_IP or EVE_JAIL_NS_IP" >&2; exit 2; }
 # Ports on HOST_IP the jailed client may talk to.
 #   26000 machoNet, 53 the stub resolver,
 #   5222 in-game chat (XMPP, `eve-server --chat`, docs/lanes/chat.md).
@@ -37,6 +39,7 @@ PREFIX=30
 # a SYN this jail dropped would be the full TCP timeout and then a modal
 # retry dialog, where an open port fails or succeeds at once.
 GAME_PORTS=${EVE_JAIL_PORTS:-26000,5222,8443}
+[[ $GAME_PORTS =~ ^[0-9,]+$ ]] || { echo "bad EVE_JAIL_PORTS: $GAME_PORTS" >&2; exit 2; }
 
 [[ $EUID -eq 0 ]] || { echo "jail-setup.sh: must run as root" >&2; exit 1; }
 

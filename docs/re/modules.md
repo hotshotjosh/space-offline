@@ -287,15 +287,10 @@ Twelve parameters, the last two defaulted. The names and order come from
 | 12 | `stall` | bool | omit, or `True` | `godma:1723`: when truthy *and* a `Prime` is in flight, the message waits on the priming channel instead of being dropped. `True` (the default) is the safe value |
 
 **The client's own call gives us a template** `[V]` `godma:3072` — when a
-module goes offline silently, `ApplyAttributeChange` fakes the event:
-
-```python
-self.OnGodmaShipEffect(itemKey, const.effectOnline, blue.os.GetSimTime(),
-                       0, 0,
-                       [itemKey, item.ownerID, item.locationID,
-                        None, None, [], const.effectOnline],
-                       None, -1, -1, None, None)
-```
+module goes offline silently, `ApplyAttributeChange` fakes the event. It calls `OnGodmaShipEffect` with the item key, `effectOnline`
+and the current sim time, then `start = 0`, `active = 0`, an environment list of
+`[itemKey, item.ownerID, item.locationID, None, None, [], effectOnline]`, then
+`None`, `-1`, `-1`, `None`, `None`.
 
 That is eleven positional arguments: `startTime=None`, `duration=-1`,
 `repeat=-1`, `error=None`, `actualStopTime=None`, `stall` defaulted. It is the
@@ -304,12 +299,9 @@ shape.
 
 ### 2.3 The one hard precondition `[V]` `godma:1731`
 
-```python
-if itemID in self.effectsByItemEffect and effectName in self.effectsByItemEffect[itemID]:
-    ... everything that matters ...
-if effect.effectCategory == const.dgmEffOverload:
-    ... overload bookkeeping only ...
-```
+The handler body has two parts (`godma:1731`): everything that matters runs only
+when `itemID` is in `effectsByItemEffect` and the effect name is under it; a
+separate branch for `dgmEffOverload` does overload bookkeeping only.
 
 **If the module was never primed, `OnGodmaShipEffect` does nothing at all** —
 no error, no log beyond `LogInfo`, no button change. This is the single most
@@ -326,16 +318,12 @@ So **the server never sends effect definitions** — only which effects are
 
 ### 2.4 `activeEffects` — the priming form of the same data `[V]`
 
-`godma:1995-1999`:
-
-```python
-d = activeDict[effectID]          # activeDict is info.activeEffects
-env = d[:ENV_IDX_LINE]            # d[:7]
-startTime, duration, repeat = d[7], d[8], d[9]
-eventLines.append((itemID, effectID, info.time, True, True,
-                   env, startTime, duration, repeat, None))
-... self.OnGodmaShipEffect(*line, stall=False)
-```
+`godma:1995-1999`: for each effect, the list entry is `activeDict[effectID]` (`activeDict` is
+`info.activeEffects`). The first seven elements, `d[:ENV_IDX_LINE]`, are the
+environment; `startTime`, `duration` and `repeat` are `d[7]`, `d[8]` and `d[9]`.
+It queues the event line `(itemID, effectID, info.time, True, True, env,
+startTime, duration, repeat, None)` and later calls `OnGodmaShipEffect` with
+`stall=False`.
 
 So in `ItemGetInfo`/`GetAllInfo`, **`activeEffects` is
 `{effectID: [env0..env6, startTime, duration, repeat]}` — a ten-element
@@ -400,26 +388,18 @@ primed or **`Update` returns before touching the button** (§6).
 
 ### 3.1 The client runs the animation off its own clock `[V]` `smb:1692`
 
-`DoActivateRampsThread` is a `uthread` loop:
+`DoActivateRampsThread` is a `uthread` loop. The loop (`smb:1692-1753`) `[V]`:
 
-```python
-(firstActivation, startTime), durationInMilliseconds = self.GetEffectTiming()
-if durationInMilliseconds <= 0: return
-...
-while self and not self.destroyed and self.ramp_active and durationInMilliseconds:
-    newNow = blue.os.GetSimTime()
-    ...
-    portionDone = blue.os.TimeDiffInMs(startTime + startTimeAdjustment, now) / durationInMilliseconds
-    if portionDone > 1:
-        iterations = int(portionDone)
-        startTime += long(durationInMilliseconds * iterations * const.MSEC)
-        _, durationInMilliseconds = self.GetEffectTiming()     # smb:1736
-        uicore.layer.shipui.sr.rampTimers[itemID] = (False, startTime)
-        portionDone -= iterations
-        if self.InLimboState(): self.IdleRamps(); break
-    self.sr.ramps.SetRampValues(portionDone)                   # smb:1753
-    blue.pyos.synchro.Yield()
-```
+1. Read `(firstActivation, startTime)` and the duration from `GetEffectTiming()`;
+   return if the duration is not positive.
+2. While the button exists, `ramp_active` is set and the duration is non-zero:
+   take the current sim time and compute
+   `portionDone = (now - (startTime + startTimeAdjustment)) / duration`.
+3. If `portionDone > 1`, advance `startTime` by `duration * iterations` (the
+   integer part), read the duration again (`smb:1736`), store
+   `(False, startTime)` in `rampTimers`, subtract the iterations from
+   `portionDone`, and when the button is in limbo idle the ramps and stop.
+4. Set the ramp values to `portionDone` (`smb:1753`) and yield.
 
 **It repeats forever.** The loop only ends when `ramp_active` goes false
 (i.e. `SetIdle`/`IdleRamps`, which the *stop* message causes) or the module
@@ -432,21 +412,15 @@ capacitor drain) but it owes the HUD nothing per cycle.
 
 ### 3.2 Where the duration number comes from `[V]` `smb:1812`
 
-`GetEffectTiming`:
+`GetEffectTiming` (`smb:1812`) `[V]`:
 
-```python
-rampStartTime = self.GetRampStartTime()
-durationInMilliseconds = 0.0
-durationAttributeID = getattr(self.def_effect, 'durationAttributeID', None)
-attribute = dogma.data.get_attribute(durationAttributeID) if durationAttributeID is not None else None
-item = self.stateManager.GetItem(self.def_effect.itemID)
-if item is None: return (0, 0.0)
-if attribute:
-    durationInMilliseconds = self.stateManager.GetAttribute(self.def_effect.itemID, attribute.name)
-if not durationInMilliseconds:
-    durationInMilliseconds = getattr(self.def_effect, 'duration', 0.0)
-return rampStartTime, durationInMilliseconds
-```
+1. It gets the ramp start time from `GetRampStartTime`.
+2. It looks up the effect's `durationAttributeID` and the item. When the item is
+   missing it returns `(0, 0.0)`.
+3. When the attribute exists, the duration is the item's value of it.
+4. When that is still falsy, the duration is the effect's own `duration`
+   (default `0.0`).
+5. It returns the start time and the duration in milliseconds.
 
 Two sources, in order:
 
@@ -485,14 +459,10 @@ load-bearing corroboration in the document.
 
 `smb:1765` `GetRampStartTime`:
 
-```python
-rampTimers = uicore.layer.shipui.sr.rampTimers
-if moduleID not in rampTimers:
-    now = blue.os.GetSimTime()
-    default = getattr(self.def_effect, 'startTime', now) or now
-    rampTimers[moduleID] = (True, default)
-return rampTimers[moduleID]
-```
+`GetRampStartTime` (`smb:1765`) looks the module up in the shared `rampTimers`
+table. When it is missing, it stores `(True, default)` with `default` being the
+effect's `startTime`, or the current sim time when that is falsy, and returns
+the stored pair.
 
 `... or now` — a **falsy** `startTime` (so `None`, or `0`) makes the old
 client anchor the ramp on its own `GetSimTime()`. We used to send `None` for
@@ -561,14 +531,11 @@ from it, and `UpdateAttribute` (`godma:2045`) / `ApplyAttributeChange`
 `GetAttribute` then returns `GetChargeValue(...)` instead of the stored number
 (`godma:2186`):
 
-```python
-def GetChargeValue(self, oldVal, oldTime, tau, Ec, newTime=None):   # godma:2413
-    if Ec == 0: return 0
-    newTime = newTime or blue.os.GetSimTime()
-    sq = math.sqrt(max(oldVal / Ec, 0))
-    timePassed = min(oldTime - newTime, 0) / float(const.dgmTauConstant)
-    return (1.0 + (sq - 1.0) * math.exp(timePassed / tau)) ** 2 * Ec
-```
+`GetChargeValue(oldVal, oldTime, tau, Ec, newTime=None)` (`godma:2413`) returns 0
+when `Ec` is 0. Otherwise, with `newTime` defaulting to the current sim time,
+`sq = sqrt(max(oldVal / Ec, 0))` and
+`timePassed = min(oldTime - newTime, 0) / dgmTauConstant`, it returns
+`(1 + (sq - 1) * exp(timePassed / tau))^2 * Ec`.
 
 For the Rifter (587): `capacitorCapacity = 250.0`, `rechargeRate = 125000.0` ms,
 so `tau = 25000` `[V]`. The identical formula is in the shipped shared engine
@@ -772,13 +739,11 @@ chargeTypeID, reloadTime)` (plays the turret reload animation).
 A second, state-based path exists and is what survives a relog `[V]`
 `godma:2666`:
 
-```python
-def GetReloadTimes(self, moduleID):
-    nextCycle = self.GetAttributeValueByID(moduleID, const.attributeNextActivationTime)   # 2729
-    if nextCycle is None or nextCycle < blue.os.GetSimTime(): return
-    duration = self.GetAttributeValueByID(moduleID, const.attributeReloadTime)            # 1795
-    return (nextCycle - duration * const.MSEC, duration)
-```
+`GetReloadTimes(moduleID)` (`godma:2666`) reads attribute 2729
+(`attributeNextActivationTime`) of the module; it returns nothing when that is
+`None` or already in the past. Otherwise it reads attribute 1795
+(`attributeReloadTime`) as `duration` and returns the pair
+`(nextCycle - duration * MSEC, duration)`.
 
 **Trap:** `IsModuleReloading` is `GetReloadTimes(...) is not None`
 (`godma:2662`), and `ModuleButton.Click` **returns immediately** when it is
@@ -791,11 +756,8 @@ For the 200mm AutoCannon I: `reloadTime = 10000.0` ms, `chargeSize = 1.0`,
 
 ### 6.4 "No charges" is raised **client-side** `[V]` `smb:1539`
 
-```python
-relevantEffect = self.GetRelevantEffect()
-if relevantEffect is None:
-    raise UserError('NoCharges', {'launcher': (const.UE_TYPEID, typeID)})
-```
+`smb:1539`: the button asks for `GetRelevantEffect()`; if that is `None` it
+raises `UserError('NoCharges', {'launcher': (UE_TYPEID, typeID)})`.
 
 `GetRelevantEffect` (`smb:1515`) returns the *charge's* default effect for
 `useMissiles` and for `warpDisruptSphere`-with-a-charge, and otherwise
@@ -866,12 +828,8 @@ revert its optimistic state — relevant to onlining, not to activation.
 
 **`ModuleReactivationDelayed2` is handled specially** `[V]` `smb:1582`:
 
-```python
-except UserError as e:
-    if e.msg == 'ModuleReactivationDelayed2':
-        self.SetReactivationTime(e.dict)
-    raise
-```
+When the `UserError` is `ModuleReactivationDelayed2`, the handler calls
+`SetReactivationTime(e.dict)` and then re-raises (`smb:1582`).
 
 and `SetReactivationTime` (`smb:1606`) reads `errorDict['timeSinceLastStop']`
 and `errorDict['itemID']`, computes `startTime = GetSimTime() - timeSinceLastStop * MSEC`,

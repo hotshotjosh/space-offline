@@ -200,19 +200,15 @@ ret = self.machoNet.channelHandlersUp[channel].CallUp(packet)                   
 to the `'sessionchange'` channel — `machobase.packetTypeChannelMap`, which
 holds only commands 16 and 18) **[V]**, so `channelHandlersUp[None]` is the
 main GPCS chain head, `ExceptionWrapper` (`machoNet.py:822`). The call climbs to
-`ServiceCall.CallUp`, which does the dispatch:
+`ServiceCall.CallUp`, which does the dispatch. In `ServiceCallGPCS.py`: **[V]**
 
-```text
-destinationMethod = packet.payload[1]
-if destinationMethod in packet.service.__dict__.get('__restrictedcalls__', {}) \
-   or destinationMethod.startswith('_'):
-    raise RuntimeError('This call can only be the result of a hack attack', destinationMethod)   # ServiceCallGPCS.py:108-109
-...
-method = getattr(packet.service, destinationMethod)                                               # ServiceGPCS.py:115
-payload = ClockThisWithoutTheStars(..., method, args)                                             # :161/:164
-...
-return packet.Response(payload=payload)                                                           # ServiceCallGPCS.py:184
-```
+1. Take the method name from `packet.payload[1]`.
+2. If the name is in the service's `__restrictedcalls__` or starts with an
+   underscore, raise `RuntimeError` ("This call can only be the result of a hack
+   attack"); `ServiceCallGPCS.py:108-109`.
+3. Look the method up on the service object with `getattr` (`ServiceGPCS.py:115`).
+4. Run it with the call arguments, timed (`:161`, `:164`).
+5. Answer with `packet.Response(payload=payload)` (`ServiceCallGPCS.py:184`).
 
 **[V]** The method is looked up on the resolved service object by name. There
 is **no** check at this layer that the method is in `__exportedcalls__` — that
@@ -289,15 +285,15 @@ than the player polling.
    cargo capacity across `flagCargo` plus any extra flags and compare it to the
    units a mission requires:
 
-   ```text
-   capacity, used = invCache.GetInventoryFromId(activeShipID).GetCapacity(flagCargo)
-   ...
-   if session.stationid is None and capacity - (used + mandatoryCargoUnits) < 0:
-       rejectMessage = localization.GetByLabel('UI/Agents/StandardMissionCargoCapWarning', cargoUnits=...)
-       self.MessageBox(localization.GetByLabel('UI/Agents/CannotAcceptMission'), rejectMessage)
-       return ('mission.offeredinsufficientcargospace', rejectMessage)
-   # else: falls off the end -> None                                      (agents.py:395-412)
-   ```
+   The client-side check (`agents.py:395-412`):
+
+   1. Read the active ship's cargo `capacity` and `used` for `flagCargo`.
+   2. If `session.stationid` is `None` and `capacity - (used + mandatoryCargoUnits)`
+      is below zero, it builds a localised reject string from the label
+      `UI/Agents/StandardMissionCargoCapWarning`, shows it in a message box
+      titled by `UI/Agents/CannotAcceptMission`, and returns
+      `('mission.offeredinsufficientcargospace', rejectMessage)`.
+   3. Otherwise it falls off the end and returns `None`.
 
    **[V]** So **it returns `None` when there is room, and the 2-tuple
    `('mission.offeredinsufficientcargospace', <localised reject string>)` when

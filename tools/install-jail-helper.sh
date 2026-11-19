@@ -38,6 +38,12 @@ HELPER=${EVE_JAIL_HELPER:-$DST}
 : "${EVE_JAIL_HOST_IP:=10.137.0.1}"
 : "${EVE_JAIL_NS_IP:=10.137.0.2}"
 
+# These are substituted into a root-owned script (`sed`, then `rm -rf "/etc/netns/$NS"`):
+# accept only a plain name and dotted-number addresses, before anything is generated.
+[[ $EVE_JAIL_NS =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || { echo "install-jail-helper.sh: bad EVE_JAIL_NS: $EVE_JAIL_NS" >&2; exit 2; }
+[[ $EVE_JAIL_HOST_IP =~ ^[0-9.]+$ && $EVE_JAIL_NS_IP =~ ^[0-9.]+$ ]] \
+    || { echo "install-jail-helper.sh: bad EVE_JAIL_HOST_IP or EVE_JAIL_NS_IP" >&2; exit 2; }
+
 [[ -f $SRC ]] || { echo "install-jail-helper.sh: no $SRC" >&2; exit 2; }
 
 # generate [REPO]: the helper as installed for REPO (default: this checkout).

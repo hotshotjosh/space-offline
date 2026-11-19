@@ -541,16 +541,10 @@ Two facts not in the roadmap, both load-bearing:
 
 - **`idtype` arrives on the wire with a `*` already prepended.** It is
   `ScattercastWithoutTheStars` that adds it, not the transport **[V]**:
-  ```python
-  def ScattercastWithoutTheStars(self, idtype, ids, method, args):
-      if not idtype.startswith('+'):
-          idtype = '*%s' % idtype
-      if ids:
-          self.ForwardNotifyDown(machoNetPacket.Notification(
-              destination=machoNetAddress.MachoAddress(
-                  broadcastID=method, idtype=idtype, narrowcast=ids),
-              payload=(1, args)))
-  ```
+  1. If `idtype` does not start with `'+'`, it becomes `'*%s' % idtype`.
+  2. If `ids` is non-empty, it forwards down a `Notification` whose destination
+     is `MachoAddress(broadcastID=method, idtype=idtype, narrowcast=ids)` and
+     whose payload is `(1, args)`.
   So the literal to send is `'*clientID'`, not `'clientID'`. (`'+nodeID'` is the proxy
   fan-out form and is not ours.)
 - **A reconstructed broadcast address has no `service` attribute at all.** `__setstate__`
@@ -727,25 +721,16 @@ trips in a test at `address.rs:328-332`.
 
 `CoreBroadcastStuff.NotifyUp`, `carbon/common/script/net/BroadcastStuffGPCS.py` **[V]**:
 
-```python
-def NotifyUp(self, packet):
-    if packet.payload[0]:
-        self.machoNet.LogInfo('BroadcastStuff::Notify(', packet.destination.broadcastID, ',...)')
-        if packet.destination.broadcastID.startswith('Process'):
-            sm.ChainEventWithoutTheStars(packet.destination.broadcastID, packet.payload[1])
-        elif packet.destination.broadcastID.startswith('Do'):
-            sm.SendEventWithoutTheStars(packet.destination.broadcastID, packet.payload[1])
-        elif packet.destination.broadcastID == '__MultiEvent':
-            ...
-        elif packet.destination.broadcastID == '__PacketBus':
-            ...
-        else:
-            sm.ScatterEventWithoutTheStars(packet.destination.broadcastID, packet.payload[1])
-        self.UpdateRecvNotificationStats(packet.destination.broadcastID, False, packet.source)
-    else:
-        packet.payload = packet.payload[1]
-        self.ForwardNotifyUp(packet)
-```
+1. When `packet.payload[0]` is truthy the notification is handled here (it is
+   logged first).
+2. A `broadcastID` starting with `Process` goes to `ChainEventWithoutTheStars`
+   with `payload[1]`; one starting with `Do` to `SendEventWithoutTheStars`.
+3. `'__MultiEvent'` and `'__PacketBus'` have their own branches (§4.2 of
+   `push-events.md` covers the first).
+4. Any other `broadcastID` goes to `ScatterEventWithoutTheStars`.
+5. Receive statistics are then updated.
+6. When `payload[0]` is falsy, `payload` is replaced by `payload[1]` and the
+   packet is forwarded up.
 
 `payload[1]` is `args` — **the whole tuple, passed positionally to the handler**, because
 `SendEventWithoutTheStars(eventid, args)` ends in `getattr(srv, eventid)(*args)` via
@@ -787,11 +772,8 @@ The note on record is correct, and here is the whole of it, in four steps **[V]*
 3. Command 12 is in `__notificationtypes__`, so the non-proxy branch is a plain
    `srcTransport.SessionNotification(theMessage)`.
 4. `SessionNotification` → `_SessionAndChannelAndIDFromPacket` → `_AssociateWithSession`:
-   ```python
-   elif macho.mode == 'client':
-       nodeID = 0
-       serviceSession = False
-   ```
+   On a client, `_AssociateWithSession` sets `nodeID = 0` and
+   `serviceSession = False`:
    **unconditional, and the packet is not read at all.** `sess` is then the global `session`.
 
 **So `clientID`, `idtype` and `narrowcast` are cosmetic for us.** Send the real server's
@@ -867,24 +849,23 @@ is literally an apology for the missing push. **The first push deletes that apol
 `eve/client/script/ui/shared/neocom/wallet/walletSvc.py` **[V]** — `WalletSvc.
 __notifyevents__` contains `'OnAccountChange'`:
 
-```python
-def OnAccountChange(self, accountKey, ownerID, balance):
-    LogInfo('Wallet::OnAccountChange', accountKey, ownerID, balance)
-    if balance is not None:
-        if accountKey == 'cash' and ownerID == session.charid:
-            self._OnCharAccountChange(balance)
-        ...
-    sm.ScatterEvent('OnAccountChange_Local', accountKey, ownerID, balance)
+`WalletSvc.OnAccountChange(accountKey, ownerID, balance)`:
 
-def _OnCharAccountChange(self, newBalance):
-    if GetSettingValue('notifyAccountChange'):
-        sm.GetService('neocom').Blink('wallet', GetByLabel('UI/Neocom/Blink/ISKBalanceChanged'))
-        self.BlinkPersonalWallet(walletConst.PANEL_TRANSACTIONS)
-    difference = newBalance - self.wealth
-    sm.ScatterEvent('OnPersonalAccountChangedClient', newBalance, difference)
-    self._wealth = newBalance
-    walletSignals.on_personal_isk_balance_changed(newBalance, difference)
-```
+1. logs the call;
+2. when `balance` is not `None`, `accountKey == 'cash'` and `ownerID` is the
+   session's `charid`, runs `_OnCharAccountChange(balance)` (other account
+   keys have further arms);
+3. scatters `OnAccountChange_Local` with the same three arguments.
+
+`_OnCharAccountChange(newBalance)`:
+
+1. when the setting `notifyAccountChange` is on, blinks the neocom wallet
+   button with the label `UI/Neocom/Blink/ISKBalanceChanged` and blinks the
+   personal wallet's transactions panel;
+2. computes `difference = newBalance - self.wealth`;
+3. scatters `OnPersonalAccountChangedClient(newBalance, difference)`;
+4. stores `_wealth = newBalance`;
+5. fires the `on_personal_isk_balance_changed(newBalance, difference)` signal.
 
 **Three things happen on screen, and the setting gates only the first:**
 
