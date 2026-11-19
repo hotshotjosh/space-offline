@@ -793,11 +793,16 @@ fn plan_fit_with<'h, 'm>(
     let in_hangar = module.location_id == station && module.flag_id == crate::model::FLAG_HANGAR;
     let in_ship =
         module.location_id == ship_id && crate::item::is_ship_fitting_flag(module.flag_id);
-    // A module may also come from the ship's own cargo hold, and is then
-    // asked everything one from the hangar is: the AIR tutorial loots one
-    // into the hold (task 1.4.01) and its fitting lesson (1.5.01) has the
-    // pilot drag it from there onto the ship **[V-data]** (the client's
-    // `[AIR] 1.5.01` graph).
+    // A module may also come from the ship's own cargo hold. The client
+    // drags one onto a slot as a fit and says it is *not* fitted:
+    // `fittingSlotController.py:93` (`AddRealItem`) computes `isFitted =
+    // locationID == shipID and flagID != flagCargo`, and `:101` calls
+    // `FitModule` for it **[V]**. The AIR tutorial relies on it: it loots a
+    // module into the hold (task 1.4.01) and its fitting lesson (1.5.01) has
+    // the pilot drag it from there. This plan asks a cargo module the same
+    // as one from the hangar (`!in_ship`); the skill gate and the online
+    // decision are the service arm's (`service/inventory.rs` `fit_one_as`,
+    // which counts it as not yet fitted for the same reason).
     let in_cargo = module.location_id == ship_id && module.flag_id == FLAG_CARGO;
     if module.owner_id != c.character_id || !(in_hangar || in_ship || in_cargo) {
         return Err(Refusal::NotAvailable);
@@ -814,7 +819,8 @@ fn plan_fit_with<'h, 'm>(
     // The client's own order (`GetModuleErrorInfo`): kind, then the hull
     // restriction (`CANT_FIT_MODULE_TO_SHIP`), then size.
     // A module already fitted (an illegal fit in a saved world) may still
-    // move slot to slot: only a module coming in from the hangar is asked.
+    // move slot to slot: only a module coming in from the hangar or the
+    // cargo hold is asked.
     if !in_ship
         && !hull_allows(
             |a| own_attribute_of(module.type_id, a),
@@ -1616,7 +1622,7 @@ mod tests {
         }])
         .unwrap();
         assert!(fit_plan(&reg, &ids, 2).is_ok(), "from the cargo hold");
-        let bay = crate::item::Slot::new(ALICE, ids[0], 87);
+        let bay = crate::item::Slot::new(ALICE, ids[0], crate::drones::FLAG_DRONE_BAY);
         reg.apply_items_quiet(&[crate::item::Edit::Move {
             item_id: ids[2],
             to: bay,
@@ -1626,6 +1632,25 @@ mod tests {
             fit_plan(&reg, &ids, 2),
             Err(Refusal::NotAvailable)
         ));
+    }
+
+    /// From the cargo hold a module is still asked the hull restriction
+    /// (`!in_ship`): one that fits only frigates is refused on a capital.
+    #[test]
+    fn a_hull_restricted_module_in_cargo_is_refused_on_the_wrong_hull() {
+        let (mut reg, ids) = alice_in(CAP_HULL, 0);
+        reg.apply_items_quiet(&[crate::item::Edit::Move {
+            item_id: ids[5],
+            to: crate::item::Slot::new(ALICE, ids[0], FLAG_CARGO),
+        }])
+        .unwrap();
+        assert_eq!(
+            fit_plan(&reg, &ids, 5).unwrap_err(),
+            Refusal::WrongKind {
+                type_id: GROUP_MODULE,
+                ship_type_id: CAP_HULL,
+            }
+        );
     }
 
     /// `CanFitModuleToShipTypeOrGroup` [V]: a module naming no hull fits any;

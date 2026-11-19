@@ -1782,6 +1782,15 @@ fn fit_one_as(
     module_id: i64,
     flag_id: i64,
 ) -> Result<i64, ServiceError> {
+    // **Already fitted means in this ship AND in a fitting slot**: the
+    // client's rule (`fittingSlotController.py:93` `AddRealItem`:
+    // `isFitted = locationID == shipID and flagID != flagCargo`) [V],
+    // narrowed to fitting slots (the plan refuses every other hold). A
+    // module in the ship's cargo hold is in this ship but not fitted: it is
+    // skill-gated and onlined by `on_fitted` like one from the hangar (#205).
+    let already_fitted = reg
+        .item(module_id)
+        .is_some_and(|m| m.location_id == ship_id && crate::item::is_ship_fitting_flag(m.flag_id));
     // No fitting in space: an observer's client drew this ship's guns once,
     // from the slim it was sent at arrival, and never redraws them
     // (`crate::fitting::refuse_in_space`, P2.5).
@@ -1793,9 +1802,10 @@ fn fit_one_as(
         // the card says refuse, and a refusal leaves the module in the
         // hangar for a bot to retry. To flip: delete this one check -- the
         // online gate and `on_fitted` already keep it offline. A slot-to-slot
-        // move of a fitted module is not gated.
+        // move of a fitted module is not gated; one from the cargo hold is
+        // (`already_fitted` is same ship AND a fitting slot, the client's rule).
         if let Some(m) = reg.item(module_id)
-            && m.location_id != ship_id
+            && !already_fitted
         {
             crate::skillgate::check(
                 reg,
@@ -1823,9 +1833,6 @@ fn fit_one_as(
         crate::fitting::plan_fit_for(reg, c.as_ref(), ship_id, module_id, flag_id)
             .map_err(|r| r.to_error())?
     };
-    let was_fitted = reg
-        .item(module_id)
-        .is_some_and(|i| i.location_id == ship_id);
     let changes = reg.apply_items(&fit.plan).map_err(plan_refused)?;
     // From a stack the fitted module is a new id (`Edit::Assemble`).
     let fitted = changes
@@ -1835,12 +1842,15 @@ fn fit_one_as(
             _ => None,
         })
         .unwrap_or(module_id);
-    // A slot-to-slot move keeps whatever online state the module had. A
-    // subsystem is passive: there is nothing to online (T3-D).
+    // A slot-to-slot move keeps whatever online state the module had; one
+    // from the cargo hold is not already fitted (same ship AND a fitting
+    // slot: the client's rule, narrowed to fitting slots), so `on_fitted`
+    // decides it. A subsystem is
+    // passive: there is nothing to online (T3-D).
     let subsystem = reg
         .item(fitted)
         .is_some_and(|i| i.category_id == crate::subsystems::CATEGORY_SUBSYSTEM);
-    if !was_fitted
+    if !already_fitted
         && !subsystem
         && !is_rig
         && let Some(c) = c
@@ -5100,5 +5110,166 @@ mod tests {
         };
         assert_eq!(rows.len(), 1);
         assert_eq!(layer_damage_whole(None), PyValue::Dict(vec![]));
+    }
+
+    /// #205: a module fitted from the active ship's own cargo hold, through
+    /// `fit_one`. It is in the ship but not fitted (the client's rule,
+    /// `fittingSlotController.py:93` [V]), so it meets the skill gate and
+    /// `on_fitted` exactly as one from the hangar does.
+    mod from_cargo {
+        use super::super::fit_one;
+        use crate::content::Content;
+        use crate::item::Item;
+        use crate::model::{Character, SandboxConfig};
+        use crate::service::{Registry, ServiceError};
+
+        const ALICE: i64 = 9_505_001;
+        const STATION: i64 = 9_505_002;
+        const HULL: i64 = 9_505_011;
+        /// Needs Small Hybrid Turret 3; the starter sheet has less.
+        const LOCKED_MOD: i64 = 9_505_021;
+        const FREE_MOD: i64 = 9_505_022;
+        /// No skill, but a CPU no hull has.
+        const HUNGRY_MOD: i64 = 9_505_023;
+
+        fn content() -> Content {
+            let module = |id: i64, cpu: &str, extra: &str| {
+                format!(
+                    "type\t{id}\t55\t7\t1\t1\t5.0\t0.0\t0.0\t1.0\t0\t12,16\t50={cpu}{extra}\tFixture Module {id}\n"
+                )
+            };
+            let rows = format!(
+                "type\t{HULL}\t25\t6\t1\t1\t1000.0\t500.0\t1200000000.0\t300.0\t0\t\t\
+                 9=1000000.0;11=45000.0;14=3;13=2;12=3;37=100.0;48=125000.0;552=30.0;\
+                 600=2.0;1281=3.0\tFixture Hull {HULL}\n{}{}{}",
+                module(LOCKED_MOD, "1.0", ";182=3301.0;277=3.0"),
+                module(FREE_MOD, "1.0", ""),
+                module(HUNGRY_MOD, "900000000.0", ""),
+            );
+            let text = format!("{}{rows}", crate::typedata::FIXTURE);
+            let table = crate::typedata::Table::parse(&text).expect("the test rows parse");
+            let mut c = Content::fixture();
+            c.insert("typedata", crate::typedata::Installed::build(table));
+            c
+        }
+
+        /// Alice, docked, in the hull (ids[0]), with in its cargo hold: the
+        /// locked module, the hungry one, a stack of three free ones and a
+        /// single free one (ids[1..=4]).
+        fn world() -> (Registry, Vec<i64>) {
+            let alice = Character {
+                character_id: ALICE,
+                name: "Alice".to_owned(),
+                station_id: Some(STATION),
+                ..Character::default()
+            };
+            let mut reg = Registry::new(SandboxConfig {
+                characters: vec![alice],
+                ..SandboxConfig::default()
+            })
+            .with_content(std::sync::Arc::new(content()));
+            let hull_id = 9_506_000;
+            let mut items = reg.store().items().to_vec();
+            let mut ids = Vec::new();
+            for (n, (type_id, quantity, singleton)) in [
+                (HULL, 1, true),
+                (LOCKED_MOD, 1, true),
+                (HUNGRY_MOD, 1, true),
+                (FREE_MOD, 3, false),
+                (FREE_MOD, 1, true),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let id = hull_id + n as i64;
+                let t = crate::item::find_in(reg.content(), type_id).expect("a fixture type");
+                let (location_id, flag_id) = if n == 0 {
+                    (STATION, crate::model::FLAG_HANGAR)
+                } else {
+                    (hull_id, crate::fitting::FLAG_CARGO)
+                };
+                items.push(Item {
+                    item_id: id,
+                    type_id,
+                    owner_id: ALICE,
+                    location_id,
+                    flag_id,
+                    quantity,
+                    group_id: t.group_id,
+                    category_id: t.category_id,
+                    singleton,
+                });
+                ids.push(id);
+            }
+            reg.apply_snapshot(crate::store::Snapshot {
+                items,
+                next_item_id: 9_507_000,
+                ..crate::store::Snapshot::default()
+            });
+            let c = reg.character_mut(ALICE).expect("Alice");
+            c.ship_id = ids[0];
+            c.ship_type_id = HULL;
+            (reg, ids)
+        }
+
+        fn fit(reg: &mut Registry, ids: &[i64], n: usize) -> Result<i64, ServiceError> {
+            fit_one(
+                reg,
+                Some(ALICE),
+                ids[0],
+                ids[n],
+                crate::fitting::FLAG_AUTOFIT,
+            )
+        }
+
+        #[test]
+        fn an_unskilled_module_from_cargo_is_refused_like_one_from_the_hangar() {
+            let (mut reg, ids) = world();
+            let r = fit(&mut reg, &ids, 1);
+            assert!(r.as_ref().is_err_and(crate::skillgate::is_refusal), "{r:?}");
+            assert_eq!(
+                reg.store().get(ids[1]).map(|i| (i.location_id, i.flag_id)),
+                Some((ids[0], crate::fitting::FLAG_CARGO)),
+                "still in the cargo hold"
+            );
+        }
+
+        #[test]
+        fn a_module_from_cargo_over_the_cpu_goes_on_offline() {
+            let (mut reg, ids) = world();
+            let id = fit(&mut reg, &ids, 2).expect("fits, offline");
+            assert!(
+                reg.store()
+                    .get(id)
+                    .is_some_and(|i| crate::item::is_ship_fitting_flag(i.flag_id))
+            );
+            assert!(!reg.modules().is_online(id), "over the CPU: offline");
+        }
+
+        #[test]
+        fn a_module_from_cargo_that_fits_the_budget_comes_up_online() {
+            let (mut reg, ids) = world();
+            let id = fit(&mut reg, &ids, 4).expect("fits");
+            assert_eq!(id, ids[4], "a single module moves, keeping its id");
+            assert!(reg.modules().is_online(id));
+        }
+
+        #[test]
+        fn a_stack_in_cargo_leaves_the_rest_in_cargo() {
+            let (mut reg, ids) = world();
+            let id = fit(&mut reg, &ids, 3).expect("fits");
+            assert_ne!(id, ids[3], "one unit assembled off the stack");
+            let fitted = reg.store().get(id).expect("the fitted unit");
+            assert!(fitted.singleton);
+            assert_eq!(fitted.location_id, ids[0]);
+            assert!(crate::item::is_ship_fitting_flag(fitted.flag_id));
+            assert_eq!(
+                reg.store()
+                    .get(ids[3])
+                    .map(|i| (i.quantity, i.location_id, i.flag_id)),
+                Some((2, ids[0], crate::fitting::FLAG_CARGO))
+            );
+            assert!(reg.modules().is_online(id));
+        }
     }
 }
