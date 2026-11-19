@@ -40,6 +40,8 @@ case "${1:-} ${2:-}" in
     "cargo test") cat "$STUB_TEST_OUT"; exit "${STUB_TEST_EXIT:-0}" ;;
     "cargo fmt") exit "${STUB_FMT_EXIT:-0}" ;;
     "cargo "*) exit 0 ;;
+    # the registry check runs in the image (/repo is the mount); here it is answered
+    "python3 -I") exit "${STUB_REGISTRY_EXIT:-0}" ;;
     "bash "*)
         printf '%s\n' "$*" >>"${STUB_ARGS:-/dev/null}"
         if [[ " $* " == *" --exact "* ]]; then
@@ -660,6 +662,13 @@ class LandingTools(unittest.TestCase):
         self.assertEqual(g.returncode, 1, g.stdout + g.stderr)
         self.assertNotIn("== python unit tests", g.stdout)
         self.assertFalse(os.path.exists(flag))
+
+    def test_a_registry_red_stops_before_the_format_stage(self) -> None:
+        self.env["STUB_REGISTRY_EXIT"] = "1"
+        g = self.run_tool("gate.sh")
+        self.assertNotEqual(g.returncode, 0, g.stdout + g.stderr)
+        self.assertIn("== dependency registry", g.stdout)
+        self.assertNotIn("== format", g.stdout)
 
     def test_the_python_report_prints_before_the_test_run(self) -> None:
         self.commit("slow py", ("tools/test_a_slow.py", "import time\ntime.sleep(1)\nprint('slow done')\n"),

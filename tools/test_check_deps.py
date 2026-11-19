@@ -133,9 +133,9 @@ class CheckDeps(unittest.TestCase):
                 out, err = sys.stdout, sys.stderr
                 sys.stdout = sys.stderr = null
                 try:
-                    clean = check_deps.main()
+                    clean = check_deps.main([])
                     self.write(".cargo/config.toml", CONFIG.replace("offline = true", ""))
-                    dirty = check_deps.main()
+                    dirty = check_deps.main([])
                 finally:
                     sys.stdout, sys.stderr = out, err
         finally:
