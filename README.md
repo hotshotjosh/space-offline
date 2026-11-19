@@ -239,7 +239,9 @@ own encryption.
 
 - Every crate, and every crate it pulls in, is listed with its version and licence in
   `server/deps.allow`, and its bytes are hash-locked in `server/deps.digest`.
-  `tools/check_deps.py` enforces both in the gate.
+  `tools/check_deps.py` checks the table in the gate. Its `--registry` mode checks the
+  bytes, the licences and `server/THIRD-PARTY.txt` against the build image's crates;
+  it runs before the cargo build, in the gate and in the deploy image's build.
 - Crates come from the build image's signed Ubuntu packages. Builds run offline in
   Docker, and nothing is fetched from crates.io.
 - Our code still forbids `unsafe`. A crate may use it, for OS calls or CPU

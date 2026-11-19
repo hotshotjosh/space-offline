@@ -29,6 +29,9 @@ ROOT = """\
 resolver = "3"
 members = ["crates/*"]
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
 [workspace.dependencies]
 """
 
@@ -36,6 +39,9 @@ CRATE = """\
 [package]
 name = "{name}"
 version = "0.0.1"
+
+[lints]
+workspace = true
 
 [dependencies]
 """
@@ -145,7 +151,7 @@ class CheckDeps(unittest.TestCase):
     def test_a_git_lock_source_fails_even_when_the_name_is_allowlisted(self):
         self.admit(self.row("zeta"))
         self.write("Cargo.lock", LOCK + '\n[[package]]\nname = "zeta"\nversion = "1.0.0"\n'
-                   'source = "git+https://example.invalid/zeta#0123"\nchecksum = "x"\n')
+                   'source = "git+https://example.invalid/zeta#0123"\nchecksum = "Could not get crate checksum"\n')
         self.assertFails("Cargo.lock", "'zeta'", "not the distro registry")
 
     def test_an_allowlisted_crates_io_lock_package_passes(self):
@@ -272,11 +278,19 @@ class CheckDeps(unittest.TestCase):
             'name = "zeta"\nversion = "1.0.0"', 'name = "zeta"\nversion = "1.0.1"'))
         self.assertFails("'zeta' 1.0.1", "not in deps.allow", "(allowed: 1.0.0)")
 
-    def test_a_lock_package_without_a_checksum_key_fails(self):
+    def test_a_lock_package_without_the_placeholder_checksum_fails(self):
         self.passing()
-        self.write("Cargo.lock", self.server.joinpath("Cargo.lock").read_text().replace(
-            'checksum = "Could not get crate checksum"\n', "", 1))
-        self.assertFails("no checksum key")
+        text = self.server.joinpath("Cargo.lock").read_text()
+        self.write("Cargo.lock", text.replace('checksum = "Could not get crate checksum"\n', "", 1))
+        self.assertFails("checksum is not the distro placeholder")
+        self.write("Cargo.lock", text.replace("Could not get crate checksum", "0" * 64, 1))
+        self.assertFails("checksum is not the distro placeholder")
+
+    def test_a_lock_source_that_only_starts_like_crates_io_fails(self):
+        self.passing()
+        text = self.server.joinpath("Cargo.lock").read_text()
+        self.write("Cargo.lock", text.replace(CRATES_IO, CRATES_IO + "-evil", 1))
+        self.assertFails("not the distro registry")
 
     def test_a_malformed_row_fails(self):
         self.passing()
@@ -370,6 +384,98 @@ class CheckDeps(unittest.TestCase):
         (self.server / "THIRD-PARTY.txt").unlink()
         self.assertFails("deps.digest: missing", "THIRD-PARTY.txt: missing")
 
+    # --- review fixes: path dependencies, the cargo boundary, lints ---------
+
+    def test_a_path_dependency_outside_the_members_fails(self):
+        for path in ("/usr/share/cargo/registry/zeta-1.0.0", "../../vendor/zeta", "../../../x"):
+            self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + f'zeta = {{ path = "{path}" }}\n')
+            self.assertFails("'zeta'", "not a server/crates/* member")
+
+    def test_a_path_dependency_to_a_member_passes_and_a_dotdot_detour_to_one_too(self):
+        self.write("crates/beta/Cargo.toml", CRATE.format(name="beta"))
+        self.write("crates/beta/src/lib.rs", "")
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + 'beta = { path = "../beta" }\n')
+        self.assertEqual(self.errors(), [])
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + 'beta = { path = "../alpha/../beta" }\n')
+        self.assertEqual(self.errors(), [])
+
+    def test_a_path_to_the_server_directory_or_a_subdirectory_of_a_member_fails(self):
+        for path in ("../..", "src", "../beta/src"):
+            self.write("crates/beta/Cargo.toml", CRATE.format(name="beta"))
+            self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + f'beta = {{ path = "{path}" }}\n')
+            self.assertFails("'beta'", "not a server/crates/* member")
+
+    def test_a_direct_crate_listed_by_another_crates_manifest_fails(self):
+        self.passing()
+        self.write("crates/beta/Cargo.toml", CRATE.format(name="beta") + "zeta = { workspace = true }\n")
+        self.write("crates/beta/src/lib.rs", "")
+        self.assertFails("crates/beta/Cargo.toml", "'zeta'", "only by crate 'alpha'")
+
+    def test_the_using_crates_own_manifest_may_list_it(self):
+        self.passing()
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + "zeta = { workspace = true }\n")
+        self.assertEqual(self.errors(), [])
+
+    def test_a_dev_or_target_listing_in_another_crate_fails_too(self):
+        self.passing()
+        self.write("crates/beta/Cargo.toml", CRATE.format(name="beta")
+                   + '[dev-dependencies]\nzeta = { workspace = true }\n')
+        self.write("crates/beta/src/lib.rs", "")
+        self.assertFails("'zeta'", "only by crate")
+
+    def test_the_root_manifest_takes_no_dependency_tables(self):
+        self.passing()
+        self.append("Cargo.toml", '\n[dependencies]\nzeta = "1"\n')
+        self.assertFails("workspace root takes no dependency tables")
+
+    def test_a_member_without_workspace_lints_fails(self):
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha").replace("[lints]\nworkspace = true\n", ""))
+        self.assertFails("crates/alpha/Cargo.toml", "[lints] workspace = true")
+
+    def test_a_lints_override_fails(self):
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha") + '\n[lints.rust]\nunsafe_code = "allow"\n')
+        self.assertFails("crates/alpha/Cargo.toml", "[lints] workspace = true")
+        self.write("crates/alpha/Cargo.toml", CRATE.format(name="alpha").replace(
+            "workspace = true", 'workspace = false\n\n[lints.rust]\nunsafe_code = "allow"'))
+        self.assertFails("[lints] workspace = true")
+
+    def test_the_workspace_must_keep_unsafe_code_forbidden(self):
+        self.write("Cargo.toml", ROOT.replace('"forbid"', '"warn"'))
+        self.assertFails("unsafe_code", "forbid")
+        self.write("Cargo.toml", ROOT.replace('[workspace.lints.rust]\nunsafe_code = "forbid"\n\n', ""))
+        self.assertFails("unsafe_code", "forbid")
+
+    # --- rule 8 bypasses -----------------------------------------------------
+
+    def naming(self, text):
+        self.passing()
+        self.write("crates/alpha/src/lib.rs", text)
+        return "\n".join(self.errors())
+
+    def test_a_leading_double_colon_path_is_caught(self):
+        self.assertIn("'zeta'", self.naming("fn g() { ::zeta::go(); }\n"))
+        self.assertIn("'zeta'", self.naming("use ::zeta::go;\n"))
+        self.assertIn("'zeta'", self.naming("use ::zeta;\n"))
+
+    def test_spaces_around_the_path_separator_are_caught(self):
+        self.assertIn("'zeta'", self.naming("fn g() { zeta :: go(); }\n"))
+        self.assertIn("'zeta'", self.naming("fn g() { :: zeta :: go(); }\n"))
+
+    def test_a_path_through_another_crate_is_not_a_hit_but_is_still_one_via_cargo(self):
+        self.assertEqual(self.naming("fn g() { other::zeta::go(); }\n"), "")
+
+    def test_a_re_export_from_the_using_file_fails(self):
+        for text in ("pub use zeta;\n", "pub use zeta::go;\n", "pub(crate) use ::zeta::go;\n",
+                     "pub extern crate zeta;\n", "pub  use  zeta as z;\n"):
+            self.passing()
+            self.write("crates/alpha/src/zeta_wrap.rs", "pub fn f() { zeta::go(); }\n" + text)
+            self.assertIn("re-exports crate 'zeta'", "\n".join(self.errors()), text)
+
+    def test_a_private_use_in_the_using_file_is_fine(self):
+        self.passing()
+        self.write("crates/alpha/src/zeta_wrap.rs", "use zeta::go;\npub fn f() { go(); }\n")
+        self.assertEqual(self.errors(), [])
+
 
 class RegistryMode(unittest.TestCase):
     """Rule 9 against a fake registry tree with invented crates."""
@@ -415,7 +521,7 @@ class RegistryMode(unittest.TestCase):
             "eta\t2.1.0\tvia zeta\tMIT\tyes\tnone\t-\n")
         (s / "Cargo.lock").write_text(
             "version = 4\n" + "".join(
-                f'\n[[package]]\nname = "{n}"\nversion = "{v}"\nsource = "{CRATES_IO}"\nchecksum = "x"\n'
+                f'\n[[package]]\nname = "{n}"\nversion = "{v}"\nsource = "{CRATES_IO}"\nchecksum = "Could not get crate checksum"\n'
                 for n, v in (("zeta", "1.0.0"), ("eta", "2.1.0"))))
         allow_rows, _ = check_deps.parse_allow((s / "deps.allow").read_text())
         (s / "deps.digest").write_text(check_deps.digest_lines(allow_rows, self.reg))
@@ -464,6 +570,24 @@ class RegistryMode(unittest.TestCase):
         (self.reg / "eta-2.1.0/NOTICE").write_text("eta notice, changed\n")
         joined = "\n".join(self.errors())
         self.assertIn("THIRD-PARTY.txt: stale", joined)
+
+
+    def test_a_crate_whose_manifest_names_another_package_fails(self):
+        (self.reg / "zeta-1.0.0/Cargo.toml").write_text(
+            '[package]\nname = "other"\nversion = "1.0.0"\nlicense = "MIT OR Apache-2.0"\nbuild = false\n')
+        self.assertIn("names package 'other'", "\n".join(self.errors()))
+
+    def test_a_symlink_inside_a_crate_fails(self):
+        os.symlink("/nonexistent/probe", self.reg / "zeta-1.0.0/src/link")
+        self.assertIn("holds a symlink: src/link", "\n".join(self.errors()))
+
+    def test_a_symlinked_directory_inside_a_crate_fails(self):
+        os.symlink("/nonexistent/probe-dir", self.reg / "zeta-1.0.0/linked")
+        self.assertIn("holds a symlink: linked", "\n".join(self.errors()))
+
+    def test_a_registry_that_is_not_a_directory_fails(self):
+        errs = check_deps.check(self.server, self.reg / "nope")[0]
+        self.assertIn("is not a directory", "\n".join(errs))
 
     def test_the_notices_carry_every_licence_file_verbatim(self):
         text = (self.server / "THIRD-PARTY.txt").read_text()

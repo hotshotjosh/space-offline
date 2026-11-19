@@ -28,7 +28,8 @@ does it.
   dependencies it does not package, so read the crate in the image before relying on
   an upstream claim.
 - `Cargo.lock` pins versions (`--locked`). The distro registry carries no checksums,
-  and cargo writes the text `Could not get crate checksum` in their place. The bytes
+  and cargo writes the text `Could not get crate checksum` in their place; the checker
+  requires exactly that text, so a real-looking checksum is a diff to review. The bytes
   are pinned by `server/deps.digest` instead.
 
 ## `server/deps.allow`
@@ -51,26 +52,38 @@ Host rules (a pure file check, run by the gate):
 
 1. `direct` rows and `[workspace.dependencies]` match both ways. A `via` row names a
    parent that is a row, and is in `Cargo.lock`.
-2. Member crates take path or `workspace = true` dependencies only.
+2. Member crates take `workspace = true` dependencies or a path to another
+   `server/crates/*` member, nothing else. The root manifest has no dependency tables.
+   Every member has `[lints] workspace = true` and no other `[lints]` entry, and the
+   workspace keeps `unsafe_code = "forbid"`, so our code is forbid(unsafe).
 3. Every `Cargo.lock` package with a source matches a row on name and version, so a
-   version bump is a guarded diff, comes from the crates.io index (which the config
-   replaces), and has a `checksum` key.
+   version bump is a guarded diff, comes from exactly the crates.io index (which the
+   config replaces), and carries the placeholder checksum.
 4. No `[patch]` or `[replace]` anywhere.
 5. The cargo config keeps offline and the distro directory.
 6. No build script in our own crates.
 7. Every licence is on the accepted list (`LICENCE_OK`), or the crate is in
    `LICENCE_EXCEPT` by owner decision.
-8. A `direct` crate is named (`name::`, `use name`, `extern crate name`) in its
-   `used-in` file and nowhere else under `server/crates`; a `via` crate nowhere.
+8. A `direct` crate is listed in the manifest of the crate that holds its `used-in`
+   file and in no other manifest, so cargo itself refuses the name elsewhere. As a
+   second line, a text scan finds no other `.rs` file under `server/crates` naming it
+   (`name::` with an optional leading `::` and spaces, `use name`, `extern crate name`),
+   and the `used-in` file does not re-export it (`pub use name`, `pub extern crate
+   name`). A `via` crate is named nowhere.
 9. `server/deps.digest` names the same crates and versions as the rows, and
    `server/THIRD-PARTY.txt` exists.
 
-Registry mode, in the image (add to the gate next to `== toolchain`):
+Registry mode, in the image. The gate runs it before the cargo build, and
+`deploy/Dockerfile` runs it in its build stage before `cargo build`, so a crate whose
+bytes moved never reaches a build script:
 
     tools/dev.sh python3 -I /repo/tools/check_deps.py --registry /usr/share/cargo/registry
 
-It checks each row's directory, version, licence and build-script flag against the
-crate's own `Cargo.toml`, the tree digest against `server/deps.digest`, and that
+It takes about two seconds and fails closed: a missing crate directory, an unreadable
+`Cargo.toml` or any mismatch is an error, and the exit status is 1. It checks each
+row's directory, name, version, licence and build-script flag against the crate's own
+`Cargo.toml`, refuses any symlink inside a crate directory (cargo follows them, the
+digest does not), the tree digest against `server/deps.digest`, and that
 `server/THIRD-PARTY.txt` is what `tools/dep-notices.py` writes now. An image rebuild
 that moved a crate's bytes, even under the same version, fails here.
 

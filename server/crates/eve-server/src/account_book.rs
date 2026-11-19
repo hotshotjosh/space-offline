@@ -359,7 +359,7 @@ pub fn ensure_bot_account_salted(
 /// **Why one is acceptable here and nowhere else.** PBKDF2 stretches a
 /// secret an attacker can guess; it adds nothing to a secret they cannot.
 /// `bot_control::provision` makes every spawn password from 128 bits of
-/// `/dev/urandom`, so a stolen row falls only to a 2^128 search at any
+/// OS randomness, so a stolen row falls only to a 2^128 search at any
 /// iteration count, while [`BOT_ITERATIONS`] cost the world lock ~1.5 ms a
 /// bot (300 bots held it ~480 ms, measured 2026-10-29). A password a person
 /// chose (sign-up, `--mark-bot`) must NEVER take this count: [`Book`] floors

@@ -27,7 +27,8 @@ GUARDED_EXACT = {
     "tools/flaky.tsv", "tools/gate_reds.py", "tools/test-parallel.sh",
     "tools/public-export.py", "tools/mirror-github.sh", "tools/import-pr.sh",
     "tools/pr_guard.py", "tools/test_mirror.py",
-    "server/deps.allow", "server/Cargo.lock", "Cargo.lock",
+    "server/deps.allow", "server/deps.digest", "server/THIRD-PARTY.txt", "server/Cargo.lock", "Cargo.lock",
+    "tools/check_deps.py", "tools/dep-notices.py",
     ".gitattributes", ".gitmodules",
 }
 GUARDED_PREFIX = (

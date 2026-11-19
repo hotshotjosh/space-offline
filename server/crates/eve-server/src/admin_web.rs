@@ -10,7 +10,7 @@
 //! [`Shared::open`] reads `<dir>/admin.token` (the bot-control directory,
 //! which is the world file's directory: `/data` on the server host) and keeps it
 //! when it holds a token of at least 32 characters; otherwise it writes a
-//! fresh one (32 bytes of `/dev/urandom`, hex, mode 0600). Every `/api/`
+//! fresh one (32 bytes of OS randomness, hex, mode 0600). Every `/api/`
 //! request must carry it in the `X-Admin-Token` header, or it gets 401. The
 //! static page itself is served without the token: it holds no data and
 //! asks the operator for the token.

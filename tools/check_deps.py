@@ -10,13 +10,16 @@ table, one row per external crate, and every crate a direct one pulls in:
 1. Every `direct` row appears in [workspace.dependencies] and every workspace
    dependency has a `direct` row. A `via PARENT` row names a parent that is a
    row too, and must be in Cargo.lock.
-2. Every crate dependency is a local path or `workspace = true`, so no crate
-   can name a git URL or another registry.
+2. Every crate dependency is a path to a `server/crates/*` member or
+   `workspace = true`, so no crate can name a git URL, another registry or any
+   other directory. The root manifest has no dependency tables. Every member
+   has `[lints] workspace = true` and nothing else under `[lints]`, and the
+   workspace keeps `unsafe_code = "forbid"`.
 3. Every Cargo.lock package with a `source` matches a row on name AND version
-   (a version bump is a guarded diff), comes from the crates.io index (which
-   config.toml replaces with the distro directory) and has a `checksum` key.
-   The distro registry has no checksums, so cargo writes a placeholder text
-   there; rule 9 is the real lock.
+   (a version bump is a guarded diff), comes from exactly the crates.io index
+   (which config.toml replaces with the distro directory) and carries the
+   checksum placeholder text. The distro registry has no checksums, so cargo
+   writes the placeholder; rule 9 is the real lock.
 4. No `[patch]` or `[replace]` in any Cargo.toml or in server/.cargo/config.toml.
 5. server/.cargo/config.toml keeps `[net] offline = true` and
    `[source.crates-io] replace-with = "distro"`, and `distro` is a
@@ -25,13 +28,17 @@ table, one row per external crate, and every crate a direct one pulls in:
    key) unless its name is in BUILD_RS_ALLOW.
 7. Every row's licence is on the accepted list (LICENCE_OK); an owner-approved
    exception goes in LICENCE_EXCEPT by crate name.
-8. A `direct` row's `used-in` file is the only .rs file under server/crates
-   that names the crate (`name::`, `use name`, `extern crate name`); a `via`
-   row's crates are named nowhere. A crate-using file must exist.
+8. A `direct` crate is listed (`workspace = true`) only in the manifest of the
+   crate that holds its `used-in` file; cargo then refuses the name anywhere
+   else. As a second line, the `used-in` file is the only .rs file under
+   server/crates that names it (`name::` with optional leading `::` and
+   spaces, `use name`, `extern crate name`), that file never re-exports it
+   (`pub use name`, `pub extern crate name`), and a `via` crate is named
+   nowhere. The `used-in` file must exist.
 9. Registry mode, run in the build image:
    `tools/dev.sh python3 -I /repo/tools/check_deps.py --registry /usr/share/cargo/registry`
-   Every row's crate directory exists with the row's version, licence and
-   build-script flag, its tree digest equals the row in server/deps.digest,
+   Every row's crate directory exists with the row's name, version, licence
+   and build-script flag, holds no symlink, its tree digest equals the row in server/deps.digest,
    and server/THIRD-PARTY.txt is what tools/dep-notices.py writes now.
    `--print-digest` (same arguments) prints the deps.digest to commit.
    Without --registry, the host mode only checks deps.digest names the same
@@ -62,6 +69,8 @@ DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 # Lock sources an allowlisted crate may come from. The distro directory
 # registry stands in for crates.io, so Cargo.lock records the crates.io index.
 LOCK_SOURCES = ("registry+https://github.com/rust-lang/crates.io-index",)
+# What cargo writes for `checksum` when the registry (a directory source) has none.
+LOCK_CHECKSUM = "Could not get crate checksum"
 # Crates of OURS allowed a build script, by package directory name. Empty: a
 # dependency's build script is declared in deps.allow (the `build` column).
 BUILD_RS_ALLOW = frozenset()
@@ -119,8 +128,21 @@ def licence_ok(expr):
 def uses_crate(text, name):
     """Whether Rust source `text` names crate `name` outside comment lines."""
     ident = re.escape(name.replace("-", "_"))
-    pat = re.compile(rf"(?<![\w:]){ident}::|\buse\s+{ident}\b|\bextern\s+crate\s+{ident}\b")
+    pat = re.compile(rf"(?<![\w:])(?:::\s*)?{ident}\s*::|\buse\s+(?:::\s*)?{ident}\b"
+                     rf"|\bextern\s+crate\s+{ident}\b")
     return any(pat.search(ln) for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+
+
+def reexports_crate(text, name):
+    """Whether `text` makes crate `name` public (`pub use name`, `pub extern crate name`)."""
+    ident = re.escape(name.replace("-", "_"))
+    pat = re.compile(rf"\bpub(?:\s*\([^)]*\))?\s+(?:use\s+(?:::\s*)?|extern\s+crate\s+){ident}\b")
+    return any(pat.search(ln) for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+
+
+def symlinks(directory):
+    """Every symlink inside `directory` (cargo follows them; the digest does not)."""
+    return sorted(p for p in pathlib.Path(directory).rglob("*") if p.is_symlink())
 
 
 def tree_digest(directory):
@@ -196,6 +218,16 @@ def check(server, registry=None):
                 errors.append(f"{rel(path)}: [{key}] is not allowed")
 
     no_overrides(root_path, root)
+    root_tables = [root.get(t, {}) for t in DEP_TABLES]
+    for target in root.get("target", {}).values():
+        root_tables += [target.get(t, {}) for t in DEP_TABLES]
+    if any(root_tables):
+        errors.append(f"{rel(root_path)}: the workspace root takes no dependency tables; "
+                      "use [workspace.dependencies]")
+    if root.get("workspace", {}).get("lints", {}).get("rust", {}).get("unsafe_code") != "forbid":
+        errors.append(f'{rel(root_path)}: [workspace.lints.rust] unsafe_code = "forbid" is missing')
+    members = {m.parent.resolve() for m in server.glob("crates/*/Cargo.toml")}
+    used_crate = {r["name"]: r["used_in"].split("/")[0] for r in rows if r["used_in"] != "-"}
 
     for manifest in sorted(server.glob("crates/*/Cargo.toml")):
         data = load(manifest)
@@ -207,12 +239,22 @@ def check(server, registry=None):
         for table in tables:
             for name, spec in table.items():
                 if isinstance(spec, dict) and "path" in spec:
+                    if (manifest.parent / spec["path"]).resolve() not in members:
+                        errors.append(f"{rel(manifest)}: '{name}' path '{spec['path']}' is not a "
+                                      "server/crates/* member")
                     continue
                 if isinstance(spec, dict) and spec.get("workspace") is True:
                     if name not in workspace_deps:
                         errors.append(f"{rel(manifest)}: '{name}' is not in [workspace.dependencies]")
+                    elif name in used_crate and used_crate[name] != crate:
+                        errors.append(f"{rel(manifest)}: '{name}' may be listed only by crate "
+                                      f"'{used_crate[name]}' (its used-in file)")
                     continue
                 errors.append(f"{rel(manifest)}: '{name}' must be a path or `workspace = true` dependency")
+        lints = data.get("lints")
+        if lints != {"workspace": True}:
+            errors.append(f"{rel(manifest)}: must have `[lints] workspace = true` and no other lint "
+                          "settings (unsafe_code = \"forbid\" comes from the workspace)")
         build = data.get("package", {}).get("build")
         if build not in (None, False) and crate not in BUILD_RS_ALLOW:
             errors.append(f"{rel(manifest)}: `build = {build!r}` is not in BUILD_RS_ALLOW")
@@ -237,10 +279,11 @@ def check(server, registry=None):
             have = ", ".join(r["version"] for r in by_name.get(name, ()))
             errors.append(f"{rel(lock_path)}: '{name}' {version} from {source} is not in deps.allow"
                           + (f" (allowed: {have})" if have else ""))
-        elif not source.startswith(LOCK_SOURCES):
+        elif source not in LOCK_SOURCES:
             errors.append(f"{rel(lock_path)}: '{name}' comes from {source}, not the distro registry")
-        if "checksum" not in pkg:
-            errors.append(f"{rel(lock_path)}: '{name}' {version} has no checksum key")
+        if pkg.get("checksum") != LOCK_CHECKSUM:
+            errors.append(f"{rel(lock_path)}: '{name}' {version} checksum is not the distro "
+                          f"placeholder '{LOCK_CHECKSUM}'")
     for r in rows:
         if (r["name"], r["version"]) not in locked:
             errors.append(f"{rel(allow_path)}: '{r['name']}' {r['version']} is not in Cargo.lock; remove or fix the row")
@@ -278,6 +321,11 @@ def check(server, registry=None):
                 errors.append(f"{rel(f)}: names crate '{r['name']}', which may be used only in "
                               f"{r['used_in'] if allowed else 'no file of ours'}")
 
+    for r in rows:
+        if r["used_in"] != "-" and (server / "crates" / r["used_in"]).is_file():
+            if reexports_crate((server / "crates" / r["used_in"]).read_text(errors="replace"), r["name"]):
+                errors.append(f"{r['used_in']}: re-exports crate '{r['name']}'; the wrapper must not")
+
     # Digest and notices: host consistency, then the registry check.
     digest_path, notices_path = server / DIGEST_NAME, server / NOTICES_NAME
     digests = {}
@@ -292,6 +340,8 @@ def check(server, registry=None):
             errors.append(f"{rel(notices_path)}: missing")
     if registry is not None:
         reg = pathlib.Path(registry)
+        if not reg.is_dir():
+            errors.append(f"registry: {reg} is not a directory")
         for r in rows:
             d = reg / f"{r['name']}-{r['version']}"
             if not d.is_dir():
@@ -303,6 +353,10 @@ def check(server, registry=None):
                 errors.append(f"registry: {d.name}/Cargo.toml unreadable: {e}")
                 continue
             pkg = manifest.get("package", {})
+            if pkg.get("name") != r["name"]:
+                errors.append(f"registry: {d.name}/Cargo.toml names package '{pkg.get('name')}'")
+            for link in symlinks(d):
+                errors.append(f"registry: {d.name} holds a symlink: {link.relative_to(d)}")
             if pkg.get("version") != r["version"]:
                 errors.append(f"registry: {d.name} says version {pkg.get('version')}")
             if pkg.get("license") != r["licence"]:

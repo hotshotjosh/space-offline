@@ -10,7 +10,7 @@
 //!
 //! [`Link::open`] binds `127.0.0.1:0` (loopback only, never another
 //! interface), writes the port to `<dir>/bot-control.addr` and a random
-//! token (32 bytes of `/dev/urandom`, hex) to `<dir>/bot-control.token`
+//! token (32 bytes of OS randomness, hex) to `<dir>/bot-control.token`
 //! (mode 0600). Lines of UTF-8, `\n` ended:
 //!
 //! - peer -> server, first: `HELLO <token>`; the server answers `OK`, or `NO`
@@ -975,7 +975,7 @@ fn ticker_of(side: &str) -> String {
 /// `NAME:PASSWORD,...`, a fresh random password per bot. Secret: the caller
 /// puts it on the loopback link and nowhere else.
 fn provision(reg: &mut Registry, args: &[&str]) -> Result<String, String> {
-    // One read of `/dev/urandom` for the whole spawn (TT-B C2): per bot, a
+    // One OS-randomness read for the whole spawn (TT-B C2): per bot, a
     // password's 16 bytes and the account's salt.
     let count = args
         .get(4)
