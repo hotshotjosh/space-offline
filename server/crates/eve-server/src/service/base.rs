@@ -746,8 +746,9 @@ fn chat_roled(reg: &Registry) -> bool {
 /// None, qa_starter_system_id)`: ten positional arguments in this order
 /// **[V]** (`ccSvc.CreateCharacterWithDoll`, R-START §1.1; EvEJS's order
 /// is another build's). Answers the new `charID`; the client then selects
-/// it. The doll (`charInfo`, `portraitInfo`) is not stored, and
-/// `ancestryID` is always `ancestryUndefined` **[V]**.
+/// it. The doll (`charInfo`, `portraitInfo`) is kept by
+/// [`crate::paperdoll::store`] for the scene portrait, and `ancestryID` is
+/// always `ancestryUndefined` **[V]**.
 ///
 /// A refused name raises its `CharNameInvalid*` key, a refused school
 /// [`crate::start::SCHOOL_ERROR_KEY`] **[A]** and a bloodline of another
@@ -784,6 +785,9 @@ fn create_character_with_doll(
             crate::outln!(
                 "[start] user {user_id} created {name:?}: character {id}, school {school_id}"
             );
+            if let (Some(ci), Some(pi)) = (a.get(5), a.get(6)) {
+                crate::paperdoll::store(reg, id, ci, pi);
+            }
             Ok(PyValue::Int(id))
         }
         Err(e) => {
