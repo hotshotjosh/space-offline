@@ -1720,6 +1720,11 @@ pub fn notification(frame: &PyValue) -> Option<(String, Vec<PyValue>)> {
 /// matches on `OnTarget`, so the batch is opened once, at the frame, and a
 /// reader never sees it. A batch of several entries, or of anything else,
 /// comes back as it is.
+///
+/// **A one-row `OnItemsChanged` is read as `OnItemChange`** the same way: the
+/// server sends every item change as `OnItemsChanged([row], change,
+/// location)` (`eve_server::notify::ItemChange`), and the readers here match
+/// on the singular.
 fn unbatched(event: String, args: Vec<PyValue>) -> (String, Vec<PyValue>) {
     if event == "OnMultiEvent"
         && let [PyValue::List(entries)] = &args[..]
@@ -1728,6 +1733,15 @@ fn unbatched(event: String, args: Vec<PyValue>) -> (String, Vec<PyValue>) {
         && let Some((PyValue::Bytes(name), rest)) = call.split_first()
     {
         return (String::from_utf8_lossy(name).into_owned(), rest.to_vec());
+    }
+    if event == "OnItemsChanged"
+        && let [PyValue::List(rows), change, location] = &args[..]
+        && let [row] = &rows[..]
+    {
+        return (
+            "OnItemChange".to_owned(),
+            vec![row.clone(), change.clone(), location.clone()],
+        );
     }
     (event, args)
 }
@@ -2123,6 +2137,18 @@ mod tests {
         assert_eq!(
             unbatched("OnTarget".into(), vec![PyValue::Int(1)]),
             ("OnTarget".to_owned(), vec![PyValue::Int(1)])
+        );
+        let items = vec![
+            PyValue::List(vec![PyValue::Int(5)]),
+            PyValue::Dict(vec![]),
+            PyValue::None,
+        ];
+        assert_eq!(
+            unbatched("OnItemsChanged".into(), items),
+            (
+                "OnItemChange".to_owned(),
+                vec![PyValue::Int(5), PyValue::Dict(vec![]), PyValue::None]
+            )
         );
     }
 
