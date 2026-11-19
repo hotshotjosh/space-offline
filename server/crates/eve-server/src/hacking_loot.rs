@@ -691,8 +691,6 @@ pub fn looted(w: &mut Registry, character_id: i64, id: i64) {
     if w.combat().wreck(id).is_some() {
         return;
     }
-    // A placed wreck that this take emptied shows empty everywhere.
-    crate::site::tell_if_emptied(w, id);
     let Some(wr) = loot_source(w, id) else {
         return;
     };

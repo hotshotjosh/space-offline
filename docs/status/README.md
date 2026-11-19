@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**64% proved** (232 of 362) · **94% built** (339 of 362) · 3 parked, not counted.
+**64% proved** (232 of 363) · **94% built** (340 of 363) · 3 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -76,6 +76,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Applying a mutaplasmid in the crafting window: *built-unproved*, dynamic_item.rs create (service/dynamic_item.rs arm); scenario fci_mutaplasmid green 36/36 on 11-10 (var/ci-1110-muta); the 11-15 rerun (var/ci-1115q-a) is red, 3 of 36 checks (a second craft from the same source stack, the rolled attributes of craft 2, a mutated item as the mutaplasmid); a known push-order race, diagnosed, fix pending
 - [ ] Mutated item Show Info and inventory tooltip: *built-unproved*, fci_dynamic_info green 22/22 on 11-15 (var/ci-1115q-a): Show Info, GetDynamicItemInfo and the rolled attributes; the inventory tooltip is not in the scenario; GetDynamicItemInfo carries characterID (creator, None when 0) for the Show Info header (ci-1110)
 - [ ] Kill missions spawn their own dungeon (rooms, squads, gates) as a per-mission instance at the bookmark, with the 3-rat ring only as a logged fallback; the squads are the fixed fill the reward prices, with no respawn: *built-unproved*, mission.rs own_dungeon tests (squad count equals npc_gen::dungeon_squads, fallbacks, completion over the spawned set, cleanup on turn-in and expiry, no vacant despawn); fci_mission_dungeon written, not yet run. Eden not used (our client, dungeon model and mission_rewards are the evidence); mission site band carved from the top of the abyss band; no cache, escalation roll or LP on a mission pocket [A]
+- [ ] A placed wreck in a site shows as empty in the overview and brackets: *built-unproved*, site.rs slim_extras: a placed wreck's slim carries isEmpty from its contents; unit test a_placed_wreck_says_whether_it_is_empty; nothing fills a placed wreck yet, so all show empty. Filling and opening tutorial wrecks stays open under #205
 - [ ] Proving Grounds: *built-unproved*, PG-1b (#64): proving.rs calendar (active downtime to downtime, over, most recent, next date, by filament) from content/pve/proving-events.tsv, one hidden QA row always active [A]; service/proving.rs answers pvpFilamentMgr's six reads, OnPVPFilaments* pushes with empty boards and zero stats for a known event, JoinPVPQueue refused with PVPJumpError 33, LeavePVPQueue None; PG-1a (#64): tools/content_proving.py `proving` section writes proving/match_types.tsv and match_rewards.tsv from the client's pvpfilamentmatchtypes (check: every filament type is group 4050), unit tests in test_content_proving.py; rows without a match type are not served; PG-1d: proving::TABLE reads proving/match_types.tsv and match_rewards.tsv (MatchType::parse_rows); a name_has row is unserved (no type names); unit tests in proving/tests.rs; left: PG-1c queue, matches (#63, #65-#67)
 - [ ] Triglavian NPC types in the NPC table: class, owner and wreck per type: *built-unproved*, tools/content_pochven.py (the pochven section, 176 types in the bundle), pochven/npc.rs merged by npc_data; tests; fci_abyss_waves, fci_abyss_loot, fci_abyss_run and fci_pochven_gate green on the new bundle (ci-1108j); no scenario of its own yet
 - [ ] NPC logistics repair only their own side (same owner corporation; an abyss room as one side): *built-unproved*, npc.rs allies_of filters wards by owner_corp_id; test allies_are_of_the_repairers_own_faction_only
@@ -196,7 +197,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
 | Upwell structures | 13 | 2 | 3 | 2 | 0 |
 | Factional warfare | 3 | 4 | 1 | 2 | 0 |
-| Missions and exploration | 37 | 6 | 0 | 0 | 0 |
+| Missions and exploration | 37 | 7 | 0 | 0 | 0 |
 | Tools and remote clients | 11 | 7 | 2 | 2 | 0 |
 | FW Conquests | 0 | 4 | 0 | 0 | 0 |
 | Live service | 0 | 1 | 0 | 0 | 0 |
@@ -602,7 +603,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Missions and exploration</b>: 37 of 43 proved, 6 open</summary>
+<details><summary><b>Missions and exploration</b>: 37 of 44 proved, 7 open</summary>
 
 - [x] Missions and which agents a standing opens: *client-proved*, fci_prog_pve W10, fci_prog_pve2 W10
 - [x] LP store: *client-proved*, fci_lpstore W10
@@ -610,6 +611,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Kill missions spawn their own dungeon (rooms, squads, gates) as a per-mission instance at the bookmark, with the 3-rat ring only as a logged fallback; the squads are the fixed fill the reward prices, with no respawn: *built-unproved*, mission.rs own_dungeon tests (squad count equals npc_gen::dungeon_squads, fallbacks, completion over the spawned set, cleanup on turn-in and expiry, no vacant despawn); fci_mission_dungeon written, not yet run. Eden not used (our client, dungeon model and mission_rewards are the evidence); mission site band carved from the top of the abyss band; no cache, escalation roll or LP on a mission pocket [A]
 - [x] Escalations: *client-proved*, fci_y_escal W10
 - [x] Hacking: *client-proved*, fci_hacking_board W10, fci_hacking_can W10
+- [ ] A placed wreck in a site shows as empty in the overview and brackets: *built-unproved*, site.rs slim_extras: a placed wreck's slim carries isEmpty from its contents; unit test a_placed_wreck_says_whether_it_is_empty; nothing fills a placed wreck yet, so all show empty. Filling and opening tutorial wrecks stays open under #205
 - [x] Probing a signature and warping to it: *client-proved*, fci_probe_site W10
 - [x] Wormhole space as the client shows it: *client-proved*, fci_y_wh W10. Research said this green once proved little; lane WH-0 tightened it
 - [x] Epic arcs: *client-proved*, fci_epic_arc (regress-w28a): a talk-start arc offered, accepted, completed, and the next missions offered, read through the client's journal; epic_arc.rs

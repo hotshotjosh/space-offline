@@ -80,7 +80,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="270.8" y="77.5" width="3" height="3" class="built"/>
 <rect x="274.8" y="77.5" width="3" height="3" class="built"/>
 <rect x="278.8" y="77.5" width="3" height="3" class="built"/>
-<text x="286.8" y="82.0" class="s xs">12</text>
+<rect x="282.8" y="77.5" width="3" height="3" class="built"/>
+<text x="290.8" y="82.0" class="s xs">13</text>
 <text x="16.0" y="98.0" class="t">3.6 Factional warfare and sov</text>
 <rect x="234.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="238.8" y="93.5" width="3" height="3" class="built"/>
