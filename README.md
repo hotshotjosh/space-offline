@@ -279,8 +279,8 @@ own encryption.
 | `content/` | Tables we author: policy and tuning no client file gives us. |
 | `containers/` | Docker image definitions; the only place network access happens. |
 | `docs/` | Guides, reference, status and design notes. Index: `docs/README.md`. |
-| `findings/` | Inventories of the client's services and calls, in TSV and JSON. |
-| `captures/` | Recordings of a real client session. The regression captures are not published. |
+| `findings/` | Tables we generate from the client and cite: build deltas, loader schemas, session keys, reference Destiny blobs. |
+| `captures/` | Recordings of client sessions (`.evecap`, read with `evecap`). None are published, and git ignores yours. |
 | `out/`, `var/`, `logs/` | Generated: content bundle, worlds, logs. Gitignored. |
 
 ## Docs map
