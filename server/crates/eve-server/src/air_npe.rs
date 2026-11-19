@@ -1046,7 +1046,50 @@ fn spawn_near_undock(reg: &mut Registry, c: i64, args: &Kw) -> Option<Kw> {
             "[airnpe] char {c}: dungeon {dungeon_id} spawned near the undock of {station} as site {id}"
         );
     }
+    if dungeon_id == MINING_DUNGEON {
+        stock_black_box(reg, c, id);
+    }
     spawn_outputs(reg, id)
+}
+
+/// Scene 2.1's wreck: dungeon 9245's object 1114288, `[AIR] Wrecked Dramiel`
+/// (type 60772), the container graph 711 uncloaks and task 2.1.05 loots
+/// **[V-data]**.
+pub const BLACK_BOX_WRECK: i64 = 1_114_288;
+
+/// What it holds: one `Dramiel Black Box` (60784) **[V-TQ]** (a live
+/// server's wreck listed one, `NPCLoot::60772`), and task 2.1.05 waits for
+/// exactly one in the ship's cargo **[V-data]** (graph 731, `Item In Ship
+/// Cargo` 60784, `equalTo` 1).
+pub const BLACK_BOX: i64 = 60_784;
+
+/// Put the black box in the mining site's wreck, once: a wreck that already
+/// holds anything is left alone, so a relog does not stock it twice.
+fn stock_black_box(reg: &mut Registry, c: i64, site: i64) {
+    let Some(wreck) = reg
+        .ext::<crate::site::Sites>()
+        .get(site)
+        .and_then(|i| {
+            i.objects
+                .iter()
+                .find(|p| p.dun_object_id == BLACK_BOX_WRECK)
+        })
+        .map(|p| p.item_id)
+    else {
+        return;
+    };
+    if reg.store().items().iter().any(|it| it.location_id == wreck) {
+        return;
+    }
+    let to = crate::item::Slot::new(c, wreck, crate::hacking_loot::FLAG_IN_CAN);
+    match reg.apply_items_quiet(&[crate::item::Edit::Create {
+        type_id: BLACK_BOX,
+        quantity: 1,
+        to,
+    }]) {
+        Ok(_) => eprintln!("[airnpe] char {c}: wreck {wreck} holds {BLACK_BOX}"),
+        Err(e) => eprintln!("[airnpe] char {c}: stocking wreck {wreck} refused: {e:?}"),
+    }
 }
 
 /// Lay dungeon `dungeon_id` out as site `id` in `system` at `anchor`
@@ -1897,14 +1940,15 @@ pub const TASK_WRECKS: [i64; 3] = [1_179_831, 1_179_888, 1_179_889];
 /// wreck held one, `[V-TQ]`; falsified by a capture holding more).
 pub const TASK_ITEM: i64 = 78_677;
 
-/// One of a tutorial site's task wrecks, as a wreck its character may loot.
+/// One of a tutorial site's task wrecks (scene 1.4's, and scene 2.1's
+/// [`BLACK_BOX_WRECK`]), as a wreck its character may loot.
 pub fn loot_source(w: &Registry, id: i64) -> Option<crate::combat::Wreck> {
     let inst = w.ext::<crate::site::Sites>().of_item(id)?;
     if !is_npe_site(inst.site_id) {
         return None;
     }
     let (p, system) = crate::site::object(w, id)?;
-    if !TASK_WRECKS.contains(&p.dun_object_id) {
+    if !TASK_WRECKS.contains(&p.dun_object_id) && p.dun_object_id != BLACK_BOX_WRECK {
         return None;
     }
     let owner = owner_of(w, inst.site_id)?;
