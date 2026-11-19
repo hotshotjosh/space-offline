@@ -108,7 +108,10 @@ pub const V24_01: ReleaseLine = ReleaseLine {
 /// V24.02, region `ccp`: build 3707965, the 2026-11-10 expansion. machoVersion,
 /// secret and padding as V24.01 **[V]** (eveMachoNetVersion.pyc and GPS.pyc
 /// unchanged in meaning, findings/build-delta-3670638-3707965.tsv); version and
-/// codename from start.ini **[V]**.
+/// codename from start.ini **[V]**. Build 3720952 (2026-11-19) is the same
+/// line: start.ini keeps version and codename, and GPS, machoNet and
+/// eveMachoNetVersion are recompiled only
+/// (findings/build-delta-3670638-3720952.tsv) **[V]**.
 pub const V24_02: ReleaseLine = ReleaseLine {
     macho: 496,
     version: 24.02,
@@ -158,6 +161,12 @@ pub static BUILDS: &[BuildEntry] = &[
     },
     BuildEntry {
         build: 3_707_965,
+        line: &V24_02,
+        status: Status::Unverified,
+        data_hash: None,
+    },
+    BuildEntry {
+        build: 3_720_952,
         line: &V24_02,
         status: Status::Unverified,
         data_hash: None,
