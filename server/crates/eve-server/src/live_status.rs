@@ -849,6 +849,11 @@ fn hours_minutes(ticks: i64) -> String {
 /// window's turn numbers.
 pub fn live_line(w: &Registry, now: BlueTime, turns: &TurnStats) -> String {
     let mut line = String::from("[live]");
+    if w.tainted() {
+        // OS-8: a panic in a call poisoned the world; saves go to
+        // `<file>.tainted` until a restart. Said on every line.
+        line.push_str(" TAINTED (not saved over the good file; restart)");
+    }
     match w.deltas().world() {
         Some(world) => {
             // Lane clock: one compressed day after the last rollover at

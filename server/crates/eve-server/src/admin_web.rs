@@ -98,6 +98,9 @@ pub struct Snapshot {
     pub npcs: usize,
     /// One row per warm or hot system ([`system_loads`]).
     pub systems: Vec<SystemLoad>,
+    /// A panic poisoned the world lock: the world is no longer saved over
+    /// the good file (it goes to `<file>.tainted`) until a restart (OS-8).
+    pub tainted: bool,
 }
 
 /// What a live system holds, counted under the world lock.
@@ -582,6 +585,7 @@ pub fn snapshot(w: &Registry) -> Snapshot {
         pilots,
         npcs: w.npcs().iter().count(),
         systems: system_loads(w),
+        tainted: w.tainted(),
     }
 }
 
@@ -779,12 +783,14 @@ pub fn status_json(shared: &Shared) -> String {
             let _ = write!(
                 s,
                 ",\"snapshot_age_s\":{},\"pilots\":{},\"humans\":{humans},\"bots\":{},\
-                 \"in_space\":{in_space},\"docked\":{docked},\"systems\":{},\"npcs\":{}",
+                 \"in_space\":{in_space},\"docked\":{docked},\"systems\":{},\"npcs\":{},\
+                 \"tainted\":{}",
                 now.saturating_sub(snap.taken_unix),
                 snap.pilots.len(),
                 snap.pilots.len() - humans,
                 systems.len(),
-                snap.npcs
+                snap.npcs,
+                snap.tainted
             );
         }
         None => s.push_str(",\"snapshot_age_s\":null"),
@@ -1614,6 +1620,7 @@ mod tests {
             pilots,
             npcs: 3,
             systems: Vec::new(),
+            tainted: false,
         });
         s
     }
@@ -2201,6 +2208,19 @@ mod tests {
         };
         assert!(json.contains("\"npcs\":1"), "{json}");
         assert!(json.contains("\"hot\":true"), "{json}");
+    }
+
+    /// OS-8: a tainted world shows on `/api/status`.
+    #[test]
+    fn status_says_when_the_world_is_tainted() {
+        let s = Shared::new("t0k3n".repeat(8), &map());
+        s.publish(Snapshot::default());
+        assert!(status_json(&s).contains("\"tainted\":false"));
+        s.publish(Snapshot {
+            tainted: true,
+            ..Snapshot::default()
+        });
+        assert!(status_json(&s).contains("\"tainted\":true"));
     }
 
     #[test]
