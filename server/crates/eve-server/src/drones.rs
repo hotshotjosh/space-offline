@@ -1832,7 +1832,11 @@ pub fn aim_of(w: &Registry, d: &Drone, victim: &Presence) -> Option<drone_skills
         })
         .unwrap_or(crate::destiny::hull::FALLBACK.signature_radius);
     Some(drone_skills::Aim {
-        distance: crate::space_state::distance(me.motion.position, victim.motion.position),
+        distance: crate::combat::surface_gap_between(
+            crate::space_state::distance(me.motion.position, victim.motion.position),
+            crate::combat::ship_radius(w, me),
+            crate::combat::ship_radius(w, victim),
+        ),
         transversal: drone_skills::transversal(
             me.motion.position,
             me.motion.velocity,
@@ -3756,6 +3760,24 @@ modifier\t990581104\tcharID\tItemModifier\t458\t459\t2\t\t\n"
             let item = reg.store().get(*id).expect("the drone is its item");
             assert_eq!((item.location_id, item.quantity), (SYSTEM, 1));
         }
+    }
+
+    /// A drone's hit-chance distance is the gap between surfaces: the centre
+    /// distance less the drone's own hull radius and the victim's.
+    #[test]
+    fn a_drones_aim_is_the_surface_gap() {
+        let mut reg = world(BIG_BAY, 5, 5);
+        undock(&mut reg, ALICE);
+        undock(&mut reg, BOB);
+        let id = launch_n(&mut reg, 1)[0];
+        let drone = *reg.modules().drones().get(id).expect("a live drone");
+        let victim = *reg.roster().get(BOB).expect("bob in space");
+        let me = *reg.roster().get(id).expect("the drone ball");
+        let centre = crate::space_state::distance(me.motion.position, victim.motion.position);
+        let r_drone = f64::from(hull_of(&reg, id).expect("the drone's hull").radius);
+        let r_victim = crate::combat::ship_radius(&reg, &victim);
+        let aim = aim_of(&reg, &drone, &victim).expect("an aim");
+        assert_eq!(aim.distance, (centre - r_drone - r_victim).max(0.0));
     }
 
     /// The pushes the client needs, to the people who need them: the balls

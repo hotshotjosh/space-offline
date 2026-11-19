@@ -975,12 +975,19 @@ fn plan_unit(w: &Registry, unit: &(Cycle, Vec<Cycle>)) -> UnitPlan {
             } else {
                 turret_numbers(w, &c).map_or(1.0, |app| {
                     let aim = crate::drone_skills::Aim {
-                        distance: crate::structure_combat::surface_gap(
-                            w,
-                            shooter.motion.position,
-                            target,
-                        )
-                        .unwrap_or(0.0),
+                        distance: crate::structure_combat::fixed_target(w, target).map_or(
+                            0.0,
+                            |t| {
+                                surface_gap_between(
+                                    crate::space_state::distance(
+                                        shooter.motion.position,
+                                        t.position,
+                                    ),
+                                    ship_radius(w, &shooter),
+                                    t.radius,
+                                )
+                            },
+                        ),
                         transversal: 0.0,
                         signature: 1.0,
                     };
@@ -1022,7 +1029,14 @@ fn plan_unit(w: &Registry, unit: &(Cycle, Vec<Cycle>)) -> UnitPlan {
         } else {
             turret_numbers(w, &c).map_or(1.0, |app| {
                 let aim = crate::drone_skills::Aim {
-                    distance: crate::space_state::distance(shooter.motion.position, at),
+                    // **[V]** ours: the unit's ball is served at `WRECK_RADIUS`
+                    // (`wreck_ball`). **[A]** TQ's unit ball is that size;
+                    // falsifier, a client range readout to a unit that disagrees.
+                    distance: surface_gap_between(
+                        crate::space_state::distance(shooter.motion.position, at),
+                        ship_radius(w, &shooter),
+                        f64::from(destiny::WRECK_RADIUS),
+                    ),
                     transversal: 0.0,
                     signature: 1.0,
                 };
@@ -1324,6 +1338,34 @@ pub(crate) fn entity_gun_verdict(
     ))
 }
 
+/// The gap between two ball surfaces from their centre distance and radii,
+/// never below 0.
+///
+/// **[V]** the client measures module range surface to surface: the range
+/// highlight compares `int(ball.surfaceDist)` (`bracketMgr.pyc:1669`), and
+/// CCP's NPC logistics uses `GetSurfaceDist` for range and falloff
+/// (`logistics.pyc:319-321`, `ballparks.pyc:44`); all re-read with
+/// `tools/dis.py`. **[I]** the server's
+/// activation check (`dogma/effects/util.pyc:49`, `DistanceBetween`) and the
+/// hit roll are surface too. **[A]** the clamp at 0: falsifier, a client range
+/// readout below 0 that the falloff term should see.
+pub(crate) fn surface_gap_between(centre: f64, shooter_radius: f64, victim_radius: f64) -> f64 {
+    (centre - shooter_radius - victim_radius).max(0.0)
+}
+
+/// The ball radius of the ship under `p`: the dogma hull (drones, fighters,
+/// NPCs, piloted ships), else the pilot's hull type, else the fallback hull.
+pub(crate) fn ship_radius(w: &Registry, p: &crate::space_state::Presence) -> f64 {
+    let r = crate::dogma::hull(w, p.ship_id)
+        .map(|h| h.radius)
+        .or_else(|| {
+            let ty = w.pilot(p.character_id)?.ship_type_id;
+            destiny::hull::find_in(w.content(), ty).map(|h| h.radius)
+        })
+        .unwrap_or(destiny::hull::FALLBACK.radius);
+    f64::from(r)
+}
+
 /// How the target looks from the shooter's gun (as `drones::aim_of`).
 fn turret_aim(
     w: &Registry,
@@ -1338,7 +1380,11 @@ fn turret_aim(
         })
         .unwrap_or(destiny::hull::FALLBACK.signature_radius);
     crate::drone_skills::Aim {
-        distance: crate::space_state::distance(shooter.motion.position, victim.motion.position),
+        distance: surface_gap_between(
+            crate::space_state::distance(shooter.motion.position, victim.motion.position),
+            ship_radius(w, shooter),
+            ship_radius(w, victim),
+        ),
         transversal: crate::drone_skills::transversal(
             shooter.motion.position,
             shooter.motion.velocity,
@@ -3277,6 +3323,67 @@ pub(crate) mod tests {
     }
 
     // ---- DOC-0 K-TURRET: invented numbers throughout ----
+
+    /// A big target (invented radius) is in range by surface, out by centre.
+    #[test]
+    fn a_large_target_is_in_range_by_surface_not_by_centre() {
+        let centre = APP.optimal + RANGE_CUT_FALLOFFS * APP.falloff + 3_000.0;
+        let by_centre = APP.chance(aim(centre, 0.0, 100.0));
+        assert_eq!(by_centre, 0.0, "past the hard cut by centre");
+        let gap = surface_gap_between(centre, 50.0, 6_000.0);
+        assert!(gap < centre - 5_000.0);
+        assert!(
+            APP.chance(aim(gap, 0.0, 100.0)) > 0.0,
+            "in reach by surface"
+        );
+    }
+
+    /// The structure path already subtracted the target's radius; the helper
+    /// agrees with it when the shooter radius is 0, and a shooter radius
+    /// only shortens the gap.
+    #[test]
+    fn surface_gap_matches_the_structure_reading() {
+        assert_eq!(surface_gap_between(20_000.0, 0.0, 7_500.0), 12_500.0);
+        assert_eq!(surface_gap_between(20_000.0, 500.0, 7_500.0), 12_000.0);
+    }
+
+    /// `turret_aim` reads both balls' radii through `ship_radius`: the gap is
+    /// the centre distance less the shooter's hull and the victim's; a ball
+    /// with no sheet and no pilot counts the fallback hull's radius.
+    #[test]
+    fn turret_aim_counts_both_hulls_and_the_fallback() {
+        let reg = alice_has_bob_locked();
+        let mut a = *reg.roster().get(ALICE).expect("alice in space");
+        let mut b = *reg.roster().get(BOB).expect("bob in space");
+        a.motion = crate::space_state::Motion::arrived([0.0; 3], [0.0; 3]);
+        b.motion = crate::space_state::Motion::arrived([50_000.0, 0.0, 0.0], [0.0; 3]);
+        let (ra, rb) = (ship_radius(&reg, &a), ship_radius(&reg, &b));
+        assert!(
+            ra > 1.0 && rb > 1.0,
+            "{ra} {rb}: real hulls, not the fallback"
+        );
+        let got = turret_aim(&reg, &a, &b).distance;
+        assert_eq!(got, 50_000.0 - ra - rb);
+        // A ball nobody owns and no sheet describes: the fallback radius.
+        let mut ghost = b;
+        ghost.ship_id = 0;
+        ghost.character_id = 0;
+        let fallback = f64::from(destiny::hull::FALLBACK.radius);
+        assert_eq!(ship_radius(&reg, &ghost), fallback);
+        assert_eq!(
+            turret_aim(&reg, &a, &ghost).distance,
+            50_000.0 - ra - fallback
+        );
+    }
+
+    /// Overlapping balls clamp to 0, and the falloff term then sees no gap.
+    #[test]
+    fn surface_gap_clamps_at_zero() {
+        assert_eq!(surface_gap_between(100.0, 80.0, 90.0), 0.0);
+        assert_eq!(surface_gap_between(0.0, 10.0, 10.0), 0.0);
+        let at_zero = APP.chance(aim(surface_gap_between(100.0, 80.0, 90.0), 0.0, 100.0));
+        assert_eq!(at_zero, APP.chance(aim(0.0, 0.0, 100.0)));
+    }
 
     /// A small gun's invented numbers.
     const APP: Application = Application {

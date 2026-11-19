@@ -334,7 +334,13 @@ pub fn strength(
     }
     let range = d.module_attr(w, r, spec.range).unwrap_or(0.0);
     let fall = d.module_attr(w, r, attr::FALLOFF).unwrap_or(0.0);
-    let gap = crate::space_state::distance(source.motion.position, target.motion.position);
+    // **[V]** range and falloff by the surface gap, as CCP's logistics does
+    // (`behaviors/actions/logistics.pyc:319-321`, `GetSurfaceDist`).
+    let gap = crate::combat::surface_gap_between(
+        crate::space_state::distance(source.motion.position, target.motion.position),
+        crate::combat::ship_radius(w, source),
+        crate::combat::ship_radius(w, target),
+    );
     let reach = if range > 0.0 {
         crate::ewar::falloff(gap, range, fall)
     } else {
@@ -1243,14 +1249,25 @@ mod tests {
                 [0.0; 3],
             );
         }
+        // The range counts from surface to surface: the centres sit both
+        // radii further apart than the gap.
+        let radii = {
+            let me = *reg.roster().get(ALICE).expect("in space");
+            let them = *reg.roster().get(BOB).expect("in space");
+            crate::combat::ship_radius(&reg, &me) + crate::combat::ship_radius(&reg, &them)
+        };
+        assert!(radii > 0.0);
         // One falloff past the range: half.
-        set(&mut reg, RANGE + FALL);
+        set(&mut reg, RANGE + FALL + radii);
         alice(&mut reg, RARMOR_T, REMOTE_ARMOR);
         reconcile(&mut reg, now(), &PLAIN);
         let half = 300.0 - rings(&reg).armor_damage;
         assert!((half - ARMOR_AMOUNT * 0.5).abs() < 1.0e-6, "{half}");
         // Beyond the reach: nothing, and no assistance either.
-        set(&mut reg, RANGE + (crate::ewar::FALLOFF_REACH + 1.0) * FALL);
+        set(
+            &mut reg,
+            RANGE + (crate::ewar::FALLOFF_REACH + 1.0) * FALL + radii,
+        );
         let before = rings(&reg).armor_damage;
         another_cycle(&mut reg, ALICE_MOD);
         reconcile(&mut reg, now(), &PLAIN);
