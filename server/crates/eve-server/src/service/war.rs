@@ -350,6 +350,12 @@ fn owner_ids_arg(v: Option<&PyValue>) -> Vec<i64> {
             .take(CAP)
             .collect(),
         Some(PyValue::Int(n)) => vec![*n],
+        // `PrimeWarsForOwners` sends `ownersToFetch`, a Python `set`, which
+        // marshals as `__builtin__.set` around a list **[V out/pyc `war_cso.py:163`,
+        // PrimeWarsForOwners]**; the fleet finder's decoder reads that shape.
+        Some(set @ PyValue::ObjectEx { .. }) => crate::fleet_finder::set_of(Some(set))
+            .map(|s| s.into_iter().take(CAP).collect())
+            .unwrap_or_default(),
         _ => Vec::new(),
     }
 }
@@ -841,6 +847,25 @@ mod tests {
     use crate::model::Character;
     use crate::notifications as store;
     use crate::war::{COST_OF_WAR, WAR_SPOOLUP};
+
+    /// `PrimeWarsForOwners` sends a Python set; it decodes to the owners.
+    #[test]
+    fn owner_ids_arg_reads_a_marshalled_set() {
+        let set = PyValue::ObjectEx {
+            form: eve_marshal::ObjectForm::Call,
+            header: Box::new(PyValue::Tuple(vec![
+                PyValue::Global(b"__builtin__.set".to_vec()),
+                PyValue::Tuple(vec![PyValue::List(vec![
+                    PyValue::Int(98_000_001),
+                    PyValue::Int(98_000_002),
+                ])]),
+            ])),
+            list: Vec::new(),
+            dict: Vec::new(),
+        };
+        assert_eq!(owner_ids_arg(Some(&set)), vec![98_000_001, 98_000_002]);
+        assert!(owner_ids_arg(Some(&PyValue::None)).is_empty());
+    }
 
     /// Invented pilots, ships and corps: nothing here is a client row.
     const ALICE: i64 = 90_000_401;

@@ -177,7 +177,7 @@ fn text_of(v: Option<&PyValue>, max: usize) -> String {
 
 /// The ints of a Python `set` (tag 0x22 around `__builtin__.set`), a list or
 /// a tuple; `None` for `None` or anything else.
-fn set_of(v: Option<&PyValue>) -> Option<BTreeSet<i64>> {
+pub(crate) fn set_of(v: Option<&PyValue>) -> Option<BTreeSet<i64>> {
     fn ints(v: &PyValue, out: &mut BTreeSet<i64>) {
         match v {
             PyValue::Int(i) => {
