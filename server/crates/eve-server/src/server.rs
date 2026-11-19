@@ -1398,6 +1398,9 @@ fn serve_one(
             user_id: session.user_id,
             character_id: None,
         });
+        // Where this game connection came from: the gateway serves the
+        // pilot only to a peer at the same address (`gateway_auth`).
+        crate::gateway_auth::note_peer(&mut w, session.client_id, peer.ip());
         // The address chat tells the client to dial
         // (`XmppChatMgr.GetDeprecatedPrefsFallback`): the listener's
         // `advertise=`, else the one this connection arrived on. World, then
