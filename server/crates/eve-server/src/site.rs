@@ -797,6 +797,14 @@ pub fn slim_extras(w: &Registry, ids: &[i64]) -> SlimExtras {
             }
             // ABYSS-1: an entrance gate carries its key, mode and openness.
             pairs.extend(crate::abyss::gate_pairs(w, *id));
+            // A placed wreck says whether it holds anything, as a combat
+            // wreck's slim does (`destiny::WreckSlim`).
+            if is_wreck(w, *id) {
+                pairs.push((
+                    KEY_IS_EMPTY,
+                    PyValue::Bool(w.store().contents_of(*id).next().is_none()),
+                ));
+            }
             Some((*id, pairs))
         })
         .collect()
@@ -1007,6 +1015,54 @@ fn check(w: &mut Registry, system: i64, ft: BlueTime) {
     for site in &reached {
         instantiate(w, site);
     }
+}
+
+/// The slim key the overview reads for a wreck's icon. **[V]**
+/// `overview/spaceObjectIcon.py` (decompiled 3707965): for
+/// `slimItem.groupID == const.groupWreck`, `slimItem.isEmpty` picks
+/// `Tooltips/Overview/EmptyWreck` over `ContainsLoot`.
+pub const KEY_IS_EMPTY: &str = "isEmpty";
+
+/// Whether a placed object is a wreck (`combat::GROUP_WRECK`), by its type.
+pub fn is_wreck(w: &Registry, id: i64) -> bool {
+    let Some(p) = w.ext::<Sites>().placed(id).copied() else {
+        return false;
+    };
+    w.content()
+        .try_get::<crate::typedata::Installed>()
+        .and_then(|t| t.table().get(p.type_id))
+        .is_some_and(|r| r.group_id == crate::combat::GROUP_WRECK)
+}
+
+/// After a take from a placed wreck: once it holds nothing, everyone in the
+/// system gets its slim again with `isEmpty` true, the edge a combat wreck
+/// sends from `combat::looted`.
+pub fn tell_if_emptied(w: &mut Registry, id: i64) {
+    let Some((p, system)) = object(w, id) else {
+        return;
+    };
+    if !is_wreck(w, id) || w.store().contents_of(id).next().is_some() {
+        return;
+    }
+    let to = crate::dungeon::audience(w, system);
+    if to.is_empty() {
+        return;
+    }
+    let extras = slim_extras(w, &[id])
+        .into_iter()
+        .next()
+        .map(|(_, pairs)| pairs)
+        .unwrap_or_default();
+    let stamp = w.next_destiny_stamp();
+    w.schedule(
+        std::time::Duration::ZERO,
+        crate::hacking::CanSlimChange {
+            to,
+            stamp,
+            slim: slim(&p),
+            extras,
+        },
+    );
 }
 
 #[cfg(test)]
@@ -1452,6 +1508,93 @@ mod tests {
         );
         assert!(vacate(&mut reg, SITE_ID));
         assert!(slim_extras(&reg, &[npc]).is_empty());
+    }
+
+    /// A placed wreck's slim says whether it holds anything (the overview's
+    /// empty-wreck icon), and the take that empties it sends the slim again.
+    #[test]
+    fn a_placed_wreck_says_whether_it_is_empty() {
+        const WRECK_TYPE: i64 = 990_186_101;
+        let mut dungeon = ore();
+        dungeon.objects.push(Object {
+            room: 5,
+            id: 7009,
+            type_id: WRECK_TYPE,
+            pos: [500.0, 0.0, 0.0],
+            radius: Some(50.0),
+            ..Object::default()
+        });
+        let mut table = dungeon_data::Table::fixture();
+        table.dungeons.insert(ORE_DUNGEON, dungeon);
+        let rows = format!(
+            "{}type\t{WRECK_TYPE}\t{}\t2\t0\t1\t0.0\t1.0\t1.0\t1.0\t0\t\t\tFixture Wreck\n",
+            crate::typedata::FIXTURE,
+            crate::combat::GROUP_WRECK
+        );
+        let mut c = Content::fixture();
+        c.insert("dungeon_data", table);
+        c.insert(
+            "typedata",
+            crate::typedata::Installed::build(crate::typedata::Table::parse(&rows).unwrap()),
+        );
+        let mut reg = Registry::new(SandboxConfig::default()).with_content(Arc::new(c));
+        reg.roster_mut().arrive(Presence::arriving(
+            ALICE,
+            ALICE_SHIP,
+            SYSTEM,
+            Motion::arrived(ANCHOR, [0.0; 3]),
+        ));
+        drain(&mut reg);
+        assert!(instantiate(&mut reg, &site(ORE_DUNGEON)));
+        drain(&mut reg);
+        let inst = reg.ext::<Sites>().get(SITE_ID).cloned().unwrap();
+        let wreck = inst
+            .objects
+            .iter()
+            .find(|p| p.type_id == WRECK_TYPE)
+            .unwrap()
+            .item_id;
+        let beacon = inst
+            .objects
+            .iter()
+            .find(|p| p.dun_object_id == 7001)
+            .unwrap()
+            .item_id;
+        let is_empty = |reg: &Registry, id| {
+            slim_extras(reg, &[id])
+                .into_iter()
+                .next()
+                .and_then(|(_, kv)| {
+                    kv.into_iter()
+                        .find(|(k, _)| *k == KEY_IS_EMPTY)
+                        .map(|(_, v)| v)
+                })
+        };
+        assert_eq!(is_empty(&reg, wreck), Some(PyValue::Bool(true)));
+        assert_eq!(is_empty(&reg, beacon), None, "only a wreck says");
+
+        let to = crate::item::Slot::new(ALICE, wreck, crate::hacking_loot::FLAG_IN_CAN);
+        // A fixture module (typedata FIXTURE's shield extender).
+        reg.apply_items_quiet(&[crate::item::Edit::Create {
+            type_id: 990_000_003,
+            quantity: 1,
+            to,
+        }])
+        .unwrap();
+        assert_eq!(is_empty(&reg, wreck), Some(PyValue::Bool(false)));
+        tell_if_emptied(&mut reg, wreck);
+        assert!(
+            drain(&mut reg).is_empty(),
+            "a wreck that still holds something says nothing"
+        );
+
+        let loot = reg.store().contents_of(wreck).next().unwrap().item_id;
+        reg.apply_items_quiet(&[crate::item::Edit::Destroy { item_id: loot }])
+            .unwrap();
+        tell_if_emptied(&mut reg, wreck);
+        let pushes = drain(&mut reg);
+        assert_eq!(pushes.len(), 1, "{pushes:?}");
+        assert_eq!(pushes[0].0, vec![ALICE]);
     }
 
     /// **Ore rocks go through `asteroid::Field`**: each entry-room rock is
