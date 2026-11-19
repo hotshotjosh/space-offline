@@ -535,7 +535,7 @@ fn no_flyable_hull_is_served_a_zero_targeting_attribute() {
 /// what lets the divergence be deleted the day ship changing works.
 #[test]
 fn the_capsule_keeps_its_real_zeros_and_is_served_a_floor() {
-    const CAPSULE: i64 = 670;
+    const CAPSULE: i64 = TYPE_CAPSULE;
     let content = crate::content::Content::fixture();
     let table =
         crate::destiny::hull::find_in(&content, CAPSULE).expect("the capsule is in the table");
@@ -1821,7 +1821,7 @@ fn the_capsule_is_a_ship_in_the_hangar() {
     // Hangar from the Item Hangar.
     assert_eq!(col("categoryID"), DbValue::Int(6), "categoryShip");
     assert_eq!(col("groupID"), DbValue::Int(29), "groupCapsule");
-    assert_eq!(col("typeID"), DbValue::Int(670), "typeCapsule");
+    assert_eq!(col("typeID"), DbValue::Int(TYPE_CAPSULE), "typeCapsule");
     // The active ship is listed in the ordinary hangar; flagPilot is
     // applied client-side to the character, not to this row.
     assert_eq!(col("flagID"), DbValue::Int(4), "flagHangar");
@@ -1857,7 +1857,7 @@ fn the_capsule_is_a_ship_in_the_hangar() {
     assert_eq!(row.values()[0], DbValue::Int(item_id));
     assert_eq!(
         row.values()[1],
-        DbValue::Int(670),
+        DbValue::Int(TYPE_CAPSULE),
         "the pod, not the station"
     );
 }
@@ -3521,8 +3521,8 @@ fn the_answers_that_would_live_lock_the_client() {
     };
 
     // The caller is
-    //     if self._cache is None:
-    //         self._cache = {row[0]: row[1] for row in remote()}
+    // fills its cache from the remote rows as a key/value dict when the
+    // cache is `None`
     // so None throws inside the comprehension, the assignment never
     // happens, and the `is None` guard sends the next read back out to
     // us. Opening the wallet made that a tight loop.
