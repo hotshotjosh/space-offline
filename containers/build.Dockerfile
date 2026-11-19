@@ -5,10 +5,12 @@
 # (librust-*-dev). Nothing is fetched from crates.io or GitHub, here or later.
 # Code is then compiled by tools/dev.sh with networking disabled.
 #
-# Toolchain only for now: the marshal and protocol codecs are dependency-free.
-# Add librust-*-dev lines (tokio for the server, flate2 for transport
-# compression, a database driver for persistence) as the crates that need them
-# arrive, and bump server/deps.allow + [workspace.dependencies] to match.
+# Crates are admitted by owner decision (docs/reference/dependencies.md). Each
+# librust-*-dev line below pairs with rows in server/deps.allow and a digest
+# in server/deps.digest. The first is getrandom (OS randomness); apt pulls in
+# the crates it names (libc, cfg-if and the wasm-only ones). python3 is for
+# `tools/check_deps.py --registry` and `tools/dep-notices.py`, which read the
+# registry (stdlib only; nothing is installed with pip).
 #
 # The base image is pinned by digest; bump it deliberately.
 FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
@@ -18,6 +20,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates gcc libc6-dev \
       rustc cargo rust-clippy rustfmt \
+      librust-getrandom-dev \
+      python3 \
  && rm -rf /var/lib/apt/lists/*
 
 # Record exactly which crates the image carries, for review in a diff.

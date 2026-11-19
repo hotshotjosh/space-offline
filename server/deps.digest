@@ -1,0 +1,4 @@
+# name	version	tree digest (tools/check_deps.py --registry DIR --print-digest)
+cfg-if	1.0.4	d7a0a28f1b0527e80b4fe20c2195b2b423ad35bdc6ea7f6195a61733dc8a2234
+getrandom	0.2.15	a9c00106e7706b7dee440732fa1f48e700da2c2e2a97c19aea62014fee6623b4
+libc	0.2.178	5cb5dbbb08171a8396d4e4bcb52b8a668805ed7e8ceb2cc071283e5fafd6e0f8

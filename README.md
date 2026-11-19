@@ -3,8 +3,8 @@
 ## What it is
 
 space-offline is an emulator for our favourite online space MMO, written in
-Rust with the standard library only: no third-party crates and no `unsafe`
-(`server/deps.allow` stays empty). It targets one client
+Rust, mostly with the standard library: a few allowlisted crates and no `unsafe`
+in our own code. It targets one client
 build: the `pinned` row of `tools/builds.tsv`. The goal is co-op and PvP with
 500 to 1,000 or more player-like bots that mine, fight, build and trade beside
 you. The build tools run in Docker and the client can run in a network jail, so
@@ -219,7 +219,7 @@ tools/land.sh --no-push
 Hard rules:
 
 - No extracted client data in git, tests included; tests use invented ids and rows.
-- No dependencies (`server/deps.allow` stays empty) and no `unsafe`.
+- Crates only through `server/deps.allow`, and no `unsafe` in our code.
 - `[A]` marks an assumption, with what would falsify it; an `[A]` value never goes into a test.
 - The gate decides, by exit code: `tools/land.sh --no-push`. Never pipe a test command into `&&`.
 - A feature change updates `docs/status/progress.tsv` in the same PR.
@@ -229,11 +229,31 @@ More: [`docs/guides/contributing.md`](docs/guides/contributing.md),
 [`docs/guides/working-together.md`](docs/guides/working-together.md),
 [`docs/guides/issue-tracking.md`](docs/guides/issue-tracking.md).
 
+## Dependencies
+
+The server was std-only until 2026-11. It now takes a few crates, where doing it
+ourselves would be the riskier choice. The first is `getrandom`: real OS randomness
+on Linux and Windows, which keys, salts and tokens need. The standard library has no
+stable API for it. Crypto and TLS crates follow, for remote play with the client's
+own encryption.
+
+- Every crate, and every crate it pulls in, is listed with its version and licence in
+  `server/deps.allow`, and its bytes are hash-locked in `server/deps.digest`.
+  `tools/check_deps.py` enforces both in the gate.
+- Crates come from the build image's signed Ubuntu packages. Builds run offline in
+  Docker, and nothing is fetched from crates.io.
+- Our code still forbids `unsafe`. A crate may use it, for OS calls or CPU
+  instructions, and each crate is used from one module only.
+- Licences: permissive only (MIT, Apache-2.0, BSD, ISC, Zlib and the like); no
+  copyleft. Their notices ship in `server/THIRD-PARTY.txt`.
+- Adding a crate is an owner decision. The criteria are in
+  [`docs/reference/dependencies.md`](docs/reference/dependencies.md).
+
 ## Repository map
 
 | Path | What lives there |
 |---|---|
-| `server/` | The Rust workspace: the server, the wire format, the bots. No dependencies. |
+| `server/` | The Rust workspace: the server, the wire format, the bots. A few allowlisted crates. |
 | `tools/` | Shell and Python tools: build, content extraction, jail, client launch, client CI, gate. |
 | `content/` | Tables we author: policy and tuning no client file gives us. |
 | `containers/` | Docker image definitions; the only place network access happens. |

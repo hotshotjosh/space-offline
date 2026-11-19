@@ -821,7 +821,7 @@ fn build(plan: &Assembled, args: Vec<String>) -> Result<Built, String> {
             [n, r, s] => (n, r, Some(s.as_str())),
             _ => return Err("usage: --new-token NAME ROLE [START_CHARACTER], last".to_owned()),
         };
-        let random = crate::accounts::urandom32().map_err(|e| format!("/dev/urandom: {e}"))?;
+        let random = crate::accounts::urandom32().map_err(|e| format!("os random: {e}"))?;
         let t = crate::accounts::new_token(&random, name, role, start, existing.as_ref())?;
         println!("{}\n{}\n{}", t.accounts_line, t.token, t.bots_line);
         return Ok(Built::Done);

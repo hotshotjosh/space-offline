@@ -61,7 +61,7 @@
 #   5. stops the bots when up.sh exits -- unless --keep, which leaves the
 #      bots up with everything else.
 #
-# The bots are a host process, like eve-server: std-only, zero dependencies.
+# The bots are a host process, like eve-server: std plus the allowlisted crates.
 # Each opens ONE TCP socket, to the server's IP literal, and resolves no
 # names (docs/guides/jail.md) -- and, with chat on, one more to the chat port of
 # the IP literal the server tells them. They give themselves their ship,

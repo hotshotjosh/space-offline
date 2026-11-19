@@ -36,7 +36,7 @@ use crate::server::Listener;
 use crate::service::{Registry, ServiceError};
 use eve_marshal::PyValue;
 use std::collections::HashMap;
-use std::io::{self, Read};
+use std::io;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
@@ -71,7 +71,7 @@ pub const PBKDF2_ITERATIONS: u32 = 100_000;
 /// and needs the stretching, so [`Book`] never goes below this.
 pub const MIN_HUMAN_ITERATIONS: u32 = 2;
 
-/// Salt bytes per account, from `/dev/urandom`.
+/// Salt bytes per account, from OS randomness.
 pub const SALT_LEN: usize = 16;
 
 /// A user name's length in bytes. [A] three is the client's own minimum
@@ -339,7 +339,7 @@ pub const BOT_ITERATIONS: u32 = 1_000;
 /// (the old one is unknown here: only its hash is kept). Dev servers only
 /// (the caller checks); the password is never logged. Returns the row.
 pub fn ensure_bot_account(d: &mut Deltas, name: &str, password: &str) -> Result<Row, String> {
-    let salt = urandom_salt().map_err(|e| format!("/dev/urandom: {e}"))?;
+    let salt = urandom_salt().map_err(|e| format!("os random: {e}"))?;
     ensure_bot_account_salted(d, name, password, salt)
 }
 
@@ -551,7 +551,7 @@ fn sign_up(
     check_name(name).map_err(Refused::SignupRefused)?;
     check_password(name, password).map_err(Refused::SignupRefused)?;
     let salt = urandom_salt().map_err(|e| {
-        crate::errln!("[accounts] /dev/urandom: {e}");
+        crate::errln!("[accounts] os random: {e}");
         Refused::SignupRefused("the server could not make a salt".to_owned())
     })?;
     let mut row = Row::new(0, name, password.as_bytes(), book.iterations, salt);
@@ -639,7 +639,7 @@ fn read(world: &RwLock<Registry>) -> std::sync::RwLockReadGuard<'_, Registry> {
 
 fn urandom_salt() -> io::Result<Vec<u8>> {
     let mut salt = vec![0u8; SALT_LEN];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut salt)?;
+    crate::accounts::urandom_fill(&mut salt)?;
     Ok(salt)
 }
 

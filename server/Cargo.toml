@@ -7,11 +7,14 @@ version = "0.0.1"
 edition = "2024"
 license-file = "../LICENSE.md"
 publish = false
+rust-version = "1.93"
 
-# No external dependencies yet. The marshal and protocol codecs are pure byte
-# manipulation with no crates. Add deps here (and to server/deps.allow, and to
-# the build image) only when a crate genuinely earns its place.
+# External crates only by owner decision (docs/reference/dependencies.md): each
+# one is a row in server/deps.allow, a librust-*-dev line in the build image,
+# and a digest in server/deps.digest. Versions are what the image's apt
+# registry carries.
 [workspace.dependencies]
+getrandom = { version = "0.2.15", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -1,4 +1,19 @@
-# External crates the server is allowed to depend on, one per line.
-# Every name here must appear in [workspace.dependencies] and vice versa;
-# tools/check_deps.py enforces both directions. Empty for now: the codecs
-# are dependency-free.
+# External crates the server may build against, tab-separated, one row per crate
+# in Cargo.lock. Policy and admission criteria: docs/reference/dependencies.md.
+# Changed by owner decision only (guarded in tools/pr_guard.py).
+#
+#   name     crate name
+#   version  exact version of the build image's apt registry
+#   kind     `direct` (a row in [workspace.dependencies]) or `via PARENT`
+#   licence  the crate's own Cargo.toml `license`; must be on the accepted list
+#   build    `yes` if the crate has a build script, else `no`
+#   unsafe   why it contains unsafe: os-ffi, cpu-intrinsics, asm, or `none`
+#   used-in  the one file of ours that names the crate (relative to
+#            server/crates), `-` for a `via` crate
+#
+# tools/check_deps.py enforces this table; server/deps.digest pins the bytes
+# and server/THIRD-PARTY.txt carries the licence texts.
+# name	version	kind	licence	build	unsafe	used-in
+getrandom	0.2.15	direct	MIT OR Apache-2.0	no	os-ffi	eve-crypto/src/rand.rs
+libc	0.2.178	via getrandom	MIT OR Apache-2.0	yes	os-ffi	-
+cfg-if	1.0.4	via getrandom	MIT OR Apache-2.0	no	none	-

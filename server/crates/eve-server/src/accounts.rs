@@ -525,16 +525,17 @@ pub fn new_token(
     })
 }
 
-/// 32 bytes from `/dev/urandom`, for [`new_token`].
+/// 32 bytes of OS randomness, for [`new_token`].
 pub fn urandom32() -> io::Result<[u8; 32]> {
     let mut out = [0u8; 32];
     urandom_fill(&mut out)?;
     Ok(out)
 }
 
-/// Fill `buf` from `/dev/urandom`: one open, one read.
+/// Fill `buf` from the operating system's CSPRNG (`eve_crypto::rand`). The
+/// name predates the crate; it stays so the callers do not change.
 pub fn urandom_fill(buf: &mut [u8]) -> io::Result<()> {
-    std::fs::File::open("/dev/urandom")?.read_exact(buf)
+    eve_crypto::rand::fill(buf)
 }
 
 /// The nearest ancestor of `path` that holds `.git`, if any.

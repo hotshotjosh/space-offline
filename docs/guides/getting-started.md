@@ -61,7 +61,7 @@ Expected: the image builds, then cargo ends with `Finished release
 `eve-offline-server`, `eve-server`, `eve-bots`, `eve-dns`.
 
 The container has no network, the repository mounted read-only, and one
-writable directory, `server/target`. The workspace has no dependencies.
+writable directory, `server/target`. The workspace's few crates come from the image's apt registry; the build stays offline.
 
 | Symptom | Fix |
 |---|---|

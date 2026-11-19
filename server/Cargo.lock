@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "cfg-if"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "Could not get crate checksum"
+
+[[package]]
 name = "eve-bot"
 version = "0.0.1"
 dependencies = [
@@ -11,6 +17,13 @@ dependencies = [
  "eve-proto",
  "eve-server",
  "eve-xmpp",
+]
+
+[[package]]
+name = "eve-crypto"
+version = "0.0.1"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]
@@ -79,6 +92,7 @@ dependencies = [
 name = "eve-server"
 version = "0.0.1"
 dependencies = [
+ "eve-crypto",
  "eve-inflate",
  "eve-marshal",
  "eve-proto",
@@ -89,3 +103,19 @@ dependencies = [
 [[package]]
 name = "eve-xmpp"
 version = "0.0.1"
+
+[[package]]
+name = "getrandom"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "Could not get crate checksum"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.178"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "Could not get crate checksum"

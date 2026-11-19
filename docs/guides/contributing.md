@@ -247,7 +247,7 @@ because they are central, risky, or being rewritten. Paths are under
 | `src/delta_kinds.rs` | the registered delta kinds; a new kind is one maintainer line |
 | `src/accounts.rs` | accounts, roles and the userid chain |
 | the registration tables | a PR exports the item and the maintainer adds the one line: `service.rs` `DOMAINS`, `lib.rs` `mod`, `tick.rs` `STAGES`, `world_ext.rs` `SLOTS`, `content_tables.rs` `TABLES`, `warp_subject.rs` `RESOLVERS`, `scan_sources.rs` `SOURCES`, `slim_extra.rs` `SOURCES`, `mission_hooks.rs` `HOOKS`, `movement_guard.rs` `WARP_GUARDS` and `JUMP_GUARDS`, `slash.rs` `COMMANDS`, `rollover_steps.rs` `STEPS`, `server/crates/eve-bot/src/roles.rs` `ROLES` |
-| `server/deps.allow`, `server/Cargo.toml`, `server/Cargo.lock` | the allowlist is empty and stays empty: the server is std-only |
+| `server/deps.allow`, `server/Cargo.toml`, `server/Cargo.lock` | the allowlist changes only by owner decision (`docs/reference/dependencies.md`) |
 | `docs/README.md` | the maintainer keeps it; a PR proposes a change in its text |
 | `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; a maintainer changes them |
 | `LICENSE.md`, `LICENSE-additions.md`, `CONTRIBUTING-terms.md`, `NOTICE` | the licence, its additional terms, the contributor terms and the third-party notices; only the owner changes them |
