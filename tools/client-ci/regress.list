@@ -437,3 +437,5 @@ fci_rig_set
 fci_hud_new --with-second -- --character Alice --character Bob --no-concord
 # wire-calls (#296): employment history pair, agent solar system, alpha injection time, pending auto-kicks, GetWarsByOwners with a set; the plain server
 fci_wire_calls
+# missions (#296): a kill mission spawns its own dungeon squads at its bookmark; the plain server with a bundle (dungeon catalogue and NPC data)
+fci_mission_dungeon --serial

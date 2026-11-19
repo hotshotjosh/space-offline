@@ -553,14 +553,21 @@ fn step(w: &mut Registry, site_id: i64, ft: BlueTime) {
             // CP36: the pilots inside hear `OnDungeonCompleted` now, while
             // the instance is still there (it must precede `site::vacate`).
             crate::dungeon_tracking::complete(w, site_id);
-            // Y-COMBAT: the last room's cache, and the escalation roll.
-            leave_cache(w, &p, ft);
-            crate::combat_site::on_complete(w, site_id, ft);
-            // FU-FWLP: an FW complex pays its pilots' militia LP now, while
-            // they are still on the grid -- unless its capture point already
-            // took the complex and paid (FW-7A).
-            if !crate::fw_capture::is_captured(w, site_id) {
-                crate::fw_lp::on_complete(w, site_id, p.system, p.anchor, ft);
+            if crate::mission::is_mission_site(site_id) {
+                // A mission's own pocket: the agent pays, so no cache, no
+                // escalation roll and no militia LP; the mission is told so
+                // its dialogue shows Complete.
+                crate::mission::site_completed(w, site_id);
+            } else {
+                // Y-COMBAT: the last room's cache, and the escalation roll.
+                leave_cache(w, &p, ft);
+                crate::combat_site::on_complete(w, site_id, ft);
+                // FU-FWLP: an FW complex pays its pilots' militia LP now,
+                // while they are still on the grid -- unless its capture
+                // point already took the complex and paid (FW-7A).
+                if !crate::fw_capture::is_captured(w, site_id) {
+                    crate::fw_lp::on_complete(w, site_id, p.system, p.anchor, ft);
+                }
             }
             for g in &mut p.groups {
                 if matches!(g.phase, Phase::Respawn(_)) {
@@ -580,7 +587,12 @@ fn step(w: &mut Registry, site_id: i64, ft: BlueTime) {
     });
     if near {
         p.vacant_since = None;
-    } else if ft.saturating_sub(*p.vacant_since.get_or_insert(ft)) >= SITE_VACANT {
+    } else if !crate::mission::is_mission_site(site_id)
+        && ft.saturating_sub(*p.vacant_since.get_or_insert(ft)) >= SITE_VACANT
+    {
+        // A mission's pocket never leaves for being vacant: it stands until
+        // the mission is turned in, quit-and-expired or declined
+        // (`mission::drop_pocket` calls [`discard`]).
         despawn(w, p, ft);
         return;
     }
@@ -798,6 +810,39 @@ pub fn is_completed(w: &Registry, site_id: i64) -> bool {
         .pockets
         .get(&site_id)
         .is_some_and(|p| p.completed.is_some())
+}
+
+/// The site an NPC was spawned for, while it is in space.
+pub fn site_of_npc(w: &Registry, npc_id: i64) -> Option<i64> {
+    w.ext::<SiteSpawns>().by_npc.get(&npc_id).copied()
+}
+
+/// The NPCs of `site_id` in space now.
+#[cfg(test)]
+pub fn npcs_of(w: &Registry, site_id: i64) -> Vec<i64> {
+    w.ext::<SiteSpawns>()
+        .by_npc
+        .iter()
+        .filter(|(_, s)| **s == site_id)
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// **Take a site away on its owner's say-so** (a mission turned in, expired
+/// or cleared by a GM): its pocket, its NPCs and its instance go, with one
+/// `RemoveBalls` each. Never marks a population slot: only a site `population`
+/// listed has one. `false` when nothing of it was there.
+pub fn discard(w: &mut Registry, site_id: i64) -> bool {
+    let had = w.ext_mut::<SiteSpawns>().pockets.remove(&site_id);
+    let ids = forget(w, site_id);
+    let system = had
+        .as_ref()
+        .map(|p| p.system)
+        .or_else(|| w.ext::<Sites>().get(site_id).map(|i| i.system));
+    if let Some(system) = system {
+        remove_npcs(w, system, &ids);
+    }
+    site::vacate(w, site_id) || had.is_some()
 }
 
 /// An instance `site` dropped (its site stopped being live, or its system

@@ -930,6 +930,8 @@ pub fn tick(w: &mut Registry, _now: Instant, ft: BlueTime) {
             .live
             .values()
             .filter(|i| live.tier(i.system) == Tier::Cold)
+            // A mission's pocket stands until the mission lets it go.
+            .filter(|i| !crate::mission::is_mission_site(i.site_id))
             .map(|i| i.site_id)
             .collect();
         let hot = live
@@ -991,6 +993,7 @@ fn check(w: &mut Registry, system: i64, ft: BlueTime) {
                 && !crate::wormhole::is_wormhole_site(i.site_id)
                 && !crate::escalation::is_escalation_site(i.site_id)
                 && !crate::abyss::is_abyss_site(i.site_id)
+                && !crate::mission::is_mission_site(i.site_id)
         })
         .map(|i| i.site_id)
         .collect();
@@ -1828,6 +1831,11 @@ mod tests {
                 abyss::SITE_BASE,
             ),
             ("abyss sites", abyss::SITE_BASE, abyss::SITE_END),
+            (
+                "mission sites",
+                crate::mission::SITE_BASE,
+                crate::mission::SITE_END,
+            ),
             (
                 "population sites",
                 population::SITE_BASE,

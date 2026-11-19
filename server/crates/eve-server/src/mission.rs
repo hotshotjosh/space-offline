@@ -72,9 +72,34 @@ const DESTINATION_OWNER: i64 = 1_000_163;
 /// not in the bundle. Falsified by a leg whose icon or name renders wrong.
 const STATION_TYPE_ID: i64 = 2502;
 
-/// `[A]` NPCs in a kill pocket: the dungeon table never says what a spawn
-/// holds. Falsified by CP22's squad fill, which replaces it.
+/// `[A]` NPCs in a fallback kill pocket, used only when the mission has no
+/// dungeon or its dungeon has no squads: a mission with a dungeon spawns that
+/// dungeon's own rooms and squads through `site_spawn`. Falsified by a kill
+/// mission whose dungeon has squads and still gets the ring of rats.
 pub const POCKET_NPCS: usize = 3;
+
+/// The site ids of mission pockets: 8.075e9 up to the population site band
+/// (8.1e9), carved from the abyss band's top (`abyss::SITE_END`). One id per
+/// live (character, agent) pocket; they wrap and skip a live one. Not a ball
+/// id: an instance's balls are in `site::INSTANCE_BASE`'s band.
+pub const SITE_BASE: i64 = 8_075_000_000;
+/// One past the band.
+pub const SITE_END: i64 = crate::population::SITE_BASE;
+
+const _: () = assert!(SITE_BASE < SITE_END);
+
+/// Whether a site id is a mission pocket's. `site.rs` and `site_spawn.rs`
+/// leave these instances to the mission that owns them.
+pub fn is_mission_site(site_id: i64) -> bool {
+    (SITE_BASE..SITE_END).contains(&site_id)
+}
+
+/// `[A]` Two pockets' anchors are this far apart along z, metres, so the
+/// rooms of two pilots' missions in one system never overlap. Falsified by a
+/// pocket that lands on a body, or two that touch.
+const POCKET_SPACING: f64 = 1.0e8;
+/// Anchors before the spacing wraps.
+const POCKET_SLOTS: i64 = 1_000;
 
 /// `[A]` (C4 §3.7) How long an offer stands, and an accepted mission with no
 /// `expire_minutes`.
@@ -212,6 +237,14 @@ pub struct Live {
     /// `(character, agent) -> pocket`. Kept across a quit, so a re-accept
     /// sends the pilot back to the NPCs still there; dropped on completion.
     pockets: BTreeMap<(i64, i64), Pocket>,
+    /// `(character, agent) -> site id` for a pocket that is the mission's own
+    /// dungeon, run by `site_spawn`. Its `pockets` entry holds only where it
+    /// is (the bookmark and the warp aim), no NPCs.
+    sites: BTreeMap<(i64, i64), i64>,
+    /// Pockets a GM cleared (`/missioncomplete`): the objective is met though
+    /// the site never counted the kills.
+    gm_done: std::collections::BTreeSet<(i64, i64)>,
+    next_site: u64,
     /// NPC types derived from `npc_data` rows, leaked once per type: `Npc`
     /// holds a `&'static NpcType`.
     rats: BTreeMap<i64, &'static NpcType>,
@@ -811,7 +844,17 @@ fn can_use(w: &Registry, character: i64, a: &pool::Agent) -> bool {
 ///   chain that hands out a mining row.
 fn objective_done(w: &Registry, character: i64, c: &Current) -> bool {
     if is_kill(&c.m) {
-        match w.ext::<Live>().pockets.get(&(character, c.agent.id)) {
+        let key = (character, c.agent.id);
+        let live = w.ext::<Live>();
+        if live.gm_done.contains(&key) {
+            return true;
+        }
+        // The mission's own dungeon: `site_spawn`'s completion over every
+        // room, including the rooms behind gates.
+        if let Some(site) = live.sites.get(&key) {
+            return crate::site_spawn::is_completed(w, *site);
+        }
+        match live.pockets.get(&key) {
             Some(p) => dungeon::cleared(w, p),
             None => !pocket_possible(w, &c.m),
         }
@@ -938,7 +981,7 @@ pub fn converse_at(
                 return (refusal(MSG_NO_MISSION), None);
             }
             crate::mission_rewards::pay(w, ch, &c.agent, &c.m, c.p.accepted_at, now);
-            w.ext_mut::<Live>().pockets.remove(&(ch, agent));
+            drop_pocket(w, (ch, agent));
             p.remember(c.m.id);
             p.state = State::Offered;
             p.mission_id = None;
@@ -999,12 +1042,17 @@ fn rat(w: &mut Registry, enemy: i64) -> Option<&'static NpcType> {
 
 fn spawn_pocket(w: &mut Registry, ch: i64, c: &Current) {
     let k = (ch, c.agent.id);
-    if w.ext::<Live>()
-        .pockets
-        .get(&k)
-        .is_some_and(|p| dungeon::alive(w, p))
-    {
+    if pocket_alive(w, k) {
         return;
+    }
+    // A pocket left behind (cleared, or its instance gone) is let go first.
+    drop_pocket(w, k);
+    match spawn_dungeon_pocket(w, k, c) {
+        Ok(()) => return,
+        Err(why) => crate::outln!(
+            "[mission] mission {} for {ch}: {why}; falling back to {POCKET_NPCS} generic rats",
+            c.m.id
+        ),
     }
     let Some(kind) = c.m.enemy_faction.and_then(|e| rat(w, e)) else {
         return;
@@ -1012,6 +1060,155 @@ fn spawn_pocket(w: &mut Registry, ch: i64, c: &Current) {
     if let Some(pocket) = dungeon::spawn(w, kind, site(c), POCKET_NPCS) {
         w.ext_mut::<Live>().pockets.insert(k, pocket);
     }
+}
+
+/// Whether `k`'s pocket still stands and still has a fight in it: the ring of
+/// rats with one alive, or the dungeon's instance, not yet cleared.
+fn pocket_alive(w: &Registry, k: (i64, i64)) -> bool {
+    let live = w.ext::<Live>();
+    if let Some(site) = live.sites.get(&k) {
+        return w.ext::<crate::site::Sites>().get(*site).is_some()
+            && !crate::site_spawn::is_completed(w, *site);
+    }
+    live.pockets.get(&k).is_some_and(|p| dungeon::alive(w, p))
+}
+
+/// The next free site id of the mission band.
+fn next_site_id(w: &mut Registry) -> Option<i64> {
+    let span = (SITE_END - SITE_BASE) as u64;
+    for _ in 0..64 {
+        let live = w.ext_mut::<Live>();
+        let id = SITE_BASE + (live.next_site % span) as i64;
+        live.next_site += 1;
+        let taken = live.sites.values().any(|s| *s == id)
+            || w.ext::<crate::site::Sites>().get(id).is_some();
+        if !taken {
+            return Some(id);
+        }
+    }
+    None
+}
+
+/// Where the pocket of site `id` is: the spawn point, moved along z by the
+/// id so two pockets never share a room.
+fn pocket_anchor(id: i64) -> [f64; 3] {
+    let n = (id - SITE_BASE) % POCKET_SLOTS;
+    let mut at = dungeon::POCKET_OFFSET;
+    at[2] += n as f64 * POCKET_SPACING;
+    at
+}
+
+/// **The mission's own dungeon as a per-mission instance** (`site`, then
+/// `site_spawn`): its entry room's objects, its R5 squads, its triggers,
+/// respawn and gates, the same machinery a combat anomaly runs. The reward is
+/// priced from this dungeon's squad fill (`mission_rewards`), so the fight and
+/// the pay agree. `Err` says why not, and the caller falls back.
+fn spawn_dungeon_pocket(w: &mut Registry, k: (i64, i64), c: &Current) -> Result<(), String> {
+    let Some(did) = c.m.dungeon else {
+        return Err("the mission names no dungeon".to_owned());
+    };
+    let archetype = w
+        .content()
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.dungeons.get(&did))
+        .map(|d| d.archetype)
+        .ok_or_else(|| format!("dungeon {did} is not in the catalogue"))?;
+    let id = next_site_id(w).ok_or("the mission site band is full")?;
+    let system = site(c);
+    let anchor = pocket_anchor(id);
+    let s = crate::population::Site {
+        system,
+        row: 0,
+        k: 0,
+        slot: 0,
+        generation: 0,
+        site_id: id,
+        dungeon_id: did,
+        archetype,
+        entry: crate::dungeon_data::Entry::Anomaly,
+        anchor,
+        target_id: format!("MSN-{}", id - SITE_BASE),
+        state: crate::population::State::Live,
+        at: crate::pyutil::filetime_now(),
+    };
+    if !crate::site::instantiate(w, &s) {
+        return Err(format!("dungeon {did} could not be instantiated"));
+    }
+    let (squads, ships) = w
+        .ext::<crate::site::Sites>()
+        .get(id)
+        .map(|inst| {
+            let groups = crate::site_spawn::open(w, inst).groups;
+            let ships: usize = groups
+                .iter()
+                .filter(|g| !g.gated)
+                .map(|g| g.members.len())
+                .sum();
+            (groups.len(), ships)
+        })
+        .unwrap_or((0, 0));
+    if squads == 0 {
+        crate::site_spawn::discard(w, id);
+        return Err(format!("dungeon {did} has no squads in its entry room"));
+    }
+    let live = w.ext_mut::<Live>();
+    live.sites.insert(k, id);
+    live.gm_done.remove(&k);
+    live.pockets.insert(
+        k,
+        Pocket {
+            solar_system_id: system,
+            position: anchor,
+            npc_ids: Vec::new(),
+        },
+    );
+    crate::outln!(
+        "[mission] mission {} for {}: its own dungeon {did} as site {id}, {squads} squads, {ships} ships on arrival",
+        c.m.id,
+        k.0
+    );
+    Ok(())
+}
+
+/// Let `k`'s pocket go: its record, and a dungeon pocket's NPCs and instance.
+/// The ring of rats' NPCs are left as they stood (their wrecks are loot).
+fn drop_pocket(w: &mut Registry, k: (i64, i64)) {
+    let live = w.ext_mut::<Live>();
+    live.pockets.remove(&k);
+    live.gm_done.remove(&k);
+    if let Some(site) = live.sites.remove(&k) {
+        crate::site_spawn::discard(w, site);
+    }
+}
+
+/// `site_spawn` found mission site `site_id` cleared: the owner's open dialogue
+/// is told 'modified' so Complete shows (as [`npc_killed`] does for a ring).
+pub fn site_completed(w: &mut Registry, site_id: i64) {
+    let hit: Vec<(i64, i64)> = w
+        .ext::<Live>()
+        .sites
+        .iter()
+        .filter(|(_, s)| **s == site_id)
+        .map(|(k, _)| *k)
+        .collect();
+    for (ch, agent) in hit {
+        if progress(w, ch, agent).state == State::Accepted {
+            tell_modified(w, ch, agent);
+        }
+    }
+}
+
+fn tell_modified(w: &mut Registry, ch: i64, agent: i64) {
+    w.schedule(
+        std::time::Duration::ZERO,
+        crate::notify::Addressed {
+            to: Some(vec![ch]),
+            inner: Box::new(AgentMissionChange {
+                change: Change::Modified.as_str(),
+                agent_id: agent,
+            }),
+        },
+    );
 }
 
 /// The courier's `obj_type x obj_qty`, topped up to the quantity: accepting
@@ -1070,11 +1267,18 @@ pub fn tell_journal_at(w: &mut Registry, agent: i64, change: Option<Change>) {
 /// GAP-LOOT: the character whose accepted mission's pocket holds `npc_id`;
 /// its wreck is theirs (EvEJS `combatDestruction.js:120-224`, `[A]`).
 pub fn pocket_owner(w: &Registry, npc_id: i64) -> Option<i64> {
-    w.ext::<Live>()
-        .pockets
+    let live = w.ext::<Live>();
+    live.pockets
         .iter()
         .find(|(_, p)| p.npc_ids.contains(&npc_id))
         .map(|((ch, _), _)| *ch)
+        .or_else(|| {
+            let site = crate::site_spawn::site_of_npc(w, npc_id)?;
+            live.sites
+                .iter()
+                .find(|(_, s)| **s == site)
+                .map(|((ch, _), _)| *ch)
+        })
 }
 
 /// **An NPC died**: every (character, agent) whose accepted kill mission's
@@ -1119,17 +1323,15 @@ pub fn gm_clear_pocket(w: &mut Registry, character: i64, agent: Option<i64>) -> 
         .map(|(k, p)| (*k, p.solar_system_id, p.npc_ids.clone()))
         .collect();
     for ((ch, a), system, ids) in &hit {
-        crate::npc::despawn_ids(w, *system, ids);
-        w.schedule(
-            std::time::Duration::ZERO,
-            crate::notify::Addressed {
-                to: Some(vec![*ch]),
-                inner: Box::new(AgentMissionChange {
-                    change: Change::Modified.as_str(),
-                    agent_id: *a,
-                }),
-            },
-        );
+        if let Some(site) = w.ext::<Live>().sites.get(&(*ch, *a)).copied() {
+            // A dungeon pocket: it and its rooms go, and the objective is
+            // met by the GM's say-so.
+            crate::site_spawn::discard(w, site);
+            w.ext_mut::<Live>().gm_done.insert((*ch, *a));
+        } else {
+            crate::npc::despawn_ids(w, *system, ids);
+        }
+        tell_modified(w, *ch, *a);
     }
     hit.len()
 }
@@ -1182,7 +1384,7 @@ pub fn on_rollover(w: &mut Registry, day: u32) {
         if let [ch, agent] = k.as_slice()
             && let (Ok(ch), Ok(agent)) = (ch.parse(), agent.parse())
         {
-            w.ext_mut::<Live>().pockets.remove(&(ch, agent));
+            drop_pocket(w, (ch, agent));
         }
         w.deltas_mut().put(KIND, k, p.to_value());
     }
@@ -1661,6 +1863,9 @@ mod tests {
         let mut c = crate::content::Content::fixture();
         c.insert("mission_pool", table());
         c.insert("npc_data", npc_rows());
+        // No dungeon catalogue: a kill mission takes the fallback ring of
+        // rats. The tests of a mission's own dungeon (`own_dungeon`) bring one.
+        c.insert("dungeon_data", crate::dungeon_data::Table::default());
         Registry::new(crate::model::SandboxConfig::default()).with_content(std::sync::Arc::new(c))
     }
 
@@ -3133,5 +3338,275 @@ mod tests {
         act(&mut w, KILLER, Some(ACTION_ACCEPT));
         assert!(said(complete_slash(&mut w, Some(ME), &["all"])).starts_with("cleared 1"));
         assert!(said(complete_slash(&mut w, Some(ME), &["x"])).starts_with("usage"));
+    }
+
+    /// **Kill missions run their own dungeon**: invented rows only. The
+    /// mission's dungeon is [`DUNGEON`], which the mission row names.
+    mod own_dungeon {
+        use super::*;
+        use crate::dungeon_data::{Dungeon, Object, Room, Spawn};
+        use crate::npc_data::{Bounty, Needs, NpcTypeRow, Role, Tier};
+        use std::time::Instant;
+
+        /// The dungeon `table()`'s kill mission names.
+        const DUNGEON: i64 = 999_101;
+        const STRUCTURE: i64 = 990_450;
+        const BLUE: i64 = 10_000_000;
+
+        fn spawn(object: i64, entity: i64) -> Spawn {
+            Spawn {
+                room: 1,
+                object,
+                entity,
+                ..Spawn::default()
+            }
+        }
+
+        /// Room 1 with two structures and `spawns` ungated spawns on them.
+        fn dungeon(spawns: Vec<Spawn>) -> Dungeon {
+            let obj = |id, x| Object {
+                room: 1,
+                id,
+                type_id: STRUCTURE,
+                pos: [x, 0.0, 0.0],
+                radius: Some(2_000.0),
+                ..Object::default()
+            };
+            Dungeon {
+                id: DUNGEON,
+                archetype: 24,
+                faction: Some(ENEMY),
+                difficulty: Some(1),
+                entry_object: Some(1),
+                rooms: vec![Room {
+                    id: 1,
+                    ..Room::default()
+                }],
+                objects: vec![obj(1, 0.0), obj(2, 20_000.0)],
+                spawns,
+                ..Dungeon::default()
+            }
+        }
+
+        /// The enemy's one type is the hand hull, with a bounty to budget.
+        fn rows() -> crate::npc_data::Table {
+            let mut t = crate::npc_data::Table::default();
+            let id = crate::npc::ANGEL_HIJACKER.type_id;
+            t.types.insert(
+                id,
+                NpcTypeRow {
+                    type_id: id,
+                    group_id: 99_600,
+                    faction_id: ENEMY,
+                    context: crate::npc_gen::ASTEROID.to_owned(),
+                    class: "Frigate".to_owned(),
+                    tier: Tier::Base,
+                    alias_of: None,
+                    needs: Needs::TURRET,
+                    role: Role::Dps,
+                },
+            );
+            t.bounty.insert(
+                id,
+                Bounty {
+                    bounty: 1.0,
+                    ..Bounty::default()
+                },
+            );
+            t
+        }
+
+        fn world_with(d: Dungeon) -> Registry {
+            let mut dungeons = crate::dungeon_data::Table::fixture();
+            dungeons.dungeons.insert(d.id, d);
+            let mut c = crate::content::Content::fixture();
+            c.insert("mission_pool", table());
+            c.insert("npc_data", rows());
+            c.insert("dungeon_data", dungeons);
+            Registry::new(crate::model::SandboxConfig::default())
+                .with_content(std::sync::Arc::new(c))
+        }
+
+        fn two_squads() -> Registry {
+            world_with(dungeon(vec![spawn(1, 71), spawn(2, 72)]))
+        }
+
+        fn site_id(w: &Registry) -> i64 {
+            *w.ext::<Live>().sites.get(&(ME, KILLER)).expect("a site")
+        }
+
+        fn step(w: &mut Registry, at: i64) {
+            crate::site_spawn::tick(w, Instant::now(), at * BLUE);
+        }
+
+        /// What `npc_gen::dungeon_squads` says the dungeon holds for `site`.
+        fn want(w: &Registry, site: i64) -> usize {
+            let d = &w.content().get::<crate::dungeon_data::Table>().dungeons[&DUNGEON];
+            let data = w.content().get::<crate::npc_data::Table>();
+            crate::npc_gen::dungeon_squads(d, data, w.world().seed, &[site as u64])
+                .iter()
+                .map(|s| s.squad.members.len())
+                .sum()
+        }
+
+        fn kill_all(w: &mut Registry, site: i64, at: i64) {
+            for id in crate::site_spawn::npcs_of(w, site) {
+                w.roster_mut().leave(id);
+                let ev = crate::kill_hooks::KillEvent {
+                    victim_character: id,
+                    victim_ship: id,
+                    ship_type: crate::npc::ANGEL_HIJACKER.type_id,
+                    killer: Some(ME),
+                    system: w.roster().get(ME).map_or(SYSTEM, |p| p.solar_system_id),
+                    npc: Some(&crate::npc::ANGEL_HIJACKER),
+                    when: at * BLUE,
+                    park: Vec::new(),
+                };
+                crate::site_spawn::npc_killed(w, &ev);
+                w.npcs_mut().remove(id);
+            }
+        }
+
+        #[test]
+        fn a_kill_mission_spawns_its_dungeons_squads_not_a_ring() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            assert!(is_mission_site(site));
+            assert_eq!(w.npcs().len(), 0, "the squads come on the site's next step");
+            step(&mut w, 1);
+            let expected = want(&w, site);
+            assert!(expected > 0);
+            assert_eq!(w.npcs().len(), expected, "the dungeon's own squad fill");
+            let held = crate::site_spawn::npcs_of(&w, site);
+            assert_eq!(held.len(), expected);
+            // The bookmark and the warp aim are the instance's anchor.
+            let pk = pocket(&w, KILLER).expect("where it is");
+            assert!(pk.npc_ids.is_empty());
+            assert_eq!(
+                w.ext::<crate::site::Sites>().get(site).map(|i| i.anchor),
+                Some(pk.position)
+            );
+            assert_eq!(pocket_owner(&w, held[0]), Some(ME));
+        }
+
+        #[test]
+        fn a_mission_with_no_dungeon_row_falls_back_to_the_ring() {
+            // The catalogue has no such dungeon: the old ring of rats.
+            let mut w = world();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            assert!(w.ext::<Live>().sites.is_empty());
+            assert_eq!(w.npcs().len(), POCKET_NPCS);
+        }
+
+        #[test]
+        fn a_dungeon_with_no_squads_falls_back_to_the_ring() {
+            // Known, but it has no spawn rows: nothing to fill.
+            let mut w = world_with(dungeon(Vec::new()));
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            assert!(w.ext::<Live>().sites.is_empty());
+            assert!(w.ext::<crate::site::Sites>().iter().next().is_none());
+            assert_eq!(w.npcs().len(), POCKET_NPCS);
+        }
+
+        #[test]
+        fn the_objective_holds_over_the_whole_spawned_set() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            step(&mut w, 1);
+            let c = current(&w, ME, KILLER, crate::pyutil::filetime_now()).expect("current");
+            assert!(!objective_done(&w, ME, &c));
+            // All but one: not met.
+            let all = crate::site_spawn::npcs_of(&w, site);
+            let (last, rest) = all.split_last().expect("ships");
+            for id in rest {
+                w.roster_mut().leave(*id);
+                w.npcs_mut().remove(*id);
+            }
+            step(&mut w, 2);
+            assert!(!objective_done(&w, ME, &c), "one is still standing");
+            let _ = last;
+            kill_all(&mut w, site, 3);
+            step(&mut w, 4);
+            assert!(objective_done(&w, ME, &c));
+            assert_eq!(
+                act(&mut w, KILLER, Some(ACTION_COMPLETE)).1,
+                Some(Change::Completed)
+            );
+        }
+
+        #[test]
+        fn turning_the_mission_in_takes_the_pocket_and_its_instance_away() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            step(&mut w, 1);
+            kill_all(&mut w, site, 2);
+            step(&mut w, 3);
+            assert_eq!(
+                act(&mut w, KILLER, Some(ACTION_COMPLETE)).1,
+                Some(Change::Completed)
+            );
+            assert!(w.ext::<Live>().sites.is_empty());
+            assert!(pocket(&w, KILLER).is_none());
+            assert!(w.ext::<crate::site::Sites>().get(site).is_none());
+            assert!(crate::site_spawn::npcs_of(&w, site).is_empty());
+        }
+
+        #[test]
+        fn an_expired_mission_takes_the_standing_pocket_away_with_its_npcs() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            step(&mut w, 1);
+            assert_ne!(w.npcs().len(), 0);
+            on_rollover(&mut w, 1_000_000);
+            assert!(w.ext::<Live>().sites.is_empty());
+            assert!(w.ext::<crate::site::Sites>().get(site).is_none());
+            assert_eq!(w.npcs().len(), 0, "the NPCs left with it");
+        }
+
+        #[test]
+        fn an_abandoned_pocket_is_not_despawned_for_being_vacant() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            step(&mut w, 1);
+            let n = w.npcs().len();
+            let later = 1 + crate::site_spawn::SITE_VACANT / BLUE + 10;
+            step(&mut w, later);
+            step(&mut w, later + 5);
+            assert_eq!(w.npcs().len(), n);
+            assert!(w.ext::<crate::site::Sites>().get(site).is_some());
+        }
+
+        #[test]
+        fn a_reaccept_reuses_the_standing_pocket_and_two_pilots_get_two_sites() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let first = site_id(&w);
+            act(&mut w, KILLER, Some(ACTION_QUIT));
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            assert_eq!(site_id(&w), first);
+            assert_eq!(w.ext::<crate::site::Sites>().iter().count(), 1);
+            // Another pilot's accept of the same agent is a second instance.
+            let next = next_site_id(&mut w).expect("an id");
+            assert_ne!(next, first);
+            assert_ne!(pocket_anchor(next), pocket_anchor(first));
+        }
+
+        #[test]
+        fn a_gm_clear_meets_the_objective_and_removes_the_instance() {
+            let mut w = two_squads();
+            act(&mut w, KILLER, Some(ACTION_ACCEPT));
+            let site = site_id(&w);
+            step(&mut w, 1);
+            assert_eq!(gm_clear_pocket(&mut w, ME, Some(KILLER)), 1);
+            assert_eq!(w.npcs().len(), 0);
+            assert!(w.ext::<crate::site::Sites>().get(site).is_none());
+            let c = current(&w, ME, KILLER, crate::pyutil::filetime_now()).expect("current");
+            assert!(objective_done(&w, ME, &c));
+        }
     }
 }

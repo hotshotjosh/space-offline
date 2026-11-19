@@ -284,15 +284,16 @@ const GATE_OFFSET: [f64; 3] = [1_500.0, 0.0, 0.0];
 /// The tiers the client knows (`abyss/common/constants.py`: 0 to 6).
 pub const TIERS: std::ops::RangeInclusive<i64> = 0..=6;
 
-/// The site ids of runs: 8.05e9 up to the population site band (8.1e9), past
+/// The site ids of runs: 8.05e9 up to the mission site band (8.075e9, which
+/// runs on to the population site band at 8.1e9), past
 /// the customs offices (8e9 plus a planet id under 5e7) and below the instance
 /// object band (8.7e9 up), so a run room's site id is never the id of a ball
 /// in any instance (the clouds' dbuff sources are such balls).
 pub const SITE_BASE: i64 = 8_050_000_000;
 /// One past the band.
-pub const SITE_END: i64 = 8_100_000_000;
+pub const SITE_END: i64 = 8_075_000_000;
 
-const _: () = assert!(SITE_END <= crate::population::SITE_BASE);
+const _: () = assert!(SITE_END <= crate::mission::SITE_BASE);
 const _: () = assert!(SITE_BASE >= crate::planet::FIRST_CUSTOMS_OFFICE_ID + 50_000_000);
 const _: () = assert!(SITE_END <= crate::site::INSTANCE_BASE);
 
