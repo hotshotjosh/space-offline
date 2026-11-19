@@ -114,13 +114,10 @@ fn other_market_call(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // `RefreshOrderCache` (marketsvc.py:846) reads our answer twice
         // by index and then twice through `len()`:
         //
-        // ```text
-        // orders = self.GetMarketProxy().GetOrders(typeID)   # line 856
-        // ...
-        // asks, bids = orders[0], orders[1]                  # line 863  <- the traceback
-        // self.orderCache[typeID] = [asks, bids, version]    # line 864
-        // self.LogInfo(..., len(orders[0]), ..., len(orders[1]), ...)  # line 866
-        // ```
+        // Lines 856-866 (`[V]`): it fetches the orders from the market
+        // proxy, takes `orders[0]` and `orders[1]` as asks and bids (line 863,
+        // where the traceback was), stores asks, bids and the version in the
+        // order cache (864), and logs the lengths of both (866).
         //
         // so **a 2-sequence**. The arity is pinned by `BINARY_SUBSCR 0`
         // and `BINARY_SUBSCR 1` rather than by `UNPACK_SEQUENCE` -- the

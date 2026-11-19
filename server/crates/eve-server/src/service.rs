@@ -4339,7 +4339,8 @@ impl Registry {
             ),
             // **A four-way unpack, unconditionally.** `_MakeShipActive`
             // unpacks `shipState` into the instance cache, the flag-quantity
-            // cache, the weapon-bank data and the heat states `[V]`, with no guard, so `None` is a `TypeError` -- and worse, the
+            // cache, the weapon-bank data and the heat states `[V]`, with no guard,
+            // so `None` is a `TypeError` -- and worse, the
             // `shipState is None` branch *above* it fires a nested
             // `PerformSelectiveSessionChange('board', ...)` into
             // `ship.Board`, which mutates the session and sets an undock
@@ -4386,7 +4387,7 @@ impl Registry {
     /// is easy to miss: **`singleton` must be truthy.** The test is
     ///
     /// the update returns early when the item is a sub-location or is not
-    /// a singleton, unless it is a charge `[V]`
+    /// a singleton, unless it is a charge (with a further condition) `[V]`
     ///
     /// so a `singleton` of 0 drops the capsule at `Godma:UpdateItem.skip3`,
     /// silently, and it never gets attributes. `categoryShip` is in the
@@ -5275,12 +5276,9 @@ pub(crate) fn name_entry_types(content: &crate::content::Content, rows: &mut [Py
 /// **Three attributes, no more and no fewer.** `clonejumpsvc.py(90)
 /// GetCloneState` is literally
 ///
-/// ```text
-/// kv = lm.GetCloneState()
-/// self.jumpClones = kv.clones              # line 94 -- the AttributeError
-/// self.jumpCloneImplants = kv.implants
-/// self.timeLastJump = kv.timeLastJump
-/// ```
+/// `GetCloneState` (line 94 is where the missing attribute raises) asks
+/// the location manager for the state and copies its `clones`,
+/// `implants` and `timeLastJump` into the service `[V]`.
 ///
 /// and the code object's `co_names` holds exactly `clones`, `implants` and
 /// `timeLastJump`, so the list is complete and is not the decompiler's

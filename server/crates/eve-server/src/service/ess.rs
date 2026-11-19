@@ -1,12 +1,9 @@
 //! **`essMgr`** -- the ESS main bank's panel (lane `ess-1`, issue #89; the
 //! model is [`crate::ess`]).
 //!
-//! `dynamicResourceSvc.GetESSDataForCurrentSystem` is
-//!
-//! answers nothing when the ESS feature is flagged offline, and
-//! otherwise the answer of `essMgr.GetDataForClientSolarSystem()`
-//!
-//! **[V]**, and the flag cannot be set from here (`machoNet.
+//! `dynamicResourceSvc.GetESSDataForCurrentSystem` answers nothing when the
+//! ESS feature is flagged offline, and otherwise the answer of
+//! `essMgr.GetDataForClientSolarSystem()` **[V]**, and the flag cannot be set from here (`machoNet.
 //! InitClientGlobalConfig` is not exported, port-tracker §41.10). So the
 //! answer is the data dict in a system that holds an ESS, and `None`, CCP's
 //! own "no ESS here", anywhere else; every caller copes with it.

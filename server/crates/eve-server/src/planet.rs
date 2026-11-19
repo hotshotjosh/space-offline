@@ -983,12 +983,8 @@ impl std::error::Error for PiError {}
 /// the field names the client uses on a pin. `SurfacePoint.__init__` takes
 /// `theta=longitude, phi=latitude` and `_CalcXYZ` is
 ///
-/// ```text
-///     radSinPhi = radius * sin(phi)
-///     x = radSinPhi * cos(theta)
-///     z = radSinPhi * sin(theta)
-///     y = radius * cos(phi)
-/// ```
+/// with `r = radius * sin(phi)`: x is `r * cos(theta)`, z is
+/// `r * sin(theta)` and y is `radius * cos(phi)` `[V]`.
 ///
 /// so `phi` ("latitude") is a **polar angle measured from the pole**, in
 /// `[0, pi]`, and `theta` ("longitude") is in `[0, 2pi]`. A port that treated
@@ -1546,9 +1542,8 @@ impl Pin {
     /// `ProcessPin.GetInputBufferState` -- the priority a factory gets in
     /// `GetSortedRoutesForPin`.
     ///
-    /// ```text
-    ///     1 - (sum(have[i] / want[i] for i in inputs) / len(inputs))
-    /// ```
+    /// The score is one minus the mean, over the inputs, of the amount held
+    /// over the amount wanted.
     ///
     /// So **lower is fuller**, and the client pushes into a min-heap, which
     /// means the *emptiest* factory is served first. Getting the sign wrong
@@ -1889,7 +1884,7 @@ impl Pin {
             // one cycle of latency.
             //
             // The pin yields its products when active. It consumes the demanded
-            // commodities and stays active when it holds enough of every one, and
+            // commodities and becomes active when it holds enough of every one, and
             // goes idle otherwise. It then shifts the received-inputs flags, stores
             // the run time and returns the products.
             //
@@ -2239,9 +2234,8 @@ impl Link {
 
     /// `planetCommon.GetCpuUsageForLink(typeID, length, level)`. **[V]**
     ///
-    /// ```text
-    ///     baseCpuUsage + int(ceil(cpuUsagePerKm * (length / 1000.0) * (level + 1) ** cpuUsageLevelModifier))
-    /// ```
+    /// The CPU is the base CPU usage plus the ceiling of `cpuUsagePerKm *
+    /// (length / 1000) * (level + 1)^cpuUsageLevelModifier`.
     ///
     /// Note `length` is metres and the `/1000.0` makes it kilometres, and
     /// that the per-km term is rounded **up** on its own before being added
@@ -2578,9 +2572,9 @@ impl Colony {
 
     /// `BaseColony.SchedulePin`. **[V]**
     ///
-    /// Scheduling looks up the pin's queue entry: an entry that is later
-    /// than the new next run time is removed, an equal-or-earlier one ends
-    /// the call. The pin is then queued at the current sim time when its
+    /// Scheduling looks up the pin's queue entry: an entry is removed
+    /// when the new next run time is unset or earlier than it; otherwise
+    /// the call ends. The pin is then queued at the current sim time when its
     /// next run time is unset or in the past, else at that run time.
     ///
     /// Two things worth not losing:
@@ -3114,10 +3108,7 @@ impl Command {
 /// A pin, link or route id as the stream carries it.
 ///
 /// **A temporary id is any tuple.** `BaseColony.IsTemporaryID` is the whole
-/// of
-///
-/// the id is a tuple `[V]`
-///
+/// test: the id is a tuple `[V]`
 /// -- no namespace, no range, no structure. The client mints one for every
 /// object it created in this edit session, submits the stream with those
 /// tuples in place of ids, and the server replies with a colony in which they

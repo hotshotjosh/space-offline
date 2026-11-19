@@ -107,7 +107,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         //
         // `characterOverviewPanel.ApplyAttributes` opens with
         //
-        //     charinfo = reg.charMgr.GetPublicInfo(session.charid)
+        // it fetches the character's public info with `GetPublicInfo` for the
+        // session's character `[V]`
         //
         // and threads that one value through five frames without ever
         // re-fetching or testing it, down to
@@ -355,12 +356,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // The client unpacks the answer into two numbers (asset worth and
             // PLEX worth) inside a `try` block, and only afterwards tests the
-            // result; the `is not None` guard that follows does not help, because
-            // the unpack runs first (`charMgr` consumer, `[V]`, net-worth refresh
-            // in the character data service).
-            //
-            // The `is not None` guard four lines later is what makes
-            // `None` look safe; `UNPACK_SEQUENCE 2` runs first.
+            // result `[V]`. The `is not None` guard that follows is what makes
+            // `None` look safe, but the two-way unpack runs first.
             //
             // This arrives on a **bound object**, and the container is
             // `containerGlobal` (10002) -- a second magic container,
@@ -572,8 +569,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The Bio tab, as a plain **string** -- not a row, not a
             // 1-tuple. `bioPanel.LoadBioFromServer` is
             //
-            //     bio = sm.RemoteSvc('charMgr').GetCharacterDescription(session.charid)
-            //     reg.bioClient = bio if bio is not None else ''
+            // it asks `charMgr.GetCharacterDescription` for the session's
+            // character and keeps the answer, or an empty string when it is `None`
+            // `[V]`
             //
             // and `LoadPanel` hands it straight to `edit.SetValue`. `None`
             // is explicitly tolerated -- the first row of the §4 table --
@@ -763,12 +761,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The address book's contact labels. **One answer, three call
             // sites, and a live lock that `{}` closes.**
             //
-            // `addressbookService.py(1213/1217/1221)` keeps three separate
-            // caches filled from the same method:
-            //
-            // `addressbookService.GetContactLabels` (`addressbookService.py:1213`
-            // and neighbours, `[V]`) keeps one cache per contact type (personal,
-            // corp, alliance); each is filled once from the matching `GetLabels`
+            // `addressbookService.GetContactLabels`
+            // (`addressbookService.py:1213/1217/1221`, `[V]`) keeps three
+            // separate caches, one per contact type (personal, corp,
+            // alliance); each is filled once from the matching `GetLabels`
             // call when it is still `None`, then returned.
             //
             // Only the first is ours: `_GetSvcForContactType` returns
@@ -844,9 +840,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // This one is worth more than it looks. It is the FIRST
             // statement of `notificationUI._NotificationProvider`:
             //
-            //     skillNotifications = SkillHistoryProvider(...).provide()
-            //     restOfNotifications = sm.GetService('notificationSvc')
-            //         .GetAllFormattedNotifications(...)
+            // it builds the skill notifications from `SkillHistoryProvider`, then
+            // asks the `notificationSvc` service for all formatted notifications
+            // `[V]`
             //
             // so a throw here means `GetAllFormattedNotifications` is
             // never reached and the **entire** neocom notification centre
@@ -1114,7 +1110,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The avatar on the character sheet. `avatarHeaderPreview`
             // calls this **synchronously**:
             //
-            //     dna = sm.RemoteSvc('paperDollServer').GetPaperDollData(session.charid)
+            // it fetches the paper-doll data for the session's character from
+            // `paperDollServer.GetPaperDollData` `[V]`
             //
             // `None` means no DNA, which means no avatar is rendered --
             // the window survives, because `PreviewCharacter` runs under
@@ -1188,12 +1185,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // line numbers in this comment come from there and not from
             // uncompyle6's reconstructed output, which renumbers):
             //
-            // ```text
-            //  102  15 LOAD_ATTR     shipJumpClones
-            //  102  18 UNARY_NOT                      # <- truthiness, not `is None`
-            //  105  64 CALL_FUNCTION                  # GetShipCloneState()
-            //  105  70 STORE_ATTR    shipJumpClones   # <- fed straight from the call
-            // ```
+            // The compiled form (`[V]`): line 102 tests the `shipJumpClones`
+            // attribute by truthiness, not against `None`; line 105 calls
+            // `GetShipCloneState()` and stores the result straight into the
+            // attribute.
             //
             // Nothing sits between the `CALL_FUNCTION` and the
             // `STORE_ATTR`, so the store **completes**. That makes this a
@@ -1345,7 +1340,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // The jump-fatigue timers, and a **3-tuple that is splatted
         // before anything is tested**:
         //
-        //     reg.OnJumpTimersUpdated(doAlert=False, *reg.crimewatchSvc.GetJumpTimers())
+        // `OnJumpTimersUpdated` is called with `doAlert=False` and the three
+        // elements of `crimewatchSvc.GetJumpTimers()` splatted in `[V]`
         //
         // into `OnJumpTimersUpdated(self, jumpActivation, jumpFatigue,
         // lastUpdated, doAlert=False)`. The client said so in as many
@@ -1407,9 +1403,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // One trap that is not in this file: straight after the calls,
         // `__RefreshStandings` does
         //
-        // the faction loop, which looks the character's race up in
-        // `factionByRace` by bare subscript when its own faction is missing
-        // from the standings
+        // the faction loop: for each faction missing from the standings it
+        // compares against `factionByRace[session.raceID]`, a bare subscript
         //
         // -- a **bare subscript** on `factionByRace`, which has exactly
         // four keys (raceCaldari=1, raceMinmatar=2, raceAmarr=4,
@@ -1537,11 +1532,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // (`GetDefaultPanelID` falls back to `PANEL_HOME_STATION`), so it
         // is not an optional corner of the window.
         //
-        //     data = reg.remote.get_home_station()
-        //     reg._home_station = Station(station_id=data.id,
-        //                                  type_id=data.type_id,
-        //                                  solar_system_id=data.solar_system_id,
-        //                                  is_fallback=data.is_fallback)
+        // the client fetches `get_home_station()` and builds a `Station` from
+        // its `id`, `type_id`, `solar_system_id` and `is_fallback` `[V]`
         //
         // Four attributes, read unconditionally -- there is no "no home
         // station" branch, and `_UpdateHomeStationText` goes on to read

@@ -223,18 +223,10 @@ impl MachoPacket {
     /// Read off that method's bytecode, because every field it does *not* copy
     /// is as load-bearing as the ones it does:
     ///
-    /// ```text
-    /// theResponse.source         = self.destination   # NOT "our node address"
-    /// theResponse.destination    = self.source
-    /// theResponse.userID         = self.userID
-    /// theResponse.contextKey     = None
-    /// theResponse.trace_id       = self.trace_id
-    /// theResponse.parent_span_id = None
-    /// theResponse.ingress_id     = self.ingress_id
-    /// theResponse.sampled        = self.sampled
-    /// theResponse.sample_rate    = self.sample_rate
-    /// theResponse.cut_parent     = None
-    /// ```
+    /// The response's source is the request's destination and its
+    /// destination is the request's source. It copies the user id, trace id,
+    /// ingress id, sampled flag and sample rate from the request, and sets
+    /// the context key, parent span id and cut-parent flag to `None`.
     ///
     /// `journeyID` is not copied either, so it stays unset.
     ///

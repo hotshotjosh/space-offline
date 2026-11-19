@@ -726,9 +726,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             // `planetSvc.GetColonyForCharacter` unpacks **two** values:
             //
-            // ```text
-            //     pins, links = planet.GetFullNetworkForOwner(planetID, ownerID)
-            // ```
+            // `pins, links` are unpacked from
+            // `planet.GetFullNetworkForOwner(planetID, ownerID)` `[V]`,
             //
             // so arity is not negotiable, and both halves are iterated. The
             // links are bare `[endpoint1, endpoint2]` pairs here rather than

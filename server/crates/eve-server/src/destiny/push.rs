@@ -570,10 +570,8 @@ impl crate::notify::Push for BallsRemoved {
 ///
 /// And nine is what the client itself passes, at `spaceMgr.py:268` **[V]**:
 ///
-/// ```text
-/// self.FxSequencer.OnSpecialFX(ball.id, None, None, None, None,
-///                              'effects.Warping', 0, 1, 0)
-/// ```
+/// `spaceMgr.py:268` calls `FxSequencer.OnSpecialFX` with the ball id,
+/// four `None`s, the effect name `effects.Warping`, and the numbers 0, 1, 0.
 ///
 /// which it does when a ball arrives **already in** `DSTBALL_WARP` and it is
 /// the player's own ship -- the reconnect-into-warp path. That is the same

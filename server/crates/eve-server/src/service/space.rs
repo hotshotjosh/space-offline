@@ -339,10 +339,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // The shape is not negotiable, because the caller destructures it
         // immediately and to three levels:
         //
-        //     myCombatTimers, myEngagements, flaggedCharacters, _ = GetClientStates()
-        //     weaponTimerState, pvpTimerState, npcTimerState, \
-        //         criminalTimerState, disapprovalTimerState = myCombatTimers
-        //     criminals, suspects = flaggedCharacters
+        // `[V]` `GetClientStates()` is unpacked into combat timers,
+        // engagements, flagged characters and one more; the combat timers into
+        // five timer states (weapon, PvP, NPC, criminal, disapproval); and the
+        // flagged characters into criminals and suspects.
         //
         // and each of the five timer states is further unpacked into
         // `(state, expiry)`. A peaceful capsuleer is all five timers

@@ -107,14 +107,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // the `guard` column of `findings/client-calls.tsv` undercounts
             // compound conditions and cannot be trusted for this):
             //
-            // ```text
-            //  18 LOAD_ATTR     stationCountCache
-            //  21 LOAD_CONST    None
-            //  24 COMPARE_OP    8            # `is`
-            //  27 POP_JUMP_IF_FALSE 57
-            //  45 CALL_FUNCTION 0             # GetStationCount()
-            //  51 STORE_ATTR    stationCountCache
-            // ```
+            // The compiled form of each (`[V]`) tests the cache attribute against
+            // `None`, calls `GetStationCount()` and stores the result in the
+            // attribute (eleven instructions in all).
             //
             // The `STORE_ATTR` is fed straight from the call, with no
             // comprehension in between, so with the `map` service routable

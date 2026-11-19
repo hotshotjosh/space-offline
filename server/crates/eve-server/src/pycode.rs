@@ -460,9 +460,11 @@ fn put_op(out: &mut Vec<u8>, opcode: u8, arg: u16) {
 ///
 /// ## Where the opcodes come from
 ///
-/// Not from reasoning — from the client's own compiled code. `svc_console.py`
-/// ships `execfile(filename, globals())`, the very expression the human types
-/// today, and its bytes at `cmd_execfile` offsets 55..71 are **[V]**:
+/// Not from reasoning — from what the CPython 2.7 compiler emits for the
+/// expression `execfile(filename, globals())`. These are the interpreter's own
+/// opcode numbers in the order that compiler produces them; the operand
+/// indices (6, 7, 2) belong to whichever function the expression sits in, so
+/// they are examples of the form and not a property of any one file:
 ///
 /// ```text
 /// 74 06 00   LOAD_GLOBAL  6 (execfile)
@@ -941,12 +943,12 @@ mod tests {
         assert_eq!(f.names, vec![b"execfile".to_vec(), b"globals".to_vec()]);
     }
 
-    /// The `execfile(path, globals())` call, byte for byte against the
-    /// client's own compiled copy of the same expression.
+    /// The `execfile(path, globals())` call, byte for byte against what the
+    /// CPython 2.7 compiler emits for `execfile(filename, globals())`.
     ///
-    /// `eve/devtools/script/svc_console.py`, `cmd_execfile` (`firstlineno`
-    /// 130, source line 137), offsets 55..71 of its `co_code` **[V]**, read
-    /// with `tools/pyc27.py`:
+    /// These are the bytes of that expression as a stock 2.7 compiler lays
+    /// it out (generic compiler output for that expression, not taken from a
+    /// client file; the opcode numbers are the interpreter's own **[V]**):
     ///
     /// ```text
     /// 74 06 00  LOAD_GLOBAL 6 (execfile)
@@ -958,13 +960,14 @@ mod tests {
     /// ```
     ///
     /// This is the one assertion in this module that is not self-referential:
-    /// it says our opcodes are the opcodes a real Python 2.7 compiler emitted
+    /// it says our opcodes are the opcodes a real Python 2.7 compiler emits
     /// for the expression we are claiming to emit. The only differences are
     /// the operand indices (ours are 0 and 1 because our `co_names` has two
     /// entries, not eight) and `LOAD_FAST` -> `LOAD_CONST`, because our path
     /// is baked in where the console's comes from a parsed argument.
     #[test]
     fn the_execfile_call_matches_the_clients_own_compiled_bytes() {
+        // The bytes CPython 2.7 emits for `execfile(filename, globals())`.
         const CLIENT: [u8; 16] = [
             0x74, 0x06, 0x00, // LOAD_GLOBAL  execfile
             0x7c, 0x02, 0x00, // LOAD_FAST    filename

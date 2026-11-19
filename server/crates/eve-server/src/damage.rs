@@ -231,13 +231,11 @@ impl Profile {
 
 /// The client's shield curve, `godma.GetChargeValue:2413-2422` `[V]` (§3.2):
 ///
-/// ```text
-/// 2414  if Ec == 0: return 0
-/// 2418  sq = math.sqrt(max(oldVal / Ec, 0))
-/// 2420  timePassed = min(oldTime - newTime, 0) / float(const.dgmTauConstant)
-/// 2421  exp = math.exp(timePassed / tau)
-/// 2422  return (1.0 + (sq - 1.0) * exp) ** 2 * Ec
-/// ```
+/// For a zero capacity the answer is 0. Otherwise (lines 2414-2422) the
+/// square root of the old value over the capacity (floored at 0) is `sq`,
+/// the time passed is the elapsed time (capped at 0) over
+/// `dgmTauConstant`, and the new value is `(1 + (sq - 1) *
+/// exp(timePassed / tau))^2` times the capacity.
 ///
 /// with one addition: a non-positive `tau` returns the value unchanged. That is
 /// the bars' own guard (`if tau > 0`, `damageStateValue.py:14`) and, on the

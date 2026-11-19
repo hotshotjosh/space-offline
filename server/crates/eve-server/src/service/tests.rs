@@ -3520,10 +3520,8 @@ fn the_answers_that_would_live_lock_the_client() {
         .unwrap_or_else(|e| panic!("{service}.{method}: {e}"))
     };
 
-    // The caller is
-    // fills its cache from the remote rows as a key/value dict when the
-    // cache is `None`
-    // so None throws inside the comprehension, the assignment never
+    // The caller fills its cache from the remote rows as a key/value dict
+    // when the cache is `None`, so None throws inside the comprehension, the assignment never
     // happens, and the `is None` guard sends the next read back out to
     // us. Opening the wallet made that a tight loop.
     for method in [

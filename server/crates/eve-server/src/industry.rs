@@ -1015,9 +1015,9 @@ pub const DISTANCE_SKILL_FOR_ACTIVITY: [(i64, i64); 6] = [
 /// on EvEJS's word. **The module is in the bundle.** Its whole body is four
 /// constants, and `tools/dis.py` reads them directly:
 ///
-/// A job whose status is installed and whose end date has passed is
-/// ready, and so is a paused job whose pause date is later than its end
-/// date; every other job shows its stored status.
+/// `MARKET_SECURITY_TAX_RATE` 0.05, `NPC_BOUNTY_SECURITY_TAX_RATE` 0.2,
+/// `INDUSTRY_SECURITY_TAX_RATE` 0.05 and `AGENT_MISSION_SECURITY_TAX_RATE`
+/// 0.2 (`const.pyc:3,5,7,9`).
 ///
 /// EvEJS's value was right; the belief that no artefact existed was not. This
 /// is exactly the shape `docs/evejs/evejs-surprises.md` §5.2 names as rule zero --

@@ -528,8 +528,6 @@ impl Table {
 
 /// `docking.GetUndockCategoryByType`: the ship's size class.
 ///
-/// CCP's body is exactly
-///
 /// The class is the one mapped from the ship's group; a missing key or
 /// an unknown type gives the default class `[V]`.
 ///
@@ -577,8 +575,6 @@ pub fn undock_directions(table: &Table, station_type_id: i64) -> Option<&[Locato
 
 /// `docking.GetUndockDirection`: one mouth for one ship.
 ///
-/// CCP's body, with `random.choice` replaced by `pick`:
-///
 /// It picks randomly from the directions listed for the ship's
 /// undock class; with no entry for that class it picks from the
 /// `None` bucket, or from the default direction when there is none
@@ -618,9 +614,7 @@ pub fn undock_direction<'t>(
 
 /// `docking.GetUndockVector`: the model-space mouth, placed in the world.
 ///
-/// CCP's body, with the ballpark lookups replaced by arguments:
-///
-/// The mouth's position and direction come from the ball type and the
+/// Ballpark lookups are replaced by arguments here. The mouth's position and direction come from the ball type and the
 /// station's undock direction; when the item has a `dunRotation` slim
 /// field, it is converted to radians and both vectors are rotated by it.
 /// The position is then offset by the ball's own coordinates, the

@@ -2127,8 +2127,8 @@ fn the_real_clients_ping_is_answered_with_its_own_times_plus_ours() {
     assert_eq!(ticks / 10_000_000 - 11_644_473_600, 1_792_405_830);
 
     // The order machoNet.Ping requires, unconditionally:
-    //     server1 = labels.index('proxy::writing')
-    //     server2 = labels.index('proxy::handle_message', server1)
+    // it takes the position of `proxy::writing` and then of
+    // `proxy::handle_message` searching from there. (`[V]`)
     // Answering with a single 'proxy::turnaround' made the client raise
     // ValueError: 'proxy::writing' is not in list.
     let labels: Vec<String> = times

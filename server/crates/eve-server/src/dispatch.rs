@@ -1081,10 +1081,9 @@ impl GpsSession {
     /// **Which labels, and in which order, is not a free choice.**
     /// `MachoNetService.Ping` ends with, unconditionally:
     ///
-    /// ```text
-    /// server1 = [p[0].strip() for p in prepared].index('proxy::writing')
-    /// server2 = [p[0].strip() for p in prepared].index('proxy::handle_message', server1)
-    /// ```
+    /// it takes the position of the label `proxy::writing` in the prepared
+    /// list, and then the position of `proxy::handle_message` searching from
+    /// there; both lookups raise when the label is missing `[V]`.
     ///
     /// so `proxy::writing` must be present and `proxy::handle_message` must
     /// follow it. We first answered with a single `proxy::turnaround`, and the

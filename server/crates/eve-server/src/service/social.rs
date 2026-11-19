@@ -136,15 +136,15 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // **A `CRowset`, and the family is forced, not chosen.** The
         // caller is one line:
         //
-        //     reg.onlineStatus = sm.RemoteSvc(
-        //         'onlineStatus').GetInitialState().Index('contactID')
+        // the client stores `onlineStatus.GetInitialState().Index('contactID')`
+        // `[V]`
         //
         // so `.Index` is called unconditionally -- `None` was an
         // `AttributeError` -- and the index column must exist. What picks
         // the family is what happens *later*:
         //
-        //     reg.onlineStatus[charID] = blue.DBRow(
-        //         reg.onlineStatus.header, [charID, True])
+        // it later stores a `blue.DBRow` built from the rowset's own header and
+        // the pair of character id and `True` under the character id `[V]`
         //
         // `blue.DBRow` takes a **`DBRowDescriptor`**, not a list of
         // names. A `util.Rowset`'s `.header` is a plain list of strings,
@@ -350,7 +350,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             //
             // `petitionWindow.py:232` (`[V]`), `InputPetition`: it asks
             // `MayPetition` for the category and character; a negative answer
-            // shows a dialog for -1 (and others for the other negative codes) and
+            // shows a dialog for -1, -2, -3, -4, -6 and -7 (none for -5) and
             // returns, and otherwise the subject/body form and Submit button are
             // built.
             //

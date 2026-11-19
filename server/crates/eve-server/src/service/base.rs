@@ -387,8 +387,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // Achievements. A dict with **exactly these two keys**, both
         // subscripted immediately:
         //
-        //     reg.completedDict = info['completedDict']
-        //     reg.PopulateEventHandler(info['eventDict'])
+        // the client stores `info['completedDict']` and passes
+        // `info['eventDict']` to `PopulateEventHandler` `[V]`
         //
         // `completedDict` is `{taskID: timestamp}` and `eventDict` is
         // `{eventName: count}`; both are iterated, so `{}` each.

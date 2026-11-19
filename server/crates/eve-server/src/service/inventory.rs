@@ -365,8 +365,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // is and never asks us. For the hangar it does not, and
             // `_SetItemData` has to go and get it:
             //
-            // it asks its moniker for the inventory's own item and copies the
-            // item id and type id from the result `[V]`
+            // when it has no item yet and has a moniker, it asks the moniker for
+            // the inventory's own item and copies the item id and type id from
+            // the result `[V]`
             //
             // There is no guard on that. Answering `None` made
             // `reg._item.itemID` an `AttributeError`, which the `itemID`

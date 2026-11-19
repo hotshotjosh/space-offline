@@ -53,11 +53,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // then ends on a cosmetic one-liner, verified from the bytecode
         // rather than the decompiler:
         //
-        //     363: LOAD_FAST self; LOAD_ATTR fastCheckoutService
-        //          LOAD_ATTR is_china_funnel; CALL_FUNCTION
-        //          POP_JUMP_IF_FALSE (to 341)
-        //     364: LOAD_CONST (2); STORE_ATTR (top)   # plexContainer.top = 2
-        //     >>341 LOAD_CONST (None); RETURN_VALUE
+        // The compiled form of its last statement: when `is_china_funnel()` on
+        // the fast-checkout service is true, it sets `plexContainer.top` to 2
+        // (line 364); otherwise it returns `None`.
         //
         // so the throw is on the **last statement of the method**, and it
         // still aborts `_AddPlex` -> `CreateHeaderLayout` ->
@@ -93,16 +91,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                 // This is CCP's flag for the storefront that cannot take
                 // card details in the client. `buy_plex`:
                 //
-                //     151:  if self.is_china_funnel():
-                //     152:      sm.GetService('vgsService').OpenStore(
-                //                    categoryTag=CATEGORYTAG_PLEX)
-                //     153:      return
-                //     155:  is_fast_checkout_enabled = \
-                //               self.is_fast_checkout_enabled()
-                //     158:  if is_fast_checkout_enabled:
-                //     159:      self.buy_plex_via_fast_checkout(log_context)
-                //     161:  else:
-                //               self.buy_plex_online(log_context=log_context)
+                // `buy_plex` (lines 151-161, `[V]`): when `is_china_funnel()` is true it
+                // opens the VGS store for the PLEX category tag and returns (152-153);
+                // otherwise it reads `is_fast_checkout_enabled()` and buys via fast
+                // checkout when true (159) or online when false (161).
                 //
                 // and `buy_plex_online` ends in `blue.os.ShellExecute(...)`
                 // (line 213) or `webbrowser.open_new(...)` (line 215) --
@@ -135,12 +127,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                 // Not `None`, because of the `is None` cache at line 92.
                 // Falsy, because its one consumer tests truthiness:
                 //
-                //     224: def _get_url_to_buy_plex_offer(self, offer_id,
-                //                                         origin, reason):
-                //     225:     fake_url = self._get_fake_buy_plex_offer_url()
-                //     226:     if fake_url:
-                //     227:         return fake_url
-                //     229:     ...build the real store URL...
+                // `_get_url_to_buy_plex_offer` (lines 224-229, `[V]`) returns the fake
+                // URL when `_get_fake_buy_plex_offer_url()` is truthy, and otherwise
+                // builds the real store URL.
                 //
                 // Empty is the honest answer -- this is a QA override and no
                 // live shard sets it -- and it costs nothing here, because a
@@ -212,8 +201,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             "IsFastCheckoutEnabledForUser" => Ok(PyValue::Bool(false)),
             // Fire-and-forget. `clear_fast_checkout_enabled` is
             //
-            //     60: self._is_fast_checkout_enabled = None
-            //     61: self.remote_service.ClearFastCheckoutCacheForUser()
+            // `clear_fast_checkout_enabled` (lines 60-61, `[V]`) resets the local
+            // flag to `None` and then calls `ClearFastCheckoutCacheForUser()`.
             //
             // and the return value is discarded, so `None` is the whole
             // answer. It is here anyway rather than left to
@@ -224,14 +213,10 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // The offer catalogue. **A falsy answer and a missing key are
             // two different disasters, and `{}` is both.**
             //
-            //     132: def _prime_offers_cache(self):
-            //     133:     if self.offers:
-            //     134:         return
-            //     136:     self.offers = self.remote_service.GetOffersForUser()
-            //     138:     for offer in self.offers['plex']:
-            //     139:         if any(x.endswith('1.0') for x in offer['tags']):
-            //     140:             self.plex_base_price = offer['price']
-            //     141:             self.plex_base_quantity = offer['baseQuantity']
+            // `_prime_offers_cache` (lines 132-141, `[V]`) returns when `offers` is
+            // truthy; otherwise it sets `offers` from `GetOffersForUser()` (136),
+            // walks `offers['plex']` (138) and, for an offer with a tag ending in
+            // `1.0` (139), keeps its price and base quantity (140-141).
             //
             // Line 133 is `if self.offers:`, not `is None`, so `{}`, `[]`,
             // `()` and `None` are all falsy and all re-issue the call on
@@ -260,14 +245,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // **A real purchase, so it refuses -- and refusing is also the
             // only answer that is not a lie.**
             //
-            //     264: def buy_plex_offer(self, log_context, offer, password):
-            //     267:     ret = self.remote_service.BuyOffer(
-            //                      offer=offer, password=password,
-            //                      purchaseTraceID=..., journeyID=...)
-            //     273: except UserError as e:
-            //     274:     self._log_plex_offer_purchase_error(
-            //                  log_context, offer.id, offer.quantity, e.msg)
-            //     275:     raise
+            // `buy_plex_offer` (lines 264-275, `[V]`) calls `BuyOffer` with the
+            // offer, password, trace id and journey id; on a `UserError` it logs the
+            // purchase error with the offer id, quantity and message and re-raises.
             //
             // We raise `UserError('OfferNotAvailable')` rather than return,
             // for two reasons. The message is the client's own vocabulary,

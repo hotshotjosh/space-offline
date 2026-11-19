@@ -94,10 +94,9 @@ fn to_pickle(v: &PyValue) -> Vec<u8> {
 ///
 /// `ObjectCall.CallDown` does
 ///
-/// ```text
-/// retval = self.ForwardCallDown(packet)
-/// retval.payload = self.FromPickle(retval.payload, packet.destination)
-/// ```
+/// `ObjectCall.CallDown` forwards the call down, then replaces the
+/// response payload with `FromPickle` of it, resolved against the
+/// packet's destination.
 ///
 /// and `FromPickle` is `blue.marshal.Load(thePickle, self.ParseObjectID)`. So
 /// the client hands the response payload straight to `marshal.Load`, which
@@ -141,7 +140,7 @@ pub fn pickled(v: &PyValue) -> PyValue {
 ///
 /// The client (`[V]`) calls `slash.SlashCmd('/')` inside a `try`; its
 /// handler takes the reason from `e.args[1]['reason']`, evaluates the
-/// text after the first `': '`, and the result becomes the command list,
+/// second `': '`-separated field of the text, and the result becomes the command list,
 /// which is not set on the normal return path.
 ///
 /// `cmds` is bound only inside the handler, so returning normally is an

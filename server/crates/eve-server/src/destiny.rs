@@ -639,18 +639,13 @@ impl Bootstrap {
 /// `eveInflight.damageStateValue.CalculateCurrentDamageStateValues(state, time)`
 /// is the only decoder **[V]**:
 ///
-/// ```text
-///  10  shieldValues = damageState[0]
-///  11  if isinstance(shieldValues, (list, tuple)):
-///  12      now = blue.os.GetSimTime()
-///  13      shieldHealth, tau = shieldValues[:2]        # SLICE+2, UNPACK_SEQUENCE 2
-///  14      if tau > 0:
-///  16          eToX = exp((time - now) / dogmaConst.dgmTauConstant / tau)
-///  17          shieldHealth = (1.0 + (sqrt(shieldHealth) - 1.0) * eToX) ** 2
-///  18      ret.append(shieldHealth)
-///  20  else: ret.append(None)
-///  21  ret = ret + list(damageState[-2:])
-/// ```
+/// Reading lines 10-21 (`[V]`): the decoder takes the shield slot; when
+/// it is a list or tuple it unpacks its first two elements as the health
+/// and tau (a slice, then a two-way unpack). With a positive tau it
+/// regenerates the health: with `x = exp((time - now) / dgmTauConstant /
+/// tau)`, the health becomes `(1 + (sqrt(health) - 1) * x)^2`. The result
+/// is appended; a non-sequence shield slot appends `None`. The last two
+/// elements of the state are then appended.
 ///
 /// So:
 ///
@@ -776,13 +771,9 @@ impl DamageState {
     /// The same decoder, `elapsed_ms` after the client stored the entry --
     /// lines 13-17 transcribed, the regeneration curve included:
     ///
-    /// ```text
-    /// 13  shieldHealth, tau = shieldValues[:2]
-    /// 14  if tau > 0:
-    /// 15      sq = sqrt(shieldHealth)
-    /// 16      eToX = exp((time - now) / dogmaConst.dgmTauConstant / tau)
-    /// 17      shieldHealth = (1.0 + (sq - 1.0) * eToX) ** 2
-    /// ```
+    /// Lines 13-17: the health and tau come from the first two elements; for
+    /// a positive tau the health becomes `(1 + (sqrt(health) - 1) * x)^2`
+    /// with `x = exp((time - now) / dgmTauConstant / tau)`.
     ///
     /// `(time - now) / dgmTauConstant` is `-elapsed_ms` **[V]**.
     #[cfg(test)]

@@ -63,14 +63,14 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         // whose entire state is two single-underscore attributes. The
         // module's own constants say what to send:
         //
-        //     ALWAYS_ENABLED  = AggressionSettings(0, None)
-        //     ALWAYS_DISABLED = AggressionSettings(None, 0)
+        // the module's constants are two settings objects: `ALWAYS_ENABLED`
+        // is `(0, None)` and `ALWAYS_DISABLED` is `(None, 0)` `[V]`
         //
         // and its own default picker, which ships in the client tree,
         // chooses between them:
         //
-        //     if not IsNPCCorporation(corpID): return ALWAYS_ENABLED
-        //     else:                            return ALWAYS_DISABLED
+        // its default picker gives `ALWAYS_ENABLED` for a corporation that is
+        // not an NPC corporation and `ALWAYS_DISABLED` for an NPC one `[V]`
         //
         // Our corp is an NPC corp, so we mirror that and send
         // `ALWAYS_DISABLED`. `None` would also survive this login --
@@ -224,15 +224,10 @@ fn npc_corp_registry(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // `findings/client-calls.tsv` (which undercounts, and is not
         // trustworthy for a decision like this):
         //
-        // ```text
-        //   3 LOAD_ATTR     titles
-        //   6 LOAD_CONST    None
-        //   9 COMPARE_OP    8            # `is`
-        //  12 POP_JUMP_IF_FALSE 146
-        //  27 CALL_FUNCTION 0             # GetCorpRegistry().GetTitles()
-        //  33 STORE_ATTR    titles        # <- completes
-        //  51 LOAD_ATTR     itervalues    # <- raises, two ops later
-        // ```
+        // The compiled form (`[V]`) tests the `titles` attribute against
+        // `None`, calls the registry's `GetTitles()` and stores the result in
+        // `titles` (this completes), and two operations later reads
+        // `itervalues` off it, which is where the error is raised.
         //
         // **Correction to the brief that opened this lane**, because it
         // changes which variant this is: the store at 33 is *not* inside
@@ -320,15 +315,11 @@ fn npc_corp_registry(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // is what every other corporation read goes through. Our `None`
         // broke the latch, not just the call:
         //
-        // ```text
-        //  58  if self.corporationByCorporationID is not None and corpid in ... and not new:
-        //  59      return self.corporationByCorporationID[corpid]
-        //  60  if corpid == session.corpid:
-        //  61      corporation = self.GetCorpRegistry().GetCorporation()
-        //  ...
-        //  83  self.corporationByCorporationID = IndexRowset(
-        //          corporation.header, [corporation.line], 'corporationID')
-        // ```
+        // Lines 58-83 (`[V]`): the getter returns the cached entry when the
+        // cache exists, holds the corporation id and the call is not forced;
+        // for the session's own corporation it fetches `GetCorporation()` from
+        // the registry and, at line 83, builds the cache as an `IndexRowset`
+        // from the corporation's header and line, keyed by `corporationID`.
         //
         // `LOAD_ATTR header` at `:83` raises **inside** the statement that
         // would have assigned the cache, so `corporationByCorporationID`

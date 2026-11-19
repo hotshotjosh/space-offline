@@ -116,8 +116,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                     // a value" default is wrong for it.**
                     //
                     // `FetchRemoteCommandList` (`[V]`) calls `slash.SlashCmd('/')` in a
-                    // `try`; the handler takes `e.args[1]['reason']`, evaluates the text
-                    // after the first `': '`, sorts it, and the result becomes the
+                    // `try`; the handler takes `e.args[1]['reason']`, evaluates the
+                    // second `': '`-separated field of the text, sorts it, and the result becomes the
                     // remote command list.
                     //
                     // `cmds` is bound only inside the handler. Verified
