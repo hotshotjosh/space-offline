@@ -1192,14 +1192,14 @@ pub(super) fn warp_to_point(
     // 644-653 as the report records it). The pilot's own client flies the
     // warp and stops by itself at its own arrival; a `SetBallPosition` +
     // `SetBallVelocity 0` + `Stop` sent to it is a snap of its own ship on a
-    // predicted timer. It gets only the massive demotion -- the landing is
-    // where a ball that is massive by default would otherwise collide with
-    // what it lands among. Observers hold a ball the server integrates, so
-    // they get the full reconciliation.
-    let pilot_batch = vec![crate::destiny::Action::SetBallMassive {
-        ball: here.ship_id,
-        massive: false,
-    }];
+    // predicted timer, so a human pilot is sent nothing. Observers hold a
+    // ball the server integrates, so they get the full reconciliation.
+    //
+    // **No `SetBallMassive` in either**:
+    // a ship is massive in normal flight, the client's `ActivateWarp` clears
+    // the flag and the arrival sets it again (`docs/re/warp.md` §5.2, §7.1,
+    // `0x18004309b`) **[V]**, and the server now collides ships with the same
+    // physics (`crate::collision`), so there is no demotion to send.
     let observer_batch = vec![
         crate::destiny::Action::SetBallPosition {
             ball: here.ship_id,
@@ -1210,23 +1210,11 @@ pub(super) fn warp_to_point(
             velocity: [0.0; 3],
         },
         crate::destiny::Action::Stop { ball: here.ship_id },
-        // The client's arrival sets `isMassive` again on its copy of the ball
-        // (`docs/re/warp.md` §7.1, `0x18004309b`), so an observer's warper
-        // lands massive and collides with what it lands among unless it is
-        // demoted again, as the pilot's batch does. After the `Stop`, which
-        // is what lets the arrival finish first.
-        crate::destiny::Action::SetBallMassive {
-            ball: here.ship_id,
-            massive: false,
-        },
     ];
     // Stamp zero, and it never reaches the wire: `take_due` restamps every
     // batch it releases. Passing the current stamp instead would be a value
     // that looks meaningful and is not, which is worse.
     let after = std::time::Duration::from_secs_f64(flight);
-    if let Some(update) = crate::destiny::ActionUpdate::new(vec![actor], 0, pilot_batch) {
-        reg.schedule(after, update);
-    }
     // **A bot is not a client**: it has no simulation to fly its own warp and
     // learns that it landed from this batch (`eve-bot` waits for the `Stop`),
     // so a bot pilot is in the full batch's audience like everyone else.
@@ -1323,9 +1311,8 @@ pub(super) fn emergency_warp(reg: &mut Registry, actor: i64, now: crate::damage:
 
 /// Whether a scheduled push is the arrival reconciliation of `ship`'s warp:
 /// one `DoDestinyUpdate` holding exactly `SetBallPosition`,
-/// `SetBallVelocity`, `Stop`, `SetBallMassive` for that ball (the observers' batch
-/// `warp_to_point` builds), or exactly `SetBallMassive` for it (the
-/// pilot's).
+/// `SetBallVelocity`, `Stop` for that ball (the observers' batch
+/// `warp_to_point` builds).
 pub(crate) fn is_warp_settle(p: &dyn crate::notify::Push, ship: i64) -> bool {
     p.cancel_tag() == Some(crate::notify::CancelTag::WarpSettle { ball: ship })
 }
@@ -1353,15 +1340,7 @@ pub(crate) fn is_warp_settle_slow(p: &dyn crate::notify::Push, ship: i64) -> boo
                 crate::pyutil::as_bytes(n) == Some(*want) && a.first() == Some(&PyValue::Int(ship))
             })
     };
-    is(
-        entries,
-        &[
-            b"SetBallPosition",
-            b"SetBallVelocity",
-            b"Stop",
-            b"SetBallMassive",
-        ],
-    ) || is(entries, &[b"SetBallMassive"])
+    is(entries, &[b"SetBallPosition", b"SetBallVelocity", b"Stop"])
 }
 
 /// Apply one movement command and push the action that carries it out.
@@ -2609,9 +2588,9 @@ mod tests {
 
         assert_eq!(
             reg.scheduled_count(),
-            2,
-            "the arrival is on the clock, not in this turn's drain: one batch \
-             for the pilot, one for the observer"
+            1,
+            "the arrival is on the clock, not in this turn's drain: one batch, \
+             for the observer; the pilot's own client lands itself"
         );
         let immediate = reg.take_pending();
         assert!(!immediate.is_empty(), "the warp itself still goes out now");
@@ -2625,23 +2604,13 @@ mod tests {
 
         // And at the far end, the three actions in order.
         let due = reg.take_due(now + std::time::Duration::from_secs(3600));
-        assert_eq!(due.len(), 2, "one batch per audience");
+        assert_eq!(due.len(), 1, "one batch, for the observer");
         // **Split by audience** (CAPTURE-UNDOCK): the pilot's own client
-        // flies and stops its warp, so it is never snapped; it gets only the
-        // massive demotion.
-        let pilot = due
-            .iter()
-            .find(|p| p.audience() == Some(vec![ALICE]))
-            .expect("a batch for the pilot alone");
-        let (_, pilot_args) = pilot.to_push();
-        assert_eq!(
-            action_args(&pilot_args, b"SetBallMassive").expect("the demotion"),
-            vec![PyValue::Int(ALICE_SHIP), PyValue::Int(0)]
-        );
+        // flies and stops its warp, so it is never snapped, and it is sent no
+        // massive demotion either: a ship is massive outside a warp.
         assert!(
-            action_args(&pilot_args, b"SetBallPosition").is_none()
-                && action_args(&pilot_args, b"Stop").is_none(),
-            "the pilot is never snapped to the predicted arrival"
+            due.iter().all(|p| p.audience() != Some(vec![ALICE])),
+            "the pilot is sent nothing at the arrival"
         );
         let observers = due
             .iter()
@@ -2668,11 +2637,9 @@ mod tests {
                 b"SetBallPosition".to_vec(),
                 b"SetBallVelocity".to_vec(),
                 b"Stop".to_vec(),
-                b"SetBallMassive".to_vec()
             ],
             "position, then velocity, then stop -- stopping first would park \
-             the ball before the position landed -- then the demotion the \
-             client's arrival undid"
+             the ball before the position landed"
         );
         let settle = action_args(&args, b"SetBallPosition").expect("a position");
         // **Against the destination the server holds**, not against a second
@@ -2718,7 +2685,7 @@ mod tests {
     }
 
     /// A bot pilot has no simulation of its own, so the arrival batch names
-    /// it too (CAPTURE-UNDOCK); a human alone gets only the demotion.
+    /// it too (CAPTURE-UNDOCK); a human is sent nothing.
     #[test]
     fn a_bot_pilot_is_still_sent_the_arrival_batch() {
         const ALICE: i64 = 1_000_001;
@@ -2760,7 +2727,8 @@ mod tests {
             due.iter()
                 .any(|p| action_args(&p.to_push().1, name).is_some())
         };
-        assert!(has(b"SetBallMassive") && has(b"SetBallPosition") && has(b"Stop"));
+        assert!(has(b"SetBallPosition") && has(b"Stop"));
+        assert!(!has(b"SetBallMassive"), "a ship is massive outside a warp");
     }
 
     /// **A follow or orbit from a shut throttle opens it; one from a set
@@ -2860,18 +2828,28 @@ mod tests {
     fn a_follow_after_landing_cancels_the_arrival_batch() {
         const ALICE: i64 = 1_000_001;
         let mut reg = Registry::new(SandboxConfig {
-            characters: vec![crate::model::Character {
-                character_id: ALICE,
-                name: "Alice".to_owned(),
-                ship_id: 100_000_001,
-                ..crate::model::Character::default()
-            }],
+            characters: vec![
+                crate::model::Character {
+                    character_id: ALICE,
+                    name: "Alice".to_owned(),
+                    ship_id: 100_000_001,
+                    ..crate::model::Character::default()
+                },
+                // An observer: a human pilot is sent no arrival batch itself.
+                crate::model::Character {
+                    character_id: 1_000_002,
+                    name: "Bob".to_owned(),
+                    ship_id: 100_000_002,
+                    ..crate::model::Character::default()
+                },
+            ],
             celestials: crate::celestial::Catalogue::parse(
                 "planet\t40000001\t11\t3000000.0\t598391482800.0\t0.0\t0.0",
             ),
             ..SandboxConfig::default()
         });
         crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+        crate::destiny::on_ballpark_bind(&mut reg, Some(1_000_002));
         let _ = reg.take_pending();
         let planet = reg
             .celestials()
@@ -2919,18 +2897,28 @@ mod tests {
         const ALICE: i64 = 1_000_001;
         const ALICE_SHIP: i64 = 100_000_001;
         let mut reg = Registry::new(SandboxConfig {
-            characters: vec![crate::model::Character {
-                character_id: ALICE,
-                name: "Alice".to_owned(),
-                ship_id: ALICE_SHIP,
-                ..crate::model::Character::default()
-            }],
+            characters: vec![
+                crate::model::Character {
+                    character_id: ALICE,
+                    name: "Alice".to_owned(),
+                    ship_id: ALICE_SHIP,
+                    ..crate::model::Character::default()
+                },
+                // An observer: a human pilot is sent no arrival batch itself.
+                crate::model::Character {
+                    character_id: 1_000_002,
+                    name: "Bob".to_owned(),
+                    ship_id: 100_000_002,
+                    ..crate::model::Character::default()
+                },
+            ],
             celestials: crate::celestial::Catalogue::parse(
                 "planet\t40000001\t11\t3000000.0\t598391482800.0\t0.0\t0.0",
             ),
             ..SandboxConfig::default()
         });
         crate::destiny::on_ballpark_bind(&mut reg, Some(ALICE));
+        crate::destiny::on_ballpark_bind(&mut reg, Some(1_000_002));
         let _ = reg.take_pending();
         let ids: Vec<i64> = reg.celestials().served().map(|c| c.id).collect();
         assert!(!ids.is_empty(), "a planet");
@@ -3480,10 +3468,6 @@ mod cancel_tag_tests {
                 velocity: [0.0; 3],
             },
             Action::Stop { ball },
-            Action::SetBallMassive {
-                ball,
-                massive: false,
-            },
         ]
     }
 
@@ -3502,7 +3486,8 @@ mod cancel_tag_tests {
         let mut mixed = observers(10);
         mixed[2] = Action::Stop { ball: 11 };
         let mut pushes = vec![
-            // The observers' batch and the pilot's lone massive flag.
+            // The observers' batch, and a lone massive flag (a kamikaze
+            // fighter's, not a warp's).
             batch(observers(10)),
             batch(vec![Action::SetBallMassive {
                 ball: 10,

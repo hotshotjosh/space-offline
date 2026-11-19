@@ -36,17 +36,41 @@ pub const FLAGS_FREE_BALL: u8 = 0x1f;
 
 /// Flags bit 2, `isMassive`: the client's native collides massive balls.
 ///
-/// **The client writes it set by default** (`0x1f`), and TQ clears it on
-/// ships (CAPTURE-UNDOCK, EVEJS-MOTION: EvEJS sends a ship as `0x01`/`0x09`
-/// and `SetBallMassive(ship, 0)` at undock and at every warp landing). The
-/// owner's capture shows the ego and every bot Hulk as `0x1f` beside a
-/// station and statics of `0x1e` with mass 0.0: a massive ship at a massive
-/// mass-0 station mouth. `[A]` that this is the cause of the 15 km/s and the
-/// bouncing; falsified by the symptoms surviving this change.
+/// **A ship is massive in normal flight** (bump lane, `bump-spec.md` §1).
+/// The client's native runs the per-ball collision query only for a massive
+/// ball (`Ballpark::Evolve` `0x180035737`) and takes a candidate only when it
+/// is massive too (`0x180089d7c-0x180089d96`) **[V]**; `ActivateWarp` clears
+/// the flag and the warp's arrival sets it to 1 again (`0x18004309b`,
+/// `docs/re/warp.md` §5.2, §7.1), so a flag the engine restores after a warp
+/// is the flag's normal state **[V]**; and CCP's own fighter behaviour calls
+/// `SetBallMassive(fighter, False)` only when a fighter turns into a missile
+/// (`behaviors/actions/combat.pyc:237`) **[V]**.
+///
+/// **What this comment used to say was wrong.** It read the CAPTURE-UNDOCK
+/// capture (a ship `0x1f` beside a station `0x1e`) as TQ clearing the flag on
+/// ships, and cited EvEJS (`0x01`/`0x09` and `SetBallMassive(ship, 0)` at
+/// undock). That capture is of **our server's** traffic, when our default
+/// was `0x1f` (`docs/lanes/capture-undock.md`): it shows what we sent, not
+/// what TQ sends, and EvEJS has no collision by design and never checked the
+/// claim against TQ. Neither is evidence about TQ.
+///
+/// The fling the capture came with is explained by the station, not the
+/// ship: a massive ship 5,447 m inside a massive station sphere of 33,413 m
+/// takes `Potential`'s overlap branch and is pushed out in one tick
+/// **[I]** (the code path is `[V]`; that it was the observed fling is
+/// inferred). Stations, gates and structures therefore stay non-massive
+/// ([`FLAGS_STATIC_BALL`]) until they carry collision geometry.
+///
+/// The server collides ships with the same physics (`crate::collision`); a
+/// massive ship whose server motion ignored bumps would desync its observers
+/// on the first contact, so the two land together.
 pub const FLAG_IS_MASSIVE: u8 = 0x04;
 
-/// A ship's ball: the client's default with [`FLAG_IS_MASSIVE`] cleared.
-pub const FLAGS_SHIP_BALL: u8 = FLAGS_FREE_BALL & !FLAG_IS_MASSIVE;
+/// A ship's ball: the client's default, `isMassive` set (`0x1f`). Drones,
+/// fighters, NPCs, capsules and pilotless hulls take it too; a ball in WARP
+/// has the bit cleared on the wire (below). `[A]` for drones: falsified by TQ
+/// footage of drones passing through each other.
+pub const FLAGS_SHIP_BALL: u8 = FLAGS_FREE_BALL;
 
 /// A static ball (station, planet, rock, wreck, structure): not free, and
 /// not massive.

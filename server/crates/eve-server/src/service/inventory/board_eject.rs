@@ -644,7 +644,7 @@ mod tests {
             .find(|b| b.ball_id == ALICE_SHIP)
             .expect("the hull is in the scene");
         assert_eq!(ball.flags, pilotless::FLAGS_PILOTLESS);
-        assert_eq!(ball.flags, 0x13);
+        assert_eq!(ball.flags, 0x17);
         let pod = scene.park.balls.iter().find(|b| b.ball_id == ALICE_POD);
         assert_eq!(pod.map(|b| b.flags), Some(crate::destiny::FLAGS_SHIP_BALL));
         let slim = scene

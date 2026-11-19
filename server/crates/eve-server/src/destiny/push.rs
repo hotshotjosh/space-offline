@@ -153,20 +153,17 @@ impl crate::notify::Push for ActionUpdate {
     }
 
     /// A warp's arrival reconciliation, read from the actions themselves:
-    /// `SetBallPosition`, `SetBallVelocity`, `Stop`, `SetBallMassive`, all on
-    /// one ball (the observers' batch `warp_to_point` builds), or a lone
-    /// `SetBallMassive` (the pilot's). Names the same batches as the old test
+    /// `SetBallPosition`, `SetBallVelocity`, `Stop`, all on one ball (the
+    /// observers' batch `warp_to_point` builds). Names the same batches as the old test
     /// on `to_push` (`service::space::is_warp_settle_slow`).
     fn cancel_tag(&self) -> Option<crate::notify::CancelTag> {
-        use super::Action::{SetBallMassive, SetBallPosition, SetBallVelocity, Stop};
+        use super::Action::{SetBallPosition, SetBallVelocity, Stop};
         let ball = match self.actions.as_slice() {
-            [SetBallMassive { ball, .. }] => *ball,
             [
                 SetBallPosition { ball, .. },
                 SetBallVelocity { ball: b2, .. },
                 Stop { ball: b3 },
-                SetBallMassive { ball: b4, .. },
-            ] if ball == b2 && ball == b3 && ball == b4 => *ball,
+            ] if ball == b2 && ball == b3 => *ball,
             _ => return None,
         };
         Some(crate::notify::CancelTag::WarpSettle { ball })

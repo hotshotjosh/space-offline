@@ -674,6 +674,24 @@ def eoci_main(EOCI_NAME):
                   ' STOP damping applies to this build stays unknown'
                   % text(exc))
 
+        # **Does the client run the iterative collision solver?** (bump lane,
+        # `bump-spec.md` 2.6.) `useIterativeCollision` /
+        # `collisionMaxIterations` select `Ballpark::CalculateCollisionResponses`
+        # instead of the per-ball `Potential` pass the server's
+        # `crate::collision` transcribes. `[A]` it is False; falsified by this
+        # line printing True, and then the iterative solver is the one to port.
+        # The check passes either way: it is a measurement.
+        try:
+            import destiny as _destiny
+            _st = _destiny.settings.Get()
+            check('the collision-solver settings are readable', True,
+                  'useIterativeCollision = %s, collisionMaxIterations = %s'
+                  % (text(_st.useIterativeCollision),
+                     text(getattr(_st, 'collisionMaxIterations', None))))
+        except Exception as exc:
+            check('the collision-solver settings are readable', False,
+                  'could not read them: %s' % text(exc))
+
         # **The ballpark's own simulation constants, read off the live
         # object.**
         #

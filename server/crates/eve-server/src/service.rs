@@ -1497,6 +1497,31 @@ impl Registry {
         })
     }
 
+    /// A mover and what the collision pass needs of the same ship
+    /// ([`crate::space_state::Solid`]): the hull its ball carries. A ship at
+    /// rest has the placeholder hull in its [`Self::mover`] (nothing needs
+    /// one to hold still), so its collision hull is the type's, without a
+    /// dogma sheet per idle ship; a ship under way has the mover's own.
+    fn mover_solid(
+        &self,
+        character_id: i64,
+    ) -> Option<(crate::space_state::Mover, crate::space_state::Solid)> {
+        let mover = self.mover(character_id)?;
+        let p = self.roster.get(character_id)?;
+        let hull = if p.motion.is_at_rest() {
+            let ship_type_id = self.pilot(character_id)?.ship_type_id;
+            *crate::destiny::hull::of_in(self.content(), ship_type_id)
+        } else {
+            mover.hull
+        };
+        let solid = crate::space_state::Solid {
+            character_id,
+            hull,
+            cloaked: crate::cloak::is_cloaked(self, p.ship_id),
+        };
+        Some((mover, solid))
+    }
+
     /// Where a ball is, for the few things that have to ask.
     pub fn ball_position(&self, ball_id: i64) -> Option<[f64; 3]> {
         self.ball_target(ball_id).map(|t| t.position)
@@ -1733,14 +1758,14 @@ impl Registry {
         // it on the client's tick grid rather than in character order (FX9,
         // `space_state::Roster::advance`).
         let here = self.roster.in_system(solar_system_id);
-        let serial = |reg: &Self| -> Vec<crate::space_state::Mover> {
+        let serial = |reg: &Self| -> Vec<(crate::space_state::Mover, crate::space_state::Solid)> {
             here.iter()
-                .filter_map(|p| reg.mover(p.character_id))
+                .filter_map(|p| reg.mover_solid(p.character_id))
                 .collect()
         };
-        let movers = if here.len() >= MOVERS_PAR_MIN && threads > 1 {
+        let pairs = if here.len() >= MOVERS_PAR_MIN && threads > 1 {
             match crate::par::par_map_with(threads, &here, MOVERS_PAR_MIN, |p| {
-                self.mover(p.character_id)
+                self.mover_solid(p.character_id)
             }) {
                 Ok(v) => v.into_iter().flatten().collect(),
                 Err(e) => {
@@ -1751,21 +1776,22 @@ impl Registry {
         } else {
             serial(self)
         };
+        let (movers, solids): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
         self.roster
-            .advance(&movers, crate::space_state::now_seconds());
+            .advance_with(&movers, &solids, crate::space_state::now_seconds(), threads);
     }
 
     /// The pre-PA-8b body, kept as the oracle of the golden test.
     #[cfg(test)]
     pub(crate) fn advance_system_legacy(&mut self, solar_system_id: i64) {
-        let movers: Vec<crate::space_state::Mover> = self
+        let (movers, solids): (Vec<_>, Vec<_>) = self
             .roster
             .in_system(solar_system_id)
             .iter()
-            .filter_map(|p| self.mover(p.character_id))
-            .collect();
+            .filter_map(|p| self.mover_solid(p.character_id))
+            .unzip();
         self.roster
-            .advance(&movers, crate::space_state::now_seconds());
+            .advance_with(&movers, &solids, crate::space_state::now_seconds(), 1);
     }
 
     /// Everything that has to outlive the process.

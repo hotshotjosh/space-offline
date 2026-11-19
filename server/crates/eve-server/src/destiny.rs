@@ -2540,16 +2540,14 @@ mod tests {
     /// The `0xff` is still the last byte, immediately after `allianceID` --
     /// which is what puts it *outside* the gated block rather than inside it,
     /// and that is the one thing about this byte we do know.
-    /// **CAPTURE-UNDOCK: no ship and no static is massive.** The owner's
-    /// capture held the ego and every Hulk as `0x1f` and the station and
-    /// statics as `0x1e` with mass 0.0 -- massive balls the client's native
-    /// collides. TQ's ships are non-massive (EvEJS: `0x01`/`0x09`).
+    /// **A ship is massive and a static ball is not** (bump lane): ships
+    /// collide, stations, gates, rocks and wrecks wait for their geometry.
     #[test]
-    fn no_ship_and_no_static_ball_is_massive() {
+    fn a_ship_is_massive_and_a_static_ball_is_not() {
         let motion = crate::space_state::Motion::arrived([0.0; 3], [0.0; 3]);
         let ship = ego_ball_of(&hull::FALLBACK, 1, 0, 0, &motion);
-        assert_eq!(ship.flags, 0x1b, "free, global, interactive, junk");
-        assert_eq!(ship.flags & FLAG_IS_MASSIVE, 0);
+        assert_eq!(ship.flags, 0x1f, "free, global, massive, interactive, junk");
+        assert_ne!(ship.flags & FLAG_IS_MASSIVE, 0);
         assert!(ship.flags & FLAG_IS_FREE != 0, "a ship still has physics");
         for (what, flags) in [
             ("station", station_ball(2, 100.0, 0).flags),

@@ -176,6 +176,9 @@ mod tests {
     fn alice(reg: &Registry) -> crate::space_state::Presence {
         let mut p = *reg.roster().get(ALICE).expect("in space");
         p.since = 0.0;
+        // Two overlapping hulls put the system on the collision tick grid,
+        // which records its own state; that is not the roster moving.
+        p.ticked = None;
         p
     }
 
