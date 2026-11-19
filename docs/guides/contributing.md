@@ -37,26 +37,25 @@ holds what you extract from **your own** installation.
   `tools/serve.sh` and `tools/up.sh` run on first start. What may and may not
   be committed: `content/README.md` and `docs/content/policy.md`.
 
-## 3. The jail
+Your human makes the prefix and the bundle; an agent uses `out/content/` as it
+finds it.
+
+## 3. The client and the jail
+
+To play on this server, the client must be patched. That is not part of this
+repository; `docs/guides/getting-started.md` §3 points to the public guides. The
+human does this on their own machine; an agent never does (`AGENTS.md`, "Your
+human's machine").
 
 We recommend running the client in the jail: tools exist to give it no route
-except to your server. Read `docs/guides/jail.md` before you play, then install the
-helper after reading what runs as root:
-
-```sh
-tools/install-jail-helper.sh --diff | less
-sudo tools/install-jail-helper.sh
-```
+except to your server. Its helper is installed with `sudo`, so the human installs
+it, after reading `docs/guides/jail.md` and what will run as root.
 
 ## 4. Run a server and a client
 
-```sh
-tools/account.sh login                    # pick a user name and password
-sudo -v && tools/serve.sh --client        # host the world and launch your client
-sudo -v && tools/bots.sh 3                # or: with 3 bot miners beside you
-tools/dev-world.sh world50 --client       # the dev world: nothing waits (docs/guides/dev-mode.md)
-```
-
+Launching the client, and every step that uses `sudo` (`tools/dev-world.sh
+--client` included), is for the human, never for an agent. The commands are in
+`docs/guides/getting-started.md`, and the dev world in `docs/guides/dev-mode.md`.
 Debugging against the real client: `docs/guides/debugging-the-client.md`.
 
 ### Server-only work
@@ -176,15 +175,16 @@ label a doc names must be a row here.
 | `area/<slug>` | one per area (§10) |
 | `good-first` | small, server-only, well specified |
 | `parked` | the owner parked it; do not start it |
-| `needs-human` | a check or the guard stopped a PR (a guarded path, a failed check); a maintainer looks |
-| `review-queue` | automation: the checks passed and the PR waits for the maintainer's import |
-| `needs-author` | automation: the template or a convention failed, or the author is over the open-PR cap |
-| `stale` | automation: no activity for 30 days |
-| `perf` | automation: the PR touches a performance-sensitive path, so the maintainer runs a bench at import |
+| `needs-human` | the GitHub `label` workflow: the template is not filled in, a guarded path is touched, or a check failed; a maintainer looks |
+| `ready-to-import` | the GitHub `label` workflow: everything passed, and the PR waits for the maintainer's import |
+| `review-queue` | a maintainer: the PR is in the import queue |
+| `needs-author` | a maintainer: waits on the author (a convention failed, or the author is over the open-PR cap, which a maintainer counts at import) |
+| `stale` | the maintainer's issue sync: an open PR with no activity for 30 days |
+| `perf` | a maintainer, at import: the PR touches a performance-sensitive path, so the maintainer runs a bench |
 | `imported` | set when the PR is closed with the sha it landed as |
 
 Every label is a hint for sorting. None of them approves or unlocks anything; the
-maintainer's import does.
+maintainer's import does. A label set by anyone else means nothing.
 
 An issue body may carry these lines, as hints for the reader:
 
@@ -209,25 +209,26 @@ Done when: <the test or scenario that proves it>
 ## 10. Areas, hot files (reviewed at import) and guarded files
 
 One area per system of `docs/status/progress.tsv`. Read the area's docs, then
-grep its code roots. Paths without a crate are under
+grep its code roots. Some areas cite design notes that are not published; there,
+the code roots are the reference. Paths without a crate are under
 `server/crates/eve-server/src/`.
 
 | area | read first | code roots |
 |---|---|---|
-| `login` | `docs/reference/session-roles.md` | `conn.rs`, `session.rs`, `accounts.rs` |
-| `space` | `docs/re/warp.md`, `docs/re/jump-gates.md` | `destiny.rs`, `warp_in.rs`, `celestial.rs` |
-| `combat` | `docs/re/damage-death.md`, `docs/re/targeting.md` | `combat.rs`, `damage.rs`, `crimewatch.rs`, `concord.rs` |
-| `fitting` | `docs/re/dogma.md` | `fitting.rs`, `fitstate.rs`, `dogma.rs` |
-| `modules` | `docs/re/modules.md` | `modules.rs`, `module.rs`, `modules/` |
-| `market` | `docs/reference/market-browse.md`, `docs/reference/wallet-ledger.md` | `market_fees.rs`, `contracts.rs` |
+| `login` | the unpublished session-roles note | `conn.rs`, `session.rs`, `accounts.rs` |
+| `space` | the unpublished warp and jump-gates notes | `destiny.rs`, `warp_in.rs`, `celestial.rs` |
+| `combat` | the unpublished damage-death and targeting notes | `combat.rs`, `damage.rs`, `crimewatch.rs`, `concord.rs` |
+| `fitting` | the unpublished dogma note | `fitting.rs`, `fitstate.rs`, `dogma.rs` |
+| `modules` | the unpublished modules note | `modules.rs`, `module.rs`, `modules/` |
+| `market` | the unpublished market-browse and wallet-ledger notes | `market_fees.rs`, `contracts.rs` |
 | `industry` | `docs/content/schema.md` | `industry.rs`, `industry/`, `belts.rs`, `compression.rs` |
 | `corp` | `docs/content/schema.md` | `corp_*.rs`, `alliance.rs` |
-| `fleet` | `docs/reference/push-path.md` | `fleet.rs`, `fleet_*.rs` |
+| `fleet` | the unpublished push-path note | `fleet.rs`, `fleet_*.rs` |
 | `sov` | `docs/content/schema.md` | `sov.rs`, `sov_*.rs`, `sov_campaign/` |
 | `upwell` | `docs/content/schema.md` | `structure.rs`, `structure_*.rs`, `structure_dock/` |
 | `fw` | `docs/status/progress.tsv` (grep `fw`) | `fw_lp.rs`, `fw_stats.rs` |
-| `pve` | `docs/re/agents-missions.md`, `docs/re/npc-behaviors.md` | `mission*.rs`, `dungeon.rs`, `abyss.rs` |
-| `bots` | `docs/reference/server.md` | `server/crates/eve-bot/src/` |
+| `pve` | the unpublished agents-missions and npc-behaviors notes | `mission*.rs`, `dungeon.rs`, `abyss.rs` |
+| `bots` | the unpublished server note | `server/crates/eve-bot/src/` |
 | `tools` | `docs/README.md` | `tools/` |
 
 **Hot files.** A PR may touch these; expect a closer review and a slower import,
@@ -250,6 +251,7 @@ because they are central, risky, or being rewritten. Paths are under
 | `server/deps.allow`, `server/Cargo.toml`, `server/Cargo.lock` | the allowlist changes only by owner decision (`docs/reference/dependencies.md`) |
 | `docs/README.md` | the maintainer keeps it; a PR proposes a change in its text |
 | `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; a maintainer changes them |
+| `docs/guides/contributing.md`, `docs/guides/getting-started.md`, `docs/guides/issue-tracking.md`, `docs/guides/working-together.md`, `SECURITY.md` | the procedure docs: every contributor's agent follows them, so a PR may propose a change and a maintainer makes it |
 | `LICENSE.md`, `LICENSE-additions.md`, `CONTRIBUTING-terms.md`, `NOTICE` | the licence, its additional terms, the contributor terms and the third-party notices; only the owner changes them |
 | `tools/flaky.tsv`, `tools/gate_reds.py`, `tools/test-parallel.sh` | the gate's flaky-rerun list and the code that reads it and runs the rerun; a row on the list is a reviewed maintainer commit, and the gate reads the list from the base, never from the change under test |
 
