@@ -222,6 +222,9 @@ What each scale and world setting changes, its range, and the numbers that have 
 | `--admin ADDR` | off | the admin page and JSON API (pilots, systems (every live system, with `in_space` for pilots and `in_space_all` for all balls in space), map, `ticks` per-minute p50/p95/max (a minute is the minute a report window ended), `methods` slowest calls, `metrics` Prometheus text; the token as `X-Admin-Token` or, on GET, `Authorization: Bearer`; `tools/metrics_sample.py` polls it into a TSV) plus token-guarded actions `POST /api/action/` `bots`, `broadcast`, `save`, `kick`, each at most one a second and logged to `admin-actions.log`; token in `admin.token` | `--admin 127.0.0.1:8090` |
 | `--signups-per-hour N` | `10` | with `--world-accounts`: at most N human sign-ups an hour, server-wide (and 3 an hour per IPv4 address or IPv6 /64); `0` is unlimited; listeners with `botnames=on` are exempt | `--signups-per-hour 30` |
 | `--max-accounts N` | `500` | with `--world-accounts`: a human sign-up is refused once the world holds N human accounts (bot accounts do not count); `0` is unlimited | `--max-accounts 1000` |
+| `--image-server ADDR` | off | a portrait image server on ADDR (plain HTTP, GET only), advertised to every client at login as its `imageserverurl` (`machoNet.OnGlobalConfigUpdated`), so the select screen, NEOCOM and chat show character portraits | `--image-server 127.0.0.1:26080` |
+| `--image-url URL` | `http://ADDR/` | the URL clients are told for the image server, when it is reached through another address than the one it listens on | `--image-url http://my.host:26080/` |
+| `--portraits DIR` | `portraits/` beside the world file | the image server's pictures, `<charID>_<size>.jpg`; a missing size is served from the largest one there is | `--portraits /path/to/Pictures/Characters` |
 | `--status FILE` | `out/live/status.tsv` with `--world` | per-system TSV, rewritten every 10 s | `--status out/live/status.tsv` |
 | `--stop-file PATH` | `FILE.stop` with `--world` | stop cleanly when PATH appears | `--stop-file var/up-server.stop` |
 | `--capture DIR` | off | one `.evecap` per connection | `--capture captures` |
@@ -376,6 +379,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_CLIENT_DIR` | `tools/analysis.sh` | `tq-offline` | install dir name inside the offline prefix | `EVE_CLIENT_DIR=tq-3619879` |
 | `EVE_PATCH_REAL_CLIENT` | `tools/test_eve_patch.py` | | runs one extra test: `eve_patch.py plan` against this real install (writes nothing) | `EVE_PATCH_REAL_CLIENT=/path/to/tq-offline` |
 | `EVE_RESFILES` | `tools/fsd.py`, `tools/check-resources.sh` | `ResFiles` beside the install | the ResFiles store | `EVE_RESFILES=/path/to/ResFiles` |
+| `EVE_ACHIEVEMENTS_BIN` | `tools/content_achievements.py` | the newest `cache/Storage/achievements/data.bin` of a Tranquility client cache (`/mnt/c/Users/*/AppData/Local/CCP/EVE/*_tranquility/`) | the achievement definitions the `achievements` content section reads (the client downloads them on its first Tranquility login; with neither, the section writes an empty table) | `EVE_ACHIEVEMENTS_BIN=/path/to/data.bin` |
 | `EVE_CONTENT` | `tools/content-lib.sh`, `tools/bots.sh` | `out/content` | which bundle the tools use (under `out/`) | `EVE_CONTENT=out/content-3619879` |
 | `EVE_CBUILD` | `tools/content-lib.sh` (sets) | | the client's `start.ini` build, for callers | set by the lib |
 | `EVE_CSTATUS` | `tools/content-lib.sh` (sets) | `legacy` | its `tools/builds.tsv` status | set by the lib |
