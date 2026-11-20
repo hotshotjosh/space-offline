@@ -53,6 +53,25 @@ class Derive(unittest.TestCase):
         t = tree([ach("a1", 98, [ms("m1", 1, 7, [])], method="m-other")])
         self.assertEqual(ca.derive(t), [])
 
+    def test_a_cumulative_agent_division_method_counts_too(self):
+        # definitions 1.8.0: the career achievements count completions, not a set
+        cum = {"params": ["agent_division", "agent_type", "agent_level", "agent_faction"],
+               "set_of": None, "mode": ca.PROGRESS_CUMULATIVE}
+        t = tree([ach("a1", 98, [ms("m1", 1, 7, [])])], method=cum)
+        self.assertEqual([r[0] for r in ca.derive(t)], ["a1"])
+
+    def test_a_cumulative_method_without_a_division_is_left_out(self):
+        cum = {"params": ["solar_system"], "set_of": None, "mode": ca.PROGRESS_CUMULATIVE}
+        t = tree([ach("a1", 98, [ms("m1", 1, 7, [])])], method=cum)
+        self.assertEqual(ca.derive(t), [])
+
+    def test_a_cumulative_achievement_without_a_division_filter_is_left_out(self):
+        cum = {"params": ["agent_division", "agent_type", "agent_level"],
+               "set_of": None, "mode": ca.PROGRESS_CUMULATIVE}
+        a = ach("a1", 98, [ms("m1", 1, 7, [])])
+        a["params"] = {"agent_type": {"agent_type": ["8"]}}
+        self.assertEqual(ca.derive(tree([a], method=cum)), [])
+
     def test_levels_are_kept(self):
         t = tree([ach("a1", 98, [ms("m1", 1, 7, [])], levels=(1, 2))])
         self.assertEqual(ca.derive(t)[0][4], "1,2")

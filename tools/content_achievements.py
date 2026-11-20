@@ -32,8 +32,13 @@ Written into the bundle:
     (one row per reward; divisions and levels are comma lists, levels may be empty)
 
 An achievement is kept when it is under the Career Program root and its contribution
-method counts a SET of `mission` values with an `agent_division` parameter (the method
-the five NPE career achievements use). `derive(tree)` is pure; the unit tests feed it
+method takes an `agent_division` parameter and counts missions: either a SET of `mission`
+values (definitions 1.7.3) or a cumulative count (1.8.0, where all nine career-agent
+achievements moved to one `CumulativeMode` method with `agent_division`, `agent_type`,
+`agent_level` and `agent_faction` parameters [V-TQ 20NOV2026, data.bin 1.8.0]).
+**[A]** the server counts distinct missions for both: a career agent offers each of its
+missions once, so a count of completions and a count of distinct missions agree;
+falsifier: a career achievement on TQ that advances on a repeated mission. `derive(tree)` is pure; the unit tests feed it
 invented trees. `gather` is the only client-data reader.
 """
 import glob
@@ -54,7 +59,9 @@ GLOB = "/mnt/c/Users/*/AppData/Local/CCP/EVE/*_tranquility/cache/Storage/achieve
 
 #: `RewardPayload` union tags [V generated.pyj].
 REWARD_KINDS = {1: "ISK", 2: "SP", 3: "ITEM", 4: "TITLE"}
-#: `ProgressConfig` union tag of `SetMode` [V generated.pyj].
+#: `ProgressConfig` union tags [V generated.pyj, progress_config.extract_from_flatbuffer]:
+#: 1 CumulativeMode, 2 ChecklistMode, 3 SetMode.
+PROGRESS_CUMULATIVE = 1
 PROGRESS_SET = 3
 
 # vtable slots [V generated.pyj], by table.
@@ -188,11 +195,12 @@ def read_definitions(buf):
     methods = {}
     for m in root.tables(DATA_METHODS):
         prog = m.table(M_PROGRESS)
-        target = prog.string(SET_TARGET_TYPE) if (
-            prog is not None and m.scalar(M_PROGRESS_TYPE, "<B") == PROGRESS_SET) else None
+        mode = m.scalar(M_PROGRESS_TYPE, "<B") if prog is not None else None
+        target = prog.string(SET_TARGET_TYPE) if mode == PROGRESS_SET else None
         methods[m.string(M_ID)] = {
             "params": [p.string(MPARAM_KEY) for p in m.tables(M_PARAMS)],
             "set_of": target,
+            "mode": mode,
         }
     career = root.table(DATA_CAREER)
     return {"methods": methods, "career": _category(career) if career else None}
@@ -228,8 +236,9 @@ def gather(ctx):
 # ---- the derivation (pure) ----------------------------------------------------------------
 
 def _counts_agent_missions(method):
-    return method is not None and method.get("set_of") == "mission" \
-        and "agent_division" in method.get("params", ())
+    if method is None or "agent_division" not in method.get("params", ()):
+        return False
+    return method.get("set_of") == "mission" or method.get("mode") == PROGRESS_CUMULATIVE
 
 
 def _walk(cat, top):
@@ -247,10 +256,16 @@ def derive(tree):
     methods = tree["methods"]
     rows = []
     for a, cat in _walk(tree["career"], tree["career"]["id"]):
-        if not _counts_agent_missions(methods.get(a["method"])):
+        method = methods.get(a["method"])
+        if not _counts_agent_missions(method):
             continue
         divisions = a["params"].get("agent_division", {}).get("division", [])
         if not divisions:
+            if method.get("mode") == PROGRESS_CUMULATIVE:
+                # 1.8.0's shared method makes the division optional; an achievement that
+                # filters on something else (acp_sof_factional_warfare_iii: agent_type)
+                # is one the server cannot count yet, so it is left out, not refused.
+                continue
             raise ContentError("%s: an agent-mission achievement with no division" % a["name"])
         levels = a["params"].get("agent_level", {}).get("level", [])
         for m in a["milestones"]:
