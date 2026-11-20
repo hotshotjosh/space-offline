@@ -102,6 +102,18 @@ class Command(unittest.TestCase):
 
 
 class PrefsPath(unittest.TestCase):
+    def test_the_folder_name_is_the_clients_rule(self) -> None:
+        # [V utillib.GetClientUniqueFolderName]; both names seen on real machines
+        self.assertEqual(wl.settings_folder_name(r"E:\dl\eve-emu\client-tq\EVE\tq-offline"),
+                         "e_dl_eve-emu_client-tq_eve_tq-offline_127.0.0.1")
+        self.assertEqual(wl.settings_folder_name(r"C:\Fenris Creations\EVE\tq-offline"),
+                         "c_fenris_creations_eve_tq-offline_127.0.0.1")
+
+    def test_the_server_part_follows_the_server(self) -> None:
+        self.assertTrue(wl.settings_folder_name(r"C:\EVE\tq", "Tranquility").endswith("_tranquility"))
+        self.assertTrue(wl.settings_folder_name(r"C:\EVE\tq", "x.servers.eveonline.com")
+                        .endswith("_x"))
+
     def test_the_settings_dir_name_flattens_the_install_path(self) -> None:
         os.environ["LOCALAPPDATA"] = os.path.join(os.sep, "Local")
         p = wl.prefs_path(r"C:\EVE\tq-offline")
@@ -109,6 +121,19 @@ class PrefsPath(unittest.TestCase):
         self.assertIn("127.0.0.1", p)
         self.assertTrue(p.endswith(os.path.join("settings", "prefs.ini")))
         self.assertIn("tq-offline", p.lower())
+
+
+class DryRun(unittest.TestCase):
+    def test_a_root_without_the_client_fails_even_on_a_dry_run(self) -> None:
+        import contextlib
+        import io
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                rc = wl.main(["--root", os.path.join(d, "nope"), "--token", "a:b", "--dry-run"])
+            self.assertEqual(rc, 2)
+            self.assertIn("exefile.exe", err.getvalue())
 
 
 if __name__ == "__main__":

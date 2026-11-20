@@ -38,6 +38,7 @@ if __name__ == "__main__":
     _sys.path.append(_sys.path.pop(0))
 
 import argparse
+import ntpath
 import os
 import shutil
 import subprocess
@@ -127,21 +128,32 @@ def build_command(
     return argv, env
 
 
-def prefs_path(root: str) -> str:
-    """The client's prefs.ini under %LOCALAPPDATA%.
+def settings_folder_name(root: str, server: str = "127.0.0.1") -> str:
+    """The name of the client's per-install, per-server folder under
+    `%LOCALAPPDATA%\\CCP\\EVE`, the way the client builds it
+    [V utillib.GetClientUniqueFolderName, build 3724492]: the install path,
+    normalised and lower-cased, with `/` and `\\` turned into `_`, `:` dropped
+    and spaces turned into `_`; then `_` and the server name, lower-cased with
+    spaces turned into `_` (a `*.servers.eveonline.com` name keeps only its
+    first label). `C:\\Fenris Creations\\EVE\\tq-offline` against 127.0.0.1 gives
+    `c_fenris_creations_eve_tq-offline_127.0.0.1`.
+    """
+    path = ntpath.normpath(root).lower()
+    path = path.replace("/", "_").replace("\\", "_").replace(":", "").replace(" ", "_")
+    name = server.lower().replace(" ", "_")
+    if name.endswith(".servers.eveonline.com"):
+        name = name.split(".")[0]
+    return path + "_" + name
 
-    The settings directory is named after the install path with separators
-    and the dots of the server address flattened to underscores, e.g.
-    `e_dl_eve-emu_client-tq_eve_tq-offline_127.0.0.1`. This derives that name
-    from `root` and the loopback server; a client launched once writes the
-    directory itself, so if this guess is wrong, launch once and point
-    `--prefs` at the directory the client created.
+
+def prefs_path(root: str, server: str = "127.0.0.1") -> str:
+    """The client's prefs.ini under %LOCALAPPDATA%, in the folder
+    `settings_folder_name` names. A client launched once writes that folder
+    itself; if it is not where this says, point `--prefs` at the one it made.
     """
     local = os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local"))
-    drive, rest = os.path.splitdrive(os.path.abspath(root))
-    flat = (drive[:-1] + rest).replace("\\", "_").replace("/", "_").lstrip("_")
-    name = "%s_127.0.0.1" % flat.lower()
-    return os.path.join(local, "CCP", "EVE", name, "settings", "prefs.ini")
+    folder = settings_folder_name(os.path.abspath(root) if os.name == "nt" else root, server)
+    return os.path.join(local, "CCP", "EVE", folder, "settings", "prefs.ini")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,21 +173,24 @@ def main(argv: list[str] | None = None) -> int:
     gateway = None if args.no_gateway else args.gateway
     cmd, env = build_command(args.root, args.server, args.port, args.token, gateway)
 
+    # Checked before --dry-run returns too, so a wrong --root shows up on the
+    # dry run rather than on launch day.
+    if not os.path.exists(exe):
+        print("no exefile.exe at %s -- is --root the install root?" % exe, file=sys.stderr)
+        return 2
+
     if args.dry_run:
         print("would launch:", " ".join(cmd))
         print("cwd:", args.root)
         print("EVE_PUBLIC_GATEWAY_ADDRESS:", env.get("EVE_PUBLIC_GATEWAY_ADDRESS", "(unset)"))
+        print("prefs.ini:", args.prefs or prefs_path(args.root, args.server))
         return 0
-
-    if not os.path.exists(exe):
-        print("no exefile.exe at %s -- is --root the install root?" % exe, file=sys.stderr)
-        return 2
 
     changed, common = ensure_common_ini(args.root)
     print("%s common.ini (cryptoPack = Placebo)" % ("wrote" if changed else "kept"))
 
     if not args.no_chat:
-        pf = args.prefs or prefs_path(args.root)
+        pf = args.prefs or prefs_path(args.root, args.server)
         if os.path.exists(os.path.dirname(pf)):
             wrote = append_line_safely(pf, CHAT_TLS_LINE)
             print("%s %s in %s" % ("added" if wrote else "kept", CHAT_TLS_LINE, pf))
