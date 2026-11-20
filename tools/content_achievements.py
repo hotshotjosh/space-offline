@@ -13,11 +13,14 @@ keeps the flatbuffer in its user cache:
     %LOCALAPPDATA%/CCP/EVE/<install>_<server>/cache/Storage/achievements/data.bin
     (version.txt beside it; file identifier `ACHV`)
 
-So this section reads that file, from a client that has logged in to Tranquility once.
-`EVE_ACHIEVEMENTS_BIN` names it; without it, the newest `data.bin` of a Tranquility
-cache (`/mnt/c/Users/*/AppData/Local/CCP/EVE/*_tranquility/cache/Storage/achievements/`;
-another server's cache may hold its own stub) is used; with
-neither, the section writes an empty table and says so. The manifest records the file
+So this section reads that file, from a client that has entered the game on
+Tranquility once. `EVE_ACHIEVEMENTS_BIN` names it; without it, the newest `data.bin` of
+`out/cdn/achievements/` (where `tools/fetch-cdn-achievements.sh` copies it) and of the
+Tranquility caches (`/mnt/c/Users/*/AppData/Local/CCP/EVE/*_tranquility/cache/Storage/
+achievements/`; another server's cache may hold its own stub) is used. The `out/` copy
+is the one `tools/analysis.sh` can reach: the container sees the repo as `/work`, but
+neither the host's `/mnt/c/Users` nor its environment. With none, the section writes an
+empty table and says how to fix it. The manifest records the file
 as a `cdn:achievements@<version>` source, so a new download re-extracts.
 
 The flatbuffer layout is the client's own generated accessors [V decompiled
@@ -56,6 +59,9 @@ HEADER = ("achievement", "name", "category", "divisions", "levels", "milestone",
           "milestone_name", "target", "points", "reward", "kind", "amount", "type_id")
 ENV = "EVE_ACHIEVEMENTS_BIN"
 GLOB = "/mnt/c/Users/*/AppData/Local/CCP/EVE/*_tranquility/cache/Storage/achievements/data.bin"
+#: Where `tools/fetch-cdn-achievements.sh` puts the file (gitignored `out/`).
+LOCAL = os.path.join(_HERE, "..", "out", "cdn", "achievements", "data.bin")
+FETCH = "tools/fetch-cdn-achievements.sh"
 
 #: `RewardPayload` union tags [V generated.pyj].
 REWARD_KINDS = {1: "ISK", 2: "SP", 3: "ITEM", 4: "TITLE"}
@@ -206,10 +212,11 @@ def read_definitions(buf):
     return {"methods": methods, "career": _category(career) if career else None}
 
 
-def find_definitions(environ=None, pattern=GLOB):
-    """`(path, version)` of the definitions file to read, or `None`."""
+def find_definitions(environ=None, pattern=GLOB, local=LOCAL):
+    """`(path, version)` of the definitions file to read, or `None`: `EVE_ACHIEVEMENTS_BIN`
+    if set, else the newest of the `out/` copy and the Tranquility caches."""
     environ = os.environ if environ is None else environ
-    paths = [environ[ENV]] if environ.get(ENV) else glob.glob(pattern)
+    paths = [environ[ENV]] if environ.get(ENV) else [local] + glob.glob(pattern)
     best = None
     for p in paths:
         if not os.path.isfile(p):
@@ -282,7 +289,9 @@ def derive(tree):
 def section(ctx):
     tree, source = gather(ctx)
     if tree is None:
-        ctx.note("achievements: no definitions file (set %s); the table is empty" % ENV)
+        ctx.note("achievements: NO DEFINITIONS FILE, the table is empty: the Career Program "
+                 "achievements (and AIR scene 2.5) will not work. Enter the game once on "
+                 "Tranquility, then run %s (or set %s)" % (FETCH, ENV))
         return [(FILE, HEADER, [], [])]
     try:
         rows = derive(tree)
