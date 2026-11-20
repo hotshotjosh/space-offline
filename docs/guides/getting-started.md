@@ -89,15 +89,20 @@ The copy lands at
 `$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/tq-offline`. That
 is the default `EVE_CLIENT`, and `ResFiles` sits beside it.
 
-To play on this server the client must be prepared, and that is not part of
-this repository. The client checks its own files against a signed list of
-hashes, and that list carries the public key it is checked with; a prepared
-client either has that check turned off or can carry a list signed with the
-server owner's own key, and it is pointed at the server with its standard
-server launch argument. The public guides are the
-[new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
-[blue_patcher](https://github.com/stschake/blue_patcher). The server-only and
-content steps below need no prepared client.
+To play on this server the copy must be prepared. Without it the server drops the
+connection right after the handshake, and the client only says "The connection to the
+server was closed". The patcher uses only the Python standard library:
+
+    python3 -I tools/eve_patch.py plan   --client "$EVE_CLIENT"   # dry run
+    python3 -I tools/eve_patch.py apply  --client "$EVE_CLIENT"
+    python3 -I tools/eve_patch.py verify --client "$EVE_CLIENT"
+
+It knows each build by its `start.ini` and refuses a build it has no manifest for, a
+file it does not recognise, and an install named `tq` (the one you play online with).
+`revert` undoes it. On Windows, run the same commands with `py -3 -I` against the copy's
+folder (for example `C:\CCP\EVE\tq-offline`); that path is not yet tested on a real
+Windows install. What it changes and why: [patcher guide](patcher.md). The server-only
+and content steps below need no prepared client.
 
 ## 4. Build the content bundle
 

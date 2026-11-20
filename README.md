@@ -102,9 +102,9 @@ tools/offline-prefix.sh --check
 ```
 
 Ready: `--check` lists the copy and its ResFiles. To play on this server the
-client must be patched. That is not part of this repository; the public guides are
-the [new users guide](https://wiki.evemu.dev/wiki/New_Users_Guide#Client_Setup) and
-[blue_patcher](https://github.com/stschake/blue_patcher).
+client copy must be prepared: `python3 -I tools/eve_patch.py apply --client <copy>`
+([patcher guide](docs/guides/patcher.md)), on the copy and never on the install you play
+online with.
 [Getting-started step 3](docs/guides/getting-started.md#3-make-the-offline-client-copy)
 has the `cp -a` that makes the `tq-offline` copy.
 

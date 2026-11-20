@@ -42,10 +42,9 @@ finds it.
 
 ## 3. The client and the jail
 
-To play on this server, the client must be patched. That is not part of this
-repository; `docs/guides/getting-started.md` §3 points to the public guides. The
-human does this on their own machine; an agent never does (`AGENTS.md`, "Your
-human's machine").
+To play on this server, the client copy must be prepared with `tools/eve_patch.py`
+(`docs/guides/patcher.md`; `docs/guides/getting-started.md` §3). The human does this
+on their own machine; an agent never does (`AGENTS.md`, "Your human's machine").
 
 We recommend running the client in the jail: tools exist to give it no route
 except to your server. Its helper is installed with `sudo`, so the human installs

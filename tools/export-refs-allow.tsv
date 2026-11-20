@@ -15,7 +15,6 @@ tools/client-ci/scenarios/throttle_and_warp.py	docs/port-tracker.md	text in a me
 tools/client-ci/scenarios/undock_distance.py	docs/port-tracker.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/client-overrides/destiny_dump.py	docs/archive/destiny-and-the-ballpark.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/client-setup.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
-tools/client-setup.sh	tools/eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/content-lib.sh	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
 tools/dev-world.sh	docs/lanes/bubble.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/doc_lane_index.py	docs/archive/plan-living-world.md	maintainer-side lane index tool; names docs it indexes, absent on the export
@@ -32,18 +31,10 @@ tools/export_refs.py	private/export-private-paths.txt	guarded: the check says it
 tools/fsd.py	docs/lanes/fsd-generic.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/gate.sh	tools/test_client_kit.py	guarded by [[ -e ]]: the test list skips files the export lacks
 tools/gate.sh	tools/test_plan_owners.py	guarded by [[ -e ]]: the test list skips files the export lacks
-tools/jail-client.sh	tools/eve_patch.py	optional, maintainer-side: used only when the file exists
-tools/jail-rootless.sh	tools/eve_patch.py	optional, maintainer-side: bound only when the file exists
-tools/jail-rootless.sh	tools/patches	optional, maintainer-side: bound only when the directory exists
 tools/land.sh	private/post-land.sh	[[ -x ]]-guarded maintainer post-land hook
 tools/new-build.sh	findings/client-calls.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/new-build.sh	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
-tools/new-build.sh	tools/client-patch-manifest.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/new-build.sh	tools/eve_patch_author.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/new-build.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/new-build.sh	tools/test_eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/pin-client.sh	docs/archive/plan-subsystems.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
-tools/pin-client.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/port-recheck.py	findings/client-calls.tsv	default input of a maintainer-side RE tool (findings/ is private); M4: owner ruling pending
 tools/port-surface.sh	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/port-surface.sh	findings/user-errors.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
@@ -53,8 +44,6 @@ tools/pr_guard.py	tools/import-pr.sh	path list matched against PR diffs, never o
 tools/pr_guard.py	tools/mirror-github.sh	path list matched against PR diffs, never opened
 tools/pr_guard.py	tools/test_mirror.py	path list matched against PR diffs, never opened
 tools/pr_overlap.py	docs/packets.tsv	path list matched against PR diffs, never opened
-tools/re-pin.sh	tools/eve_patch.py	M4: owner ruling pending (maintainer-only client patch tooling)
-tools/retire-build.sh	tools/patches	M4: owner ruling pending (maintainer-only client patch tooling)
 tools/scan_bound.py	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/scan_calls.py	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/scan_calls_emit.py	findings/client-calls.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
@@ -84,14 +73,9 @@ tools/test_export_parity.py	private/export-private-paths.txt	fixture: an invente
 tools/test_export_refs.py	private/export-private-paths.txt	fixture: an invented tree's private list
 tools/test_fci_scenarios.py	docs/guides/human-checks.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_gate.py	private/post-land.sh	fixture in a test: a stub hook committed in a temporary repo, the real path is never read
-tools/test_new_build.py	tools/eve_patch_author.py	fixture or assertion text in a test: a fake/expected string, nothing is run
-tools/test_new_build.py	tools/patches	fixture: an invented tree's patches dir
 tools/test_public_export.py	private/export-private-paths.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_public_export.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_re_pin.py	tools/eve_patch.py	fixture or assertion text in a test: a fake/expected string, nothing is run
-tools/test_retire_build.py	tools/patches	fixture or assertion text in a test: a fake/expected string, nothing is run
 tools/test_status_page.py	docs/plans	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_status_page.py	docs/plans/master-plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
-tools/test_jail.py	tools/eve_patch.py	fixture or assertion text in a test: a fake/expected string, nothing is run

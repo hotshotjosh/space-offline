@@ -374,6 +374,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 |---|---|---|---|---|
 | `EVE_CLIENT` | `tools/analysis.sh`, `tools/run-client.sh`, `tools/content.py` | `$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/$EVE_CLIENT_DIR` | the client install (holds `start.ini`) | `EVE_CLIENT=/path/to/tq-offline` |
 | `EVE_CLIENT_DIR` | `tools/analysis.sh` | `tq-offline` | install dir name inside the offline prefix | `EVE_CLIENT_DIR=tq-3619879` |
+| `EVE_PATCH_REAL_CLIENT` | `tools/test_eve_patch.py` | | runs one extra test: `eve_patch.py plan` against this real install (writes nothing) | `EVE_PATCH_REAL_CLIENT=/path/to/tq-offline` |
 | `EVE_RESFILES` | `tools/fsd.py`, `tools/check-resources.sh` | `ResFiles` beside the install | the ResFiles store | `EVE_RESFILES=/path/to/ResFiles` |
 | `EVE_CONTENT` | `tools/content-lib.sh`, `tools/bots.sh` | `out/content` | which bundle the tools use (under `out/`) | `EVE_CONTENT=out/content-3619879` |
 | `EVE_CBUILD` | `tools/content-lib.sh` (sets) | | the client's `start.ini` build, for callers | set by the lib |
