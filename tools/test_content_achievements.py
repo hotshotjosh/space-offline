@@ -97,9 +97,26 @@ class Find(unittest.TestCase):
                 open(os.path.join(d, name, "version.txt"), "w").write(ver)
                 paths.append(p)
             pattern = os.path.join(d, "*", "data.bin")
-            self.assertEqual(ca.find_definitions({}, pattern), (paths[1], "1.10.1"))
-            self.assertEqual(ca.find_definitions({ca.ENV: paths[0]}, pattern), (paths[0], "1.2.0"))
-            self.assertIsNone(ca.find_definitions({}, os.path.join(d, "none", "*.bin")))
+            nolocal = os.path.join(d, "nolocal", "data.bin")
+            self.assertEqual(ca.find_definitions({}, pattern, nolocal), (paths[1], "1.10.1"))
+            self.assertEqual(ca.find_definitions({ca.ENV: paths[0]}, pattern, nolocal),
+                             (paths[0], "1.2.0"))
+            self.assertIsNone(ca.find_definitions({}, os.path.join(d, "none", "*.bin"), nolocal))
+
+    def test_the_out_copy_is_found_and_competes_on_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            def put(name, ver):
+                os.makedirs(os.path.join(d, name))
+                p = os.path.join(d, name, "data.bin")
+                open(p, "wb").write(b"x")
+                open(os.path.join(d, name, "version.txt"), "w").write(ver)
+                return p
+            local = put("out", "1.8.0")
+            none = os.path.join(d, "none", "*.bin")
+            self.assertEqual(ca.find_definitions({}, none, local), (local, "1.8.0"))
+            cache = put("cache", "1.9.0")
+            self.assertEqual(ca.find_definitions({}, os.path.join(d, "cache", "data.bin"), local),
+                             (cache, "1.9.0"))
 
     def test_a_file_without_the_identifier_is_refused(self):
         with self.assertRaises(ca.ContentError):
