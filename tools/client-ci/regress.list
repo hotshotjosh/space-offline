@@ -441,3 +441,5 @@ fci_wire_calls
 fci_mission_dungeon --serial
 # bumping (#296): two piloted ships meet head on and both clients see the same bump; two clients
 fci_bump_pair --with-second -- --character Alice --character Bob
+# PG-1c (#64): a pilot joins the Proving Grounds queue with a filament, a second join is refused, leaving works, and docking drops the queue; one client (written, not yet run on a client)
+fci_proving_queue
