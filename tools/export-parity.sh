@@ -118,7 +118,7 @@ w=$(mktemp -d -p "$root" run-XXXXXX)
 trap 'chmod -R u+w "$w" 2>/dev/null; rm -rf "$w"' EXIT
 mkdir "$w/tree"
 git archive HEAD | tar -x -C "$w/tree"
-# The same path as tools/mirror-github.sh: the archived tree is a repo with everything added,
+# The same path as tools/publish-github.py: the archived tree is a repo with everything added,
 # ignored files included, before the export reads it.
 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$w/tree" init -q
 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "$w/tree" add -f -A

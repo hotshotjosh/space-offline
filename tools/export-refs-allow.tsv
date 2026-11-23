@@ -41,8 +41,7 @@ tools/port-surface.sh	findings/user-errors.tsv	default input/output of a maintai
 tools/pr_guard.py	docs/guides/public-export.md	path list matched against PR diffs, never opened
 tools/pr_guard.py	docs/lanes/README.md	path list matched against PR diffs, never opened
 tools/pr_guard.py	tools/import-pr.sh	path list matched against PR diffs, never opened
-tools/pr_guard.py	tools/mirror-github.sh	path list matched against PR diffs, never opened
-tools/pr_guard.py	tools/test_mirror.py	path list matched against PR diffs, never opened
+tools/pr_guard.py	tools/test_import_pr_mirrorless.py	path list matched against PR diffs, never opened
 tools/pr_overlap.py	docs/packets.tsv	path list matched against PR diffs, never opened
 tools/scan_bound.py	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/scan_calls.py	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
