@@ -167,6 +167,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::structure_combat::SLOT,
     // HN-1 (#203): who listens to which raffle, and the soonest expiry.
     crate::hypernet::SLOT,
+    // #64 PG-1c: who waits in the Proving Grounds queue.
+    crate::proving::queue::SLOT,
 ];
 
 /// The slots' state, keyed by type.

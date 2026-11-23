@@ -343,6 +343,11 @@ pub const RULES: &[StageRule] = &[
         Rule::OwnClock,
         "a full build every RECONCILE_EVERY (1 s), nothing between",
     ),
+    r(
+        "proving_queue",
+        Rule::Every,
+        "one emptiness check while nobody waits",
+    ),
     r("grid", Rule::Every, "systems with a viewer only"),
 ];
 

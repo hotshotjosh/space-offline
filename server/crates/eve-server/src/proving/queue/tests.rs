@@ -599,8 +599,7 @@ fn the_empty_queue_is_a_no_op() {
 
 // ---- through the slot ------------------------------------------------------
 //
-// These need `queue::SLOT` in `world_ext::SLOTS` (a maintainer line), so they
-// are ignored until it is there; with the row, drop the `ignore`.
+// These go through the real registry with `queue::SLOT` in `world_ext::SLOTS`.
 
 fn call(
     reg: &mut Registry,
@@ -619,7 +618,6 @@ fn call(
 }
 
 #[test]
-#[ignore = "needs queue::SLOT in world_ext::SLOTS"]
 fn the_wire_joins_refuses_a_second_and_leaves() {
     let mut reg = world(qa_catalogue(2, 1));
     stand(&mut reg, ALICE, HOME);
@@ -652,7 +650,6 @@ fn the_wire_joins_refuses_a_second_and_leaves() {
 }
 
 #[test]
-#[ignore = "needs queue::SLOT in world_ext::SLOTS"]
 fn the_tick_and_the_logoff_hook_empty_the_queue() {
     let mut reg = world(qa_catalogue(2, 1));
     stand(&mut reg, ALICE, HOME);

@@ -71,6 +71,11 @@ pub const ON_LOGOFF: &[Row] = &[
         name: "structure_control",
         run: structure_control_off,
     },
+    // #64 PG-1c: a pilot who logged off leaves the Proving Grounds queue.
+    Row {
+        name: "proving_queue",
+        run: crate::proving::queue::on_logoff,
+    },
     // Last: chat's directory drops the pilot (PA-11).
     Row {
         name: "chat_dir",

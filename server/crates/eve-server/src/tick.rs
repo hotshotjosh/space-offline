@@ -515,6 +515,14 @@ pub const STAGES: &[Stage] = &[
         phase: 0,
         run: crate::chat_dir::tick,
     },
+    // #64 PG-1c: a queued Proving Grounds pilot who docked, moved or lost the key is dropped; before
+    // `grid`, which keeps the last slice to itself.
+    Stage {
+        name: "proving_queue",
+        every: 1,
+        phase: 0,
+        run: crate::proving::queue::tick,
+    },
     // Last of all, so every ball this tick spawned, moved or removed is in
     // the world before the grids are measured, and what it schedules leaves
     // in this tick's `take_due` (GRID-B, `crate::grid`).
