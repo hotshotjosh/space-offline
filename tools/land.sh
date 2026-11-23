@@ -62,6 +62,17 @@ while (($#)); do
     shift
 done
 
+# The maintainer's landing publishes to GitHub as a fast-forward (private/post-land.sh,
+# tools/publish-github.py), so a PR merged on GitHub must be pulled in, and gated with this
+# tree, first. Only where that publish runs: a `github` remote and private/post-land.sh.
+if ((push)) && [[ -x private/post-land.sh && -f tools/publish-github.py ]] \
+        && git remote get-url github >/dev/null 2>&1; then
+    if ! python3 -I tools/publish-github.py pull --check; then
+        echo "land: GitHub main has merges this tree lacks; run python3 -I tools/publish-github.py pull, then land" >&2
+        exit 2
+    fi
+fi
+
 log=$(mktemp -t eve-land-XXXXXX.log)
 
 # **`set -e` must not fire here.** The whole point is to inspect the gate's

@@ -82,3 +82,8 @@ tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an i
 tools/public-export.py	private/docs-index.md	text in a message: where a private doc's index row belongs; never opened
 tools/test_docs.py	private/docs-index.md	read only when it exists (the private tree); an exported tree has no private/
 tools/test_public_export.py	private/docs-index.md	fixture: an invented tree's private index
+tools/publish-github.py	private/export-private-paths.txt	maintainer-side publisher: reads the private lists in the private tree, where it runs (private/post-land.sh)
+tools/publish-github.py	private/export-scan.txt	maintainer-side publisher: reads the private lists in the private tree, where it runs (private/post-land.sh)
+tools/publish-github.py	private/post-scan.txt	maintainer-side publisher: reads the private lists in the private tree, where it runs (private/post-land.sh)
+tools/test_publish_github.py	private/export-scan.txt	fixture: an invented private tree
+tools/test_publish_github.py	private/export-private-paths.txt	fixture: an invented private tree
