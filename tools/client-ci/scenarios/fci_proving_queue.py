@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Proving Grounds queue through the real client (progress.tsv row 251: PG-1d
+"""Proving Grounds queue through the real client (progress.tsv row "Proving Grounds", #64: PG-1d
 match types, PG-1c queue; `proving.rs`, `proving/queue.rs`, `service/proving.rs`).
 
     THIS FILE RUNS INSIDE THE REAL EVE CLIENT, under Stackless Python 2.7.
-    Nothing in the server build imports it.  Lane `pg1dc`.
+    Nothing in the server build imports it.  Issue #64.
 
 The client's own `pvpFilamentSvc` drives `pvpFilamentMgr`.  Every check can fail
 on what it names:

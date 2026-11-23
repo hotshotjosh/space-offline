@@ -571,6 +571,40 @@ fn sweep_drops_a_pilot_whose_key_is_gone() {
 }
 
 #[test]
+fn sweep_drops_a_pilot_whose_key_left_the_ship() {
+    let mut reg = world(qa_catalogue(2, 1));
+    stand(&mut reg, ALICE, HOME);
+    let mut q = Queue::default();
+    assert_eq!(join(&reg, &mut q, ALICE, KEY, FIL, noon(0)), Ok(0));
+    // The filament is still hers, but now in a hangar, not in the ship.
+    let mut items = reg.store().items().to_vec();
+    for i in items.iter_mut().filter(|i| i.item_id == KEY) {
+        i.location_id = HANGAR;
+    }
+    reg.apply_snapshot(crate::store::Snapshot {
+        items,
+        next_item_id: 100_883_000,
+        ..crate::store::Snapshot::default()
+    });
+    assert_eq!(sweep(&mut reg, &mut q, noon(0)), vec![ALICE]);
+    let pushed = failures(&mut reg);
+    assert_eq!(pushed[0].1, errors_value(&[(DROP_MOVED, vec![])]));
+}
+
+#[test]
+fn the_fleet_check_comes_before_the_key_checks() {
+    let j = JoinFacts {
+        fleet_format: true,
+        key: None,
+        ..clean_join()
+    };
+    assert_eq!(
+        codes(&join_errors(ALICE, &clean_facts(), &j)),
+        vec![FLEET_NEEDED, err::KEY_NOT_FOUND]
+    );
+}
+
+#[test]
 fn a_pilot_between_gates_is_in_a_jump_not_docked() {
     let mut reg = world(qa_catalogue(2, 1));
     stand(&mut reg, ALICE, HOME);
@@ -650,7 +684,7 @@ fn the_wire_joins_refuses_a_second_and_leaves() {
 }
 
 #[test]
-fn the_tick_and_the_logoff_hook_empty_the_queue() {
+fn the_registered_tick_stage_and_logoff_row_empty_the_queue() {
     let mut reg = world(qa_catalogue(2, 1));
     stand(&mut reg, ALICE, HOME);
     stand(&mut reg, BOB, HOME);
@@ -659,12 +693,21 @@ fn the_tick_and_the_logoff_hook_empty_the_queue() {
         call(&mut reg, who, "JoinPVPQueue", &args).unwrap();
     }
     assert_eq!(reg.ext::<Queue>().len(), 2);
-    tick(&mut reg, Instant::now(), noon(0));
+    // The real tables: the rows must exist, or the queue is never swept.
+    let stage = crate::tick::STAGES
+        .iter()
+        .find(|s| s.name == "proving_queue")
+        .expect("tick::STAGES has a proving_queue row");
+    let row = crate::session_hooks::ON_LOGOFF
+        .iter()
+        .find(|r| r.name == "proving_queue")
+        .expect("session_hooks::ON_LOGOFF has a proving_queue row");
+    (stage.run)(&mut reg, Instant::now(), noon(0));
     assert_eq!(reg.ext::<Queue>().len(), 2, "nobody moved");
     let _ = reg.roster_mut().leave(ALICE);
-    tick(&mut reg, Instant::now(), noon(0));
+    (stage.run)(&mut reg, Instant::now(), noon(0));
     assert_eq!(reg.ext::<Queue>().len(), 1);
-    on_logoff(&mut reg, BOB);
+    (row.run)(&mut reg, BOB);
     assert!(reg.ext::<Queue>().is_empty());
     assert_eq!(failures(&mut reg).len(), 1, "only the docked pilot is told");
 }

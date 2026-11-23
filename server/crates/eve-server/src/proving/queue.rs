@@ -29,11 +29,18 @@
 //!
 //! ## The server's checks, after the client's
 //!
-//! The key (`_validate_key` exists in the client but is not called, so this
-//! order is ours **[I]**): not found (6), not in the ship (5), not a filament
-//! or not the type asked for (2), not the pilot's (3), empty (11). Then a
-//! format with more than one pilot per fleet needs a fleet (23), then no
-//! active event for the filament (33), then already queued (32).
+//! **[I]** The order after the client's list is ours (`_validate_key` exists
+//! in the client but is not called). It follows the abyss validator, which
+//! runs the fleet check before the key (`abyss/common/validator`
+//! `perform_deploy_validation_checks`, ~:294): a format with more than one
+//! pilot per fleet needs a fleet (23); then the key: not found (6), not in
+//! the ship (5), not a filament or not the type asked for (2), not the
+//! pilot's (3), empty (11); then no active event for the filament (33), then
+//! already queued (32). Falsified by a client label text or TQ material that
+//! shows another order.
+//!
+//! The queue is in memory only and empties on a restart, which is harmless:
+//! a restart drops every session, and a pilot must join again.
 //!
 //! ## The [A]s (each with its falsifier)
 //!
@@ -193,6 +200,9 @@ pub fn join_errors(char_id: i64, f: &Facts, j: &JoinFacts) -> Vec<Refusal> {
             e.push((code, who()));
         }
     }
+    if j.fleet_format && !f.in_fleet {
+        e.push((FLEET_NEEDED, vec![]));
+    }
     match &j.key {
         None => e.push((err::KEY_NOT_FOUND, vec![])),
         Some(k) => {
@@ -209,9 +219,6 @@ pub fn join_errors(char_id: i64, f: &Facts, j: &JoinFacts) -> Vec<Refusal> {
                 e.push((err::INVALID_KEY_AMOUNT, vec![]));
             }
         }
-    }
-    if j.fleet_format && !f.in_fleet {
-        e.push((FLEET_NEEDED, vec![]));
     }
     if !j.event_active {
         e.push((err::EVENT_NOT_ACTIVE, vec![]));
@@ -465,7 +472,7 @@ pub fn now_of(reg: &Registry, e: &Entry, ft: i64) -> Now {
         ship_id: reg.character(e.char_id).map_or(0, |c| c.ship_id),
         event: event_of(reg, ft, e.type_id).map(|ev| (ev.match_type.id, ev.schedule.id)),
         key_held: key_facts(reg, e.char_id, e.item_id)
-            .is_some_and(|k| k.owned && k.stack >= 1 && k.type_id == e.type_id),
+            .is_some_and(|k| k.in_ship && k.owned && k.stack >= 1 && k.type_id == e.type_id),
     }
 }
 
