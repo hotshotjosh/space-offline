@@ -192,6 +192,7 @@ comment exactly as shown.
 | `cosmetics/ship-licences.tsv` | #207 EM-3 (`content_lp.py`, the `lp` section) | `emblem` (`emblem::Licences`: the licence types a purchase grants as entitlements) |
 | `facwar/systems.tsv` | FW-3 (`content_facwar.py`, the `facwar` section) | `facwar` (`facwar::Table`: the warzone territory list) |
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
+| `facwar/scoreboards.tsv` | #8 FW-7 (`content_facwar.py`) | `facwar` (`facwar::Table::scoreboard_of`: a battlefield scoreboard type's win thresholds) |
 | `mining/geodes.tsv` | L6A GEODES (`content_geodes.py`, the `geodes` section) | L6A (`eve-mod-econ` `geode`: the geode crate types) |
 | `mining/geode-candidates.tsv` | L6A GEODES (`content_geodes.py`) | the owner, to pick from; the server does not read it |
 | `proving/match_types.tsv` | #64 PG-1a (`content_proving.py`, the `proving` section) | #64 PG-1d (`proving::TABLE`) |
@@ -3089,6 +3090,22 @@ A listed system whose own `faction_id` is not a militia of its warzone is logged
 |---|---|---|
 | `group_id` | `i64` | the victim hull's inventory group (`inventorycommon/const.group*`) |
 | `max_lp` | `i64` | the most one kill of that group pays, in LP, before the line multiplier |
+
+### `facwar/scoreboards.tsv` (#8, FW-7)
+
+- **Writer:** `tools/content_facwar.py`, the `facwar` section of `content.py`. Input: the client's `spacecomponentsbytype` table, the `fwScoreboard` struct of each type [V `findings/pyd-schemas.tsv`: two optional i32s]. **Adding it needs a full bundle regeneration** (the manifest gains a file).
+- **Readers:** `facwar.rs` (`Table::scoreboard_of`, read through the `facwar` table's `boxed_load`), `fw_scoreboard::thresholds`. Optional: with no file, or a type with no row, or an empty field, the server uses `fw_scoreboard::ASSUMED` [A].
+- **Key:** `type_id`; sorted ascending.
+
+```
+#type_id	attacker_wins	occupier_wins
+```
+
+| column | type | source and meaning |
+|---|---|---|
+| `type_id` | `i64` | a type whose `spacecomponentsbytype` row has `fwScoreboard` |
+| `attacker_wins` | `i64?` | `attackerWinsThreshold`, sign kept; empty when the component leaves it out |
+| `occupier_wins` | `i64?` | `occupierWinsThreshold`, sign kept; empty when absent (the server reads the magnitude) |
 
 ### `content/pochven/filaments.tsv`
 

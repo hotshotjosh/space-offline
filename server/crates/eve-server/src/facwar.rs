@@ -76,6 +76,40 @@ pub const MAX_LP_FILE: &str = "facwar/max_lp.tsv";
 /// Its header.
 pub const MAX_LP_HEADER: &str = "#group_id\tmax_lp";
 
+/// The battlefield scoreboards' win thresholds (`fwScoreboard`'s
+/// `attackerWinsThreshold` and `occupierWinsThreshold`, #8), extracted by
+/// `content_facwar.py`; optional, like [`MAX_LP_FILE`].
+pub const SCOREBOARDS_FILE: &str = "facwar/scoreboards.tsv";
+
+/// Its header.
+pub const SCOREBOARDS_HEADER: &str = "#type_id\tattacker_wins\toccupier_wins";
+
+/// One row of [`SCOREBOARDS_FILE`]: the type and its two optional, signed
+/// thresholds (an empty field is `None`).
+pub type ScoreboardRow = (i64, Option<i64>, Option<i64>);
+
+/// Parse one data line of [`SCOREBOARDS_FILE`].
+///
+/// # Errors
+///
+/// A line that is not three TAB fields, a type that is not an integer, or a
+/// threshold that is neither empty nor an integer.
+pub fn parse_scoreboard_line(line: &str) -> Result<ScoreboardRow, String> {
+    let bad = || format!("{SCOREBOARDS_FILE}: bad row {line:?}");
+    let f: Vec<&str> = line.split('\t').collect();
+    let [t, a, o] = f[..] else {
+        return Err(bad());
+    };
+    let opt = |s: &str| -> Result<Option<i64>, String> {
+        if s.is_empty() {
+            Ok(None)
+        } else {
+            s.parse().map(Some).map_err(|_| bad())
+        }
+    };
+    Ok((t.parse().map_err(|_| bad())?, opt(a)?, opt(o)?))
+}
+
 /// This module's registration row, one line in `TABLES` in
 /// `content_tables.rs` (coordinator-only).
 pub const WARZONES: TableSpec = TableSpec {
@@ -97,6 +131,10 @@ fn boxed_load(src: &Sources) -> Result<Boxed, String> {
                 }
                 _ => return Err(format!("{MAX_LP_FILE}: bad row {line:?}")),
             }
+        }
+        for line in b.data_lines(SCOREBOARDS_FILE, SCOREBOARDS_HEADER)? {
+            let (t, a, o) = parse_scoreboard_line(&line)?;
+            table.scoreboards.insert(t, (a, o));
         }
         for line in b.data_lines(SYSTEMS_FILE, SYSTEMS_HEADER)? {
             let mut f = line.split('\t').map(str::parse::<i64>);
@@ -148,6 +186,9 @@ pub struct Table {
     /// `hull group -> the most a kill pays` from [`MAX_LP_FILE`]; empty
     /// without one, and then every kill is capped by the unknown-group figure.
     max_lp: BTreeMap<i64, i64>,
+    /// `scoreboard type -> (attacker_wins, occupier_wins)` from
+    /// [`SCOREBOARDS_FILE`]; empty without one.
+    scoreboards: BTreeMap<i64, (Option<i64>, Option<i64>)>,
 }
 
 impl Table {
@@ -180,6 +221,7 @@ impl Table {
             warzones,
             systems: BTreeMap::new(),
             max_lp: BTreeMap::new(),
+            scoreboards: BTreeMap::new(),
         })
     }
 
@@ -211,6 +253,22 @@ impl Table {
     pub fn with_max_lp(mut self, max_lp: BTreeMap<i64, i64>) -> Table {
         self.max_lp = max_lp;
         self
+    }
+
+    /// The same table with scoreboard thresholds (`type -> (attacker, occupier)`).
+    pub fn with_scoreboards(
+        mut self,
+        scoreboards: BTreeMap<i64, (Option<i64>, Option<i64>)>,
+    ) -> Table {
+        self.scoreboards = scoreboards;
+        self
+    }
+
+    /// A scoreboard type's raw `(attackerWinsThreshold, occupierWinsThreshold)`,
+    /// if the bundle lists the type. Either may be `None`: the component
+    /// leaves it out.
+    pub fn scoreboard_of(&self, type_id: i64) -> Option<(Option<i64>, Option<i64>)> {
+        self.scoreboards.get(&type_id).copied()
     }
 
     /// The most a kill of a hull of `group` pays, if the bundle says.
@@ -1115,6 +1173,37 @@ pub(crate) mod tests {
         let src = Sources::new(None, &dir);
         let t = boxed_load(&src).expect("warzones.tsv loads");
         assert!(t.downcast_ref::<Table>().is_some());
+    }
+
+    #[test]
+    fn a_scoreboard_row_parses_and_a_bad_one_is_an_error() {
+        assert_eq!(
+            parse_scoreboard_line("990001\t30\t-40"),
+            Ok((990_001, Some(30), Some(-40)))
+        );
+        assert_eq!(
+            parse_scoreboard_line("990002\t\t25"),
+            Ok((990_002, None, Some(25)))
+        );
+        assert_eq!(
+            parse_scoreboard_line("990003\t\t"),
+            Ok((990_003, None, None))
+        );
+        for bad in ["990001\t30", "x\t1\t2", "990001\t1.5\t2", "990001\t1\t2\t3"] {
+            assert!(parse_scoreboard_line(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn scoreboard_of_answers_from_the_table_and_an_absent_file_loads() {
+        let t = Table::fixture().with_scoreboards([(990_001, (Some(30), None))].into());
+        assert_eq!(t.scoreboard_of(990_001), Some((Some(30), None)));
+        assert_eq!(t.scoreboard_of(990_002), None);
+        let dir = crate::authored::Dir::compiled_only();
+        let src = Sources::new(None, &dir);
+        let loaded = boxed_load(&src).expect("no bundle: no scoreboards, still loads");
+        let loaded = loaded.downcast_ref::<Table>().expect("a Table");
+        assert_eq!(loaded.scoreboard_of(990_001), None);
     }
 
     // ---- W17 CP53b ----

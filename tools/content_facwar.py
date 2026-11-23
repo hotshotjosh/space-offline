@@ -1,6 +1,6 @@
 """The `facwar` content section: the client's warzone territory list (FW-3, #99).
 
-`handback/r-fw/report.md` §4. Writes two bundle files:
+`handback/r-fw/report.md` §4. Writes three bundle files:
 
     facwar/systems.tsv   `system_id warzone_id`, one row per system the client
                          draws as warzone territory
@@ -9,6 +9,14 @@
                          kill of that group pays. Read from the bytecode of
                          `out/pyc`; with no `out/pyc` the file is not written
                          and the server falls back to `facwarMaxLPUnknownGroup`.
+    facwar/scoreboards.tsv
+                         `type_id attacker_wins occupier_wins` (#8, FW-7), one
+                         row per type whose `spacecomponentsbytype` row has an
+                         `fwScoreboard` component: its two optional win
+                         thresholds (`attackerWinsThreshold`,
+                         `occupierWinsThreshold`), the sign kept, empty when
+                         the component leaves one out [V `findings/pyd-schemas.tsv`:
+                         struct fwScoreboard, two optional i32].
 
 The source is `warzonespositiondata.fsdbinary` [V, R-FW §2]:
 `{warzoneID: {systems: {ssid: {solarSystemId, isVisible, territorySprite,
@@ -25,12 +33,16 @@ import sys
 
 SECTION = "facwar"
 DEPENDS = ()
-CFSD = ("warzonespositiondata",)
+CFSD = ("warzonespositiondata", "spacecomponentsbytype")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 HEADER = ("system_id", "warzone_id")
 SOURCES = ["res:/staticdata/warzonespositiondata.fsdbinary"]
+
+SCOREBOARD_HEADER = ("type_id", "attacker_wins", "occupier_wins")
+SCOREBOARD_SOURCES = ["res:/staticdata/spacecomponentsbytype.fsdbinary"]
+SCOREBOARD_COMPONENT = "fwScoreboard"
 
 MAX_LP_HEADER = ("group_id", "max_lp")
 MAX_LP_SOURCES = ["pyc:eve/common/lib/appConst.pyc", "pyc:inventorycommon/const.pyc"]
@@ -129,6 +141,40 @@ def derive(zones):
     return rows, problems
 
 
+def derive_scoreboards(components):
+    """`(rows, problems)` from `{type_id: {component: {attr: value}}}`.
+
+    A type is a scoreboard when it has the `fwScoreboard` component (a dict,
+    possibly empty). The two thresholds are optional i32s: absent is `None`
+    (an empty field), the sign is kept (the occupier's is normally stored
+    negative or positive, the server reads its magnitude). A value that is
+    not a plain int is a problem."""
+    rows, problems = [], []
+    for tid in sorted(components):
+        comp = (components[tid] or {}).get(SCOREBOARD_COMPONENT)
+        if comp is None:
+            continue
+        vals = []
+        for name in ("attackerWinsThreshold", "occupierWinsThreshold"):
+            v = comp.get(name)
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+                problems.append("type %s: %s is %r, not an int" % (tid, name, v))
+                v = None
+            vals.append(v)
+        rows.append((int(tid), vals[0], vals[1]))
+    return rows, problems
+
+
+def _scoreboards(ctx):
+    fsd = _content()._imp("fsd")  # noqa: SLF001
+    components = {}
+    for t, r in fsd.rows(ctx.client, "spacecomponentsbytype").items():
+        r = dict(r)
+        if r.get(SCOREBOARD_COMPONENT) is not None:
+            components[t] = {SCOREBOARD_COMPONENT: dict(r[SCOREBOARD_COMPONENT])}
+    return derive_scoreboards(components)
+
+
 def _content():
     if _HERE not in sys.path:
         sys.path.append(_HERE)
@@ -151,6 +197,11 @@ def section(ctx):
     ctx.note("facwar/systems.tsv: %d systems (%s)"
              % (len(rows), ", ".join("warzone %d: %d" % kv for kv in sorted(per.items()))))
     out = [("facwar/systems.tsv", HEADER, rows, SOURCES)]
+    sb, sb_problems = _scoreboards(ctx)
+    if sb_problems:
+        raise ValueError("facwar: " + "; ".join(sb_problems[:20]))
+    ctx.note("facwar/scoreboards.tsv: %d scoreboard types" % len(sb))
+    out.append(("facwar/scoreboards.tsv", SCOREBOARD_HEADER, sb, SCOREBOARD_SOURCES))
     got = _max_lp()
     if got is None:
         ctx.note("facwar/max_lp.tsv: out/pyc is not unpacked, not written")
@@ -171,6 +222,12 @@ def check(ctx):
     if got != [content.encode_row(r).split("\t") for r in rows]:
         bad.append("facwar/systems.tsv: differs from a fresh derive (%d vs %d rows)"
                    % (len(got), len(rows)))
+    sb, sb_problems = _scoreboards(ctx)
+    bad.extend(sb_problems)
+    have_sb = list(content.read_rows(ctx.path("facwar/scoreboards.tsv")))
+    if have_sb != [content.encode_row(r).split("\t") for r in sb]:
+        bad.append("facwar/scoreboards.tsv: differs from a fresh derive (%d vs %d rows)"
+                   % (len(have_sb), len(sb)))
     got_lp = _max_lp()
     if got_lp is not None:
         lp, lp_problems = got_lp

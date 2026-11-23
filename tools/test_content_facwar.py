@@ -81,5 +81,27 @@ class MaxLp(unittest.TestCase):
         self.assertEqual(len(F.max_lp_rows(ops, self.GROUPS)[1]), 1)
 
 
+class Scoreboards(unittest.TestCase):
+    def test_a_type_with_the_component_is_a_row_and_the_sign_is_kept(self):
+        comps = {990001: {"fwScoreboard": {"attackerWinsThreshold": 30,
+                                           "occupierWinsThreshold": -40}},
+                 990002: {"fwCapturePoint": {}}}
+        rows, problems = F.derive_scoreboards(comps)
+        self.assertEqual((rows, problems), ([(990001, 30, -40)], []))
+
+    def test_an_absent_threshold_is_empty_and_the_rows_sort(self):
+        comps = {990009: {"fwScoreboard": {}},
+                 990003: {"fwScoreboard": {"occupierWinsThreshold": 25}}}
+        rows, problems = F.derive_scoreboards(comps)
+        self.assertEqual(rows, [(990003, None, 25), (990009, None, None)])
+        self.assertEqual(problems, [])
+        self.assertEqual(F._content().encode_row(rows[1]), "990009\t\t")
+
+    def test_a_non_int_threshold_is_a_problem(self):
+        rows, problems = F.derive_scoreboards(
+            {990001: {"fwScoreboard": {"attackerWinsThreshold": 1.5}}})
+        self.assertEqual((rows, len(problems)), ([(990001, None, None)], 1))
+
+
 if __name__ == "__main__":
     unittest.main()
