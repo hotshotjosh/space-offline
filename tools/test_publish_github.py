@@ -177,6 +177,20 @@ class Publish(unittest.TestCase):
         r = self.pub("push")
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_a_later_change_to_the_private_list_does_not_remap_published_commits(self):
+        self.land({"lib/a.txt": "a\n", "tools/old-mirror.sh": "x\n",
+                   "private/export-private-paths.txt": "findings/\ntools/old-mirror.sh\n"},
+                  "A fix with a private tool (#7)")
+        self.assertEqual(self.pub("push").returncode, 0)
+        pushed = self.gh_main()
+        # the tool is retired: gone from the tree and from the private list
+        os.remove(os.path.join(self.priv, "tools/old-mirror.sh"))
+        self.land({"private/export-private-paths.txt": "findings/\n", "lib/b.txt": "b\n"},
+                  "The old tool is gone (#8)")
+        r = self.pub("push")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(git(self.gh, "rev-parse", "main~1"), pushed)
+
     def test_a_leaking_subject_is_withheld(self):
         self.land({"lib/a.txt": "a\n"}, "Fix for invented-secret-name (#4)\n\nfine line")
         r = self.pub("push")

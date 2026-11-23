@@ -85,12 +85,13 @@ def is_private(path: str, prefixes: list[str]) -> bool:
 def public_tree(g: Git, commit: str, prefixes: list[str], cache: dict) -> str:
     """The tree of `commit` without the private paths (a tree object id)."""
     tree = g.run("rev-parse", commit + "^{tree}").strip()
-    if tree in cache:
-        return cache[tree]
+    key = (tree, tuple(prefixes))
+    if key in cache:
+        return cache[key]
     names = [l for l in g.run("ls-tree", "-r", "-z", "--name-only", tree).split("\0") if l]
     drop = [n for n in names if is_private(n, prefixes)]
     if not drop:
-        cache[tree] = tree
+        cache[key] = tree
         return tree
     idx = os.path.join(g.run("rev-parse", "--absolute-git-dir").strip(), "publish-index")
     env = {"GIT_INDEX_FILE": idx}
@@ -98,7 +99,7 @@ def public_tree(g: Git, commit: str, prefixes: list[str], cache: dict) -> str:
     g.run("update-index", "--force-remove", "-z", "--stdin", env=env, input="\0".join(drop) + "\0")
     out = g.run("write-tree", env=env).strip()
     os.remove(idx)
-    cache[tree] = out
+    cache[key] = out
     return out
 
 
@@ -128,8 +129,33 @@ def areas_of(g: Git, parent_tree: str | None, tree: str) -> str:
     return ", ".join(tops[:3]) + (f" and {len(tops) - 3} more" if len(tops) > 3 else "") or "files"
 
 
-def build_map(g: Git, tip: str, upstream: str | None, prefixes, pats) -> dict:
-    """private commit -> public commit, for every commit reachable from tip."""
+def lines_at(g: Git, commit: str, rel: str) -> list[str]:
+    """`public-export.lines_of` of a file as it is in `commit` (empty when absent)."""
+    out = g.run("show", f"{commit}:{rel}", ok=False)
+    return [s.strip() for s in out.split("\n") if s.strip() and not s.lstrip().startswith("#")]
+
+
+def lists_at(g: Git, commit: str, pe, memo: dict):
+    """The private paths and the message scan of `commit`'s own tree, so mapping an old
+    commit never depends on how the lists changed later (the map stays deterministic)."""
+    blobs = tuple(g.run("rev-parse", "-q", "--verify", f"{commit}:{rel}", ok=False).strip()
+                  for rel in ("private/export-private-paths.txt", "private/export-scan.txt",
+                              "private/post-scan.txt"))
+    if blobs not in memo:
+        prefixes = ["private/"] + lines_at(g, commit, "private/export-private-paths.txt")
+        pats = [re.compile(p) for p in pe.BUILT_IN + lines_at(g, commit, "private/export-scan.txt")]
+        try:
+            pats += [re.compile(p) for p in lines_at(g, commit, "private/post-scan.txt")]
+        except re.error:
+            pats = [re.compile("")]   # a list that does not compile withholds every line
+        memo[blobs] = (prefixes, pats)
+    return memo[blobs]
+
+
+def build_map(g: Git, tip: str, upstream: str | None, pe) -> dict:
+    """private commit -> public commit, for every commit reachable from tip. Each commit is
+    mapped with the private paths and the scan of its own tree."""
+    memo: dict = {}
     on_github = set()
     if upstream:
         on_github = set(g.run("rev-list", upstream).split())
@@ -148,6 +174,7 @@ def build_map(g: Git, tip: str, upstream: str | None, prefixes, pats) -> dict:
                 mp.append(q)
         # drop a mapped parent that another mapped parent already contains
         mp = [p for p in mp if not any(o != p and g.ok("merge-base", "--is-ancestor", p, o) for o in mp)]
+        prefixes, pats = lists_at(g, c, pe, memo)
         tree = public_tree(g, c, prefixes, cache)
         if len(mp) == 1 and g.run("rev-parse", mp[0] + "^{tree}").strip() == tree:
             m[c] = mp[0]
@@ -198,7 +225,7 @@ def main(argv: list[str]) -> int:
 
     if a.cmd == "pull":
         if g.ok("merge-base", "--is-ancestor", upstream,
-                build_map(g, g.run("rev-parse", a.rev).strip(), upstream, prefixes, pats)[
+                build_map(g, g.run("rev-parse", a.rev).strip(), upstream, pe)[
                     g.run("rev-parse", a.rev).strip()]):
             print(f"publish-github: {a.remote}/{a.branch} ({upstream[:12]}) is already merged")
             return 0
@@ -237,7 +264,7 @@ def main(argv: list[str]) -> int:
         print("\n".join(ident), file=sys.stderr)
         print("publish-github: the private tree is not its exported form; refusing", file=sys.stderr)
         return 1
-    m = build_map(g, g.run("rev-parse", a.rev).strip(), upstream, prefixes, pats)
+    m = build_map(g, g.run("rev-parse", a.rev).strip(), upstream, pe)
     tip = m[g.run("rev-parse", a.rev).strip()]
     # GitHub holds the maps of what we pushed before; anything else on it (a merged PR)
     # must be pulled in first, or the push would not be a fast-forward
