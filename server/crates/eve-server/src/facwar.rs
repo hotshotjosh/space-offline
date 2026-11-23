@@ -1037,7 +1037,9 @@ fn flip(reg: &mut Registry, system: i64, mut o: Occupation, now: BlueTime) -> Oc
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    //! `pub(crate)`: the battlefield tests (`fw_scoreboard`, `fw_capture`) reuse
+    //! this module's invented warzone.
     use super::*;
     use crate::pyutil::dict_get;
 
@@ -1124,23 +1126,23 @@ mod tests {
     use std::sync::Arc;
 
     /// Invented militias A and B of one warzone, and an outsider C.
-    const A: i64 = 599_201;
-    const B: i64 = 599_202;
-    const C: i64 = 599_203;
+    pub(crate) const A: i64 = 599_201;
+    pub(crate) const B: i64 = 599_202;
+    pub(crate) const C: i64 = 599_203;
     const ZONE: i64 = 97;
     /// Two warzone systems joined by a gate (S1 held by A, S2 by B), a
     /// low-sec system outside the warzone, and a high-sec one of A's.
-    const S1: i64 = 39_000_201;
-    const S2: i64 = 39_000_202;
+    pub(crate) const S1: i64 = 39_000_201;
+    pub(crate) const S2: i64 = 39_000_202;
     const LOW: i64 = 39_000_203;
     const HIGH: i64 = 39_000_204;
     const THIRD: i64 = 39_000_205;
-    const ME: i64 = 90_000_201;
-    const YOU: i64 = 90_000_202;
-    const FW: i64 = FW_ARCHETYPES[0];
+    pub(crate) const ME: i64 = 90_000_201;
+    pub(crate) const YOU: i64 = 90_000_202;
+    pub(crate) const FW: i64 = FW_ARCHETYPES[0];
     /// The militia corporations of A and B (invented).
-    const CORP_A: i64 = 1_999_201;
-    const CORP_B: i64 = 1_999_202;
+    pub(crate) const CORP_A: i64 = 1_999_201;
+    pub(crate) const CORP_B: i64 = 1_999_202;
 
     fn universe() -> Universe {
         let row = |id: i64, faction: Option<i64>, sec: &str| {
@@ -1161,7 +1163,7 @@ mod tests {
 
     /// FW complexes owned by A, by B and by the outsider C, all of the
     /// one fixture archetype, plus their population row.
-    fn dungeons() -> dungeon_data::Table {
+    pub(crate) fn dungeons() -> dungeon_data::Table {
         let d = |id: i64, faction: i64| Dungeon {
             id,
             archetype: FW,
@@ -1179,7 +1181,7 @@ mod tests {
         }
     }
 
-    fn population_table() -> population::Table {
+    fn population_rows() -> Vec<population::Row> {
         let row = population::Row {
             key: "fx_fw_low".to_owned(),
             band: crate::celestial::Band::Low,
@@ -1191,7 +1193,7 @@ mod tests {
             ttl_s: 172_800,
             pochven: false,
         };
-        population::Table::new(vec![row]).expect("one row")
+        vec![row]
     }
 
     fn pilot(id: i64, system: i64) -> Character {
@@ -1203,7 +1205,19 @@ mod tests {
         }
     }
 
-    fn world() -> Registry {
+    pub(crate) fn world() -> Registry {
+        world_with(|_, _, _| ())
+    }
+
+    /// [`world`] with `extra` applied to the npc table, the dungeons and the
+    /// population rows before they are shared.
+    pub(crate) fn world_with(
+        extra: impl FnOnce(
+            &mut crate::npc_data::Table,
+            &mut dungeon_data::Table,
+            &mut Vec<population::Row>,
+        ),
+    ) -> Registry {
         let mut c = Content::fixture();
         let zone = Warzone {
             id: ZONE,
@@ -1212,8 +1226,6 @@ mod tests {
         };
         c.insert("facwar", Table::new(vec![zone]).expect("ok"));
         c.insert("universe", universe());
-        c.insert("dungeon_data", dungeons());
-        c.insert("population", population_table());
         let mut npc = crate::npc_data::Table::default();
         for (f, corp) in [(A, CORP_A), (B, CORP_B)] {
             npc.factions.insert(
@@ -1226,6 +1238,10 @@ mod tests {
                 },
             );
         }
+        let (mut dun, mut rows) = (dungeons(), population_rows());
+        extra(&mut npc, &mut dun, &mut rows);
+        c.insert("dungeon_data", dun);
+        c.insert("population", population::Table::new(rows).expect("rows"));
         c.insert("npc_data", npc);
         let mut text = String::new();
         for (n, s) in [S1, S2, LOW, HIGH].iter().enumerate() {
@@ -1273,7 +1289,7 @@ mod tests {
             .unwrap_or_else(|| panic!("{name} on {v:?}"))
     }
 
-    fn fw_sites(reg: &Registry, system: i64) -> Vec<population::Site> {
+    pub(crate) fn fw_sites(reg: &Registry, system: i64) -> Vec<population::Site> {
         population::sites(reg, system, reg.world().birth)
             .sites
             .into_iter()

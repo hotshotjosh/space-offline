@@ -232,7 +232,9 @@ pub fn next_point(p: &Point, params: &Params, now: BlueTime) -> Option<BlueTime>
 #[derive(Debug, Clone, Default)]
 pub struct State {
     params: Option<Params>,
-    points: BTreeMap<i64, Point>,
+    /// Keyed by `(site_id, item_id)`; a complex with no point object keeps
+    /// one point under item 0.
+    points: BTreeMap<(i64, i64), Point>,
     next_check: BlueTime,
 }
 
@@ -246,13 +248,21 @@ impl State {
         self.params.clone().unwrap_or_else(assumed)
     }
 
-    pub fn point(&self, site_id: i64) -> Option<&Point> {
-        self.points.get(&site_id)
+    /// Every point of a site (a battlefield has one to three).
+    pub fn points_of(&self, site_id: i64) -> impl Iterator<Item = &Point> {
+        self.points
+            .range((site_id, i64::MIN)..=(site_id, i64::MAX))
+            .map(|(_, p)| p)
     }
 
-    /// Whether a capture has taken this complex.
+    /// The first point of a site.
+    pub fn point(&self, site_id: i64) -> Option<&Point> {
+        self.points_of(site_id).next()
+    }
+
+    /// Whether a capture has taken this complex (any of its points).
     pub fn is_captured(&self, site_id: i64) -> bool {
-        self.points.get(&site_id).is_some_and(|p| p.taken)
+        self.points_of(site_id).any(|p| p.taken)
     }
 }
 
@@ -411,7 +421,7 @@ pub fn slash(
 }
 
 /// A live complex: site, system, dungeon, anchor, and its point object.
-type Live = (i64, i64, i64, [f64; 3], Option<(i64, [f64; 3])>);
+type Live = (i64, i64, i64, [f64; 3], Vec<(i64, [f64; 3])>);
 
 /// **The stage** (called from `facwar::tick`): every [`CHECK_EVERY`], each
 /// live FW complex in a warzone system has its point judged and advanced;
@@ -438,17 +448,23 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                 let obj = i
                     .objects
                     .iter()
-                    .find(|o| npc.is_some_and(|n| n.has_component(o.type_id, COMPONENT)))
-                    .map(|o| (o.item_id, o.position));
+                    .filter(|o| npc.is_some_and(|n| n.has_component(o.type_id, COMPONENT)))
+                    .map(|o| (o.item_id, o.position))
+                    .collect();
                 (i.site_id, i.system, i.dungeon_id, i.anchor, obj)
             })
             .collect()
     };
     let live: BTreeSet<i64> = sites.iter().map(|s| s.0).collect();
+    let items: BTreeSet<(i64, i64)> = sites
+        .iter()
+        .flat_map(|s| s.4.iter().map(|o| (s.0, o.0)))
+        .collect();
     let st = reg.ext_mut::<crate::facwar::Facwar>().capture_mut();
     // A taken point is kept only while the population still lists its site.
-    st.points.retain(|id, _| live.contains(id));
-    for (site_id, system, dungeon, anchor, obj) in sites {
+    st.points
+        .retain(|(id, item), _| live.contains(id) && (*item == 0 || items.contains(&(*id, *item))));
+    for (site_id, system, dungeon, anchor, objs) in sites {
         let Some((archetype, owner)) = reg
             .content()
             .try_get::<crate::dungeon_data::Table>()
@@ -473,52 +489,63 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
         {
             continue;
         }
-        let position = obj.map_or(anchor, |x| x.1);
-        let empty = obj.is_none() && crate::site_spawn::is_empty_pocket(reg, site_id);
-        let params = interim_params(&base_params, empty);
-        let (capturing, blocking) = near(reg, system, position, &params, ft);
-        let (phase, holder) = judge(o.attacker, o.occupier, &capturing, &blocking);
-        let (awards, before, after) = {
-            let st = reg.ext_mut::<crate::facwar::Facwar>().capture_mut();
-            let p = st.points.entry(site_id).or_insert_with(|| Point {
-                site_id,
-                system,
-                item_id: obj.map(|x| x.0),
-                position,
-                attacker: o.attacker,
-                occupier: o.occupier,
-                progress: 0,
-                holder: None,
-                phase: Phase::Empty,
-                last: ft,
-                cycles: 0,
-                taken: false,
-            });
-            p.attacker = o.attacker;
-            p.occupier = o.occupier;
-            let before = seen(p);
-            let awards = advance(p, &params, ft, phase, holder);
-            (awards, before, p.clone())
+        // One point per capture-point object; a complex without one is judged
+        // at its anchor under item 0.
+        let targets: Vec<(Option<i64>, [f64; 3])> = if objs.is_empty() {
+            vec![(None, anchor)]
+        } else {
+            objs.iter().map(|o| (Some(o.0), o.1)).collect()
         };
-        // The client reads `nextPointTime` and `factionInfo` only when it
-        // builds the item or on `OnSlimItemChange` ([V] `:39-49`).
-        if let (true, Some(item)) = (slim_stale(before, &after), after.item_id) {
-            push_slim(reg, item);
-        }
-        for a in awards {
-            match a {
-                Award::Points { holder, points } => {
-                    let delta = if holder == o.attacker {
-                        points
-                    } else {
-                        -points
-                    };
-                    crate::facwar::add_vp(reg, system, delta, ft);
-                }
-                Award::Taken { .. } => {
-                    // Pay only when the slot was still live to take.
-                    if crate::population::complete(reg, system, site_id, ft) {
-                        crate::fw_lp::on_complete(reg, site_id, system, anchor, ft);
+        for (item, position) in targets {
+            let empty = objs.is_empty() && crate::site_spawn::is_empty_pocket(reg, site_id);
+            let params = interim_params(&base_params, empty);
+            let (capturing, blocking) = near(reg, system, position, &params, ft);
+            let (phase, holder) = judge(o.attacker, o.occupier, &capturing, &blocking);
+            let (awards, before, after) = {
+                let st = reg.ext_mut::<crate::facwar::Facwar>().capture_mut();
+                let p = st
+                    .points
+                    .entry((site_id, item.unwrap_or(0)))
+                    .or_insert_with(|| Point {
+                        site_id,
+                        system,
+                        item_id: item,
+                        position,
+                        attacker: o.attacker,
+                        occupier: o.occupier,
+                        progress: 0,
+                        holder: None,
+                        phase: Phase::Empty,
+                        last: ft,
+                        cycles: 0,
+                        taken: false,
+                    });
+                p.attacker = o.attacker;
+                p.occupier = o.occupier;
+                let before = seen(p);
+                let awards = advance(p, &params, ft, phase, holder);
+                (awards, before, p.clone())
+            };
+            // The client reads `nextPointTime` and `factionInfo` only when it
+            // builds the item or on `OnSlimItemChange` ([V] `:39-49`).
+            if let (true, Some(item)) = (slim_stale(before, &after), after.item_id) {
+                push_slim(reg, item);
+            }
+            for a in awards {
+                match a {
+                    Award::Points { holder, points } => {
+                        let delta = if holder == o.attacker {
+                            points
+                        } else {
+                            -points
+                        };
+                        crate::facwar::add_vp(reg, system, delta, ft);
+                    }
+                    Award::Taken { .. } => {
+                        // Pay only when the slot was still live to take.
+                        if crate::population::complete(reg, system, site_id, ft) {
+                            crate::fw_lp::on_complete(reg, site_id, system, anchor, ft);
+                        }
                     }
                 }
             }
@@ -716,7 +743,7 @@ mod tests {
         reg.ext_mut::<crate::facwar::Facwar>()
             .capture_mut()
             .points
-            .insert(1, p.clone());
+            .insert((1, 3), p.clone());
         let got = slim_extras(&reg, &[3]);
         let keys: Vec<&str> = got[0].1.iter().map(|k| k.0).collect();
         assert_eq!(keys, vec![KEY_FACTION_INFO, KEY_NEXT_POINT]);
@@ -724,8 +751,76 @@ mod tests {
         reg.ext_mut::<crate::facwar::Facwar>()
             .capture_mut()
             .points
-            .insert(1, p);
+            .insert((1, 3), p);
         let got = slim_extras(&reg, &[3]);
         assert_eq!(got[0].1.len(), 1, "no countdown while contested");
+    }
+
+    /// Invented capture-point type; the pilot of side B (the attacker of S1).
+    const CP_TYPE: i64 = 990_101;
+
+    fn put_pilot(reg: &mut Registry, at: [f64; 3]) {
+        use crate::facwar::tests as fx;
+        reg.roster_mut()
+            .arrive(crate::space_state::Presence::arriving(
+                fx::ME,
+                fx::ME + 100,
+                fx::S1,
+                crate::space_state::Motion::arrived(at, [0.0; 3]),
+            ));
+    }
+
+    fn run(reg: &mut Registry, from: BlueTime, to: BlueTime) {
+        let mut t = from;
+        while t < to {
+            tick(reg, t);
+            t += CHECK_EVERY;
+        }
+    }
+
+    #[test]
+    fn every_capture_point_of_a_site_is_its_own_point() {
+        use crate::facwar::tests as fx;
+        let mut reg = fx::world_with(|npc, _, _| {
+            npc.components.insert((CP_TYPE, COMPONENT.to_owned()));
+        });
+        let now = reg.world().birth;
+        let site = fx::fw_sites(&reg, fx::S1)
+            .into_iter()
+            .find(|s| fx::dungeons().dungeons[&s.dungeon_id].faction == Some(fx::A))
+            .expect("a complex of S1's occupier");
+        assert!(crate::site::instantiate(&mut reg, &site));
+        let near = site.anchor;
+        let far = [near[0] + 200_000.0, near[1], near[2]];
+        let one = crate::site::add_object(&mut reg, site.site_id, CP_TYPE, near).expect("one");
+        let two = crate::site::add_object(&mut reg, site.site_id, CP_TYPE, far).expect("two");
+        crate::service::facwar_mgr::enlist(&mut reg, fx::ME, fx::B, now).expect("enlists");
+        put_pilot(&mut reg, near);
+        let cycle = assumed().seconds * SECOND;
+        run(&mut reg, now, now + 2 * cycle);
+        let st = reg.ext::<crate::facwar::Facwar>().capture();
+        assert_eq!(st.points_of(site.site_id).count(), 2, "one per object");
+        let at = |item: i64| {
+            st.points
+                .get(&(site.site_id, item))
+                .expect("a point")
+                .clone()
+        };
+        assert!(at(one.item_id).cycles >= 1, "held: paid");
+        assert_eq!(at(two.item_id).cycles, 0);
+        assert_eq!(at(two.item_id).phase, Phase::Empty);
+        assert!(!st.is_captured(site.site_id));
+        // Walk to the other point: it is judged and paid on its own.
+        put_pilot(&mut reg, far);
+        run(&mut reg, now + 2 * cycle, now + 5 * cycle);
+        let st = reg.ext::<crate::facwar::Facwar>().capture();
+        let at = |item: i64| {
+            st.points
+                .get(&(site.site_id, item))
+                .expect("a point")
+                .clone()
+        };
+        assert!(at(two.item_id).cycles >= 1);
+        assert_eq!(at(one.item_id).phase, Phase::Empty);
     }
 }
