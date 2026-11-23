@@ -6,8 +6,7 @@ space-offline is a private server for the EVE Online game client, written in
 Rust: mostly the standard library, a few allowlisted crates, and no `unsafe` in
 our own code. You bring your own client; the repository contains no file of
 the game client. It targets one client build at a time: the `pinned` row of
-`tools/builds.tsv`. The goal is co-op and PvP with friends, beside 500 to 1,000
-or more player-like bots that mine, fight, build and trade. The build tools run
+`tools/builds.tsv`. The goal is co-op and PvP locally with player-like bots that mine, fight, build and trade. The build tools run
 in Docker, so the build installs nothing on the host.
 
 **No money, ever.** It is free, and nobody may make or take money, or anything
