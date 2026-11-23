@@ -571,10 +571,12 @@ pub fn effect(vote_type: i64, outcome: Outcome, opts: &[VoteOption]) -> Effect {
 }
 
 /// The rule for a CEO vote to act **[A]**: the yes weight is more than half
-/// of the shares issued. Falsifier: reference data on the pass rule, or an
-/// owner decision.
-pub fn ceo_quorum_met(yes: i64, issued: i64) -> bool {
-    issued > 0 && yes.saturating_mul(2) > issued
+/// of the shares that can vote, `voting`: the issued shares less the corp's
+/// own holding, which has no vote. Falsifier: reference data on the pass
+/// rule, or a TQ CEO vote whose quorum counts treasury shares; or an owner
+/// decision.
+pub fn ceo_quorum_met(yes: i64, voting: i64) -> bool {
+    voting > 0 && yes.saturating_mul(2) > voting
 }
 
 /// Whether the closed case `id` has been settled.
@@ -609,7 +611,9 @@ pub fn take_due(d: &mut Deltas, now: i64) -> Vec<Due> {
         let mut effect = effect(case.vote_type, outcome, &opts);
         if matches!(effect, Effect::NewCeo { .. }) {
             let yes = opts.iter().find(|o| o.id == 0).map_or(0, |o| o.votes_for);
-            if !ceo_quorum_met(yes, crate::corp_shares::issued(d, case.corp)) {
+            let voting = crate::corp_shares::issued(d, case.corp)
+                - crate::corp_shares::held(d, case.corp, case.corp);
+            if !ceo_quorum_met(yes, voting) {
                 effect = Effect::Nothing;
             }
         }
@@ -1211,6 +1215,14 @@ mod tests {
         assert_eq!(eff(half), Effect::Nothing);
         assert_eq!(eff(most), Effect::NewCeo { candidate: BOB });
         assert!(ceo_quorum_met(501, 1000) && !ceo_quorum_met(500, 1000) && !ceo_quorum_met(1, 0));
+        // 1000 founding shares and 1500 created to the corp: only 1000 can
+        // vote, so a unanimous vote of them passes.
+        let mut d = Deltas::default();
+        cs::found(&mut d, CORP, ALICE);
+        cs::create(&mut d, CORP, 1500).unwrap();
+        let voting = cs::issued(&d, CORP) - cs::held(&d, CORP, CORP);
+        assert_eq!(voting, cs::FOUNDING_SHARES);
+        assert!(ceo_quorum_met(cs::FOUNDING_SHARES, voting));
     }
 
     #[test]

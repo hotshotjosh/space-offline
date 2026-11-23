@@ -239,7 +239,7 @@ fn pair(old: i64, new: i64) -> PyValue {
 }
 
 /// `OnShareChange` to whoever holds the changed shares.
-fn tell_change(reg: &mut Registry, corp: i64, c: Change) {
+pub(crate) fn tell_change(reg: &mut Registry, corp: i64, c: Change) {
     let to = listeners(reg, c.holder);
     if to.is_empty() {
         return;

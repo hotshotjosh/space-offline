@@ -178,9 +178,9 @@ pub fn move_shares(
 /// Issue `n` new shares of `corp`: the issued total rises by `n` and the
 /// corporation itself holds them **[A: new shares go to the corporation's own
 /// holding, as the holder id `corp`; falsifier: TQ crediting them to the CEO
-/// or to the voters]**. Nothing changes when it is refused. Answers the new
-/// issued total.
-pub fn create(d: &mut Deltas, corp: i64, n: i64) -> Result<i64, CreateRefusal> {
+/// or to the voters]**. Nothing changes when it is refused. Answers the
+/// corporation's own holding change.
+pub fn create(d: &mut Deltas, corp: i64, n: i64) -> Result<Change, CreateRefusal> {
     if n < 1 {
         return Err(CreateRefusal::NothingToCreate);
     }
@@ -195,7 +195,11 @@ pub fn create(d: &mut Deltas, corp: i64, n: i64) -> Result<i64, CreateRefusal> {
         .ok_or(CreateRefusal::TooMany)?;
     d.put(KIND, key(corp, MARKER), vec![total.to_string()]);
     set(d, corp, corp, own);
-    Ok(total)
+    Ok(Change {
+        holder: corp,
+        old: own - n,
+        new: own,
+    })
 }
 
 /// Split `cents` over `holders` (`(who, shares)`) by weight against `issued`
@@ -256,14 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn creating_raises_the_total_and_the_corp_holds_the_new_shares() {
+    fn creating_raises_the_issued_total_and_the_holdings_add_up_to_it() {
         let mut d = Deltas::default();
         assert_eq!(create(&mut d, CORP, 5), Err(CreateRefusal::NotFounded));
         found(&mut d, CORP, ALICE);
         assert_eq!(create(&mut d, CORP, 0), Err(CreateRefusal::NothingToCreate));
-        assert_eq!(create(&mut d, CORP, 50), Ok(FOUNDING_SHARES + 50));
+        create(&mut d, CORP, 50).unwrap();
         assert_eq!(issued(&d, CORP), FOUNDING_SHARES + 50);
-        assert_eq!(held(&d, CORP, CORP), 50);
+        let sum: i64 = holders(&d, CORP).iter().map(|h| h.1).sum();
+        assert_eq!(sum, issued(&d, CORP));
         assert_eq!(held(&d, CORP, ALICE), FOUNDING_SHARES);
         assert_eq!(create(&mut d, CORP, i64::MAX), Err(CreateRefusal::TooMany));
         assert_eq!(issued(&d, CORP), FOUNDING_SHARES + 50);

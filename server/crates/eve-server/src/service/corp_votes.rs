@@ -332,14 +332,14 @@ fn activate_sanctioned(
         let now = crate::pyutil::filetime_now();
         // Check, create, then mark: a refused creation leaves the case as it was.
         let s = cv::check_put_in_effect(reg.deltas(), id, now).map_err(refusal)?;
-        ensure_founded(reg, corp);
-        cs::create(reg.deltas_mut(), corp, s.parameter).map_err(|r| match r {
+        let change = cs::create(reg.deltas_mut(), corp, s.parameter).map_err(|r| match r {
             cs::CreateRefusal::NothingToCreate => custom("That vote names no shares to create."),
             cs::CreateRefusal::NotFounded | cs::CreateRefusal::TooMany => {
                 custom("Those shares cannot be created.")
             }
         })?;
         cv::put_in_effect(reg.deltas_mut(), id, now).map_err(refusal)?;
+        super::corp_shares::tell_change(reg, corp, change);
         tell(
             reg,
             corp,
@@ -499,6 +499,9 @@ fn insert_case(reg: &mut Registry, req: &Request<'_>, me: i64) -> Result<PyValue
         if !in_corp || target_is_ceo {
             return Err(custom("That pilot cannot be put to an expulsion vote."));
         }
+    }
+    if vote_type == cv::VOTE_SHARES && options.first().is_none_or(|o| o.parameter < 1) {
+        return Err(custom("A share vote must name at least one share."));
     }
     let now = crate::pyutil::filetime_now();
     let id = cv::open(
@@ -1308,7 +1311,12 @@ mod tests {
         assert_eq!(cs::issued(reg.deltas(), corp), before);
         call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
         assert_eq!(cs::issued(reg.deltas(), corp), before + 50);
-        assert_eq!(cs::held(reg.deltas(), corp, corp), 50);
+        let sum: i64 = cs::holders(reg.deltas(), corp).iter().map(|h| h.1).sum();
+        assert_eq!(sum, cs::issued(reg.deltas(), corp));
+        let p = pushes(&mut reg);
+        let share: Vec<_> = p.iter().filter(|x| x.0 == "OnShareChange").collect();
+        assert_eq!(share.len(), 1);
+        assert!(share[0].1.contains(&ALICE) && share[0].1.contains(&BOB));
         let rows = listed(&mut reg, ALICE);
         assert_eq!(attr(&rows[0].1, "actedUpon"), i(1));
         let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
@@ -1317,11 +1325,47 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_share_creation_leaves_the_action_to_try_again() {
+    fn a_zero_share_vote_is_refused_at_creation() {
         let (mut reg, corp) = world();
-        let id = won_kick(&mut reg, corp, cv::VOTE_SHARES, 0);
+        let e = call(
+            &mut reg,
+            ALICE,
+            "InsertVoteCase",
+            &[
+                u(""),
+                u(""),
+                i(cv::VOTE_SHARES),
+                PyValue::Tuple(vec![u("a"), u("b"), i(0), PyValue::None, PyValue::None]),
+                i(1),
+            ],
+        )
+        .unwrap_err();
+        assert_eq!(text_of(&e), "A share vote must name at least one share.");
+        assert!(cases_now(&reg, corp).is_empty());
+    }
+
+    #[test]
+    fn a_zero_share_sanction_is_refused_and_changes_nothing() {
+        let (mut reg, corp) = world();
+        // A row written before the creation check existed.
+        let id = won_kick(&mut reg, corp, cv::VOTE_KICK_MEMBER, CAROL);
+        let mut row = reg
+            .deltas()
+            .of(cv::KIND)
+            .get(&vec!["case".to_owned(), id.to_string()])
+            .unwrap()
+            .clone();
+        row[1] = cv::VOTE_SHARES.to_string();
+        reg.deltas_mut()
+            .put(cv::KIND, vec!["case".to_owned(), id.to_string()], row);
+        let ok = vec!["opt".to_owned(), id.to_string(), "0".to_owned()];
+        let mut opt = reg.deltas().of(cv::KIND).get(&ok).unwrap().clone();
+        opt[1] = "0".to_owned();
+        reg.deltas_mut().put(cv::KIND, ok, opt);
+        let before = cs::issued(reg.deltas(), corp);
         let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
-        assert_eq!(key_of(&e), "CustomNotify");
+        assert_eq!(text_of(&e), "That vote names no shares to create.");
+        assert_eq!(cs::issued(reg.deltas(), corp), before);
         let rows = listed(&mut reg, ALICE);
         assert_eq!(attr(&rows[0].1, "actedUpon"), i(0));
     }
