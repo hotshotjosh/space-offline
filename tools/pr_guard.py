@@ -4,6 +4,7 @@ Stdlib only. It READS git objects and text; it never checks out, builds or runs
 anything from the PR.
 
   python3 -I tools/pr_guard.py diff REPO BASE HEAD   # full check; exit 3 on any refusal
+  python3 -I tools/pr_guard.py commits REPO BASE HEAD  # every commit of BASE..HEAD on its own; exit 3 on any refusal
   python3 -I tools/pr_guard.py names < names.txt     # path-only check of a name list; exit 3 if guarded
 
 A PR is refused (label `needs-human`) when it touches a guarded path, a binary
@@ -28,7 +29,7 @@ GUARDED_EXACT = {
     "tools/land.sh", "tools/gate.sh", "tools/dev.sh",
     "tools/flaky.tsv", "tools/gate_reds.py", "tools/test-parallel.sh",
     "tools/public-export.py", "tools/publish-github.py", "tools/import-pr.sh",
-    "tools/pr_guard.py", "tools/test_import_pr_mirrorless.py",
+    "tools/pr_guard.py", "tools/test_import_pr.py",
     "server/deps.allow", "server/deps.digest", "server/THIRD-PARTY.txt", "server/Cargo.lock", "Cargo.lock",
     "tools/check_deps.py", "tools/dep-notices.py",
     ".gitattributes", ".gitmodules",
@@ -124,9 +125,29 @@ def check_diff(repo: str, base: str, head: str) -> list[str]:
     return out
 
 
+def check_commits(repo: str, base: str, head: str) -> list[str]:
+    """Every commit of base..head enters history on a native merge, so each is checked on
+    its own (against its parent), not only the net diff. A merge commit, or a root commit
+    (which cannot be reachable from base), is refused."""
+    out = []
+    for c in git(repo, "rev-list", "--reverse", f"{base}..{head}").decode().split():
+        parents = git(repo, "rev-list", "--parents", "-n", "1", c).decode().split()[1:]
+        short = c[:12]
+        if len(parents) > 1:
+            out.append(f"refuse: commit {short}: merge commit")
+        elif not parents:
+            out.append(f"refuse: commit {short}: root commit, not reachable from the base")
+        else:
+            for line in check_diff(repo, parents[0], c):
+                out.append(line.replace("refuse: ", f"refuse: commit {short}: ", 1))
+    return out
+
+
 def main(argv: list[str]) -> int:
     if len(argv) == 4 and argv[0] == "diff":
         res = check_diff(argv[1], argv[2], argv[3])
+    elif len(argv) == 4 and argv[0] == "commits":
+        res = check_commits(argv[1], argv[2], argv[3])
     elif argv == ["names"]:
         res = []
         for line in sys.stdin.read().split("\n"):

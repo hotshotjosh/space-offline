@@ -15,6 +15,11 @@
 /docs/guides/issue-tracking.md      @thewhitekidney
 /docs/guides/working-together.md    @thewhitekidney
 /tools/land.sh                      @thewhitekidney
+/tools/publish-github.py            @thewhitekidney
+/tools/flaky.tsv                    @thewhitekidney
+/tools/gate_reds.py                 @thewhitekidney
+/tools/test-parallel.sh             @thewhitekidney
+/.gitattributes                     @thewhitekidney
 /tools/gate.sh                      @thewhitekidney
 /tools/dev.sh                       @thewhitekidney
 /tools/public-export.py             @thewhitekidney
