@@ -1,6 +1,7 @@
 # Checks for a pull request. Trigger is `pull_request` ONLY, never
 # `pull_request_target`: an outside PR runs here with a read-only token and no secrets.
-# A light check: fmt, clippy and the lints; the tests run in the maintainer gate.
+# fmt, clippy, the full Rust test suite and the lints: PRs merge natively on GitHub, so this
+# is the gate before a merge (the private gate runs again when GitHub main is pulled in).
 # The Rust steps run in the repo's own image through tools/dev.sh (no network, no
 # capabilities, repo mounted read-only), like the local gate.
 # Labelling is a separate workflow (label.yml); this one never writes anything.
@@ -14,7 +15,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       EVE_MIN_FREE_GB: "0"
       EVE_MAX_JOBS: "2"   # the runner's CPUs; tools/dev.sh caps at the machine anyway
@@ -30,9 +31,11 @@ jobs:
         run: tools/dev.sh cargo fmt --all -- --check
       - name: clippy
         run: tools/dev.sh cargo clippy --locked --workspace --all-targets -- -D warnings
-      # No `cargo test` here (maintainer decision 2026-11-04, #111): a full workspace test
-      # on a 2-CPU runner per PR costs too many Actions minutes. The full suite runs in
-      # the maintainer gate (tools/land.sh) that every imported PR passes before it lands.
+      - name: tests
+        # the same tests the maintainer gate runs: a PR merges natively, so this is its gate
+        run: tools/dev.sh cargo test --locked --workspace
+      # `cargo test` runs above since 2026-11-24: the repo is public (Actions minutes are
+      # free) and PRs merge natively, which replaces decision #111 (no tests here).
       - name: docs lint
         run: python3 -I tools/test_docs.py
       - name: progress table moves with the code

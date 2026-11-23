@@ -2,7 +2,7 @@
 
 Contributors fork the GitHub repo (or, as a collaborator, clone it directly). You pick an
 issue on GitHub Issues, or bring your own fix, check overlap, and open a PR against the
-main repo; a maintainer reviews and imports it. The labels are in §8.
+main repo; a maintainer reviews it and the owner merges it on GitHub. The labels are in §8.
 `AGENTS.md` is the short guide; this page holds the reference it points to:
 setup, labels, areas and hot files. You are responsible for what your agent
 submits.
@@ -94,7 +94,9 @@ last command's, so that pushes on red.
 
 ## 7. How a change reaches main
 
-Main takes pull requests. A maintainer imports each one and gates it.
+Main takes pull requests, and they merge on GitHub: natively, with their commits and
+authors, after the `check` workflow passes, a maintainer's peer review, and the owner's
+approval (branch protection on `main` requires both).
 
 1. **Check overlap**: `python3 -I tools/pr_overlap.py` lists open PRs that
    touch your files or lines (`--branches`: branches too). How several people's agents share the tree:
@@ -104,15 +106,17 @@ Main takes pull requests. A maintainer imports each one and gates it.
    of its log (the stamp, `out/landed/<sha>`) in the PR.
 4. **Push to your fork and open a PR** against the main repo and tick the sign-off box: you accept the
    Contributor Terms (`CONTRIBUTING-terms.md`) under the project licence
-   (`LICENSE.md`). A PR without it is not imported. Say what changed and
+   (`LICENSE.md`). A PR without it is not merged. Say what changed and
    why, the overlap output, the tests added (as `new: name`), the marks (`[V]`,
    `[I]`, `[A]` with falsifiers), the status rows touched, and, for
    player-visible work, a human check.
-5. **Review.** A maintainer reviews every PR. An independent review pass over the
-   diff and the PR text (not your conclusions), by a person or a model, is
-   welcome: paste its findings into the PR, with each one fixed or answered.
-6. **A maintainer imports it**, after the review and a green gate on the imported
-   result. The import is the merge.
+5. **Review.** A maintainer peer-reviews every PR. A small fix is pushed onto your
+   branch as its own commit (leave "allow edits by maintainers" on); anything larger is
+   a review that asks you for it. An independent review pass over the diff and the PR
+   text (not your conclusions), by a person or a model, is welcome: paste its findings
+   into the PR, with each one fixed or answered.
+6. **The owner approves and merges it** on GitHub, once the checks are green and the
+   review is answered. Your commits keep your name.
 
 ### Fork flow
 
@@ -175,15 +179,15 @@ label a doc names must be a row here.
 | `good-first` | small, server-only, well specified |
 | `parked` | the owner parked it; do not start it |
 | `needs-human` | the GitHub `label` workflow: the template is not filled in, a guarded path is touched, or a check failed; a maintainer looks |
-| `ready-to-import` | the GitHub `label` workflow: everything passed, and the PR waits for the maintainer's import |
-| `review-queue` | a maintainer: the PR is in the import queue |
-| `needs-author` | a maintainer: waits on the author (a convention failed, or the author is over the open-PR cap, which a maintainer counts at import) |
+| `ready-to-import` | the GitHub `label` workflow: everything passed, and the PR waits for review and the owner's merge (the name is historical) |
+| `review-queue` | a maintainer: the PR is in the review queue |
+| `needs-author` | a maintainer: waits on the author (a convention failed, or the author is over the open-PR cap) |
 | `stale` | the maintainer's issue sync: an open PR with no activity for 30 days |
-| `perf` | a maintainer, at import: the PR touches a performance-sensitive path, so the maintainer runs a bench |
-| `imported` | set when the PR is closed with the sha it landed as |
+| `perf` | a maintainer, at review: the PR touches a performance-sensitive path, so the maintainer runs a bench |
+| `imported` | historical: PRs before 2026-11-24 were imported, not merged, and closed with the sha they landed as |
 
 Every label is a hint for sorting. None of them approves or unlocks anything; the
-maintainer's import does. A label set by anyone else means nothing.
+owner's approving review on GitHub does. A label set by anyone else means nothing.
 
 An issue body may carry these lines, as hints for the reader:
 
@@ -205,7 +209,7 @@ Done when: <the test or scenario that proves it>
 - On a conflict in `docs/status/progress.tsv`, keep both rows and regenerate
   (`python3 -I tools/status-page.py`); never hand-merge a generated file.
 
-## 10. Areas, hot files (reviewed at import) and guarded files
+## 10. Areas, hot files (closer review) and guarded files
 
 One area per system of `docs/status/progress.tsv`. Read the area's docs, then
 grep its code roots. Paths without a crate are under
@@ -229,7 +233,7 @@ grep its code roots. Paths without a crate are under
 | `bots` | `docs/reference/server.md` | `server/crates/eve-bot/src/` |
 | `tools` | `docs/README.md` | `tools/` |
 
-**Hot files.** A PR may touch these; expect a closer review and a slower import,
+**Hot files.** A PR may touch these; expect a closer review and a slower merge,
 because they are central, risky, or being rewritten. Paths are under
 `server/crates/eve-server/` unless they say otherwise.
 

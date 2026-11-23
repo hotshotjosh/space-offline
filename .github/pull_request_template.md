@@ -1,6 +1,6 @@
 <!-- space-offline-pr-template: keep this line; label.yml looks for it -->
 Fill in every section and tick every box. The procedure is `AGENTS.md`. Labels sort
-work; a maintainer reviews and imports the PR.
+work; a maintainer peer-reviews the PR and the owner approves and merges it.
 
 Closes #
 
