@@ -11,7 +11,8 @@
 //! | [`KIND`] | `corp #` | `n`, the shares issued: the marker that the corp is founded |
 //!
 //! A holder with no shares has no row. The issued total is fixed at
-//! [`FOUNDING_SHARES`]: creating more is a vote (S10, parked), so shares only
+//! [`FOUNDING_SHARES`] until a won share-issue vote runs [`create`], which
+//! adds to it and to the corporation's own holding; otherwise shares only
 //! move. A corp founded before this lane has no marker; [`found`] grants it on
 //! the first share call, so an old world needs no migration.
 //!
@@ -42,6 +43,17 @@ pub enum Refusal {
     MoreThanHeld { held: i64 },
     /// The giver and the taker are one.
     ToSelf,
+}
+
+/// Why a share creation is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreateRefusal {
+    /// Zero or fewer shares.
+    NothingToCreate,
+    /// The corp has no shares issued yet.
+    NotFounded,
+    /// The issued total would overflow.
+    TooMany,
 }
 
 /// One holder's change in one move: `(old, new)` share counts, where `0`
@@ -163,6 +175,29 @@ pub fn move_shares(
     ))
 }
 
+/// Issue `n` new shares of `corp`: the issued total rises by `n` and the
+/// corporation itself holds them **[A: new shares go to the corporation's own
+/// holding, as the holder id `corp`; falsifier: TQ crediting them to the CEO
+/// or to the voters]**. Nothing changes when it is refused. Answers the new
+/// issued total.
+pub fn create(d: &mut Deltas, corp: i64, n: i64) -> Result<i64, CreateRefusal> {
+    if n < 1 {
+        return Err(CreateRefusal::NothingToCreate);
+    }
+    if !is_founded(d, corp) {
+        return Err(CreateRefusal::NotFounded);
+    }
+    let total = issued(d, corp)
+        .checked_add(n)
+        .ok_or(CreateRefusal::TooMany)?;
+    let own = held(d, corp, corp)
+        .checked_add(n)
+        .ok_or(CreateRefusal::TooMany)?;
+    d.put(KIND, key(corp, MARKER), vec![total.to_string()]);
+    set(d, corp, corp, own);
+    Ok(total)
+}
+
 /// Split `cents` over `holders` (`(who, shares)`) by weight against `issued`
 /// shares: each gets `cents * shares / issued`, rounded down. Holders owed
 /// nothing are left out; the rest of `cents` is not paid to anyone.
@@ -218,6 +253,20 @@ mod tests {
             holders(&d, CORP),
             vec![(ALICE, FOUNDING_SHARES - four_tenths), (BOB, four_tenths)]
         );
+    }
+
+    #[test]
+    fn creating_raises_the_total_and_the_corp_holds_the_new_shares() {
+        let mut d = Deltas::default();
+        assert_eq!(create(&mut d, CORP, 5), Err(CreateRefusal::NotFounded));
+        found(&mut d, CORP, ALICE);
+        assert_eq!(create(&mut d, CORP, 0), Err(CreateRefusal::NothingToCreate));
+        assert_eq!(create(&mut d, CORP, 50), Ok(FOUNDING_SHARES + 50));
+        assert_eq!(issued(&d, CORP), FOUNDING_SHARES + 50);
+        assert_eq!(held(&d, CORP, CORP), 50);
+        assert_eq!(held(&d, CORP, ALICE), FOUNDING_SHARES);
+        assert_eq!(create(&mut d, CORP, i64::MAX), Err(CreateRefusal::TooMany));
+        assert_eq!(issued(&d, CORP), FOUNDING_SHARES + 50);
     }
 
     #[test]

@@ -44,8 +44,9 @@
 //! `GetCorpSanctionedActions`, and the client's Implement button calls
 //! `ActivateSanctionedAction(voteCaseID)` (`corp_ui_sanctionableactions.py`
 //! **[V]**): the CEO puts a won expulsion in effect through
-//! `corp::expel`, keeping every `can_be_kicked_out` refusal. Create shares
-//! and blueprint lock or unlock are refused until built, and stay listed and
+//! `corp::expel`, keeping every `can_be_kicked_out` refusal; a won share
+//! vote runs `corp_shares::create` the same way. Blueprint lock or unlock
+//! are refused until built, and stay listed and
 //! not acted upon. Nobody is told when
 //! nothing is called, so a closed vote acts when the next vote call comes
 //! in, from anyone.
@@ -327,6 +328,26 @@ fn activate_sanctioned(
         return Err(denied(NOT_CEO));
     }
     // Check the type first: a kind not built yet stays activatable.
+    if case.vote_type == cv::VOTE_SHARES {
+        let now = crate::pyutil::filetime_now();
+        // Check, create, then mark: a refused creation leaves the case as it was.
+        let s = cv::check_put_in_effect(reg.deltas(), id, now).map_err(refusal)?;
+        ensure_founded(reg, corp);
+        cs::create(reg.deltas_mut(), corp, s.parameter).map_err(|r| match r {
+            cs::CreateRefusal::NothingToCreate => custom("That vote names no shares to create."),
+            cs::CreateRefusal::NotFounded | cs::CreateRefusal::TooMany => {
+                custom("Those shares cannot be created.")
+            }
+        })?;
+        cv::put_in_effect(reg.deltas_mut(), id, now).map_err(refusal)?;
+        tell(
+            reg,
+            corp,
+            id,
+            &["OnSanctionedActionChanged", "OnVoteCaseChanged"],
+        );
+        return Ok(PyValue::None);
+    }
     if case.vote_type != cv::VOTE_KICK_MEMBER {
         return Err(
             if cv::sanctioned(reg.deltas(), corp, i64::MAX)
@@ -1277,9 +1298,38 @@ mod tests {
     }
 
     #[test]
-    fn a_won_shares_vote_cannot_be_put_in_effect_yet_and_stays_listed_not_acted() {
+    fn a_won_shares_vote_creates_shares_for_the_corp_once() {
         let (mut reg, corp) = world();
+        let before = cs::issued(reg.deltas(), corp);
         let id = won_kick(&mut reg, corp, cv::VOTE_SHARES, 50);
+        // A non-CEO is refused and nothing changes.
+        let e = call(&mut reg, BOB, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(key_of(&e), "CrpAccessDenied");
+        assert_eq!(cs::issued(reg.deltas(), corp), before);
+        call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap();
+        assert_eq!(cs::issued(reg.deltas(), corp), before + 50);
+        assert_eq!(cs::held(reg.deltas(), corp, corp), 50);
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(1));
+        let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(text_of(&e), "That action has already been put in effect.");
+        assert_eq!(cs::issued(reg.deltas(), corp), before + 50);
+    }
+
+    #[test]
+    fn a_refused_share_creation_leaves_the_action_to_try_again() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_SHARES, 0);
+        let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
+        assert_eq!(key_of(&e), "CustomNotify");
+        let rows = listed(&mut reg, ALICE);
+        assert_eq!(attr(&rows[0].1, "actedUpon"), i(0));
+    }
+
+    #[test]
+    fn a_won_blueprint_lock_cannot_be_put_in_effect_yet_and_stays_listed_not_acted() {
+        let (mut reg, corp) = world();
+        let id = won_kick(&mut reg, corp, cv::VOTE_ITEM_LOCKDOWN, 50);
         let e = call(&mut reg, ALICE, "ActivateSanctionedAction", &[i(id)]).unwrap_err();
         assert_eq!(key_of(&e), "CustomNotify");
         assert_eq!(text_of(&e), "That action cannot be put in effect yet.");
