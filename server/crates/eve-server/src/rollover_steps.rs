@@ -129,6 +129,12 @@ pub const STEPS: &[Step] = &[
         name: "daily_goals",
         run: Run::Once(crate::daily_goals::on_rollover),
     },
+    // #276: drop the HyperNet offers (status 8 and 9) that ended over 30 days
+    // ago; never one in escrow (7). Its count is the offers dropped.
+    Step {
+        name: "hypernet_prune",
+        run: Run::Once(crate::hypernet::on_rollover),
+    },
     // MINE-UI: drop Mining Ledger rows older than the window. Its count is the rows dropped.
     Step {
         name: "mining_ledger",
