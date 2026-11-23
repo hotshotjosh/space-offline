@@ -222,6 +222,9 @@ EXPECT_BY_BUILD = {
     # licences, a new type and its blueprint); the other three equal.
     3720952: {"types/market.tsv": 53941, "types/marketgroups.tsv": 2125,
               "types/typelists.tsv": 477, "types/compress.tsv": 220},
+    # 3731714 [V] by bundle-diff against 3720952 (same line): every types/ file equal.
+    3731714: {"types/market.tsv": 53941, "types/marketgroups.tsv": 2125,
+              "types/typelists.tsv": 477, "types/compress.tsv": 220},
 }
 #: Builds whose counts are verified: `EXPECT` is 3619879's, 3628513 shares it,
 #: and `EXPECT_BY_BUILD` holds the rest. Any other build (the next client, before

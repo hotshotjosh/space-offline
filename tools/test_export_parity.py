@@ -59,6 +59,8 @@ class Parity(unittest.TestCase):
             "private/export-private-paths.txt": "secret-dir/\n",
             "secret-dir/x.txt": "x\n",
             "tools/test_ok.py": "print(1)\n",
+            # the private tree holds its exported form (public-export.py identity())
+            "tools/doc-private-prefixes.txt": "# Docs the public export omits on purpose, as sha256 of each path (written by tools/public-export.py --write-prefixes).\n",
             "LICENSE.md": "l\n", "LICENSE-additions.md": "l\n", "CONTRIBUTING-terms.md": "t\n", "NOTICE": "n\n",
         }.items():
             self.put(rel, text)

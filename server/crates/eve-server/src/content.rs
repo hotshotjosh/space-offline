@@ -1067,8 +1067,21 @@ mod tests {
                 .into_iter()
                 .filter(|o| *o != b)
                 .collect();
+            // ... unless one of those is a provisional build on b's line and b
+            // is pinned or equivalent: a provisional build opens its line's
+            // bundle (tracking-tq.md section 4.2).
+            use eve_marshal::build::{Status, entry};
+            let of = entry(b).unwrap();
+            let rides = matches!(of.status, Status::Pinned | Status::Equivalent)
+                && others.iter().any(|o| {
+                    entry(*o).is_some_and(|e| e.status == Status::Provisional && e.line == of.line)
+                });
             if !others.is_empty() {
-                assert!(Bundle::open_accepting(&t.0, &others).is_err());
+                assert_eq!(
+                    Bundle::open_accepting(&t.0, &others).is_ok(),
+                    rides,
+                    "bundle of {b}"
+                );
             }
         }
     }

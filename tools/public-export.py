@@ -22,7 +22,9 @@ What counts as a leak, in an exported file:
   - each regex in `private/export-scan.txt`, one per line: names, user names,
     host names. They live in the private folder so this script names nobody.
 
-`--out` also writes `tools/doc-private-prefixes.txt` (one `sha256:<hex>` per `docs/` line of the
+`--write-prefixes` writes the tracked `tools/doc-private-prefixes.txt`; `--check` fails, in the
+private tree, when it is stale or `docs/README.md` lists a private doc (`identity()`: the
+exported files must already be their exported form). `--out` also writes `tools/doc-private-prefixes.txt` (one `sha256:<hex>` per `docs/` line of the
 private list, so the exported doc lint knows which docs are absent on purpose without the
 file naming them) and drops the
 private rows, and any section they leave with only its table header, from the exported
@@ -331,6 +333,39 @@ def filter_index(text: str, prefixes: list[str]) -> str:
     return "\n".join(out)
 
 
+PREFIXES_FILE = "tools/doc-private-prefixes.txt"
+
+
+def prefixes_text(prefixes: list[str]) -> str:
+    """The content of `tools/doc-private-prefixes.txt` for these private doc prefixes."""
+    return ("# Docs the public export omits on purpose, as sha256 of each path (written by "
+            "tools/public-export.py --write-prefixes).\n"
+            + "".join("sha256:" + hashlib.sha256(p.rstrip("/").encode()).hexdigest() + "\n"
+                      for p in prefixes))
+
+
+def identity(root: str) -> list[str]:
+    """In the private tree (it has `private/`), every exported file must already be its
+    exported form, so the public tree is the private one minus the private paths and the
+    two share the public files' history: `docs/README.md` lists no private doc (those rows
+    live in `private/docs-index.md`), and `tools/doc-private-prefixes.txt` is current."""
+    if not os.path.isdir(os.path.join(root, PRIVATE_DIR)):
+        return []
+    out = []
+    prefixes = private_docs(root)
+    idx = os.path.join(root, "docs", "README.md")
+    if os.path.exists(idx):
+        with open(idx, encoding="utf-8") as f:
+            text = f.read()
+        if filter_index(text, prefixes) != text:
+            out.append("docs/README.md: identity: lists a private doc; move its row to private/docs-index.md")
+    pf = os.path.join(root, PREFIXES_FILE)
+    have = open(pf, encoding="utf-8").read() if os.path.exists(pf) else None
+    if have != prefixes_text(prefixes):
+        out.append(f"{PREFIXES_FILE}: identity: stale; run python3 -I tools/public-export.py --write-prefixes")
+    return out
+
+
 DOC_MENTION = re.compile(r"docs/[A-Za-z0-9_./-]*[A-Za-z0-9_/]")
 
 
@@ -359,13 +394,19 @@ def main(argv: list[str]) -> int:
     g.add_argument("--check", action="store_true")
     g.add_argument("--list", action="store_true")
     g.add_argument("--out")
+    g.add_argument("--write-prefixes", action="store_true")
     ap.add_argument("--root", default=ROOT)
     a = ap.parse_args(argv)
+    if a.write_prefixes:
+        os.makedirs(os.path.join(a.root, os.path.dirname(PREFIXES_FILE)), exist_ok=True)
+        with open(os.path.join(a.root, PREFIXES_FILE), "w", encoding="utf-8") as f:
+            f.write(prefixes_text(private_docs(a.root)))
+        return 0
     files = exported(a.root)
     if a.list:
         print("\n".join(files))
         return 0
-    hits = leaks(a.root, files) + policy(a.root, files)
+    hits = leaks(a.root, files) + policy(a.root, files) + identity(a.root)
     for h in hits:
         print(h)
     ments = mentions(a.root, files)
@@ -393,11 +434,10 @@ def main(argv: list[str]) -> int:
         else:
             shutil.copy2(os.path.join(a.root, rel), dst)
     # The exported doc lint reads this when private/ is absent (tools/test_docs.py).
-    dst = os.path.join(a.out, "tools", "doc-private-prefixes.txt")
+    dst = os.path.join(a.out, PREFIXES_FILE)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     with open(dst, "w", encoding="utf-8") as f:
-        f.write("# Docs the public export omits on purpose, as sha256 of each path (written by tools/public-export.py --out).\n")
-        f.write("".join("sha256:" + hashlib.sha256(p.rstrip("/").encode()).hexdigest() + "\n" for p in prefixes))
+        f.write(prefixes_text(prefixes))
     return 0
 
 

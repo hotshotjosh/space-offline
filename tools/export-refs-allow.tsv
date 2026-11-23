@@ -79,3 +79,6 @@ tools/test_status_page.py	docs/plans	fixture or skip text in a test: an invented
 tools/test_status_page.py	docs/plans/master-plan.md	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/export-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
 tools/test_tracker.py	private/post-scan.txt	fixture or skip text in a test: an invented tree or a message, nothing is read from the real path
+tools/public-export.py	private/docs-index.md	text in a message: where a private doc's index row belongs; never opened
+tools/test_docs.py	private/docs-index.md	read only when it exists (the private tree); an exported tree has no private/
+tools/test_public_export.py	private/docs-index.md	fixture: an invented tree's private index

@@ -1,4 +1,4 @@
-# Docs the public export omits on purpose, as sha256 of each path (written by tools/public-export.py --out).
+# Docs the public export omits on purpose, as sha256 of each path (written by tools/public-export.py --write-prefixes).
 sha256:9d6336ea1d05a22c3119185f7b65ee9b3266a9befde8bc54e9636de4897f1132
 sha256:65ebca35ec09b3655343721eb639a2bf2a2bac015ea7bf501745f1b2722225a1
 sha256:90e054e32f683a92beb539ef03aee32cacbe4b8c4ccc7ba65162b1d82ae53be4

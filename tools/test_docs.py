@@ -274,6 +274,10 @@ def row_path(cells: list[str]) -> str | None:
 def check_index(root, files) -> list[str]:
     """(b) and (c); the caller skips them when there is no index."""
     rows = index_rows(read(root, "docs/README.md"))
+    # the private docs' rows live in private/docs-index.md (absent from an exported tree),
+    # so the tracked docs/README.md is byte for byte the public one
+    if os.path.exists(os.path.join(root, "private", "docs-index.md")):
+        rows += index_rows(read(root, "private/docs-index.md"))
     listed = {row_path(r) for r in rows} - {None}
     fail = []
     for rel in files:

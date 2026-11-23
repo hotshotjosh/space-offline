@@ -325,7 +325,7 @@ class ClientSetup(unittest.TestCase):
         self.good_install()
         self.put("tq-offline/start.ini", "[main]\nbuild = 100\n")
         r = self.check()
-        self.assertIn("not the pinned", r.stdout)
+        self.assertRegex(r.stdout, r"not the (pinned|served) ")  # served when a provisional row is ahead
         self.assertIn("mv '", r.stdout)       # the old copy is kept, not removed
         self.assertNotIn("rm -rf", r.stdout)
         self.assertIn("offline-prefix.sh --force", r.stdout)
@@ -395,7 +395,7 @@ class ClientSetup(unittest.TestCase):
         self.good_install("100")
         r = self.run_step("copy")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("not the pinned", r.stderr)
+        self.assertRegex(r.stderr, r"not the (pinned|served) ")  # served when a provisional row is ahead
         self.good_install()
         self.put("ResFiles/ab/ab12_cafe", "1")
         r = self.run_step("copy")

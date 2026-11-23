@@ -167,6 +167,12 @@ pub static BUILDS: &[BuildEntry] = &[
         data_hash: None,
     },
     BuildEntry {
+        build: 3_731_714,
+        line: &V24_02,
+        status: Status::Provisional,
+        data_hash: None,
+    },
+    BuildEntry {
         build: REFERENCE,
         line: &V24_02,
         status: Status::Pinned,

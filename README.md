@@ -16,6 +16,8 @@ costs ([Licence](#licence)).
 This project is not affiliated with, endorsed by or sponsored by CCP ehf., CCP
 Games or Fenris Creations. EVE Online and related names are their trademarks.
 
+**Community:** [Discord](https://discord.gg/aY9Cd7wEX).
+
 **What works today.** Logging in, flying and warping, fitting, combat, the market
 and wallet, missions and exploration, mining and industry, fleets and
 corporations and Upwell structures have passed scripted tests against the real

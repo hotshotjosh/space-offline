@@ -320,8 +320,21 @@ class Docs(unittest.TestCase):
             for rel in pe.REQUIRED:
                 put(rel, "invented\n")
             out = os.path.join(root, "out-tree")
+            # the private tree must already hold its exported form: a private row in the
+            # index, or no prefix file, refuses
+            self.assertEqual(pe.main(["--root", root, "--out", out]), 1)
+            self.assertFalse(os.path.exists(out))
+            self.assertEqual(len(pe.identity(root)), 2)
+            put("docs/README.md", "| `docs/a.md` | x |\n")
+            put("private/docs-index.md", "| `docs/hidden.md` | y |\n")
+            self.assertEqual(pe.main(["--root", root, "--write-prefixes"]), 0)
+            self.assertEqual(pe.identity(root), [])
             self.assertEqual(pe.main(["--root", root, "--out", out]), 0)
             self.assertFalse(os.path.exists(os.path.join(out, "docs/hidden.md")))
+            self.assertFalse(os.path.exists(os.path.join(out, "private")))
+            with open(os.path.join(root, "tools/doc-private-prefixes.txt")) as a, \
+                    open(os.path.join(out, "tools/doc-private-prefixes.txt")) as b:
+                self.assertEqual(a.read(), b.read())
             with open(os.path.join(out, "docs/README.md")) as f:
                 self.assertNotIn("hidden", f.read())
             with open(os.path.join(out, "tools/doc-private-prefixes.txt")) as f:
