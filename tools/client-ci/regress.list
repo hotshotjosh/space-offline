@@ -449,3 +449,5 @@ fci_bump_pair --with-second -- --character Alice --character Bob
 fci_proving_queue
 # PG-2 (#65): two pilots queue a 2x1 Proving Grounds match, land in one arena, one kills the other, the loser's capsule goes home and the winner leaves by the conduit (written, not yet run on a client)
 fci_proving_duel --with-second -- --character Alice --character Bob
+# PG-3 (#66): two pilots duel in a 2x1 Proving Grounds match; each client reads its statistics pushed unasked, the winner sees the leaderboard, is paid by /pg award (queue push, redeem tokens, Kredits), claims an item in the hangar, and a second award grants nothing (written, not yet run on a client)
+fci_proving_results --with-second -- --character Alice --character Bob
