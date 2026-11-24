@@ -155,7 +155,7 @@ sudo -v && tools/client-ci.sh run undock_distance
 (`server/crates/eve-offline-server`); the tools start it by default
 (`EVE_SERVER_BIN` picks the plain core binary). Flags are parsed in
 `server/crates/eve-server/src/cli.rs`; module flags come from
-`server/crates/eve-mod-*/src`.
+`server/crates/eve-mod-*/src` and from eve-server's own modules (`--air-npe`, `crate::air_npe`).
 
 ### Listening and accounts
 
@@ -222,6 +222,7 @@ What each scale and world setting changes, its range, and the numbers that have 
 | `--admin ADDR` | off | the admin page and JSON API (pilots, systems (every live system, with `in_space` for pilots and `in_space_all` for all balls in space), map, `ticks` per-minute p50/p95/max (a minute is the minute a report window ended), `methods` slowest calls, `metrics` Prometheus text; the token as `X-Admin-Token` or, on GET, `Authorization: Bearer`; `tools/metrics_sample.py` polls it into a TSV) plus token-guarded actions `POST /api/action/` `bots`, `broadcast`, `save`, `kick`, each at most one a second and logged to `admin-actions.log`; token in `admin.token` | `--admin 127.0.0.1:8090` |
 | `--signups-per-hour N` | `10` | with `--world-accounts`: at most N human sign-ups an hour, server-wide (and 3 an hour per IPv4 address or IPv6 /64); `0` is unlimited; listeners with `botnames=on` are exempt | `--signups-per-hour 30` |
 | `--max-accounts N` | `500` | with `--world-accounts`: a human sign-up is refused once the world holds N human accounts (bot accounts do not count); `0` is unlimited | `--max-accounts 1000` |
+| `--air-npe` | off | the AIR new-player experience (`air_npe` module): character creation offers the tutorial, it runs from the bundle's `nodegraphs/`, GMs get `/airnpe`, and the Career Program achievements it waits on (`achievements/agent-missions.tsv`) are served, progressed and paid, ISK and items included | `--air-npe` |
 | `--status FILE` | `out/live/status.tsv` with `--world` | per-system TSV, rewritten every 10 s | `--status out/live/status.tsv` |
 | `--stop-file PATH` | `FILE.stop` with `--world` | stop cleanly when PATH appears | `--stop-file var/up-server.stop` |
 | `--capture DIR` | off | one `.evecap` per connection | `--capture captures` |

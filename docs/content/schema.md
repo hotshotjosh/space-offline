@@ -191,7 +191,7 @@ comment exactly as shown.
 | `store/types.tsv` | L1 NES-BACKEND (`content_store.py`) | L1 (`nes`: the item types the store delivers) |
 | `skins/licenses.tsv` | L2 SKINS (`content_skins.py`, the `skins` section) | L2 (`skins`: licence types and their item types) |
 | `skins/skins.tsv` | L2 SKINS (`content_skins.py`) | L2 (`skins`: the hulls a SKIN fits) |
-| `nodegraphs/{graphs,nodes,nodetypes,atoms}.tsv` | #205 (`content_nodegraphs.py`, the `nodegraphs` section) | #205 (`node_graph::data::Library`, the node-graph runtime) |
+| `nodegraphs/{graphs,nodes,nodetypes,atoms}.tsv` | #205 (`content_nodegraphs.py`, the `nodegraphs` section) | #205 (`node_graph::data::Library`, the node-graph runtime; run by `air_npe` with `--air-npe`) |
 | `cosmetics/ship-licences.tsv` | #207 EM-3 (`content_lp.py`, the `lp` section) | `emblem` (`emblem::Licences`: the licence types a purchase grants as entitlements) |
 | `facwar/systems.tsv` | FW-3 (`content_facwar.py`, the `facwar` section) | `facwar` (`facwar::Table`: the warzone territory list) |
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
@@ -1857,7 +1857,7 @@ Invented example rows:
 ### `nodegraphs/*.tsv` (#205)
 
 - **Writer:** `tools/content_nodegraphs.py`, the `nodegraphs` section of `content.py`. Inputs: the client's `nodegraphs`, `nodetypes` and `atoms` (`fsd.rows`; the edges, `graphNode.connections`, by `fsd.CFSD_ELEMENT_KINDS`). A decode problem warns and does not stop the bundle build: a node with an unknown type or atom is left out, an edge to a node its graph lacks is written (the runtime ignores it), and tables that do not decode at all give the four files with headers only.
-- **Readers:** `eve-server` `node_graph::data::Library::load` (the runtime in `node_graph/engine.rs`). No server path loads it yet; the runtime's first user is the AIR new-player experience (#205). Optional: a bundle without `nodegraphs/` is complete.
+- **Readers:** `eve-server` `node_graph::data::Library::load` (the runtime in `node_graph/engine.rs`), loaded by `air_npe` (a file that does not load warns and leaves the tutorial off). Optional: with no `nodegraphs/`, or without `--air-npe`, `air_npe.is_air_npe_enabled` answers false and `/airnpe start` refuses.
 - **Escaping:** every field escapes `% ; = | , TAB LF CR` as `%XX`. A parameter list is `key=VALUE;...`, VALUE one of `n:` (None), `i:<int>` (bools 0/1), `f:<repr>`, `s:<text>`, `l:<python list repr>`, `v:<x,y,z>`, `c:<node>.<param>` (wired from another node's output). Edges are `port:guid,guid|...`. A node's `atom_id` parameter is written as the atom's name in the `atom` column.
 
 ```

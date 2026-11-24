@@ -44,6 +44,7 @@
 pub mod abyss;
 pub mod account_book;
 pub mod accounts;
+pub mod air_npe;
 pub mod alliance;
 pub mod asset_safety;
 pub mod asteroid;
