@@ -1560,7 +1560,8 @@ def eoci_main(EOCI_NAME):
             no_new_tracebacks('compress', mark)
             return
         gm_check('/upwell fit puts the reprocessing module online',
-                 '/upwell fit %d %d' % (item_id, REPROCESSING_MODULE), expect=['online'])
+                 '/upwell fit %d %d' % (item_id, REPROCESSING_MODULE),
+                 expect=[', online'], forbid=['offline', 'refused'])
         sleep_ms(3000)
         ok, v = rcall('structureCompressionMgr', 'CompressItemInStructure', it)
         check('with the module online Compress answers instead of raising', ok, text(v)[:200])

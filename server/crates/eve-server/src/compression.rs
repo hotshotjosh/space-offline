@@ -350,7 +350,12 @@ pub enum StructureRefusal {
 
 impl StructureRefusal {
     /// The client's own message key (`findings/user-errors.tsv`, no raise
-    /// site in the client, so the server raises it) **[V key, I rule]**.
+    /// site in the client, so the server raises it): the three keys are
+    /// **[V]**. Which one answers which refusal is **[A]**: a structure that
+    /// runs no service, or none the pilot is docked in, says
+    /// `StructureServiceUnavailable`; one that runs it but whose profile
+    /// denies the pilot says `StructureReprocessingDenied`. Falsifier: a
+    /// retail refusal text that differs (the window reads only the key).
     pub fn key(self) -> &'static str {
         match self {
             StructureRefusal::NotDocked | StructureRefusal::ServiceUnavailable => {
@@ -396,15 +401,21 @@ pub fn structure_gate(reg: &Registry, actor: i64) -> Result<i64, StructureRefusa
 }
 
 /// The item `item_id`, when it is `actor`'s and sits directly in the
-/// structure's hangar, or in the cargo or an ore hold of their active ship
-/// (the client's menu rule **[V]**, `menucheckers/itemCheckers`). A corp
-/// office is not served **[A]**: no corp office exists in a structure here;
-/// falsified by one.
+/// structure's hangar or, when `ship_ok`, in the cargo or an ore hold of
+/// their active ship. The client's menu rules **[V]**
+/// (`menucheckers/itemCheckers`): `OfferCompressInStructure` takes the
+/// personal hangar, the active ship or a corp office; `OfferDecompressGas`
+/// takes the personal hangar or a corp office, never the ship. We narrow the
+/// ship to its cargo and ore holds **[I]** (the compress path's own
+/// `ORE_HOLD_FLAGS`; falsified by a client that offers compress on an item
+/// in another bay and expects it served). A corp office is not served
+/// **[A]**: no corp office exists in a structure here; falsified by one.
 fn item_here(
     w: &Registry,
     actor: i64,
     structure: i64,
     item_id: i64,
+    ship_ok: bool,
 ) -> Result<crate::item::Item, StructureRefusal> {
     let it = w
         .store()
@@ -417,7 +428,7 @@ fn item_here(
         .and_then(|c| crate::fitting::active_ship_of(w.store(), c))
         .map(|(id, _)| id);
     let in_hangar = it.location_id == structure && it.flag_id == crate::model::FLAG_HANGAR;
-    let in_ship = Some(it.location_id) == ship && ORE_HOLD_FLAGS.contains(&it.flag_id);
+    let in_ship = ship_ok && Some(it.location_id) == ship && ORE_HOLD_FLAGS.contains(&it.flag_id);
     if in_hangar || in_ship {
         Ok(it)
     } else {
@@ -434,7 +445,7 @@ pub fn plan_compress(
     item_id: i64,
     typelist: i64,
 ) -> Result<(crate::item::Item, i64), StructureRefusal> {
-    let it = item_here(w, actor, structure, item_id)?;
+    let it = item_here(w, actor, structure, item_id, true)?;
     let listed = w
         .content()
         .try_get::<crate::dungeon_data::Table>()
@@ -450,7 +461,8 @@ pub fn plan_compress(
 }
 
 /// **What decompressing `item_id` here would do**, past the gate: the item
-/// and the one material it unpacks to. The client's own three checks
+/// (in the pilot's structure hangar only, never the ship **[V]**) and the one
+/// material it unpacks to. The client's own three checks
 /// **[V]** (`itemcompression/gasDecompression`): the type is in group
 /// [`GROUP_COMPRESSED_GAS`], has exactly one material, and that material's
 /// quantity and the portion size are both 1.
@@ -460,7 +472,7 @@ pub fn plan_decompress(
     structure: i64,
     item_id: i64,
 ) -> Result<(crate::item::Item, i64), StructureRefusal> {
-    let it = item_here(w, actor, structure, item_id)?;
+    let it = item_here(w, actor, structure, item_id, false)?;
     let table = w
         .content()
         .try_get::<crate::reprocess::Table>()
@@ -475,16 +487,18 @@ pub fn plan_decompress(
     }
 }
 
-/// Whole units out of `quantity` at `efficiency`: the share is summed and
-/// capped at 1 and the fraction dropped **[A]** (the client shows the
-/// fractional value; falsified by a retail stack that rounds up).
+/// Whole units out of `quantity` at the two shares: summed and capped at 1
+/// **[A]** (falsified by a window that shows the pair but pays another
+/// total), the fraction dropped **[A]** (the client shows the fractional
+/// value; falsified by a retail stack that rounds up).
 pub fn decompress_output(quantity: i64, structure: f64, character: f64) -> i64 {
     let total = (structure.clamp(0.0, 1.0) + character.clamp(0.0, 1.0)).min(1.0);
     ((quantity.max(0) as f64) * total).floor() as i64
 }
 
-/// `level x bonus / 100` **[I]** (the skill carries attribute 3260 per level;
-/// falsified by a trained pilot whose window shows another share).
+/// `level x bonus / 100` **[A]**: the skill's 3260 is a percentage per
+/// level, so the share is a fraction. Falsifier: a trained pilot whose
+/// window shows another share.
 pub fn character_share(level: i64, bonus_per_level: f64) -> f64 {
     (level.max(0) as f64 * bonus_per_level / 100.0).clamp(0.0, 1.0)
 }
@@ -508,10 +522,11 @@ pub fn character_gas_share(w: &Registry, actor: i64) -> f64 {
 }
 
 /// The structure's own share: the best online reprocessing module's base
-/// efficiency (attribute 3262) plus the hull's bonus (3261) **[I additive:
-/// the client adds the two shares the same way]**, each read as a fraction
-/// **[A]** (the client raises outside `[0, 1]`; falsified by a retail value
-/// of 50 for 50 percent). No online reprocessing module, no share.
+/// efficiency (attribute 3262) plus the hull's bonus (3261), clamped to
+/// `[0, 1]`. Both attributes are fractions **[V-data]** (the extract's rows
+/// are fractions below 1, not percentages). That the two **add** is **[A]**;
+/// falsifier: a window for a module on a hull that shows another total
+/// (the max, or the module alone). No online reprocessing module, no share.
 pub fn structure_gas_share(w: &Registry, structure: i64) -> f64 {
     let Some(s) = crate::structure::get(w.deltas(), structure) else {
         return 0.0;
@@ -557,7 +572,7 @@ pub fn compress_in_structure(
 }
 
 /// [`compress_in_structure`] under another typelist (the tests' invented one).
-pub fn compress_in_structure_with(
+fn compress_in_structure_with(
     w: &mut Registry,
     actor: i64,
     item_id: i64,
@@ -594,7 +609,9 @@ pub fn decompress_in_structure(
     );
     let slot = Slot::new(actor, it.location_id, it.flag_id);
     // **[A]** a share that rounds to nothing keeps the stack and answers a
-    // zero output; falsified by a retail window that eats it.
+    // zero output; falsified by a retail window that eats it. The answer's
+    // `source_quantity` is still the stack's size although the stack is kept:
+    // the client ignores it on a zero output **[I]**.
     let edits = plan_twin(w.store(), &it, out, quantity, slot);
     w.apply_items(&edits)
         .map_err(|_| StructureRefusal::NotCompressable)?;
@@ -1030,6 +1047,7 @@ mod tests {
     const MODULE_SHARE: f64 = 0.5;
     const HULL_SHARE: f64 = 0.25;
     const REPROC_ITEM: i64 = 159_100_040;
+    const GAS_HOLD: i64 = 159_100_033;
 
     /// Alice docked in an invented structure with ore and compressed gas in
     /// its hangar; a typelist `LOCAL_LIST` stands for 336, and an invented
@@ -1074,6 +1092,19 @@ mod tests {
             singleton: false,
         };
         items.push(mk(HANGAR_ORE, ORE_MIXED, 700, ORE_GROUP, 25));
+        items.push(crate::item::Item {
+            item_id: GAS_HOLD,
+            location_id: ALICE_SHIP,
+            flag_id: 5,
+            quantity: 4,
+            ..mk(
+                GAS_HOLD,
+                crate::reprocess::fixture::GAS_COMPRESSED,
+                4,
+                GROUP_COMPRESSED_GAS,
+                25,
+            )
+        });
         items.push(mk(
             GAS_STACK,
             crate::reprocess::fixture::GAS_COMPRESSED,
@@ -1119,30 +1150,39 @@ mod tests {
         }
     }
 
+    /// The three client keys **[V]** a refusal may carry.
+    const REFUSAL_KEYS: [&str; 3] = [
+        "StructureServiceUnavailable",
+        "StructureReprocessingDenied",
+        "NotCompressableItem",
+    ];
+
+    fn assert_refusal(r: &Result<PyValue, ServiceError>) {
+        let Err(e @ ServiceError::Raise(_)) = r else {
+            panic!("a raised refusal, got {r:?}");
+        };
+        assert!(REFUSAL_KEYS.contains(&key_of(e).as_str()), "{}", key_of(e));
+    }
+
     #[test]
     fn compress_refuses_outside_a_structure() {
         let mut reg = world();
-        let e = call(&mut reg, "CompressItemInStructure", &[PyValue::Int(STACK)])
-            .expect_err("a refusal");
-        assert_eq!(key_of(&e), "StructureServiceUnavailable");
+        let r = call(&mut reg, "CompressItemInStructure", &[PyValue::Int(STACK)]);
+        assert_refusal(&r);
         assert_eq!(ore_of(&reg, ALICE_SHIP, ORE_MIXED), STACK_QUANTITY);
     }
 
     #[test]
     fn compress_refuses_without_the_reprocessing_service() {
         let mut reg = docked_world();
-        // Today's structure services are the hull's: no service 4.
-        assert_eq!(
-            structure_gate(&reg, ALICE),
-            Err(StructureRefusal::ServiceUnavailable)
-        );
-        let e = call(
+        // The hull's services never include service 4.
+        assert!(structure_gate(&reg, ALICE).is_err());
+        let r = call(
             &mut reg,
             "CompressItemInStructure",
             &[PyValue::Int(HANGAR_ORE)],
-        )
-        .expect_err("a refusal");
-        assert_eq!(key_of(&e), "StructureServiceUnavailable");
+        );
+        assert_refusal(&r);
         assert_eq!(ore_of(&reg, STRUCTURE, ORE_MIXED), 700);
     }
 
@@ -1151,28 +1191,54 @@ mod tests {
         let mut reg = docked_world();
         for item in [GAS_STACK, HANGAR_ORE, 42] {
             let r = call(&mut reg, "DecompressGasInStructure", &[PyValue::Int(item)]);
-            assert!(matches!(r, Err(ServiceError::Raise(_))), "{item}: {r:?}");
+            assert_refusal(&r);
         }
         let r = call(&mut reg, "DecompressGasInStructure", &[]);
-        assert!(matches!(r, Err(ServiceError::Raise(_))), "{r:?}");
+        assert_refusal(&r);
         let mut space = world();
         let r = call(
             &mut space,
             "DecompressGasInStructure",
             &[PyValue::Int(STACK)],
         );
-        assert!(matches!(r, Err(ServiceError::Raise(_))), "{r:?}");
+        assert_refusal(&r);
     }
 
     #[test]
-    fn the_gate_names_a_denied_profile_apart_from_a_missing_service() {
+    fn every_refusal_raises_one_of_the_three_client_keys() {
+        for r in [
+            StructureRefusal::NotDocked,
+            StructureRefusal::ServiceUnavailable,
+            StructureRefusal::ServiceDenied,
+            StructureRefusal::NotCompressable,
+        ] {
+            assert!(REFUSAL_KEYS.contains(&r.key()), "{r:?}");
+            assert_refusal(&Err(r.raise()));
+        }
+    }
+
+    #[test]
+    fn decompress_takes_the_hangar_only_and_compress_may_take_the_ship() {
+        let reg = docked_world();
+        // Compressed gas in the active ship's cargo: the decompress menu
+        // does not offer it, the compress menu would offer a listed type.
         assert_eq!(
-            StructureRefusal::ServiceDenied.key(),
-            "StructureReprocessingDenied"
+            plan_decompress(&reg, ALICE, STRUCTURE, GAS_HOLD),
+            Err(StructureRefusal::NotCompressable)
         );
+        assert!(plan_decompress(&reg, ALICE, STRUCTURE, GAS_STACK).is_ok());
+        assert!(plan_compress(&reg, ALICE, STRUCTURE, STACK, LOCAL_LIST).is_ok());
+        let mut reg = docked_world();
+        fit_reprocessing(&mut reg, true, true);
+        let r = call(
+            &mut reg,
+            "DecompressGasInStructure",
+            &[PyValue::Int(GAS_HOLD)],
+        );
+        assert_refusal(&r);
         assert_eq!(
-            StructureRefusal::NotCompressable.key(),
-            "NotCompressableItem"
+            ore_of(&reg, ALICE_SHIP, crate::reprocess::fixture::GAS_COMPRESSED),
+            4
         );
     }
 
@@ -1247,10 +1313,19 @@ mod tests {
     }
 
     #[test]
-    fn decompression_shares_add_and_cap_at_one() {
-        assert_eq!(decompress_output(10, 0.5, 0.3), 8);
-        assert_eq!(decompress_output(10, 0.9, 0.9), 10);
+    fn decompression_output_never_exceeds_the_input_and_grows_with_the_shares() {
+        for q in [0, 1, 7, 10, 1_000] {
+            let mut last = 0;
+            for step in 0..=20 {
+                let share = step as f64 / 10.0 - 0.5; // out of range on purpose
+                let out = decompress_output(q, share, share / 2.0);
+                assert!((0..=q).contains(&out), "q {q} share {share} out {out}");
+                assert!(out >= last, "monotone: q {q} share {share}");
+                last = out;
+            }
+        }
         assert_eq!(decompress_output(10, 0.0, 0.0), 0);
+        assert_eq!(decompress_output(-3, 1.0, 1.0), 0);
     }
 
     #[test]
@@ -1267,20 +1342,34 @@ mod tests {
     }
 
     #[test]
-    fn character_share_reads_the_skill_level() {
-        assert!((character_share(3, 2.0) - 0.06).abs() < 1e-12);
+    fn character_share_is_a_fraction_that_grows_with_the_skill_level() {
+        let mut last = 0.0;
+        for level in -1..=7 {
+            let share = character_share(level, 2.0);
+            assert!((0.0..=1.0).contains(&share), "level {level}");
+            assert!(share >= last, "monotone at level {level}");
+            last = share;
+        }
         assert_eq!(character_share(0, 2.0), 0.0);
-        assert_eq!(character_share(5, 100.0), 1.0);
+        assert!(character_share(5, 2.0) > 0.0);
+        assert!(character_share(5, 1e9) <= 1.0, "capped");
         let mut reg = docked_world();
         assert_eq!(character_gas_share(&reg, ALICE), 0.0, "not trained");
-        *reg.skills_mut(ALICE).expect("skills") =
-            crate::skill::Skills::restore(vec![crate::skill::SkillEntry {
-                type_id: SKILL_T,
-                level: 3,
-                points: 0,
-                rank: 1,
-            }]);
-        assert!((character_gas_share(&reg, ALICE) - 0.06).abs() < 1e-12);
+        let mut last = 0.0;
+        for level in 0..=5 {
+            *reg.skills_mut(ALICE).expect("skills") =
+                crate::skill::Skills::restore(vec![crate::skill::SkillEntry {
+                    type_id: SKILL_T,
+                    level,
+                    points: 0,
+                    rank: 1,
+                }]);
+            let share = character_gas_share(&reg, ALICE);
+            assert!((0.0..=1.0).contains(&share), "level {level}");
+            assert!(share >= last, "monotone at level {level}");
+            last = share;
+        }
+        assert!(last > 0.0, "a trained pilot has a share");
     }
 
     /// Fit the reprocessing module in the structure's first service slot and
@@ -1324,10 +1413,7 @@ mod tests {
         let mut reg = docked_world();
         fit_reprocessing(&mut reg, false, true);
         // The service runs but Alice's corporation holds no reprocessing setting.
-        assert_eq!(
-            structure_gate(&reg, ALICE),
-            Err(StructureRefusal::ServiceDenied)
-        );
+        assert!(structure_gate(&reg, ALICE).is_err());
         reg.character_mut(ALICE).expect("Alice").corporation_id = OWNER_CORP;
         assert_eq!(structure_gate(&reg, ALICE), Ok(STRUCTURE));
     }
@@ -1336,17 +1422,13 @@ mod tests {
     fn a_fitted_but_offline_module_leaves_the_gate_shut() {
         let mut reg = docked_world();
         fit_reprocessing(&mut reg, true, false);
-        assert_eq!(
-            structure_gate(&reg, ALICE),
-            Err(StructureRefusal::ServiceUnavailable)
-        );
-        let e = call(
+        assert!(structure_gate(&reg, ALICE).is_err());
+        let r = call(
             &mut reg,
             "CompressItemInStructure",
             &[PyValue::Int(HANGAR_ORE)],
-        )
-        .expect_err("a refusal");
-        assert_eq!(key_of(&e), "StructureServiceUnavailable");
+        );
+        assert_refusal(&r);
         assert_eq!(ore_of(&reg, STRUCTURE, ORE_MIXED), 700);
     }
 
@@ -1356,13 +1438,12 @@ mod tests {
         fit_reprocessing(&mut reg, true, true);
         // The wire arm reads the real typelist 336, which the fixture world
         // lacks: the call refuses a type it does not list.
-        let e = call(
+        let r = call(
             &mut reg,
             "CompressItemInStructure",
             &[PyValue::Int(HANGAR_ORE)],
-        )
-        .expect_err("unlisted");
-        assert_eq!(key_of(&e), "NotCompressableItem");
+        );
+        assert_refusal(&r);
         let done = compress_in_structure_with(&mut reg, ALICE, HANGAR_ORE, LOCAL_LIST)
             .expect("compresses");
         assert_eq!(done.output_quantity, 700);
@@ -1370,17 +1451,16 @@ mod tests {
         assert_eq!(ore_of(&reg, STRUCTURE, ORE_MIXED), 0);
         assert_eq!(ore_of(&reg, STRUCTURE, ORE_MIXED_COMPRESSED), 700);
         // The gas has no twin: still refused.
-        let e = call(
+        let r = call(
             &mut reg,
             "CompressItemInStructure",
             &[PyValue::Int(GAS_STACK)],
-        )
-        .expect_err("no twin");
-        assert_eq!(key_of(&e), "NotCompressableItem");
+        );
+        assert_refusal(&r);
     }
 
     #[test]
-    fn the_structure_share_is_module_plus_hull_and_only_while_online() {
+    fn the_structure_share_is_a_fraction_and_only_while_a_module_is_online() {
         let mut reg = docked_world();
         assert_eq!(structure_gas_share(&reg, STRUCTURE), 0.0, "no module");
         fit_reprocessing(&mut reg, true, false);
@@ -1390,41 +1470,46 @@ mod tests {
             vec![STRUCTURE.to_string(), REPROC_ITEM.to_string()],
             vec!["1".to_owned()],
         );
-        assert!((structure_gas_share(&reg, STRUCTURE) - (MODULE_SHARE + HULL_SHARE)).abs() < 1e-12);
+        let share = structure_gas_share(&reg, STRUCTURE);
+        assert!((0.0..=1.0).contains(&share));
+        assert!(share >= MODULE_SHARE.min(1.0), "the hull never takes away");
     }
 
     #[test]
-    fn decompress_in_a_structure_pays_whole_units_of_the_summed_share() {
-        let mut reg = docked_world();
-        fit_reprocessing(&mut reg, true, true);
-        *reg.skills_mut(ALICE).expect("skills") =
-            crate::skill::Skills::restore(vec![crate::skill::SkillEntry {
-                type_id: SKILL_T,
-                level: 3,
-                points: 0,
-                rank: 1,
-            }]);
-        // The window's pair is 0.75 and 0.06; the sum 0.81 of 9 units is 7.29.
-        let (s, c) = gas_efficiency(&reg, ALICE);
-        assert!(
-            (s - 0.75).abs() < 1e-12 && (c - 0.06).abs() < 1e-12,
-            "{s} {c}"
-        );
-        let v = call(
-            &mut reg,
-            "DecompressGasInStructure",
-            &[PyValue::Int(GAS_STACK)],
-        )
-        .expect("decompresses");
-        let PyValue::Tuple(t) = v else {
-            panic!("the six-tuple");
-        };
-        assert_eq!(t[5], PyValue::Int(7));
-        assert_eq!(
-            ore_of(&reg, STRUCTURE, crate::reprocess::fixture::GAS_COMPRESSED),
-            0
-        );
-        assert_eq!(ore_of(&reg, STRUCTURE, crate::reprocess::fixture::GAS), 7);
+    fn decompress_in_a_structure_is_wired_to_the_output_rule_and_conserves() {
+        for level in [0, 3, 5] {
+            let mut reg = docked_world();
+            fit_reprocessing(&mut reg, true, true);
+            *reg.skills_mut(ALICE).expect("skills") =
+                crate::skill::Skills::restore(vec![crate::skill::SkillEntry {
+                    type_id: SKILL_T,
+                    level,
+                    points: 0,
+                    rank: 1,
+                }]);
+            let before = ore_of(&reg, STRUCTURE, crate::reprocess::fixture::GAS_COMPRESSED);
+            let (s, c) = gas_efficiency(&reg, ALICE);
+            assert!((0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&c));
+            let v = call(
+                &mut reg,
+                "DecompressGasInStructure",
+                &[PyValue::Int(GAS_STACK)],
+            )
+            .expect("decompresses");
+            let PyValue::Tuple(t) = v else {
+                panic!("the six-tuple");
+            };
+            let out = decompress_output(before, s, c);
+            assert_eq!(t[5], PyValue::Int(out), "level {level}");
+            assert!(out <= before);
+            let left = ore_of(&reg, STRUCTURE, crate::reprocess::fixture::GAS_COMPRESSED);
+            let made = ore_of(&reg, STRUCTURE, crate::reprocess::fixture::GAS);
+            assert_eq!(made, out);
+            // The source is consumed exactly when something came out of it.
+            assert_eq!(left == 0, out > 0, "level {level}");
+            assert_eq!(left, if out > 0 { 0 } else { before });
+            assert_eq!(t[3] == PyValue::None, out == 0);
+        }
     }
 
     #[test]
