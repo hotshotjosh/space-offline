@@ -263,6 +263,8 @@ fci_upwell_clone
 fci_upwell_revive
 # (#41) service modules at a structure's controls: /world freeclone 0 and freeupkeep 0, the client's own TryFit of a Cloning Center at 164 (corp-owned) and its own online, the clone bay and the upkeep follow, a Reprocessing Facility in 165, OfflineModule, an unfit by Add(flag=4), the Market Hub refused by the client's own hull check; settings restored; one client; written, not yet run on a client
 fci_upwell_modules
+# (#42) the hourly fuel burn: /world fuelburn 1 and freeupkeep 0, fuel blocks into the fuel bay (a non-fuel item refused), a Cloning Center fitted and onlined at the client's own cost (2110), fuelExpires equal to the client's GetFuelExpiryTime arithmetic, /strfuel runs one hour for exactly the client's own use per hour, a bay short of an hour takes the module offline with mail 198, a refill and online again with mails 207 and 208; settings restored; one client; written, not yet run on a client
+fci_upwell_fuel
 
 # bp-3 (#120): a hostile hunter fitted with a smartbomb from its stock sets it off when two foes are in the field; one with a micro jump drive, tackled by a disruptor, jumps out (EVE_BOTS_KIT_DRILL grants the part in open mode, CI only)
 fci_bot_smartbomb --with-bots --bots-kit smartbomb --serial -- --dev
