@@ -151,6 +151,38 @@ class Gates(unittest.TestCase):
         self.assertEqual(dr.gate_g10(slow)[0], dr.FAIL)
         self.assertEqual(dr.gate_g10(dr.Log())[0], dr.NA)
 
+    def test_g10_one_outlier_in_a_thousand_passes(self):
+        lines = ["[turns] secs=10.0 hold_max=1.0ms"] * 999 + ["[turns] secs=10.0 hold_max=34.0ms"]
+        self.assertEqual(dr.gate_g10(log_of(lines))[0], dr.PASS)
+        # Two among a thousand is one too many; a short run allows none.
+        two = ["[turns] hold_max=1.0ms"] * 998 + ["[turns] hold_max=34.0ms"] * 2
+        self.assertEqual(dr.gate_g10(log_of(two))[0], dr.FAIL)
+        short = ["[turns] hold_max=1.0ms"] * 99 + ["[turns] hold_max=34.0ms"]
+        self.assertEqual(dr.gate_g10(log_of(short))[0], dr.FAIL)
+
+    def test_g10_twenty_slow_windows_fail(self):
+        lines = ["[turns] hold_max=1.0ms"] * 980 + ["[turns] hold_max=30.0ms"] * 20
+        self.assertEqual(dr.gate_g10(log_of(lines))[0], dr.FAIL)
+
+    def test_g10_turn_sched_judges_cpu_and_runq(self):
+        def slow(hold, cpu, runq, blocked):
+            return f"[turn-slow] worst label=a.B hold={hold}ms wait=0.1ms cpu={cpu}ms runq={runq}ms blocked={blocked}ms"
+
+        base = ["[turns] hold_max=1.0ms"] * 99
+        # A 40 ms hold that was all blocked: passes, and says so.
+        blocked = log_of(base + ["[turns] hold_max=40.0ms", slow(40.0, 0.5, 0.5, 39.0)])
+        s, d = dr.gate_g10(blocked)
+        self.assertEqual(s, dr.PASS, d)
+        self.assertIn("blocked", d)
+        self.assertIn("1 over", d)
+        # A 40 ms hold of cpu: fails.
+        busy = log_of(base + ["[turns] hold_max=40.0ms", slow(40.0, 38.0, 1.0, 1.0)])
+        self.assertEqual(dr.gate_g10(busy)[0], dr.FAIL)
+        # Without sched fields (`-`) the hold rule applies.
+        plain = log_of(base + ["[turns] hold_max=40.0ms",
+                               "[turn-slow] worst label=a.B hold=40.0ms cpu=- runq=- blocked=-"])
+        self.assertEqual(dr.gate_g10(plain)[0], dr.FAIL)
+
     def test_the_report_lists_all_ten_and_exits_by_fail(self):
         res = dr.judge(log_of(roll([(1, K1), (2, K1), (3, K1)])), dr.Log(), {})
         text = dr.render(res)

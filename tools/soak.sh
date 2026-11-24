@@ -154,7 +154,9 @@
 #   - peak VmRSS over --rss-budget;
 #   - VmRSS growth over --rss-growth after the last bot login (the sample
 #     where every bot's character has entered the game);
-#   - a `[turns]` line whose hold_max is over --hold-ms;
+#   - a `[turns]` line whose hold_max is over --hold-ms (tools/doctrine-report.py G10
+#     is the p99.9 rule; the server runs with --turn-sched, and env.tsv holds the
+#     cgroup throttle / memory pressure / majflt samples, #248);
 #   - a deny-list hit or a pilot still online after the bots stopped (S10).
 # The `[turns]` contract (CP15/CA13): one line per window starting `[turns]`
 # with a `hold_max=<ms>` field, e.g. `[turns] ... hold_max=12.5ms ...`.
@@ -410,7 +412,7 @@ EVE_DEV_TIMEOUT=$((SECS + 600 + 900 * ACCOUNTS)) "$REPO/tools/dev.sh" bash -c '
     # #94: the economy rows for tools/econ-report.py; set after the accounts
     # step so its one-shot server writes none. dev.sh passes no environment.
     export EVE_ECON_TSV="$out/econ.tsv"
-    "$bin/${EVE_SERVER_BIN:-eve-offline-server}" --bind 127.0.0.1:26000 --world "$out/world.dat" --status "$out/status.tsv" "${server[@]}" \
+    "$bin/${EVE_SERVER_BIN:-eve-offline-server}" --bind 127.0.0.1:26000 --world "$out/world.dat" --status "$out/status.tsv" --turn-sched "${server[@]}" \
         >"$out/server.log" 2>&1 &
     spid=$!
     sample() {
@@ -419,6 +421,19 @@ EVE_DEV_TIMEOUT=$((SECS + 600 + 900 * ACCOUNTS)) "$REPO/tools/dev.sh" bash -c '
         [[ -n $kb ]] || return 0
         printf "%s\t%s\t%s\n" "$SECONDS" "$kb" \
             "$(grep -c "entering the game" "$out/server.log" 2>/dev/null)" >>"$out/rss.tsv"
+        sample_env
+    }
+    # #248: what the box did to the server, from read-only files. env.tsv:
+    # seconds, cgroup cpu throttle (periods, usec), memory pressure
+    # some/full avg10, the server pid majflt. A file that is absent reads "-".
+    sample_env() {
+        local cg=/sys/fs/cgroup nth tus ps pf mf
+        nth=$(awk "/^nr_throttled /{print \$2}" "$cg/cpu.stat" 2>/dev/null) || nth=
+        tus=$(awk "/^throttled_usec /{print \$2}" "$cg/cpu.stat" 2>/dev/null) || tus=
+        ps=$(sed -n "s/^some .*avg10=\([0-9.]*\).*/\1/p" "$cg/memory.pressure" 2>/dev/null) || ps=
+        pf=$(sed -n "s/^full .*avg10=\([0-9.]*\).*/\1/p" "$cg/memory.pressure" 2>/dev/null) || pf=
+        mf=$(awk "{print \$12}" "/proc/$spid/stat" 2>/dev/null) || mf=
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$SECONDS" "${nth:--}" "${tus:--}" "${ps:--}" "${pf:--}" "${mf:--}" >>"$out/env.tsv"
     }
     hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
     sample_bots() {
@@ -441,6 +456,7 @@ EVE_DEV_TIMEOUT=$((SECS + 600 + 900 * ACCOUNTS)) "$REPO/tools/dev.sh" bash -c '
         done
     }
     printf "secs\trss_kb\tlogins\n" >"$out/rss.tsv"
+    printf "secs\tnr_throttled\tthrottled_usec\tmem_some_avg10\tmem_full_avg10\tmajflt\n" >"$out/env.tsv"
     printf "secs\trss_kb\tthreads\tcpu_s\n" >"$out/bots-rss.tsv"
     printf "secs\tthread\twchan\tstate\n" >"$out/bots-threads.tsv"
     SECONDS=0
@@ -559,6 +575,23 @@ elif ((TURNS_REQUIRED)); then
     fail "turns: no [turns] line in server.log"
 else
     echo "soak: note: no [turns] line yet (CP15); the hold is not judged"
+fi
+
+# #248: the box's own pressure over the soak (cgroup cpu throttle, memory
+# pressure, server majflt), reported, not judged: it tells a world-turn hold
+# that was the server's from one that was the container's. `-` = not readable.
+if [[ $(wc -l <"$out/env.tsv" 2>/dev/null || echo 0) -gt 1 ]]; then
+    awk -F'\t' '
+        NR == 1 { next }
+        { n++; if ($2 != "-") { if (f2 == "") f2 = $2; l2 = $2 }
+          if ($3 != "-") { if (f3 == "") f3 = $3; l3 = $3 }
+          if ($4 != "-" && $4 + 0 > ps) ps = $4 + 0
+          if ($5 != "-" && $5 + 0 > pf) pf = $5 + 0
+          if ($6 != "-") { if (f6 == "") f6 = $6; l6 = $6 } }
+        END {
+            printf "soak: box: %d samples; cpu throttled %s periods / %s ms; memory pressure avg10 max some %s full %s; server majflt +%s\n", n,
+                f2 == "" ? "?" : l2 - f2, f3 == "" ? "?" : (l3 - f3) / 1000, ps + 0, pf + 0, f6 == "" ? "?" : l6 - f6
+        }' "$out/env.tsv"
 fi
 
 # The bot process (R-ECON B3): reported, not judged.
