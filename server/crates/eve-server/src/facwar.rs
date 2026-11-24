@@ -112,6 +112,71 @@ pub fn parse_scoreboard_line(line: &str) -> Result<ScoreboardRow, String> {
     Ok((t.parse().map_err(|_| bad())?, opt(a)?, opt(o)?))
 }
 
+/// The capture points' attributes (`fwCapturePoint`, #75), extracted by
+/// `content_facwar.py`; optional, like [`MAX_LP_FILE`].
+pub const CAPTURE_POINTS_FILE: &str = "facwar/capture_points.tsv";
+
+/// Its header.
+pub const CAPTURE_POINTS_HEADER: &str =
+    "#type_id\tseconds\trange\tpoint_value\tlooping\tcapturing\tblocking";
+
+/// One capture point type's attributes as the bundle states them; an empty
+/// field is `None` (the server then uses its assumed value for it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CapturePointRow {
+    /// `numberOfSeconds`.
+    pub seconds: Option<i64>,
+    /// `range`, metres.
+    pub range: Option<i64>,
+    /// `pointValue`.
+    pub point_value: Option<i64>,
+    /// `looping`.
+    pub looping: Option<bool>,
+    /// `capturingTypeListID`, a `types/typelists.tsv` id.
+    pub capturing: Option<i64>,
+    /// `blockingTypeListID`, likewise.
+    pub blocking: Option<i64>,
+}
+
+/// Parse one data line of [`CAPTURE_POINTS_FILE`].
+///
+/// # Errors
+///
+/// A line that is not seven TAB fields, a type that is not an integer, a
+/// field that is neither empty nor an integer, or a `looping` that is not
+/// empty, `0` or `1`.
+pub fn parse_capture_point_line(line: &str) -> Result<(i64, CapturePointRow), String> {
+    let bad = || format!("{CAPTURE_POINTS_FILE}: bad row {line:?}");
+    let f: Vec<&str> = line.split('\t').collect();
+    let [t, secs, range, value, looping, cap, block] = f[..] else {
+        return Err(bad());
+    };
+    let opt = |s: &str| -> Result<Option<i64>, String> {
+        if s.is_empty() {
+            Ok(None)
+        } else {
+            s.parse().map(Some).map_err(|_| bad())
+        }
+    };
+    let looping = match looping {
+        "" => None,
+        "0" => Some(false),
+        "1" => Some(true),
+        _ => return Err(bad()),
+    };
+    Ok((
+        t.parse().map_err(|_| bad())?,
+        CapturePointRow {
+            seconds: opt(secs)?,
+            range: opt(range)?,
+            point_value: opt(value)?,
+            looping,
+            capturing: opt(cap)?,
+            blocking: opt(block)?,
+        },
+    ))
+}
+
 /// This module's registration row, one line in `TABLES` in
 /// `content_tables.rs` (coordinator-only).
 pub const WARZONES: TableSpec = TableSpec {
@@ -137,6 +202,10 @@ fn boxed_load(src: &Sources) -> Result<Boxed, String> {
         for line in b.data_lines(SCOREBOARDS_FILE, SCOREBOARDS_HEADER)? {
             let (t, a, o) = parse_scoreboard_line(&line)?;
             table.scoreboards.insert(t, (a, o));
+        }
+        for line in b.data_lines(CAPTURE_POINTS_FILE, CAPTURE_POINTS_HEADER)? {
+            let (t, row) = parse_capture_point_line(&line)?;
+            table.capture_points.insert(t, row);
         }
         for line in b.data_lines(SYSTEMS_FILE, SYSTEMS_HEADER)? {
             let mut f = line.split('\t').map(str::parse::<i64>);
@@ -191,6 +260,9 @@ pub struct Table {
     /// `scoreboard type -> (attacker_wins, occupier_wins)` from
     /// [`SCOREBOARDS_FILE`]; empty without one.
     scoreboards: BTreeMap<i64, (Option<i64>, Option<i64>)>,
+    /// `capture point type -> attributes` from [`CAPTURE_POINTS_FILE`]; empty
+    /// without one.
+    capture_points: BTreeMap<i64, CapturePointRow>,
 }
 
 impl Table {
@@ -224,6 +296,7 @@ impl Table {
             systems: BTreeMap::new(),
             max_lp: BTreeMap::new(),
             scoreboards: BTreeMap::new(),
+            capture_points: BTreeMap::new(),
         })
     }
 
@@ -271,6 +344,17 @@ impl Table {
     /// leaves it out.
     pub fn scoreboard_of(&self, type_id: i64) -> Option<(Option<i64>, Option<i64>)> {
         self.scoreboards.get(&type_id).copied()
+    }
+
+    /// The same table with capture point attributes (`type -> row`).
+    pub fn with_capture_points(mut self, rows: BTreeMap<i64, CapturePointRow>) -> Table {
+        self.capture_points = rows;
+        self
+    }
+
+    /// A capture point type's attributes, if the bundle lists the type.
+    pub fn capture_point_of(&self, type_id: i64) -> Option<CapturePointRow> {
+        self.capture_points.get(&type_id).copied()
     }
 
     /// The most a kill of a hull of `group` pays, if the bundle says.
@@ -1211,6 +1295,59 @@ pub(crate) mod tests {
         assert_eq!(loaded.scoreboard_of(990_001), None);
     }
 
+    #[test]
+    fn a_capture_point_row_parses_and_a_bad_one_is_an_error() {
+        assert_eq!(
+            parse_capture_point_line("990001\t45\t7000\t2\t1\t990101\t990102"),
+            Ok((
+                990_001,
+                CapturePointRow {
+                    seconds: Some(45),
+                    range: Some(7000),
+                    point_value: Some(2),
+                    looping: Some(true),
+                    capturing: Some(990_101),
+                    blocking: Some(990_102),
+                }
+            ))
+        );
+        assert_eq!(
+            parse_capture_point_line("990002\t\t\t\t0\t\t"),
+            Ok((
+                990_002,
+                CapturePointRow {
+                    looping: Some(false),
+                    ..CapturePointRow::default()
+                }
+            ))
+        );
+        for bad in [
+            "990001\t1\t2\t3\t1\t4",
+            "x\t1\t2\t3\t1\t4\t5",
+            "990001\t1.5\t2\t3\t1\t4\t5",
+            "990001\t1\t2\t3\t2\t4\t5",
+            "990001\t1\t2\t3\ttrue\t4\t5",
+        ] {
+            assert!(parse_capture_point_line(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn capture_point_of_answers_from_the_table_and_an_absent_file_loads() {
+        let row = CapturePointRow {
+            seconds: Some(45),
+            ..CapturePointRow::default()
+        };
+        let t = Table::fixture().with_capture_points([(990_001, row)].into());
+        assert_eq!(t.capture_point_of(990_001), Some(row));
+        assert_eq!(t.capture_point_of(990_002), None);
+        let dir = crate::authored::Dir::compiled_only();
+        let src = Sources::new(None, &dir);
+        let loaded = boxed_load(&src).expect("no bundle: no capture points, still loads");
+        let loaded = loaded.downcast_ref::<Table>().expect("a Table");
+        assert_eq!(loaded.capture_point_of(990_001), None);
+    }
+
     // ---- W17 CP53b ----
 
     use crate::celestial::{Catalogue, Universe};
@@ -1313,6 +1450,19 @@ pub(crate) mod tests {
             &mut BTreeMap<i64, (Option<i64>, Option<i64>)>,
         ),
     ) -> Registry {
+        world_with_points(BTreeMap::new(), extra)
+    }
+
+    /// [`world_with`] with capture point rows in the warzone table.
+    pub(crate) fn world_with_points(
+        points: BTreeMap<i64, CapturePointRow>,
+        extra: impl FnOnce(
+            &mut crate::npc_data::Table,
+            &mut dungeon_data::Table,
+            &mut Vec<population::Row>,
+            &mut BTreeMap<i64, (Option<i64>, Option<i64>)>,
+        ),
+    ) -> Registry {
         let mut c = Content::fixture();
         let zone = Warzone {
             id: ZONE,
@@ -1338,7 +1488,8 @@ pub(crate) mod tests {
             "facwar",
             Table::new(vec![zone])
                 .expect("ok")
-                .with_scoreboards(scoreboards),
+                .with_scoreboards(scoreboards)
+                .with_capture_points(points),
         );
         c.insert("universe", universe());
         c.insert("dungeon_data", dun);
