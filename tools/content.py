@@ -28,7 +28,7 @@ keeps every other file and row; see `merge_base`. With no `--sections` the
 run replaces the whole bundle.
 
 **Builds** (R-BUILD BA-3): the install may be any build `tools/builds.tsv`
-marks `pinned` or `equivalent` (`--build N` demands one build, `--build any`
+marks `pinned`, `equivalent` or `provisional` (`--build N` demands one build, `--build any`
 stops checking; the same flag as `tools/dogma.py`). The manifest records the
 install's own build as `client_build` and, since format 1.1, a `data_hash`
 over the data files, so two extractions can be proved to hold the same data
@@ -1023,7 +1023,7 @@ def parse_args(argv):
                     help="with --check: also prove BUNDLE's data_hash equals --out's")
     ap.add_argument("--build", metavar="N",
                     help="the build the install must be, or 'any' (default: any "
-                         "build tools/builds.tsv marks pinned or equivalent)")
+                         "build tools/builds.tsv marks pinned, equivalent or provisional)")
     a = ap.parse_args(argv)
     if a.against and not a.check:
         ap.error("--against needs --check")

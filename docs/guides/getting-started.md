@@ -21,7 +21,7 @@ Every flag and `EVE_*` variable is in
   with status `pinned`
   (`awk -F'\t' '$3=="pinned"{print $1}' tools/builds.tsv` prints it). The
   launcher always installs the current Tranquility build. When that build is
-  not `pinned` or `equivalent`, the server refuses it until the registry
+  not `pinned`, `equivalent` or `provisional`, the server refuses it until the registry
   catches up ([tracking-tq.md](tracking-tq.md)). Server-only work (most issues) needs no
   client at all.
 - **The client comes from the human.** A person installs EVE Online through

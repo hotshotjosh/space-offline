@@ -43,7 +43,7 @@ online install.
 | `--out DIR` | the bundle (default `out/content`) |
 | `--sections a,b` | rebuild only these sections, plus what they depend on, merged into the existing bundle |
 | `--systems id,id` | a sandbox: restricts `universe` and `belts` only |
-| `--build N\|any` | accept this build (default: the ones `tools/builds.tsv` marks pinned or equivalent) |
+| `--build N\|any` | accept this build (default: the ones `tools/builds.tsv` marks pinned, equivalent or provisional) |
 | `--check` | verify a bundle instead of writing one |
 | `--against BUNDLE` | with `--check`: prove two bundles hold the same data |
 
@@ -62,7 +62,7 @@ steps, for a host that receives a bundle built elsewhere
 
 `tools/content-lib.sh` picks the directory:
 
-- a pinned or equivalent build uses `out/content`;
+- a pinned, equivalent or provisional build uses `out/content`;
 - an unverified build uses `out/content-<build>`;
 - an unregistered build is refused;
 - `EVE_CONTENT` overrides the directory, which must stay under `out/`.

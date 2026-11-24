@@ -1308,9 +1308,14 @@ def pinned_build(path=None):
 #: accept, and why. `client-pin.sha256` pins FILES; this pins MEANING.
 BUILDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "builds.tsv")
-#: Registry statuses a tool accepts without ``--build``: the pinned build
-#: and any build `tools/build-delta.py` measured ``equivalent`` to it.
-ACCEPTED_STATUSES = ("pinned", "equivalent")
+#: Registry statuses a tool accepts without ``--build``: the pinned build,
+#: any build `tools/build-delta.py` measured ``equivalent`` to it, and a
+#: ``provisional`` build. A provisional build is registered only after its
+#: loader layout (`fsd.CFSD_BUILD_LAYOUTS`) and its content counts are, so
+#: the extractor reads it as well as an equivalent one; refusing it left a
+#: player whose launcher already has the newest build with no way to build
+#: a bundle (tools/content-lib.sh already gives it `out/content`).
+ACCEPTED_STATUSES = ("pinned", "equivalent", "provisional")
 
 
 def registry(path=None):
@@ -1378,7 +1383,7 @@ def resolve_client(client=None, resfiles=None, want_build=None, out=None):
       and **which of the two sources it came from**, since they fail in very
       different places;
     * ``start.ini`` names a build `tools/builds.tsv` does not accept
-      (``pinned`` or ``equivalent``), or names none. With no registry, the
+      (``pinned``, ``equivalent`` or ``provisional``), or names none. With no registry, the
       pin's build is the only one. Pass ``--build <n>`` for another build on
       purpose, or ``--build any`` to stop checking.
 
@@ -1422,9 +1427,13 @@ def resolve_client(client=None, resfiles=None, want_build=None, out=None):
         accepted = accepted_builds()
         if accepted and build in accepted:
             entry = registry().get(build)
-            if entry and entry["status"] != "pinned":
-                print("dogma.py: build %s is %s to the pinned build (%s)"
-                      % (build, entry["status"], entry["evidence"]), file=out)
+            if entry and entry["status"] == "equivalent":
+                print("dogma.py: build %s is equivalent to the pinned build (%s)"
+                      % (build, entry["evidence"]), file=out)
+            elif entry and entry["status"] == "provisional":
+                print("dogma.py: build %s is provisional: registered with its own "
+                      "loader layout and counts, not measured further (%s)"
+                      % (build, entry["evidence"]), file=out)
             want = None
         else:
             want = ",".join(accepted) or None
@@ -1487,7 +1496,7 @@ def main(argv=None):
         parser.add_argument("--build", default=d(None), metavar="N",
                             help="the build this install must be, or "
                                  "'any' (default: any build tools/builds.tsv "
-                                 "marks pinned or equivalent)")
+                                 "marks pinned, equivalent or provisional)")
 
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_common(p, sub=False)
