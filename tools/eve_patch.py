@@ -848,12 +848,20 @@ class Ctx:
 def open_ctx(args, need_client=True):
     c = Ctx()
     c.args = args
-    c.client = Path(args.client).resolve() if args.client else None
+    client = args.client or os.environ.get("EVE_CLIENT") or None
+    c.client = Path(client).expanduser().resolve() if client else None
     if need_client and c.client is None:
-        raise Refuse("--client DIR is required")
+        raise Refuse("no client folder: --client is empty or missing and $EVE_CLIENT is not set "
+                     "in this terminal. Give the full path, e.g. "
+                     "--client ~/<prefix>/drive_c/CCP/EVE/tq-offline")
     if c.client is not None and not c.client.is_dir():
-        raise Refuse(f"no client directory at {c.client}")
+        raise Refuse(f"no client folder at {c.client}: check the path "
+                     "(it ends in drive_c/CCP/EVE/tq-offline, the copy, not tq)")
     found = read_build(c.client) if c.client else None
+    if c.client is not None and found is None and args.build is None:
+        raise Refuse(f"{c.client} has no readable start.ini: that is not a client folder. "
+                     "--client must be the folder holding start.ini and bin64/ "
+                     "(.../drive_c/CCP/EVE/tq-offline)")
     if args.build is not None and found is not None and str(args.build) != found:
         raise Refuse(f"--build {args.build} but start.ini says build = {found}")
     c.build = str(args.build) if args.build is not None else found
@@ -1320,7 +1328,7 @@ COMMANDS = {
 def parser():
     ap = argparse.ArgumentParser(prog="eve_patch.py", description=__doc__.splitlines()[0])
     ap.add_argument("command", choices=sorted(COMMANDS))
-    ap.add_argument("--client", help="the install directory (holds start.ini and bin64/)")
+    ap.add_argument("--client", help="the install directory (holds start.ini and bin64/); default $EVE_CLIENT")
     ap.add_argument("--build", help="the build, instead of reading start.ini")
     ap.add_argument("--patches-dir", default=str(PATCHES), help=argparse.SUPPRESS)
     ap.add_argument("--tier", default=DEFAULT_TIERS, help="tiers to apply/verify (default A,P,B,C; C is the code.ccp constants)")

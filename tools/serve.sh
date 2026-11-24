@@ -222,6 +222,11 @@ if (( FROZEN )); then
     [[ -s $MANIFEST ]] || die "--bundle-frozen: no $MANIFEST; rsync out/content/ from your dev box first"
     echo "== content bundle frozen: build $(awk -F'\t' '$1=="client_build"{print $2; exit}' "$MANIFEST"), data_hash $(awk -F'\t' '$1=="data_hash"{print $2; exit}' "$MANIFEST")"
 else
+    client=${EVE_CLIENT:-$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/${EVE_CLIENT_DIR:-tq-offline}}
+    [[ -r $client/start.ini ]] || die "no client at $client (no start.ini): the server reads its game data from your client copy. Run it as
+    EVE_CLIENT=/full/path/to/drive_c/CCP/EVE/tq-offline tools/serve.sh ...
+or pass --bundle-frozen to serve a bundle you already have in out/content"
+    echo "== client: $client (build $(sed -n 's/^build *= *//p' "$client/start.ini" | head -1 | tr -d '\r '))"
     stale=$(content_stale)
     if [[ -n $stale ]]; then
         echo "== extracting the content bundle"; printf '   because: %s\n' "$stale"
