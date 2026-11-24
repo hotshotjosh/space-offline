@@ -149,6 +149,7 @@ pub mod gateway_out;
 pub mod gateway_plans;
 pub mod gm_tools;
 pub mod mtu;
+pub mod paperdoll;
 pub mod smartbomb;
 pub mod superweapon;
 pub mod world_events;
