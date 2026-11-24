@@ -204,6 +204,9 @@ fn view() -> LinkView {
         gap: Some(0.0),
         silo: Some(STATE_IDLE),
         hold_free: HOLD_MIN_M3,
+        closes: Some(NOW + 2 * 3_600 * TICKS),
+        now: NOW,
+        owner_ok: true,
     }
 }
 
@@ -234,6 +237,120 @@ fn the_link_is_called_only_in_range_in_an_allowed_hull_on_an_idle_silo() {
         hold_free: HOLD_MIN_M3 - 1.0,
         ..view()
     }));
+    assert!(!may_link(&LinkView {
+        owner_ok: false,
+        ..view()
+    }));
+}
+
+#[test]
+fn the_window_is_checked_again_before_the_link() {
+    let link = eve_server::skyhook_theft::LINK_DURATION_S as i64;
+    // Plenty left, and exactly the link plus the margin.
+    assert!(window_allows(NOW + (link + LINK_MARGIN_S) * TICKS, NOW));
+    // A second short of it, and already closed.
+    assert!(!window_allows(
+        NOW + (link + LINK_MARGIN_S) * TICKS - TICKS,
+        NOW
+    ));
+    assert!(!window_allows(NOW - TICKS, NOW));
+    assert!(!may_link(&LinkView {
+        closes: Some(NOW + link * TICKS / 2),
+        ..view()
+    }));
+    // An unknown end does not stop a link on a silo that is there.
+    assert!(may_link(&LinkView {
+        closes: None,
+        ..view()
+    }));
+}
+
+fn enemy_only(a: i64) -> bool {
+    crate::sov_bot::raidable(ME, a, &rel, &never, &mate)
+}
+
+#[test]
+fn the_silos_own_corp_decides_not_the_systems_holder() {
+    const OWN_CORP: i64 = 98_221_001;
+    const FOE_CORP: i64 = 98_221_002;
+    // Our own skyhook in a system an enemy holds: never linked, whatever the
+    // alliance the park names or the holder is.
+    assert!(owner_gate(Some(OWN_CORP), OWN_CORP, None, Some(FOE), &enemy_only).is_err());
+    assert!(owner_gate(Some(OWN_CORP), OWN_CORP, Some(FOE), Some(FOE), &enemy_only).is_err());
+    // A blue corp's skyhook in an enemy-held system: the alliance named wins.
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, Some(BLUE), Some(FOE), &enemy_only).is_err());
+    // An enemy corp's skyhook in a system we or a blue hold.
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, Some(FOE), Some(ME), &enemy_only).is_ok());
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, Some(FOE), Some(BLUE), &enemy_only).is_ok());
+    // No alliance on the slim: the holder's decides; no holder, no raid.
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, None, Some(FOE), &enemy_only).is_ok());
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, None, Some(BLUE), &enemy_only).is_err());
+    assert!(owner_gate(Some(FOE_CORP), OWN_CORP, None, None, &enemy_only).is_err());
+}
+
+#[test]
+fn a_raid_never_outranks_a_claim_or_an_attack() {
+    use crate::sov_bot::{HubView, RAID_CAP, raid_value};
+    // The worst-case raid (red, and the bloc's enemy) stays under the cap.
+    assert!(raid_value(-1.0, true) <= RAID_CAP);
+    // Order among raids: worse R and a bloc enemy are worth more.
+    assert!(raid_value(-0.9, false) > raid_value(-0.3, false));
+    assert!(raid_value(-0.3, true) > raid_value(-0.3, false));
+    // A neutral hub to claim, and a raid, the same jumps: the claim wins.
+    let (o, c) = open_for(2 * RAID_MIN_LEFT);
+    let hubs = [HubView {
+        system: 30_221_009,
+        hub_id: 8_221_009,
+        holder: None,
+        adm: 1.0,
+        phase: Phase::Neutral,
+        campaign: None,
+        contesters: Vec::new(),
+    }];
+    let raids = [raid(Some(FOE), o, c)];
+    let t = plan(&Facts {
+        me: ME,
+        hubs: &hubs,
+        jumps: &near,
+        relation: &rel,
+        bloc_enemy: &never,
+        bloc_mate: &mate,
+        now: NOW,
+        linkers: 1,
+        previous: None,
+        raids: &raids,
+        alarms: &[],
+    })
+    .expect("a target");
+    assert_eq!(t.kind, Kind::Claim);
+}
+
+#[test]
+fn the_sale_is_capped_at_what_was_just_unloaded() {
+    // Stack 1 was in the hangar before (50 units); stack 2 is the delivery.
+    let stacks = [(1, 50), (2, 30)];
+    assert_eq!(sell_quota(&stacks, &[2], 30), vec![(2, 30)]);
+    // The delivery merged into the old stack: only the delivery is listed.
+    assert_eq!(sell_quota(&[(1, 80)], &[1], 30), vec![(1, 30)]);
+    // Never more than the budget, none for none.
+    assert_eq!(sell_quota(&stacks, &[2], 10), vec![(2, 10)]);
+    assert!(sell_quota(&stacks, &[2], 0).is_empty());
+    let total: i64 = sell_quota(&stacks, &[2], 60).iter().map(|(_, q)| q).sum();
+    assert_eq!(total, 60);
+}
+
+#[test]
+fn stranded_reagents_are_disposed_of_before_anything_else() {
+    // What a pass starting with a loaded hold sees: units to dispose of, and
+    // the same rule as a fresh delivery.
+    let hold = [row(GROUP_COLONY_REAGENTS, 12)];
+    let stranded = reagent_units(&hold);
+    assert_eq!(stranded, 12);
+    assert_eq!(disposal(stranded, &[]), Disposal::Sell);
+    assert_eq!(
+        disposal(stranded, &[(SYSTEM, 8_221_900)]),
+        Disposal::Deposit(SYSTEM, 8_221_900)
+    );
 }
 
 #[test]
@@ -241,8 +358,9 @@ fn only_a_frigate_class_hull_raids() {
     for g in RAIDER_GROUPS {
         assert!(hull_allowed(g));
     }
-    // An invented group that is no frigate's.
+    // An invented group that is no frigate's, and a cruiser's (26).
     assert!(!hull_allowed(990_221_900));
+    assert!(!hull_allowed(26));
 }
 
 fn row(group: i64, qty: i64) -> ItemRow {
@@ -316,4 +434,40 @@ fn the_map_filter_answers_decode() {
     for n in 0..payload.len() {
         let _ = decode_windows(&payload[..n]);
     }
+}
+
+#[test]
+fn the_decoders_read_the_servers_own_answers() {
+    use eve_server::module::Deltas;
+    use eve_server::skyhook::{self, Skyhook};
+    use eve_server::skyhook_theft::{in_system_response, systems_response};
+    let hook = |id: i64, system: i64, start: u64, end: u64| Skyhook {
+        id,
+        planet: 40_221_000 + id,
+        system,
+        corp: 98_221_001,
+        active: true,
+        activated_at: 1,
+        built_until: 1,
+        secured: 0,
+        unsecured: 10,
+        last_cycle: 0,
+        vuln_start: start,
+        vuln_end: end,
+        state: 0,
+    };
+    let now = 1_800_000_000u64;
+    let mut d = Deltas::default();
+    // Open now, closed already (ended), and one in another system.
+    skyhook::put(&mut d, &hook(SKYHOOK, SYSTEM, now - 600, now + 3_600));
+    skyhook::put(&mut d, &hook(SKYHOOK_B, SYSTEM, now - 9_000, now - 100));
+    skyhook::put(&mut d, &hook(8_221_003, 30_221_002, now - 600, now + 3_600));
+    let mut systems = decode_systems(&systems_response(&d, now));
+    systems.sort_unstable();
+    assert_eq!(systems, vec![SYSTEM, 30_221_002]);
+    // Only the open window of the system comes back, with its own times.
+    assert_eq!(
+        decode_windows(&in_system_response(&d, SYSTEM, now)),
+        vec![(SKYHOOK, now - 600, now + 3_600)]
+    );
 }

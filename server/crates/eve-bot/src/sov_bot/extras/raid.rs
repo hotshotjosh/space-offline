@@ -32,10 +32,12 @@
 //! hold. Falsified by TQ naming a hull rule (then [`hull_allowed`] reads
 //! it), or by raiders that cannot carry what a link moves.
 //!
-//! **[A] B2-2**: [`RAIDER_GROUPS`] are the market groups of the frigate
-//! hulls a thief flies: frigate, assault, covert ops, electronic attack,
-//! stealth bomber. Falsified by a content table whose frigate groups differ
-//! (the arm then says `MISSING an allowed hull`).
+//! **[A] B2-2**: [`RAIDER_GROUPS`] are the inventory groups of the
+//! frigate-class hulls a thief flies: frigate 25, rookie 237, assault 324,
+//! covert ops 830, interceptor 831, stealth bomber 834, electronic attack 893,
+//! expedition 1283, logistics frigate 1527 (no shared const exists in the
+//! tree). Falsified by a content table whose frigate groups differ (the arm
+//! then says `MISSING an allowed hull`).
 //!
 //! **[A] B2-3**: [`HOLD_MIN_M3`] is 50 m3. Falsified by links that move
 //! nothing for want of room.
@@ -44,9 +46,22 @@
 //! past the link's duration for the slim to say `COMPLETED`. Falsified by a
 //! raider that gives up on a link that completes later.
 //!
-//! **[A] B2-5**: a skyhook's owner is the alliance that holds its system
-//! (`stationSvc.GetAllianceSystems`); the map filter names no owner.
-//! Falsified by a skyhook of a corp that is not in the holder's alliance.
+//! **[A] B2-5**: the planner takes a skyhook's owner to be the alliance that
+//! holds its system (`stationSvc.GetAllianceSystems`); the map filter names
+//! no owner, and a skyhook stays with its corp when sov flips until
+//! `AcquireSkyhooks`. So the raider checks again at the silo ([`owner_gate`]):
+//! the silo's slim names the corp (`sk.corp`, `skyhook_theft::slim`); our own
+//! corp is never linked, and where the skyhook ball's slim names the corp's
+//! alliance the own, mate and war tests run on that alliance. A corp with no
+//! alliance on the slim falls back to the holder's. Falsified by raids on a
+//! blue or own skyhook (in a soak note), or by a skyhook slim that never
+//! carries its alliance (then the fallback decides every time).
+//!
+//! **[A] B2-7**: an alarm ([`watch`]) names a silo as ours when its slim's
+//! corp is our corp, or the skyhook ball's or the silo's slim names our
+//! alliance. A silo of another corp of our alliance is seen only where the
+//! slim carries the alliance. Falsified by a link on such a silo that raises
+//! no alarm.
 //!
 //! **[A] B2-6**: a raider holds its place and does not flee (the guards
 //! fight). Falsified by raiders lost in soaks without delivering.
@@ -68,9 +83,8 @@ use eve_server::sov_resources::GROUP_COLONY_REAGENTS;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-/// The market groups of the hulls a raider flies (**[A] B2-2**): frigate,
-/// assault frigate, covert ops, electronic attack frigate, stealth bomber.
-pub const RAIDER_GROUPS: [i64; 5] = [25, 324, 830, 893, 834];
+/// The inventory groups of the hulls a raider flies (**[A] B2-2**).
+pub const RAIDER_GROUPS: [i64; 9] = [25, 237, 324, 830, 831, 834, 893, 1283, 1527];
 /// The silo's link states as the slim's integers (`linkWithShip.py` **[V]**).
 pub const STATE_IDLE: i64 = LINKSTATE_IDLE as i64;
 pub const STATE_RUNNING: i64 = LINKSTATE_RUNNING as i64;
@@ -107,12 +121,53 @@ pub struct LinkView {
     pub silo: Option<i64>,
     /// Free hold, m3.
     pub hold_free: f64,
+    /// The window's end and now, `blue` ticks; `None` for the end when the
+    /// plan does not know it.
+    pub closes: Option<i64>,
+    pub now: i64,
+    /// The silo's owner passed [`owner_gate`].
+    pub owner_ok: bool,
 }
 
-/// **Whether to call `InitiateLink` now** (pure): in an allowed hull, a silo
-/// that is idle, in range, with room in the hold.
+/// Seconds beyond a link's duration a window must still have to start one
+/// (**[A] B2-8**). Falsified by links that break at the close (too short) or
+/// raiders that never start in a two-hour window (too long).
+pub const LINK_MARGIN_S: i64 = 120;
+
+/// Whether a window ending at `closes` (ticks) still has room for a whole
+/// link at `now` (pure).
+pub fn window_allows(closes: i64, now: i64) -> bool {
+    closes - now >= (LINK_DURATION_S as i64 + LINK_MARGIN_S) * crate::sov_bot::TICKS
+}
+
+/// Why the owner of a silo may not be raided, if so (pure). `corp` is the
+/// silo slim's corp, `alliance` the alliance the skyhook's slim names,
+/// `holder` the system's holder (the fallback). `raidable` is the planner's
+/// own test ([`crate::sov_bot::raidable`]) on an alliance.
+pub fn owner_gate(
+    corp: Option<i64>,
+    own_corp: i64,
+    alliance: Option<i64>,
+    holder: Option<i64>,
+    raidable: &dyn Fn(i64) -> bool,
+) -> std::result::Result<(), &'static str> {
+    if corp == Some(own_corp) {
+        return Err("the skyhook is our corp's");
+    }
+    match alliance.or(holder) {
+        Some(a) if raidable(a) => Ok(()),
+        Some(_) => Err("the skyhook's alliance is not an enemy"),
+        None => Err("the skyhook has no known owner"),
+    }
+}
+
+/// **Whether to call `InitiateLink` now** (pure): in an allowed hull, an
+/// owner that may be raided, a silo that is idle, in range, a window with
+/// room for the link, room in the hold.
 pub fn may_link(v: &LinkView) -> bool {
     v.hull_ok
+        && v.owner_ok
+        && v.closes.is_none_or(|c| window_allows(c, v.now))
         && v.silo == Some(STATE_IDLE)
         && v.gap.is_some_and(|g| g <= MAX_LINK_RANGE)
         && v.hold_free >= HOLD_MIN_M3
@@ -190,19 +245,39 @@ pub fn decode_windows(payload: &[u8]) -> Vec<(i64, u64, u64)> {
         .collect()
 }
 
+/// **What to sell** (pure): of the hangar's reagent stacks `(item, units)`,
+/// at most `budget` units in all, the stacks just unloaded first. Never more
+/// than the budget, so a stack that was in the hangar before is not sold.
+pub fn sell_quota(stacks: &[(i64, i64)], unloaded: &[i64], budget: i64) -> Vec<(i64, i64)> {
+    let mut left = budget.max(0);
+    let mut out = Vec::new();
+    let first = stacks.iter().filter(|(i, _)| unloaded.contains(i));
+    let rest = stacks.iter().filter(|(i, _)| !unloaded.contains(i));
+    for &(item, qty) in first.chain(rest) {
+        let take = qty.min(left);
+        if take > 0 {
+            out.push((item, take));
+            left -= take;
+        }
+    }
+    out
+}
+
 // ---- reading the windows -------------------------------------------------------------------
 
 /// **The theft windows in view** (the planner's input): the systems that
 /// hold a vulnerable skyhook, those near `home` first, each asked for its
 /// windows. Empty without a gateway. The owner is the system's holder
-/// (**[A] B2-5**).
+/// (**[A] B2-5**, re-checked at the silo). The server's map filter answers
+/// only windows open now (`skyhook::vulnerability`), so a window that has not
+/// opened never arises from this data; the planner's `Shut` case is for
+/// callers with a schedule.
 pub fn read_raids(
     c: &mut Conn,
     m: &mut Memory,
     map: &crate::travel::Map,
     home: i64,
     held: &BTreeMap<i64, i64>,
-    _stamp: i64,
 ) -> Vec<RaidView> {
     let Some(mut g) = Gw::open(c, &mut m.sov.extras) else {
         return Vec::new();
@@ -222,8 +297,11 @@ pub fn read_raids(
     for system in near {
         let ty = format!("{}{IN_SYSTEM}", gw::SKYHOOK_PKG);
         let body = steward::id_body(system);
-        let Ok((200, payload)) = g.ask(&mut m.sov.extras, &ty, &body) else {
-            break;
+        let payload = match g.ask(&mut m.sov.extras, &ty, &body) {
+            Ok((200, p)) => p,
+            // One system's refusal leaves the others; a lost gateway ends it.
+            Ok(_) => continue,
+            Err(_) => break,
         };
         for (skyhook, opens, closes) in decode_windows(&payload) {
             out.push(RaidView {
@@ -241,9 +319,10 @@ pub fn read_raids(
 // ---- the defence ---------------------------------------------------------------------------
 
 /// **The steward's eyes** ([`super::ARMS`], first; always `Ok(None)`): a
-/// pilot of an alliance in space, on a grid with a silo of its own corp whose
-/// slim shows a thief's link running, tells the hall. The planner then sends
-/// the guards ([`Kind::Rescue`]).
+/// pilot of an alliance in space, on a grid with a silo of its own corp (or
+/// whose skyhook or silo slim names its alliance, **[A] B2-7**) with a
+/// stranger's link running, tells the hall. The planner then sends the
+/// guards ([`Kind::Rescue`]).
 pub fn watch(
     c: &mut Conn,
     _m: &mut Memory,
@@ -267,8 +346,14 @@ pub fn watch(
         .filter_map(|b| {
             let s = b.slim?;
             let skyhook = s.silo_skyhook?;
-            let own =
-                s.corp_id == Some(corp) || s.alliance_id == Some(me) || s.owner_id == Some(corp);
+            let hook_alliance = world
+                .get(skyhook)
+                .and_then(|h| h.slim)
+                .and_then(|h| h.alliance_id);
+            let own = s.corp_id == Some(corp)
+                || s.owner_id == Some(corp)
+                || s.alliance_id == Some(me)
+                || hook_alliance == Some(me);
             let linker = s
                 .link
                 .and_then(|(_, ship)| ship)
@@ -293,11 +378,23 @@ pub struct Mind {
     pub refused: BTreeMap<i64, std::time::Instant>,
 }
 
-/// The silo of `skyhook` on the grid: `(ball, link state)`.
-fn silo_of(c: &mut Conn, skyhook: i64) -> Option<(i64, Option<i64>)> {
+/// A silo on the grid, as its slim shows it.
+#[derive(Debug, Clone, Copy)]
+struct Silo {
+    ball: i64,
+    state: Option<i64>,
+    corp: Option<i64>,
+}
+
+/// The silo of `skyhook` on the grid.
+fn silo_of(c: &mut Conn, skyhook: i64) -> Option<Silo> {
     c.world_now().balls().find_map(|b| {
         let s = b.slim?;
-        (s.silo_skyhook == Some(skyhook)).then_some((b.ball_id, s.link.map(|l| l.0)))
+        (s.silo_skyhook == Some(skyhook)).then_some(Silo {
+            ball: b.ball_id,
+            state: s.link.map(|l| l.0),
+            corp: s.corp_id.or(s.owner_id),
+        })
     })
 }
 
@@ -321,8 +418,18 @@ fn hull_type(c: &mut Conn) -> Option<i64> {
     }
 }
 
+/// The alliance the skyhook ball's slim names, if the park shows it.
+fn hook_alliance(c: &mut Conn, skyhook: i64) -> Option<i64> {
+    c.world_now()
+        .get(skyhook)
+        .and_then(|b| b.slim)
+        .and_then(|s| s.alliance_id)
+}
+
 /// **The raider's arm** ([`super::ARMS`]): an [`Duty::Idle`] pilot of an
 /// alliance whose plan is a raid. `Ok(None)` for every other pilot or plan.
+/// Reagents already in the hold (a delivery of an earlier link that was not
+/// disposed of) are disposed of first.
 pub fn arm(
     c: &mut Conn,
     m: &mut Memory,
@@ -330,13 +437,20 @@ pub fn arm(
     plan: &Plan,
     duty: Duty,
 ) -> Result<Option<String>> {
-    let Some(t) = plan.target.as_ref().filter(|t| t.kind == Kind::Raid) else {
-        return Ok(None);
-    };
     if duty != Duty::Idle {
         return Ok(None);
     }
     let (Some(map), Some(content)) = (ctx.map, ctx.content) else {
+        return Ok(None);
+    };
+    // Stranded reagents are real server deliveries: they go first, whatever
+    // the plan says now.
+    let stranded = reagent_units(&c.cargo()?);
+    if stranded > 0 {
+        let line = dispose(c, m, map, stranded, &plan.fuel)?;
+        return Ok(Some(format!("sov raid: stranded {line}")));
+    }
+    let Some(t) = plan.target.as_ref().filter(|t| t.kind == Kind::Raid) else {
         return Ok(None);
     };
     let now = clock::instant();
@@ -348,18 +462,19 @@ pub fn arm(
     if m.sov.extras.raid.refused.contains_key(&t.hub_id) {
         return Ok(None);
     }
+    // A hull or a hold that cannot raid is the pilot's to change: no backoff
+    // on the skyhook.
     let hull_ok = hull_type(c)
         .and_then(|h| eve_server::item::find_in(content, h))
         .is_some_and(|t| hull_allowed(t.group_id));
-    let capacity = steward::hold_capacity(c, content);
     if !hull_ok {
-        m.sov.extras.raid.refused.insert(t.hub_id, now);
         return Ok(Some(
             "sov raid: MISSING an allowed hull (a frigate-class hull)".to_owned(),
         ));
     }
-    let before = c.cargo()?;
-    let used: f64 = before
+    let capacity = steward::hold_capacity(c, content);
+    let used: f64 = c
+        .cargo()?
         .iter()
         .map(|r| {
             r.quantity.max(1) as f64
@@ -368,17 +483,14 @@ pub fn arm(
         .sum();
     let hold_free = (capacity - used).max(0.0);
     if hold_free < HOLD_MIN_M3 {
-        m.sov.extras.raid.refused.insert(t.hub_id, now);
         return Ok(Some(
             "sov raid: MISSING room in the hold for what a link moves".to_owned(),
         ));
     }
-    let held_before = reagent_units(&before);
 
     fly_to_system(c, map, t.system)?;
-    let mut lines: Vec<String> = Vec::new();
     // Before the window the silo is not there: wait beside the skyhook.
-    let Some((silo, state)) = silo_of(c, t.hub_id) else {
+    let Some(seen) = silo_of(c, t.hub_id) else {
         if c.world().get(t.hub_id).is_some() {
             warp_near(c, t.hub_id, MAX_LINK_RANGE * RANGE_USE)?;
         }
@@ -387,21 +499,55 @@ pub fn arm(
             t.hub_id
         )));
     };
-    warp_near(c, silo, MAX_LINK_RANGE * RANGE_USE)?;
+    warp_near(c, seen.ball, MAX_LINK_RANGE * RANGE_USE)?;
+    let silo = silo_of(c, t.hub_id).unwrap_or(seen);
+    // A silo already linked is not a refusal: the pilot stands by (the
+    // guards fight) and the next pass looks again.
+    if silo.state == Some(STATE_RUNNING) {
+        return Ok(Some(format!(
+            "sov raid: skyhook {} is already linked, standing by",
+            t.hub_id
+        )));
+    }
+    // The skyhook's own corp, not the system's holder, decides (B2-5).
+    let (me, own_corp) = (
+        c.session().get_i64("allianceid").unwrap_or(0),
+        c.session().get_i64("corpid").unwrap_or(0),
+    );
+    let alliance = hook_alliance(c, t.hub_id);
+    let relation = |a: i64| match ctx.society {
+        Some(h) => h.lock().coalition_relation(me, a),
+        None => ctx.relation.map_or(0.0, |f| f(me, a)),
+    };
+    let bloc_enemy = |a: i64| ctx.society.is_some_and(|h| h.lock().bloc_enemy(me, a));
+    let bloc_mate = |a: i64| ctx.society.is_some_and(|h| h.lock().bloc_mate(me, a));
+    let gate = owner_gate(silo.corp, own_corp, alliance, t.holder, &|a| {
+        crate::sov_bot::raidable(me, a, &relation, &bloc_enemy, &bloc_mate)
+    });
+    let closes = match t.phase {
+        crate::sov_bot::Phase::Open { closes } => Some(closes),
+        _ => None,
+    };
     let view = LinkView {
         hull_ok,
-        gap: gap_to(c, silo),
-        silo: silo_of(c, t.hub_id).map_or(state, |(_, s)| s),
+        gap: gap_to(c, silo.ball),
+        silo: silo.state,
         hold_free,
+        closes,
+        now: eve_server::pyutil::filetime_now(),
+        owner_ok: gate.is_ok(),
     };
     if !may_link(&view) {
         m.sov.extras.raid.refused.insert(t.hub_id, now);
         return Ok(Some(format!(
-            "sov raid: not linking skyhook {} (silo {:?}, gap {:?})",
-            t.hub_id, view.silo, view.gap
+            "sov raid: not linking skyhook {} ({}; silo {:?}, gap {:?})",
+            t.hub_id,
+            gate.err().unwrap_or("window, range or state"),
+            view.silo,
+            view.gap
         )));
     }
-    let out = gw::component_call(c, silo, LINK_WITH_SHIP, INITIATE, vec![])?;
+    let out = gw::component_call(c, silo.ball, LINK_WITH_SHIP, INITIATE, vec![])?;
     if let Some(why) = out.refusal() {
         m.sov.extras.raid.refused.insert(t.hub_id, now);
         return Ok(Some(format!(
@@ -409,48 +555,66 @@ pub fn arm(
             t.hub_id
         )));
     }
-    lines.push(format!("linking silo {silo} of skyhook {}", t.hub_id));
+    let mut lines = vec![format!(
+        "linking silo {} of skyhook {}",
+        silo.ball, t.hub_id
+    )];
 
-    // Hold range until the silo says the link is over.
+    // Hold range until the silo says the link is over. A refusal inside the
+    // wait still leaves the hold to be disposed of.
+    match hold_link(c, t.hub_id, silo.ball) {
+        Ok(l) => lines.extend(l),
+        Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
+        Err(e) => lines.push(format!("hold ended: {e}")),
+    }
+
+    // What the hold gained is what the server's link moved; nothing else.
+    let delivered = reagent_units(&c.cargo()?);
+    lines.push(format!("{delivered} reagents in the hold"));
+    if delivered > 0 {
+        lines.push(dispose(c, m, map, delivered, &plan.fuel)?);
+    }
+    Ok(Some(format!("sov raid: {}", lines.join("; "))))
+}
+
+/// Wait out the link beside the silo: until the slim says completed or over,
+/// the silo is gone, or the wall deadline passes.
+fn hold_link(c: &mut Conn, skyhook: i64, silo: i64) -> Result<Vec<String>> {
     let deadline = clock::wall_unix_secs() + LINK_DURATION_S + HOLD_EXTRA;
     loop {
         c.pump(Duration::from_secs(3))?;
-        let now_state = silo_of(c, t.hub_id).map(|(_, s)| s);
         if clock::wall_unix_secs() >= deadline {
-            lines.push("link wait over".to_owned());
-            break;
+            return Ok(vec!["link wait over".to_owned()]);
         }
-        match now_state {
+        match silo_of(c, skyhook).map(|s| s.state) {
             Some(Some(s)) if s == STATE_COMPLETED => {
-                lines.push("link completed".to_owned());
-                break;
+                return Ok(vec!["link completed".to_owned()]);
             }
             Some(s) if !link_over(s) => {
                 if gap_to(c, silo).is_none_or(|g| g > MAX_LINK_RANGE * 0.9) {
                     warp_near(c, silo, MAX_LINK_RANGE * RANGE_USE)?;
                 }
             }
-            Some(_) => {
-                lines.push("link ended".to_owned());
-                break;
-            }
-            None => {
-                lines.push("silo gone".to_owned());
-                break;
-            }
+            Some(_) => return Ok(vec!["link ended".to_owned()]),
+            None => return Ok(vec!["silo gone".to_owned()]),
         }
     }
+}
 
-    // What the hold gained is what the server's link moved; nothing else.
-    let after = c.cargo()?;
-    let delivered = reagent_units(&after) - held_before;
-    lines.push(format!("{delivered} reagents in the hold"));
-    match disposal(delivered, &plan.fuel) {
-        Disposal::Nothing => {}
-        Disposal::Deposit(system, hub) => lines.push(deposit(c, m, map, system, hub)?),
-        Disposal::Sell => lines.push(sell_home(c, m, map)?),
+/// **Dispose of `units` reagents in the hold** ([`disposal`]): an own hub's
+/// bay, else the market; at most `units` are sold.
+fn dispose(
+    c: &mut Conn,
+    m: &mut Memory,
+    map: &crate::travel::Map,
+    units: i64,
+    hubs: &[(i64, i64)],
+) -> Result<String> {
+    match disposal(units, hubs) {
+        Disposal::Nothing => Ok(String::new()),
+        Disposal::Deposit(system, hub) => deposit(c, m, map, system, hub, units),
+        Disposal::Sell => sell_home(c, m, map, units),
     }
-    Ok(Some(format!("sov raid: {}", lines.join("; "))))
 }
 
 /// **Put the hold's reagents into an own hub's bay** (the steward's
@@ -461,10 +625,11 @@ fn deposit(
     map: &crate::travel::Map,
     system: i64,
     hub: i64,
+    units: i64,
 ) -> Result<String> {
     fly_to_system(c, map, system)?;
     if c.world().get(hub).is_none() {
-        let sold = sell_home(c, m, map)?;
+        let sold = sell_home(c, m, map, units)?;
         return Ok(format!("hub {hub} not on the grid; {sold}"));
     }
     warp_near(c, hub, TRANSFER_RANGE * RANGE_USE)?;
@@ -484,13 +649,15 @@ fn deposit(
             }
         }
     }
-    let rest = sell_home(c, m, map)?;
+    let left = reagent_units(&c.cargo()?);
+    let rest = sell_home(c, m, map, left.min(units))?;
     Ok(format!("deposited {put} into hub {hub}; {rest}"))
 }
 
-/// **Home, and list the reagents still in the hold** at the reservation
-/// price (the escort's listing days and broker fee).
-fn sell_home(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<String> {
+/// **Home, and list the reagents just unloaded** at the reservation price
+/// (the escort's listing days and broker fee): at most `units` in all, never
+/// another stack the hangar already held.
+fn sell_home(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map, units: i64) -> Result<String> {
     let left = reagent_units(&c.cargo()?);
     let home = crate::sov_bot::go_home(c, m, map)?;
     if left == 0 {
@@ -504,17 +671,31 @@ fn sell_home(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<S
         .into_iter()
         .filter(|r| r.group_id == GROUP_COLONY_REAGENTS)
         .collect();
+    let mut unloaded = Vec::new();
     for r in held {
-        soft(c.unload(r.item_id, None))?;
+        if soft(c.unload(r.item_id, None))?.is_some() {
+            unloaded.push(r.item_id);
+        }
     }
     let stacks: Vec<ItemRow> = c
         .hangar_items()?
         .into_iter()
         .filter(|r| r.group_id == GROUP_COLONY_REAGENTS && r.quantity > 0)
         .collect();
+    let quota = sell_quota(
+        &stacks
+            .iter()
+            .map(|r| (r.item_id, r.quantity))
+            .collect::<Vec<_>>(),
+        &unloaded,
+        units.min(left),
+    );
     let mut prices = crate::pricing::Prices::read(c)?;
     let mut listed = 0;
-    for r in stacks {
+    for (item, qty) in quota {
+        let Some(r) = stacks.iter().find(|r| r.item_id == item) else {
+            continue;
+        };
         let Some(price) = prices.reservation(c, r.type_id)?.filter(|p| *p > 0.0) else {
             continue;
         };
@@ -523,14 +704,14 @@ fn sell_home(c: &mut Conn, m: &mut Memory, map: &crate::travel::Map) -> Result<S
             type_id: r.type_id,
             item_id: r.item_id,
             price,
-            quantity: r.quantity,
+            quantity: qty,
         };
         match c.sell(
             &[line],
             crate::escort::LIST_DAYS,
             crate::escort::LIST_BROKER_FEE,
         ) {
-            Ok(()) => listed += r.quantity,
+            Ok(()) => listed += qty,
             Err(e @ (Error::Io(_) | Error::Protocol(_))) => return Err(e),
             Err(_) => {}
         }

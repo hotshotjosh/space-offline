@@ -147,14 +147,19 @@ pub const STICK: f64 = 5.0;
 pub const NODE_TOUR_JUMPS: u32 = 3;
 /// `blue` ticks per second.
 pub const TICKS: i64 = 10_000_000;
-/// #221 B2 **[A]**: a raid on a skyhook is worth this, before the jumps and
-/// the owner's `R` are taken off: below a neutral hub's claim, far below a
-/// defence. Falsified by raiders that leave a hub claim unfought (too high)
-/// or that never raid a red alliance's skyhook (too low).
-pub const RAID_VALUE: f64 = 9.0;
+/// #221 B2 **[A]**: a raid on a skyhook is worth this before the jumps are
+/// taken off, and at most [`RAID_CAP`] whatever the owner's `R` and the bloc
+/// add (they order raids among themselves only). With the same jumps a raid
+/// is therefore worth less than a claim ([`CLAIM_VALUE`]) and than an attack
+/// (at least [`ATTACK_VALUE`] plus an ADM of 1), far less than a defence.
+/// Falsified by raiders that leave a hub claim unfought (too high) or that
+/// never raid a red alliance's skyhook (too low).
+pub const RAID_VALUE: f64 = 7.0;
+/// The most a raid is worth before the jumps (**[A]**, same falsifier).
+pub const RAID_CAP: f64 = CLAIM_VALUE - 1.0;
 /// #221 B2 **[A]**: a raid is not set out for unless this many seconds of
-/// its window are left: a link takes ten minutes ([`eve_server::skyhook_theft::
-/// LINK_DURATION_S`]) and the flight is minutes more. Falsified by links
+/// its window are left: a link takes ten minutes
+/// ([`eve_server::skyhook_theft::LINK_DURATION_S`]) and the flight is minutes more. Falsified by links
 /// that break at the window's close (too short).
 pub const RAID_MIN_LEFT: i64 = 900;
 /// #221 B2 **[A]**: a steward's alarm for a running link on an own silo
@@ -513,10 +518,7 @@ fn consider(best: &mut Option<Target>, f: &Facts, mut t: Target) {
 /// never targets.
 pub fn raid_target(f: &Facts, r: &RaidView) -> Option<Target> {
     let owner = r.owner?;
-    if owner == f.me || (f.bloc_mate)(owner) {
-        return None;
-    }
-    if !((f.relation)(owner) <= ATTACK_R || (f.bloc_enemy)(owner)) {
+    if !raidable(f.me, owner, f.relation, f.bloc_enemy, f.bloc_mate) {
         return None;
     }
     let phase = if r.opens <= f.now {
@@ -534,13 +536,30 @@ pub fn raid_target(f: &Facts, r: &RaidView) -> Option<Target> {
         kind: Kind::Raid,
         holder: Some(owner),
         phase,
-        score: RAID_VALUE - cost - (f.relation)(owner) * R_WEIGHT
-            + if (f.bloc_enemy)(owner) {
-                BLOC_ENEMY_VALUE
-            } else {
-                0.0
-            },
+        score: raid_value((f.relation)(owner), (f.bloc_enemy)(owner)) - cost,
     })
+}
+
+/// **Whether an alliance's skyhook may be raided by `me`** (pure): not us, not
+/// a bloc mate, and at war with us (the bloc named it an enemy) or `R <=
+/// ATTACK_R`.
+pub fn raidable(
+    me: i64,
+    owner: i64,
+    relation: &dyn Fn(i64) -> f64,
+    bloc_enemy: &dyn Fn(i64) -> bool,
+    bloc_mate: &dyn Fn(i64) -> bool,
+) -> bool {
+    owner != me && !bloc_mate(owner) && (relation(owner) <= ATTACK_R || bloc_enemy(owner))
+}
+
+/// A raid's worth before the jumps (pure): [`RAID_VALUE`] plus up to
+/// [`RAID_CAP`] - [`RAID_VALUE`] for a worse `R` and a bloc enemy, in the
+/// order those would add, never beyond the cap.
+pub fn raid_value(relation: f64, bloc_enemy: bool) -> f64 {
+    let bonus = (-relation * R_WEIGHT).max(0.0) + if bloc_enemy { BLOC_ENEMY_VALUE } else { 0.0 };
+    let most = R_WEIGHT + BLOC_ENEMY_VALUE;
+    RAID_VALUE + (bonus / most).min(1.0) * (RAID_CAP - RAID_VALUE)
 }
 
 /// The own hubs that need fuel on the next run (pure): every claimed hub of
@@ -1187,8 +1206,19 @@ pub fn candidates(map: &Map, home: i64, held: &BTreeMap<i64, i64>) -> Vec<(i64, 
 /// The view: every hub in the candidate systems.
 pub fn observe(c: &mut Conn, map: &Map, home: i64, now: i64) -> Result<Vec<HubView>> {
     let held = holders(c)?;
+    observe_with(c, map, home, now, &held)
+}
+
+/// [`observe`] with the holders already read.
+pub fn observe_with(
+    c: &mut Conn,
+    map: &Map,
+    home: i64,
+    now: i64,
+    held: &BTreeMap<i64, i64>,
+) -> Result<Vec<HubView>> {
     let mut hubs = Vec::new();
-    for (system, _) in candidates(map, home, &held) {
+    for (system, _) in candidates(map, home, held) {
         hubs.extend(hubs_in(c, system, now)?);
     }
     Ok(hubs)
@@ -1925,7 +1955,8 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         && let Some(map) = ctx.map
     {
         let stamp = eve_server::pyutil::filetime_now();
-        let hubs = observe(c, map, home, stamp)?;
+        let held = holders(c)?;
+        let hubs = observe_with(c, map, home, stamp, &held)?;
         let previous = ctx.hall.plan_of(alliance).target;
         let jumps = |s: i64| map.jumps(home, s, SOV_FLOOR);
         // R-REL-5: with a society hall, the alliance's view through its
@@ -1941,8 +1972,7 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
         let bloc_mate = |a: i64| ctx.society.is_some_and(|h| h.lock().bloc_mate(alliance, a));
         // #221 B2: the theft windows of the systems in view and the own
         // silos a steward saw a thief's link on.
-        let held = holders(c)?;
-        let raids = extras::raid::read_raids(c, m, map, home, &held, stamp);
+        let raids = extras::raid::read_raids(c, m, map, home, &held);
         let alarms = ctx.hall.alarms(alliance, now);
         let target = plan(&Facts {
             me: alliance,
