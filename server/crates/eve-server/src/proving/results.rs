@@ -34,6 +34,10 @@
 //!   `rewardsHintID` text saying "per win" or by TQ paying per match.
 //! - **[A]** ISK is the list's amount at the world's mission dial
 //!   (`econ_scale`), with no corporation tax. Falsified by an owner ruling.
+//! - **[A] Placeholder:** the ISK amount itself, the list's own figure
+//!   (100M ISK on the current bundle's lists), is kept for now as a
+//!   placeholder until a reward tuning pass sets it (owner, 2026-11-24).
+//!   Falsified by that pass or by an owner ruling on the figure.
 //! - Nothing is made from nowhere: ISK is posted to the pilot's wallet with
 //!   journal ref 147 by an NPC issuer (the same kind of grant as a mission
 //!   reward), skill point tokens go to the free pool, and every other reward
