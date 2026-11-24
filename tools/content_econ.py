@@ -26,6 +26,7 @@ invented rows; `gather(ctx)` is the only client reader.
 
 import math
 import os
+import sqlite3
 import sys
 
 SECTION = "econ"
@@ -51,6 +52,9 @@ OPERATIONS_HEADER = tuple(
 PRICES_HEADER = tuple(
     "type_id ref_price source floor_price category_id group_id meta_group_id "
     "portion_size build_min".split())
+MODIFIER_SOURCES_HEADER = tuple(
+    "type_id activity_id kind attribute_id filter_id".split())
+TARGET_FILTERS_HEADER = ("filter_id", "category_ids", "group_ids")
 OVERRIDES_HEADER = ("type_id", "price", "why")
 META_MULT_HEADER = ("meta_group_id", "mult", "why")
 
@@ -521,6 +525,83 @@ def read_blueprints(path):
 
 BLUEPRINTS_RES = "res:/staticdata/blueprints.static"
 ACTIVITIES_RES = "res:/staticdata/industry_activities.static"
+#: #57: what a structure and its rigs change in an industry job. Both are
+#: OPTIONAL: a client without them gives no file and the server loads without
+#: structure or rig modifiers. [V-data] the layouts are in
+#: `parity-structure-services.md` §L2.1.
+MODIFIER_SOURCES_RES = "res:/staticdata/industry_activity_modifier_sources.static"
+TARGET_FILTERS_RES = "res:/staticdata/industry_activity_target_filters.static"
+MODIFIER_KINDS = ("time", "material", "cost")
+
+
+def modifier_source_rows(doc):
+    """`doc` is `{type_id: {activity_name: {time|material|cost: [{dogmaAttributeID,
+    filterID?}]}}}` (`industry_activity_modifier_sources.static`). One row per
+    list entry, `filter_id` 0 when absent, sorted. An unknown activity name or
+    kind is an `EconError`, as in `blueprint_rows`."""
+    out = []
+    for t in doc:
+        for name, kinds in (doc[t] or {}).items():
+            if name not in ACTIVITY_IDS:
+                raise EconError("modifier sources %s: activity %r has no id here" % (t, name))
+            unknown = sorted(set(kinds or {}) - set(MODIFIER_KINDS))
+            if unknown:
+                raise EconError("modifier sources %s: kind %s is not time, material or cost"
+                                % (t, unknown))
+            for kind in MODIFIER_KINDS:
+                for e in (kinds or {}).get(kind) or ():
+                    out.append((int(t), ACTIVITY_IDS[name], kind,
+                                int(e["dogmaAttributeID"]), int(e.get("filterID") or 0)))
+    return sorted(out)
+
+
+def target_filter_rows(doc):
+    """`doc` is `{filterID: {name, categoryIDs, groupIDs}}`
+    (`industry_activity_target_filters.static`): `(filter_id, category_ids,
+    group_ids)`, the lists comma-joined, sorted by id."""
+    return [(int(k), ",".join(str(int(c)) for c in sorted(doc[k].get("categoryIDs") or ())),
+             ",".join(str(int(g)) for g in sorted(doc[k].get("groupIDs") or ())))
+            for k in sorted(doc, key=int)]
+
+
+def _static_doc(ctx, res, rel):
+    """A `.static` cache as `{int(key): document}`, or `None` (noted) when the
+    client has no such file or it is not a readable sqlite cache."""
+    fsd = _content()._imp("fsd")  # noqa: SLF001
+    try:
+        path = ctx.client.path(res)
+        if not os.path.isfile(path):
+            raise OSError("absent")
+        return {int(k): v for k, v in fsd.sqlite_rows(path)}
+    except (OSError, KeyError, ValueError, sqlite3.DatabaseError):
+        ctx.note("%s: no source layout (%s), not written" % (rel, res))
+        return None
+
+
+def optional_rows(ctx):
+    """`{relpath: (header, rows, sources)}` for the two #57 files the client
+    has; an absent source is skipped with a note."""
+    out = {}
+    for rel, res, header, build in (
+            ("industry/modifier-sources.tsv", MODIFIER_SOURCES_RES, MODIFIER_SOURCES_HEADER,
+             modifier_source_rows),
+            ("industry/target-filters.tsv", TARGET_FILTERS_RES, TARGET_FILTERS_HEADER,
+             target_filter_rows)):
+        doc = _static_doc(ctx, res, rel)
+        if doc is None:
+            continue
+        # The files are optional: a document that is not what this reads (an
+        # unknown activity or kind, a missing key) skips the file with a note
+        # and never aborts the econ section.
+        try:
+            rows = build(doc)
+        except (EconError, KeyError, ValueError, TypeError, AttributeError) as e:
+            ctx.note("%s: unreadable layout (%s: %s), not written"
+                     % (rel, e.__class__.__name__, e))
+            continue
+        ctx.note("%s: %d rows" % (rel, len(rows)))
+        out[rel] = (header, rows, [res])
+    return out
 
 
 def map_objects(client):
@@ -616,6 +697,7 @@ def section(ctx):
     rows = derive(ctx)
     content = _content()
     fb = content.fsdbin
+    optional = [(rel, h, r, src) for rel, (h, r, src) in sorted(optional_rows(ctx).items())]
     return [
         ("industry/blueprints.tsv", BLUEPRINTS_HEADER, rows["industry/blueprints.tsv"],
          [BLUEPRINTS_RES]),
@@ -625,7 +707,7 @@ def section(ctx):
          [fb("stationoperations")]),
         ("econ/prices.tsv", PRICES_HEADER, rows["econ/prices.tsv"],
          [BLUEPRINTS_RES, fb("schematics"), fb("types"), fb("groups"), fb("typematerials")]),
-    ]
+    ] + optional
 
 
 # --- the client-backed check (real ids and counts live only here, plan §1.6) ---
@@ -644,6 +726,15 @@ def check(ctx):
         if got != [content.encode_row(w).split("\t") for w in want]:
             bad.append("%s: differs from a fresh derive (%d vs %d rows)"
                        % (rel, len(got), len(want)))
+    for rel, (_h, want_rows, _src) in sorted(optional_rows(ctx).items()):
+        try:
+            got = list(content.read_rows(ctx.path(rel)))
+        except OSError:
+            bad.append("%s: missing (re-extract the econ section)" % rel)
+            continue
+        if got != [content.encode_row(w).split("\t") for w in want_rows]:
+            bad.append("%s: differs from a fresh derive (%d vs %d rows)"
+                       % (rel, len(got), len(want_rows)))
     fsd = content._imp("fsd")  # noqa: SLF001
     ids = sorted(int(r["activityID"]) for _k, r in
                  fsd.sqlite_rows(ctx.client.path(ACTIVITIES_RES)))

@@ -105,6 +105,8 @@ class Headers(unittest.TestCase):
                           "manufacturing_factor\tresearch_factor",
             "prices": "#type_id\tref_price\tsource\tfloor_price\tcategory_id\tgroup_id\t"
                       "meta_group_id\tportion_size\tbuild_min",
+            "modifier_sources": "#type_id\tactivity_id\tkind\tattribute_id\tfilter_id",
+            "target_filters": "#filter_id\tcategory_ids\tgroup_ids",
             "overrides": "#type_id\tprice\twhy",
             "meta": "#meta_group_id\tmult\twhy",
             "markup": "#markup\twhy",
@@ -112,6 +114,8 @@ class Headers(unittest.TestCase):
         }
         got = {"blueprints": E.BLUEPRINTS_HEADER, "stations": E.STATIONS_HEADER,
                "operations": E.OPERATIONS_HEADER, "prices": E.PRICES_HEADER,
+               "modifier_sources": E.MODIFIER_SOURCES_HEADER,
+               "target_filters": E.TARGET_FILTERS_HEADER,
                "overrides": E.OVERRIDES_HEADER, "meta": E.META_MULT_HEADER,
                "markup": E.RECIPE_MARKUP_HEADER, "pimarkup": E.PI_MARKUP_HEADER}
         for k, line in want.items():
@@ -555,6 +559,125 @@ class Blueprints(unittest.TestCase):
             con.close()
             got = {int(k): v for k, v in fsd.sqlite_rows(path)}
         self.assertEqual(E.blueprint_rows(got), E.blueprint_rows(_blueprints()))
+
+
+def _static(d, name, docs):
+    """A synthetic fsdlite `.static`: `cache(key, value, time)`, JSON values."""
+    path = os.path.join(d, name)
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE cache (key, value, time)")
+    for k, v in docs.items():
+        con.execute("INSERT INTO cache VALUES (?, ?, 0)", (str(k), json.dumps(v)))
+    con.commit()
+    con.close()
+    return path
+
+
+class StructureIndustry(unittest.TestCase):
+    """#57: the two optional bundle files, from invented documents."""
+    HULL, RIG, FILTER = 990401, 990402, 990501
+    SOURCES = {
+        HULL: {"manufacturing": {"time": [{"dogmaAttributeID": 990601}],
+                                 "material": [{"dogmaAttributeID": 990602}],
+                                 "cost": [{"dogmaAttributeID": 990603}]},
+               "reaction": {"time": [{"dogmaAttributeID": 990604}]}},
+        RIG: {"research_time": {"time": [{"dogmaAttributeID": 990605,
+                                          "filterID": FILTER}]}},
+    }
+
+    def test_one_sorted_row_per_entry_with_the_filter_zero_when_absent(self):
+        got = E.modifier_source_rows(self.SOURCES)
+        self.assertEqual(got, sorted(got))
+        self.assertEqual(len(got), 5)
+        self.assertIn((self.HULL, 1, "material", 990602, 0), got)
+        self.assertIn((self.HULL, 9, "time", 990604, 0), got)
+        self.assertIn((self.RIG, 3, "time", 990605, self.FILTER), got)
+
+    def test_an_unknown_activity_or_kind_is_refused(self):
+        with self.assertRaises(E.EconError):
+            E.modifier_source_rows({1: {"smelting": {"time": []}}})
+        with self.assertRaises(E.EconError):
+            E.modifier_source_rows({1: {"manufacturing": {"speed": []}}})
+
+    def test_target_filters_join_their_lists_sorted_by_id(self):
+        docs = {self.FILTER + 1: {"name": "b", "categoryIDs": [], "groupIDs": [9, 3]},
+                self.FILTER: {"name": "a", "categoryIDs": [7, 6], "groupIDs": []}}
+        self.assertEqual(E.target_filter_rows(docs),
+                         [(self.FILTER, "6,7", ""), (self.FILTER + 1, "", "3,9")])
+
+    def test_the_rows_read_back_from_synthetic_sqlite_bytes(self):
+        fsd = content._imp("fsd")  # noqa: SLF001
+        with tempfile.TemporaryDirectory() as d:
+            path = _static(d, "m.static", self.SOURCES)
+            got = {int(k): v for k, v in fsd.sqlite_rows(path)}
+        self.assertEqual(E.modifier_source_rows(got), E.modifier_source_rows(self.SOURCES))
+
+    def test_a_client_without_the_files_skips_them_with_a_note(self):
+        notes = []
+
+        class Client:
+            def path(self, res):
+                return os.path.join(tempfile.gettempdir(), "nonexistent-57", res.split("/")[-1])
+
+        class Ctx:
+            client = Client()
+
+            def note(self, msg):
+                notes.append(msg)
+
+        self.assertEqual(E.optional_rows(Ctx()), {})
+        self.assertEqual(len(notes), 2)
+        self.assertTrue(all("not written" in n for n in notes))
+
+    def test_an_unreadable_layout_skips_the_file_with_a_note(self):
+        notes = []
+        with tempfile.TemporaryDirectory() as d:
+            # an unknown activity name, and a filter document with no lists key shape
+            _static(d, "industry_activity_modifier_sources.static",
+                    {self.HULL: {"smelting": {"time": [{"dogmaAttributeID": 1}]}}})
+            _static(d, "industry_activity_target_filters.static",
+                    {self.FILTER: {"name": "a", "categoryIDs": [6], "groupIDs": [3]}})
+
+            class Client:
+                def path(self, res):
+                    return os.path.join(d, res.split("/")[-1])
+
+            class Ctx:
+                client = Client()
+
+                def note(self, msg):
+                    notes.append(msg)
+
+            got = E.optional_rows(Ctx())
+            # a missing dogmaAttributeID key is skipped too
+            os.remove(os.path.join(d, "industry_activity_modifier_sources.static"))
+            _static(d, "industry_activity_modifier_sources.static",
+                    {self.HULL: {"manufacturing": {"time": [{"filterID": 1}]}}})
+            got2 = E.optional_rows(Ctx())
+        self.assertEqual(sorted(got), ["industry/target-filters.tsv"])
+        self.assertEqual(sorted(got2), ["industry/target-filters.tsv"])
+        self.assertEqual(len([n for n in notes if "unreadable layout" in n]), 2)
+
+    def test_a_client_with_the_files_writes_both(self):
+        with tempfile.TemporaryDirectory() as d:
+            _static(d, "industry_activity_modifier_sources.static", self.SOURCES)
+            _static(d, "industry_activity_target_filters.static",
+                    {self.FILTER: {"name": "a", "categoryIDs": [6], "groupIDs": [3]}})
+
+            class Client:
+                def path(self, res):
+                    return os.path.join(d, res.split("/")[-1])
+
+            class Ctx:
+                client = Client()
+
+                def note(self, msg):
+                    pass
+
+            got = E.optional_rows(Ctx())
+        self.assertEqual(sorted(got), ["industry/modifier-sources.tsv",
+                                       "industry/target-filters.tsv"])
+        self.assertEqual(got["industry/target-filters.tsv"][1], [(self.FILTER, "6", "3")])
 
 
 class Stations(unittest.TestCase):

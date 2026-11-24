@@ -175,6 +175,8 @@ comment exactly as shown.
 | `agents/npc-characters.tsv` | CP13 | none yet |
 | `agents/lp-offers.tsv` | CP37a | CP37b |
 | `industry/blueprints.tsv` | CP24 | CP33b, CP24 |
+| `industry/modifier-sources.tsv` | CP24 (#57, optional) | `industry::Table` (#57) |
+| `industry/target-filters.tsv` | CP24 (#57, optional) | `industry::Table` (#57) |
 | `stations/stations.tsv` | CP24 | CP35, CP32b, CP31 |
 | `stations/operations.tsv` | CP24 | CP35, CP32b |
 | `econ/prices.tsv` | CP24 | CP31, CP32b, CP33b, CP35, CP44 |
@@ -1593,6 +1595,38 @@ Invented example row:
 ```
 
 - X1 adds `kind = activity` to C1 §2.8's set, so that `copying`, which may have no materials, keeps a row.
+
+### `industry/modifier-sources.tsv` and `industry/target-filters.tsv` (optional, #57)
+
+- **Writer:** CP24 (`content_econ.py`), from `industry_activity_modifier_sources.static` and
+  `industry_activity_target_filters.static`. **Optional:** a client without either gives no file
+  (the section notes it), and the server (`industry::Table::from_bundle`) loads without them: no
+  structure or rig modifiers.
+- **Readers:** `industry::Table` (`modifier_sources`, `target_filters`); `structure_industry`
+  reads the hull's rows. `Table::from_bundle` rejects a wrong header.
+- **Key:** `(type_id, activity_id, kind, attribute_id, filter_id)` and `filter_id`.
+- **Stable client ids and delta keys (ruling 4):** none.
+
+```
+#type_id	activity_id	kind	attribute_id	filter_id
+#filter_id	category_ids	group_ids
+```
+
+| column | type | source and meaning |
+|---|---|---|
+| `type_id` | `i64` | the structure or rig type whose attribute holds a multiplier |
+| `activity_id` | `i64` | the activity id for the activity name (1, 3, 4, 5, 8, 9) |
+| `kind` | `enum(time\|material\|cost)` | which modifier of the job the attribute changes |
+| `attribute_id` | `i64` | `dogmaAttributeID`: the type attribute that holds the multiplier itself [V-data] (Raitaru 2602 = 0.85) |
+| `filter_id` | `i64` | `filterID`, 0 when the entry has none (a hull's own bonus); a rig names a filter |
+| `category_ids`, `group_ids` | `i64` list, comma-joined | the filter's product categories and groups; empty is the empty list |
+
+Rows sorted. Invented examples:
+
+```
+990401	1	material	990602	0
+990501	6,7	3,9
+```
 
 ### `stations/stations.tsv`
 
