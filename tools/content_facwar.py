@@ -187,20 +187,29 @@ def derive_scoreboards(components):
     return rows, problems
 
 
-def _scoreboards(ctx):
-    """`(rows, problems)`, or `None` when the client's `spacecomponentsbytype`
-    layout is not recoverable here (the file is then skipped with a note)."""
+def _components(ctx):
+    """The client's `spacecomponentsbytype` table, read once, or `None` when
+    its layout is not recoverable here (the files built from it are then
+    skipped with a note)."""
     fsd = _content()._imp("fsd")  # noqa: SLF001
-    components = {}
     try:
-        table = fsd.rows(ctx.client, "spacecomponentsbytype")
+        return fsd.rows(ctx.client, "spacecomponentsbytype")
     except fsd.FsdError:
         return None
+
+
+def _only(table, component):
+    out = {}
     for t, r in table.items():
         r = dict(r)
-        if r.get(SCOREBOARD_COMPONENT) is not None:
-            components[t] = {SCOREBOARD_COMPONENT: dict(r[SCOREBOARD_COMPONENT])}
-    return derive_scoreboards(components)
+        if r.get(component) is not None:
+            out[t] = {component: dict(r[component])}
+    return out
+
+
+def _scoreboards(table):
+    """`(rows, problems)` from the table `_components` read."""
+    return derive_scoreboards(_only(table, SCOREBOARD_COMPONENT))
 
 
 def derive_capture_points(components):
@@ -219,8 +228,12 @@ def derive_capture_points(components):
         vals = []
         for col, name in CAPTURE_FIELDS:
             v = comp.get(name)
-            if col == "looping" and isinstance(v, bool):
-                v = int(v)
+            if col == "looping":
+                if isinstance(v, bool):
+                    v = int(v)
+                if isinstance(v, int) and v not in (0, 1):
+                    problems.append("type %s: looping is %r, not 0 or 1" % (tid, v))
+                    v = None
             if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
                 problems.append("type %s: %s is %r, not an int" % (tid, name, v))
                 v = None
@@ -229,14 +242,9 @@ def derive_capture_points(components):
     return rows, problems
 
 
-def _capture_points(ctx):
-    fsd = _content()._imp("fsd")  # noqa: SLF001
-    components = {}
-    for t, r in fsd.rows(ctx.client, "spacecomponentsbytype").items():
-        r = dict(r)
-        if r.get(CAPTURE_COMPONENT) is not None:
-            components[t] = {CAPTURE_COMPONENT: dict(r[CAPTURE_COMPONENT])}
-    return derive_capture_points(components)
+def _capture_points(table):
+    """`(rows, problems)` from the table `_components` read."""
+    return derive_capture_points(_only(table, CAPTURE_COMPONENT))
 
 
 def _content():
@@ -261,20 +269,21 @@ def section(ctx):
     ctx.note("facwar/systems.tsv: %d systems (%s)"
              % (len(rows), ", ".join("warzone %d: %d" % kv for kv in sorted(per.items()))))
     out = [("facwar/systems.tsv", HEADER, rows, SOURCES)]
-    got_sb = _scoreboards(ctx)
-    if got_sb is None:
+    table = _components(ctx)
+    if table is None:
         ctx.note("facwar/scoreboards.tsv: no layout for spacecomponentsbytype, not written")
+        ctx.note("facwar/capture_points.tsv: no layout for spacecomponentsbytype, not written")
     else:
-        sb, sb_problems = got_sb
+        sb, sb_problems = _scoreboards(table)
         if sb_problems:
             raise ValueError("facwar: " + "; ".join(sb_problems[:20]))
         ctx.note("facwar/scoreboards.tsv: %d scoreboard types" % len(sb))
         out.append(("facwar/scoreboards.tsv", SCOREBOARD_HEADER, sb, SCOREBOARD_SOURCES))
-    cp, cp_problems = _capture_points(ctx)
-    if cp_problems:
-        raise ValueError("facwar: " + "; ".join(cp_problems[:20]))
-    ctx.note("facwar/capture_points.tsv: %d capture point types" % len(cp))
-    out.append(("facwar/capture_points.tsv", CAPTURE_HEADER, cp, CAPTURE_SOURCES))
+        cp, cp_problems = _capture_points(table)
+        if cp_problems:
+            raise ValueError("facwar: " + "; ".join(cp_problems[:20]))
+        ctx.note("facwar/capture_points.tsv: %d capture point types" % len(cp))
+        out.append(("facwar/capture_points.tsv", CAPTURE_HEADER, cp, CAPTURE_SOURCES))
     got = _max_lp()
     if got is None:
         ctx.note("facwar/max_lp.tsv: out/pyc is not unpacked, not written")
@@ -291,34 +300,37 @@ def check(ctx):
     content = _content()
     rows, problems = _derive(ctx)
     bad = list(problems)
-    got = list(content.read_rows(ctx.path("facwar/systems.tsv")))
-    if got != [content.encode_row(r).split("\t") for r in rows]:
-        bad.append("facwar/systems.tsv: differs from a fresh derive (%d vs %d rows)"
-                   % (len(got), len(rows)))
-    got_sb = _scoreboards(ctx)
-    if got_sb is not None:
-        sb, sb_problems = got_sb
-        bad.extend(sb_problems)
-        try:
-            have_sb = list(content.read_rows(ctx.path("facwar/scoreboards.tsv")))
-        except OSError:
-            bad.append("facwar/scoreboards.tsv: missing (re-extract the facwar section)")
-        else:
-            if have_sb != [content.encode_row(r).split("\t") for r in sb]:
-                bad.append("facwar/scoreboards.tsv: differs from a fresh derive (%d vs %d rows)"
-                           % (len(have_sb), len(sb)))
-    cp, cp_problems = _capture_points(ctx)
-    bad.extend(cp_problems)
-    have_cp = list(content.read_rows(ctx.path("facwar/capture_points.tsv")))
-    if have_cp != [content.encode_row(r).split("\t") for r in cp]:
-        bad.append("facwar/capture_points.tsv: differs from a fresh derive (%d vs %d rows)"
-                   % (len(have_cp), len(cp)))
+    try:
+        got = list(content.read_rows(ctx.path("facwar/systems.tsv")))
+    except OSError:
+        bad.append("facwar/systems.tsv: missing (re-extract the facwar section)")
+    else:
+        if got != [content.encode_row(r).split("\t") for r in rows]:
+            bad.append("facwar/systems.tsv: differs from a fresh derive (%d vs %d rows)"
+                       % (len(got), len(rows)))
+    table = _components(ctx)
+    if table is not None:
+        for name, (rows_, probs_) in (("facwar/scoreboards.tsv", _scoreboards(table)),
+                                      ("facwar/capture_points.tsv", _capture_points(table))):
+            bad.extend(probs_)
+            try:
+                have = list(content.read_rows(ctx.path(name)))
+            except OSError:
+                bad.append("%s: missing (re-extract the facwar section)" % name)
+            else:
+                if have != [content.encode_row(r).split("\t") for r in rows_]:
+                    bad.append("%s: differs from a fresh derive (%d vs %d rows)"
+                               % (name, len(have), len(rows_)))
     got_lp = _max_lp()
     if got_lp is not None:
         lp, lp_problems = got_lp
         bad.extend(lp_problems)
-        have = list(content.read_rows(ctx.path("facwar/max_lp.tsv")))
-        if have != [content.encode_row(r).split("\t") for r in lp]:
-            bad.append("facwar/max_lp.tsv: differs from a fresh derive (%d vs %d rows)"
-                       % (len(have), len(lp)))
+        try:
+            have = list(content.read_rows(ctx.path("facwar/max_lp.tsv")))
+        except OSError:
+            bad.append("facwar/max_lp.tsv: missing (re-extract the facwar section)")
+        else:
+            if have != [content.encode_row(r).split("\t") for r in lp]:
+                bad.append("facwar/max_lp.tsv: differs from a fresh derive (%d vs %d rows)"
+                           % (len(have), len(lp)))
     return bad

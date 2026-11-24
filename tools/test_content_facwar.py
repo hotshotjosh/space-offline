@@ -130,6 +130,73 @@ class CapturePoints(unittest.TestCase):
         self.assertEqual((rows, len(problems)),
                          ([(990001, None, None, None, None, None, None)], 1))
 
+    def test_a_looping_outside_zero_and_one_is_a_problem_and_not_written(self):
+        rows, problems = F.derive_capture_points(
+            {990001: {"fwCapturePoint": {"looping": 2}}})
+        self.assertEqual((rows, len(problems)),
+                         ([(990001, None, None, None, None, None, None)], 1))
+
+
+class NoLayout(unittest.TestCase):
+    """`spacecomponentsbytype` has no recoverable layout: the section still
+    writes systems.tsv, and check reports problems instead of raising."""
+
+    class FsdError(Exception):
+        pass
+
+    def setUp(self):
+        outer = self
+
+        class Fsd:
+            FsdError = outer.FsdError
+
+            @staticmethod
+            def rows(_client, name):
+                if name == "warzonespositiondata":
+                    return {98: {"systems": {"39000001": row(39000001)}}}
+                raise outer.FsdError(name)
+
+        class Content:
+            @staticmethod
+            def _imp(_name):
+                return Fsd
+
+            @staticmethod
+            def read_rows(path):
+                raise OSError(path)
+
+            @staticmethod
+            def encode_row(r):
+                return "\t".join(str(x) for x in r)
+
+        class Ctx:
+            client = None
+            notes = []
+
+            def note(self, m):
+                self.notes.append(m)
+
+            @staticmethod
+            def path(p):
+                return "/nonexistent/probe/" + p
+
+        self.ctx = Ctx()
+        self.saved = (F._content, F._max_lp)
+        F._content = lambda: Content
+        F._max_lp = lambda: None
+
+    def tearDown(self):
+        F._content, F._max_lp = self.saved
+
+    def test_the_section_skips_the_two_files_with_a_note(self):
+        out = F.section(self.ctx)
+        self.assertEqual([o[0] for o in out], ["facwar/systems.tsv"])
+        self.assertTrue(any("capture_points.tsv: no layout" in n for n in self.ctx.notes))
+
+    def test_check_reports_problems_and_never_raises(self):
+        bad = F.check(self.ctx)
+        self.assertTrue(any("systems.tsv" in b for b in bad), bad)
+
 
 if __name__ == "__main__":
     unittest.main()
