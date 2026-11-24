@@ -296,6 +296,9 @@ pub struct TurnStats {
     /// Turns served under `world.read()` and their summed holds (PA-12a).
     pub ro_turns: u64,
     pub ro_hold_total: Duration,
+    /// The longest read turn (#248). Read turns do not hold the world write
+    /// lock but still delay the clock and writers, so G10 judges it too.
+    pub ro_hold_max: Duration,
     /// Read-eligible calls served by the write path instead.
     pub ro_fallbacks: u64,
 }
@@ -306,6 +309,7 @@ impl TurnStats {
         if t.read {
             self.ro_turns += 1;
             self.ro_hold_total += t.hold;
+            self.ro_hold_max = self.ro_hold_max.max(t.hold);
             return;
         }
         self.ro_fallbacks += u64::from(t.fallback);
@@ -412,7 +416,7 @@ render_us_per_kb={:.1} write_us_per_kb={:.1}",
             "[turns] secs={secs:.1} turns={} turns_per_s={:.1} hold_mean={:.1}ms \
 hold_max={:.1}ms wait_mean={:.1}ms wait_max={:.1}ms saves={} saves_per_s={:.1} \
 save_max={:.1}ms slowest={slowest} slowest_ms={slowest_ms:.1}ms labels={} \
-ro_turns={} ro_hold_mean={:.2}ms ro_fallbacks={}",
+ro_turns={} ro_hold_mean={:.2}ms ro_max={:.1}ms ro_fallbacks={}",
             self.turns,
             rate(self.turns),
             ms(mean(self.hold_total, self.turns)),
@@ -425,6 +429,7 @@ ro_turns={} ro_hold_mean={:.2}ms ro_fallbacks={}",
             self.labels_field(),
             self.ro_turns,
             ms(mean(self.ro_hold_total, self.ro_turns)),
+            ms(self.ro_hold_max),
             self.ro_fallbacks,
         )
     }
@@ -1194,6 +1199,22 @@ mod tests {
                 .report(Duration::from_secs(1))
                 .contains(" labels=- ro_turns=0 ")
         );
+        // #248: the longest read turn is `ro_max=`, not `ro_hold_max=`, so
+        // soak.sh's greedy `.*hold_max=` still reads the write turn's field.
+        let mut r = TurnStats::default();
+        for hold in [3, 41, 7] {
+            r.observe(&Turn {
+                hold: d(hold),
+                read: true,
+                ..Default::default()
+            });
+        }
+        let line = r.report(Duration::from_secs(1));
+        assert!(line.contains(" ro_turns=3 "), "{line}");
+        assert!(line.contains(" ro_max=41.0ms "), "{line}");
+        assert!(line.contains(" hold_max=0.0ms "), "{line}");
+        let after = line.rsplit("hold_max=").next().expect("hold_max=");
+        assert!(after.starts_with("0.0ms"), "{after}");
     }
 
     /// Recorded through the world slot, and taken once.
@@ -1565,6 +1586,7 @@ mod read_turn_tests {
                 "labels",
                 "ro_turns",
                 "ro_hold_mean",
+                "ro_max",
                 "ro_fallbacks"
             ]
         );

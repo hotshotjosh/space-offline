@@ -3630,6 +3630,10 @@ mod tests {
                 solar_system_id: Some(SYSTEM),
                 ..Character::default()
             }],
+            // The pilot's system has a region, so the market history resolves.
+            celestials: crate::celestial::Catalogue::parse(
+                "#system\t30990001\t20990001\t10990001\n",
+            ),
             ..SandboxConfig::default()
         });
         if let Some(content) = content {
@@ -3913,8 +3917,23 @@ mod tests {
     fn price_history_halves_are_read_turns_with_the_same_bytes() {
         crate::test_clock::freeze(Duration::from_secs(1_800_000_000));
         let world = read_world();
+        // An invented day of folded history (`mkthist`) and an invented trade
+        // today (`mkttrade`, with its region_id), both in the pilot's region.
+        let now = crate::pyutil::filetime_now();
+        let day = 864_000_000_000_i64;
+        let old_day = (now / day) * day - 3 * day;
+        world
+            .write()
+            .expect("unpoisoned")
+            .seed_market_records_for_test(&[
+                format!("mkthist\t10990001\t34\t{old_day}\t4.5\t6.5\t5.5\t1200\t7"),
+                format!(
+                    "mkttrade\t900001\t{now}\t34\t50\t5.75\t60990001\t1980901\t1980902\t10990001"
+                ),
+            ]);
         let (mut ro, mut rw) = read_pair(&world);
         let mut served = 0;
+        let mut lens = Vec::new();
         for (i, (method, type_id)) in [
             ("GetOldPriceHistory", 34),
             ("GetNewPriceHistory", 34),
@@ -3930,10 +3949,22 @@ mod tests {
             SERIAL.with(|c| c.set(200 + i as i64));
             let b = rw.on_payload(&bytes).expect("rw");
             assert_eq!(a, b, "{method} {type_id}");
-            assert!(!a.payloads[0].is_empty());
+            lens.push((type_id, a.payloads[0].len()));
             served += 1;
             assert_eq!(ro.read_turns_served(), served, "{method} {type_id}");
             assert_eq!(rw.read_turns_served(), 0);
+        }
+        // Each half of type 34 holds a row, so it is longer than the empty
+        // rowset an unknown id gets.
+        let empty = lens
+            .iter()
+            .find(|(t, _)| *t == 999_999_001)
+            .expect("empty")
+            .1;
+        for (t, len) in &lens {
+            if *t == 34 {
+                assert!(*len > empty, "type 34 half: {len} vs empty {empty}");
+            }
         }
         crate::test_clock::thaw();
     }

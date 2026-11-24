@@ -1251,6 +1251,20 @@ fn closed_kept(o: &Order, from: i64) -> bool {
     o.escrow != 0.0 || day_start(order_date(o)) >= from
 }
 
+#[cfg(test)]
+impl Registry {
+    /// Test seam (#248): load invented `mkttrade` / `mkthist` records (tab
+    /// separated, as the world file writes them) into the market.
+    pub(crate) fn seed_market_records_for_test(&mut self, lines: &[String]) {
+        for line in lines {
+            let f: Vec<&str> = line.split('\t').collect();
+            self.market
+                .parse_record(&f)
+                .expect("an invented market record");
+        }
+    }
+}
+
 impl Registry {
     /// Lane clock: the market's expiry index at the game clock's pace
     /// (`crate::game_clock::set`).
