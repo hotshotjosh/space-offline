@@ -1390,11 +1390,19 @@ pub fn bootstrap_for(w: &mut Registry, actor: i64) -> Option<Bootstrap> {
 
 /// The pre-change bind path, kept as the byte-identity oracle.
 #[cfg(test)]
-pub(crate) fn bootstrap_oracle(w: &Registry, actor: i64, stamp: u32) -> Option<Bootstrap> {
+///
+/// `station` is what [`bootstrap_for`] computes for the pilot's uncatalogued
+/// home station (`None` when the catalogue has the row).
+pub(crate) fn bootstrap_oracle(
+    w: &Registry,
+    actor: i64,
+    stamp: u32,
+    station: Option<(i64, i64, i64)>,
+) -> Option<Bootstrap> {
     let (ship_id, _) = undock_motion(w, actor)?;
     // The pilot is in the roster by now (the new path seeded it).
     let system = w.roster().get(actor)?.solar_system_id;
-    let mut state = scene(w, system, ship_id, None, stamp);
+    let mut state = scene(w, system, ship_id, station, stamp);
     let ego_at = w
         .roster()
         .get(actor)
@@ -1864,7 +1872,7 @@ pub fn scene_kept(
         });
     }
     // **Whatever else a registered source says about these slims**
-    // (`crate::slim_extra::SOURCES`, empty today).
+    // (`crate::slim_extra::SOURCES`).
     let slim_ids: Vec<i64> = slims.iter().map(|s: &Slim| s.item_id).collect();
     let extras = crate::slim_extra::for_slims(w, &slim_ids);
     // **What is already running in this system**, for a late arrival's

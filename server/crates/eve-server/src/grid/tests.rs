@@ -2368,8 +2368,18 @@ pub(crate) fn the_queued_removal_reached_alice(reg: &mut Registry) -> bool {
 /// The bind's `SetState`, as it would leave, against the pre-change path
 /// (whole scene, then `retain_balls`), built from the same roster.
 fn bind_matches_oracle(reg: &mut Registry, who: i64) -> crate::destiny::Bootstrap {
+    bind_matches_oracle_with(reg, who, None)
+}
+
+/// [`bind_matches_oracle`] for a pilot whose home station is uncatalogued:
+/// the oracle gets the station the bind computes.
+fn bind_matches_oracle_with(
+    reg: &mut Registry,
+    who: i64,
+    station: Option<(i64, i64, i64)>,
+) -> crate::destiny::Bootstrap {
     let state = bootstrap_for(reg, who).expect("a state");
-    let old = crate::destiny::bootstrap_oracle(reg, who, state.stamp).expect("the oracle");
+    let old = crate::destiny::bootstrap_oracle(reg, who, state.stamp, station).expect("the oracle");
     assert_eq!(
         format!("{:?}", state.to_push()),
         format!("{:?}", old.to_push()),
@@ -2412,6 +2422,7 @@ fn far_rocks(n: i64) -> Vec<crate::asteroid::Rock> {
 /// three. The state is the old path's.
 #[test]
 fn a_bind_builds_only_the_rocks_on_the_grid() {
+    crate::test_clock::freeze(std::time::Duration::from_secs(1_800_000_000));
     for far in [2_000, 0] {
         let mut reg = world();
         for r in far_rocks(far) {
@@ -2427,12 +2438,14 @@ fn a_bind_builds_only_the_rocks_on_the_grid() {
         assert_eq!(rock_built(), 3, "{far} far rocks");
         // The old path built every rock of the system: both belts' and the far ones.
         reset_rock_built();
-        let _ = crate::destiny::bootstrap_oracle(&reg, ALICE, state.stamp).expect("the oracle");
+        let _ =
+            crate::destiny::bootstrap_oracle(&reg, ALICE, state.stamp, None).expect("the oracle");
         assert_eq!(rock_built(), 6 + far as usize, "the oracle's whole scene");
         let held = ids(&state);
         assert!(rocks_a().iter().all(|r| held.contains(r)));
         assert!(rocks_b().iter().all(|r| !held.contains(r)));
     }
+    crate::test_clock::thaw();
 }
 
 /// The scene's other filtered kinds and pilots: a wreck near and a wreck
@@ -2440,6 +2453,7 @@ fn a_bind_builds_only_the_rocks_on_the_grid() {
 /// viewer at the belt, at the station and in deep space.
 #[test]
 fn a_bind_is_the_old_paths_state_for_every_fixture() {
+    crate::test_clock::freeze(std::time::Duration::from_secs(1_800_000_000));
     let wreck = |id: i64, at: [f64; 3]| crate::combat::Wreck {
         wreck_id: id,
         type_id: 26_557,
@@ -2483,4 +2497,71 @@ fn a_bind_is_the_old_paths_state_for_every_fixture() {
         let _ = bind_matches_oracle(&mut reg, ALICE);
         let _ = bind_matches_oracle(&mut reg, BOB);
     }
+    crate::test_clock::thaw();
+}
+
+/// A pilot whose home station the catalogue does not have: the bind adds the
+/// station ball, and the state is the old path's with that station.
+#[test]
+fn a_bind_with_an_uncatalogued_home_station_is_the_old_paths_state() {
+    crate::test_clock::freeze(std::time::Duration::from_secs(1_800_000_000));
+    const HOME: i64 = 60_999_901;
+    let mut pilot = pilot_at_station(ALICE, "Alice", ALICE_SHIP);
+    pilot.station_id = Some(HOME);
+    let station = Some((HOME, pilot.station_type_id, pilot.station_owner_id));
+    let mut reg = world_of(vec![pilot]);
+    for r in far_rocks(5) {
+        reg.rocks_mut().add(r);
+    }
+    let state = bind_matches_oracle_with(&mut reg, ALICE, station);
+    assert!(
+        ids(&state).contains(&HOME),
+        "the station is a ball of the state"
+    );
+    crate::test_clock::thaw();
+}
+
+/// A running effect aimed at a rock on the grid and one aimed at a far rock:
+/// the state's effect list is the old path's (the near one in, the far one
+/// out).
+#[test]
+fn a_bind_keeps_the_effects_on_the_grid_as_the_old_path_does() {
+    crate::test_clock::freeze(std::time::Duration::from_secs(1_800_000_000));
+    let mut reg = world();
+    for r in far_rocks(5) {
+        reg.rocks_mut().add(r);
+    }
+    let near = rocks_a()[0];
+    let far = crate::asteroid::MIN_ROCK_ID + 10_000;
+    undock(&mut reg, ALICE);
+    put(&mut reg, ALICE, BELT_A_AT);
+    let now = crate::pyutil::filetime_now();
+    for (module_id, target) in [(990_000_910, near), (990_000_911, far)] {
+        reg.modules_mut().insert_running(crate::modules::Running {
+            character_id: ALICE,
+            ship_id: ALICE_SHIP,
+            module_id,
+            type_id: 990_000_920,
+            effect: crate::modules::Effect {
+                effect_id: 990_000_901,
+                name: "fixture",
+                category: crate::modules::CATEGORY_TARGET,
+                guid: "effects.Laser",
+                is_offensive: true,
+                duration_attribute: 73,
+                warp_safe: None,
+            },
+            target_id: Some(target),
+            started: now,
+            period: 5_000 * 10_000,
+            repeat: 1000,
+            cycles: 1,
+            stop_at: None,
+        });
+    }
+    let state = bind_matches_oracle(&mut reg, ALICE);
+    let targets: Vec<Option<i64>> = state.fx.iter().map(|f| f.target_id).collect();
+    assert!(targets.contains(&Some(near)), "{targets:?}");
+    assert!(!targets.contains(&Some(far)), "{targets:?}");
+    crate::test_clock::thaw();
 }
