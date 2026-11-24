@@ -259,6 +259,8 @@ fci_upwell_insure
 fci_upwell_clone
 # u5-upwell-home (#65): home structure, /tr back to the start station, capsule, self_destruct_clone: wake in the structure with structureid keys and a new capsule; the plain server
 fci_upwell_revive
+# (#41) service modules at a structure's controls: /world freeclone 0 and freeupkeep 0, the client's own TryFit of a Cloning Center at 164 (corp-owned) and its own online, the clone bay and the upkeep follow, a Reprocessing Facility in 165, OfflineModule, an unfit by Add(flag=4), the Market Hub refused by the client's own hull check; settings restored; one client; written, not yet run on a client
+fci_upwell_modules
 
 # bp-3 (#120): a hostile hunter fitted with a smartbomb from its stock sets it off when two foes are in the field; one with a micro jump drive, tackled by a disruptor, jumps out (EVE_BOTS_KIT_DRILL grants the part in open mode, CI only)
 fci_bot_smartbomb --with-bots --bots-kit smartbomb --serial -- --dev
