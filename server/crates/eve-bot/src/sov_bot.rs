@@ -147,6 +147,20 @@ pub const STICK: f64 = 5.0;
 pub const NODE_TOUR_JUMPS: u32 = 3;
 /// `blue` ticks per second.
 pub const TICKS: i64 = 10_000_000;
+/// #221 B2 **[A]**: a raid on a skyhook is worth this, before the jumps and
+/// the owner's `R` are taken off: below a neutral hub's claim, far below a
+/// defence. Falsified by raiders that leave a hub claim unfought (too high)
+/// or that never raid a red alliance's skyhook (too low).
+pub const RAID_VALUE: f64 = 9.0;
+/// #221 B2 **[A]**: a raid is not set out for unless this many seconds of
+/// its window are left: a link takes ten minutes ([`eve_server::skyhook_theft::
+/// LINK_DURATION_S`]) and the flight is minutes more. Falsified by links
+/// that break at the window's close (too short).
+pub const RAID_MIN_LEFT: i64 = 900;
+/// #221 B2 **[A]**: a steward's alarm for a running link on an own silo
+/// stands this long. Falsified by guards sent to a link that ended (too
+/// long) or standing down while the link runs (too short).
+pub const ALARM_TTL: Duration = Duration::from_secs(180);
 
 /// The message a pilot with no hall says.
 pub const MISSING_HALL: &str = "eve-bots with a sov hall (a bot of this role is given one)";
@@ -306,6 +320,32 @@ pub enum Kind {
     /// R-REL-5: stand guard at a coalition mate's hub in its node fight
     /// (guards only: no link is ever put on a mate's hub).
     Aid,
+    /// #221 B2: steal the unsecured reagents of an enemy's skyhook while its
+    /// theft window is open: raiders and guards, no entosis (`hub_id` is the
+    /// skyhook).
+    Raid,
+    /// #221 B2: an own skyhook's silo has a thief's link running: guards only
+    /// (`hub_id` is the skyhook); the defend-first rule.
+    Rescue,
+}
+
+impl Kind {
+    /// Whether an entosis link is ever put on this campaign's target.
+    pub fn takes_links(self) -> bool {
+        !matches!(self, Kind::Aid | Kind::Raid | Kind::Rescue)
+    }
+}
+
+/// An enemy skyhook's theft window, as the map filter shows it (#221 B2).
+/// The times are `blue` ticks, as [`Facts::now`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RaidView {
+    pub system: i64,
+    pub skyhook: i64,
+    /// The owner: the holder of the system; `None` when none holds it.
+    pub owner: Option<i64>,
+    pub opens: i64,
+    pub closes: i64,
 }
 
 /// The alliance's campaign.
@@ -340,6 +380,11 @@ pub struct Facts<'a> {
     pub linkers: usize,
     /// The campaign running now, which is kept while it is valid.
     pub previous: Option<&'a Target>,
+    /// #221 B2: the theft windows in view.
+    pub raids: &'a [RaidView],
+    /// #221 B2: own skyhooks whose silo has a thief's link running, as
+    /// `(system, skyhook)`.
+    pub alarms: &'a [(i64, i64)],
 }
 
 /// Links an attack on a hub of `adm` wants (pure).
@@ -425,7 +470,77 @@ pub fn plan(f: &Facts) -> Option<Target> {
             });
         }
     }
+    for &(system, skyhook) in f.alarms {
+        let cost = f64::from((f.jumps)(system).unwrap_or(VIEW_JUMPS + 1)) * JUMP_COST;
+        consider(
+            &mut best,
+            f,
+            Target {
+                system,
+                hub_id: skyhook,
+                kind: Kind::Rescue,
+                holder: Some(f.me),
+                phase: Phase::Unknown,
+                score: DEFEND_VALUE - cost,
+            },
+        );
+    }
+    for r in f.raids {
+        if let Some(t) = raid_target(f, r) {
+            consider(&mut best, f, t);
+        }
+    }
     best.filter(|t| t.score > 0.0)
+}
+
+/// Keep `t` when it beats the best so far (the running campaign gets
+/// [`STICK`]).
+fn consider(best: &mut Option<Target>, f: &Facts, mut t: Target) {
+    if f.previous
+        .is_some_and(|p| p.hub_id == t.hub_id && p.kind == t.kind)
+    {
+        t.score += STICK;
+    }
+    if best.as_ref().is_none_or(|b| t.score > b.score) {
+        *best = Some(t);
+    }
+}
+
+/// **A raid candidate** (pure, #221 B2): the window is open or opens within
+/// [`LEAD_SECS`] and has [`RAID_MIN_LEFT`] left; the owner is not us or a
+/// bloc mate and is at war with us (the society's bloc enemy) or has
+/// `R <= ATTACK_R`. A closed window, a blue owner and an unowned skyhook are
+/// never targets.
+pub fn raid_target(f: &Facts, r: &RaidView) -> Option<Target> {
+    let owner = r.owner?;
+    if owner == f.me || (f.bloc_mate)(owner) {
+        return None;
+    }
+    if !((f.relation)(owner) <= ATTACK_R || (f.bloc_enemy)(owner)) {
+        return None;
+    }
+    let phase = if r.opens <= f.now {
+        Phase::Open { closes: r.closes }
+    } else {
+        Phase::Shut { opens: r.opens }
+    };
+    if r.closes - f.now < RAID_MIN_LEFT * TICKS || !due(phase, f.now) {
+        return None;
+    }
+    let cost = f64::from((f.jumps)(r.system).unwrap_or(VIEW_JUMPS + 1)) * JUMP_COST;
+    Some(Target {
+        system: r.system,
+        hub_id: r.skyhook,
+        kind: Kind::Raid,
+        holder: Some(owner),
+        phase,
+        score: RAID_VALUE - cost - (f.relation)(owner) * R_WEIGHT
+            + if (f.bloc_enemy)(owner) {
+                BLOC_ENEMY_VALUE
+            } else {
+                0.0
+            },
+    })
 }
 
 /// The own hubs that need fuel on the next run (pure): every claimed hub of
@@ -491,7 +606,7 @@ pub fn assign(plan: &Plan, roster: &BTreeMap<i64, Kit>) -> BTreeMap<i64, Duty> {
     for (&who, kit) in roster {
         let duty = match &plan.target {
             // An aid puts no link on a mate's hub: guards only.
-            Some(t) if kit.link && linkers < LINKERS_MAX && t.kind != Kind::Aid => {
+            Some(t) if kit.link && linkers < LINKERS_MAX && t.kind.takes_links() => {
                 // A claim needs one link; an attack the ADM's worth.
                 let want = match t.kind {
                     Kind::Claim => 1,
@@ -528,6 +643,9 @@ struct Book {
     /// Characters that already tried the prime hour, and when.
     prime_tried: BTreeMap<i64, Instant>,
     log: Vec<String>,
+    /// #221 B2: own skyhooks a steward saw a thief's link on:
+    /// `skyhook -> (system, seen)`.
+    alarms: BTreeMap<i64, (i64, Instant)>,
 }
 
 /// **The hall**: every alliance's roster and plan, shared by the process.
@@ -628,6 +746,25 @@ impl SovHall {
             b.prime_tried.insert(who, now);
         }
         ok
+    }
+
+    /// #221 B2: a pilot saw a thief's link running on the own skyhook's silo.
+    pub fn alarm(&self, alliance: i64, system: i64, skyhook: i64, now: Instant) {
+        self.lock()
+            .entry(alliance)
+            .or_default()
+            .alarms
+            .insert(skyhook, (system, now));
+    }
+
+    /// #221 B2: the alarms not older than [`ALARM_TTL`], as
+    /// `(system, skyhook)`.
+    pub fn alarms(&self, alliance: i64, now: Instant) -> Vec<(i64, i64)> {
+        let mut g = self.lock();
+        let b = g.entry(alliance).or_default();
+        b.alarms
+            .retain(|_, (_, seen)| now.saturating_duration_since(*seen) < ALARM_TTL);
+        b.alarms.iter().map(|(sk, (sys, _))| (*sys, *sk)).collect()
     }
 
     /// The campaign lines so far (for `[sov]` and tests).
@@ -1802,6 +1939,11 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
                 .is_some_and(|h| h.lock().bloc_enemy(alliance, a))
         };
         let bloc_mate = |a: i64| ctx.society.is_some_and(|h| h.lock().bloc_mate(alliance, a));
+        // #221 B2: the theft windows of the systems in view and the own
+        // silos a steward saw a thief's link on.
+        let held = holders(c)?;
+        let raids = extras::raid::read_raids(c, m, map, home, &held, stamp);
+        let alarms = ctx.hall.alarms(alliance, now);
         let target = plan(&Facts {
             me: alliance,
             hubs: &hubs,
@@ -1812,6 +1954,8 @@ pub fn turn(c: &mut Conn, m: &mut Memory, ctx: &Ctx<'_>) -> Result<String> {
             now: stamp,
             linkers: ctx.hall.linkers(alliance),
             previous: previous.as_ref(),
+            raids: &raids,
+            alarms: &alarms,
         });
         let fuel = fuel_runs(alliance, &hubs);
         notes.push(format!(

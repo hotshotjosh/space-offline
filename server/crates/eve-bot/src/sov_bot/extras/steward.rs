@@ -775,7 +775,7 @@ fn skyhook_type(content: &eve_server::content::Content) -> Option<i64> {
 }
 
 /// The reagent stacks of `rows`, summed per type.
-fn reagents_in(rows: &[ItemRow]) -> Vec<(i64, i64)> {
+pub(super) fn reagents_in(rows: &[ItemRow]) -> Vec<(i64, i64)> {
     let mut by: BTreeMap<i64, i64> = BTreeMap::new();
     for r in rows.iter().filter(|r| r.group_id == GROUP_COLONY_REAGENTS) {
         *by.entry(r.type_id).or_default() += r.quantity.max(1);
@@ -784,7 +784,7 @@ fn reagents_in(rows: &[ItemRow]) -> Vec<(i64, i64)> {
 }
 
 /// The active hull's hold, m3 (0 when the hull is unknown).
-fn hold_capacity(c: &mut Conn, content: &eve_server::content::Content) -> f64 {
+pub(super) fn hold_capacity(c: &mut Conn, content: &eve_server::content::Content) -> f64 {
     let hull = match c.session().station_id() {
         Some(_) => {
             let ship = c.session().ship_id();

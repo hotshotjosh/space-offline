@@ -1,7 +1,7 @@
 //! **The sov extras** (SOVX, #221): the steward, raider and den-runner duties
 //! that sit beside the campaign duties of [`super`]. This module is the seam:
 //! the dispatch hook ([`turn`]), the gateway seam ([`gw`]) and the sov kit on
-//! the builders' ladder ([`kit`]). The duties themselves come in later lanes.
+//! the builders' ladder ([`kit`]). The duties are one module each ([`steward`], [`upgrades`], [`den`], [`raid`]).
 //!
 //! **The rule.** Every act is a client verb: a drop from the ship, a ballpark
 //! component call, a gateway request a player's client also sends. No slash
@@ -26,6 +26,9 @@ pub mod den;
 mod den_tests;
 pub mod gw;
 pub mod kit;
+pub mod raid;
+#[cfg(test)]
+mod raid_tests;
 pub mod steward;
 #[cfg(test)]
 mod steward_tests;
@@ -56,13 +59,21 @@ pub struct Mind {
     pub steward: steward::Mind,
     /// The den runner's memory (B3).
     pub den: den::Mind,
+    /// The raider's memory (B2).
+    pub raid: raid::Mind,
 }
 
 /// One duty: `Ok(None)` is nothing to do this pass.
 type Arm = fn(&mut Conn, &mut Memory, &Ctx<'_>, &Plan, Duty) -> Result<Option<String>>;
 
 /// The duties, in order; the first that answers a line wins the turn.
-const ARMS: &[Arm] = &[steward::arm, upgrades::arm, den::arm];
+const ARMS: &[Arm] = &[
+    raid::watch,
+    steward::arm,
+    upgrades::arm,
+    den::arm,
+    raid::arm,
+];
 
 /// **The hook** `sov_bot::turn` calls before the duty match: `Ok(None)` means
 /// the old duty runs unchanged. A dead connection (`Io`, `Protocol`) is the

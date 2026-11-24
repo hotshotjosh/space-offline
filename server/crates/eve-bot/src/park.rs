@@ -118,6 +118,14 @@ pub struct SlimInfo {
     /// in FILETIME ticks, `None` when no timer runs or the type is no
     /// structure.
     pub structure_timer: Option<(i64, i64, Option<i64>)>,
+    /// `component_skyhookReagentSilo_skyhookID` [V key,
+    /// `skyhook_theft::extras_of`] on a reagent silo's slim (#221 B2): the
+    /// skyhook it belongs to. `None` on everything else.
+    pub silo_skyhook: Option<i64>,
+    /// `component_linkWithShip` [V key, same] on a silo's slim: the link
+    /// state (`linkWithShip.py`: 1 idle, 2 running, 3 completed, 4
+    /// disabled) and the linked ship, if any.
+    pub link: Option<(i64, Option<i64>)>,
 }
 
 /// One ball, as last told and carried forward.
@@ -799,6 +807,20 @@ fn slim_of(v: &PyValue) -> Option<(i64, SlimInfo)> {
             },
             structure_state,
             structure_timer,
+            silo_skyhook: int("component_skyhookReagentSilo_skyhookID"),
+            link: match crate::dict_get(dict, "component_linkWithShip") {
+                Some(PyValue::Tuple(t)) => match t.as_slice() {
+                    [_, PyValue::Int(state), _, ship] => Some((
+                        *state,
+                        match ship {
+                            PyValue::Int(s) => Some(*s),
+                            _ => None,
+                        },
+                    )),
+                    _ => None,
+                },
+                _ => None,
+            },
         },
     ))
 }
@@ -931,6 +953,48 @@ mod tests {
         let (_, s) = slim_of(&slim_dict()).unwrap();
         assert_eq!(s.structure_state, None);
         assert_eq!(s.structure_timer, None);
+    }
+
+    /// #221 B2: a silo's slim names its skyhook and its link; the same keys
+    /// are absent on anything else.
+    #[test]
+    fn the_slim_parse_reads_a_silos_skyhook_and_link() {
+        let silo = crate::dict(vec![
+            ("itemID", PyValue::Int(5_002)),
+            ("typeID", PyValue::Int(9_900_002)),
+            (
+                "component_skyhookReagentSilo_skyhookID",
+                PyValue::Int(5_001),
+            ),
+            (
+                "component_linkWithShip",
+                PyValue::Tuple(vec![
+                    PyValue::Int(1),
+                    PyValue::Int(2),
+                    PyValue::None,
+                    PyValue::Int(5_003),
+                ]),
+            ),
+        ]);
+        let (_, s) = slim_of(&silo).unwrap();
+        assert_eq!(s.silo_skyhook, Some(5_001));
+        assert_eq!(s.link, Some((2, Some(5_003))));
+        let idle = crate::dict(vec![
+            ("itemID", PyValue::Int(5_002)),
+            (
+                "component_linkWithShip",
+                PyValue::Tuple(vec![
+                    PyValue::Int(1),
+                    PyValue::Int(1),
+                    PyValue::None,
+                    PyValue::None,
+                ]),
+            ),
+        ]);
+        assert_eq!(slim_of(&idle).unwrap().1.link, Some((1, None)));
+        let plain = crate::dict(vec![("itemID", PyValue::Int(5_004))]);
+        let (_, p) = slim_of(&plain).unwrap();
+        assert_eq!((p.silo_skyhook, p.link), (None, None));
     }
 
     #[test]

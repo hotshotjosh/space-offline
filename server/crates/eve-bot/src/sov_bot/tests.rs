@@ -69,6 +69,8 @@ fn facts<'a>(
         now: NOW,
         linkers,
         previous,
+        raids: &[],
+        alarms: &[],
     }
 }
 

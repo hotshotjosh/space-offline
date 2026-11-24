@@ -304,6 +304,8 @@ fn the_view_reads_a_rivals_hub_and_the_planner_attacks_it_only_when_it_is_red() 
             now,
             linkers,
             previous: None,
+            raids: &[],
+            alarms: &[],
         })
     };
     assert_eq!(

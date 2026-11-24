@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 366) · **94% built** (345 of 366) · 1 parked, not counted.
+**63% proved** (232 of 367) · **94% built** (346 of 367) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -101,6 +101,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] Bot stewards launch skyhooks for the corp and haul their reagents to the hub's reagent bay: *built-unproved*, eve-bot sov_bot/extras/steward.rs: one steward per hub, the plan (a skyhook per yield planet, activate, extract when worth it, deposit up to the days of burn), ship.Drop and the component call as the client sends them, items only from builders' asks; BT sov_steward.rs (socket)
 - [ ] Bot stewards install the hub upgrades the client's power rule would bring online: *built-unproved*, eve-bot sov_bot/extras/upgrades.rs: definitions, hub upgrades and resources over the gateway, sov_upgrade::simulate as the gate, producers first, never one that knocks another low, ProcessConfiguration as the client sends it; BT sov_upgrade_bot.rs
 - [ ] Bot den runners keep mercenary dens, sell the infomorphs and run the den activities: *built-unproved*, eve-bot sov_bot/extras/den.rs: a den beside an own workforce skyhook (skill in the sov skill plan), infomorph extraction and listing (no NPC buyer), Start when capacity allows, the activity's site run as a guard post; BT sov_den.rs
+- [ ] Bot raiders steal the unsecured reagents of an enemy's skyhook in its theft window, and stewards raise the alarm for a link on an own silo: *built-unproved*, eve-bot sov_bot/extras/raid.rs: the planner's Raid candidate (open or opening window with time for a link, owner at war or R <= ATTACK_R, never blue, own or unowned), guards by the existing Duty::Guard, the raider calls the silo's InitiateLink only in range in a frigate-class hull, holds range until the silo's slim says the link is over, hauls what the hold gained into an own hub's bay or sells it; the steward-side watch reads the silo slim (park.rs link state) and the planner defends first (Kind::Rescue); pure unit tests; no socket test of a raid yet
 - [ ] FW plexers hold a capture point of their militia for a set time or until it is gone: *built-unproved*, plexer.rs point_step; tests
 - [ ] Bots attack war targets' Upwell structures in their vulnerable windows and defend their corp's: *built-unproved*, structure_war.rs (a submodule of hunt.rs); /bots siege, /bots unsiege; fci_bot_str_siege written; unit tests; SIEGE_RANGE, the war-or-order rule and the defence trigger are [A]
 - [ ] Theaters of War opens with the dormant conquest pages absent: *built-unproved*, tools/client-ci/scenarios/fci_tow_conquest_dormant.py (CQ-0, not yet run on a client): the Conquest nodes and panels are absent, open_conquest_overview_window falls back to the landing page, no traceback
@@ -193,7 +194,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Fitting and ships | 13 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 4 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
-| Bots | 11 | 44 | 2 | 0 | 2 |
+| Bots | 11 | 45 | 2 | 0 | 2 |
 | Industry and mining | 17 | 0 | 0 | 3 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
@@ -420,7 +421,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Bots</b>: 11 of 59 proved, 48 open</summary>
+<details><summary><b>Bots</b>: 11 of 60 proved, 49 open</summary>
 
 - [ ] Bot corps found: the closing pledge lands the founder on the line and a founder holding pledges takes its turn every 30 s: *built-unproved*, cofound.rs pledge_amount (ceil, a small gap paid whole) and step, corpmind.rs turn_due (FOUNDER_EVERY [A] 30 s), founder_first, reserved_for, driver.rs social_turn (#155); a re-trace of soak C finds a corp in session 4 under these rules; the founder's buy budgets honour the reserve (#159, row: A pool founder's buy and bid budgets); doctrine-report reads "layer on, no leaders" when no corp exists
 - [ ] Builders value jobs at the server's fee and their own trade skills, drop jobs that lose, respect the order cap and never buy their own asks: *built-unproved*, build_choice install_fee_share (the server's cost index + SCC + tax; cost_lines comparison test), run_profit shared by appraise and signal::margin_index (demand from bids and fills), jobs_that_pay with dropped bids moved down to break-even, orders_left/list_slots/order_cap_refused, plan_excluding, earnings game hours with the offline gap booked only for settled careers (#158); no soak yet
@@ -468,6 +469,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] Bot stewards launch skyhooks for the corp and haul their reagents to the hub's reagent bay: *built-unproved*, eve-bot sov_bot/extras/steward.rs: one steward per hub, the plan (a skyhook per yield planet, activate, extract when worth it, deposit up to the days of burn), ship.Drop and the component call as the client sends them, items only from builders' asks; BT sov_steward.rs (socket)
 - [ ] Bot stewards install the hub upgrades the client's power rule would bring online: *built-unproved*, eve-bot sov_bot/extras/upgrades.rs: definitions, hub upgrades and resources over the gateway, sov_upgrade::simulate as the gate, producers first, never one that knocks another low, ProcessConfiguration as the client sends it; BT sov_upgrade_bot.rs
 - [ ] Bot den runners keep mercenary dens, sell the infomorphs and run the den activities: *built-unproved*, eve-bot sov_bot/extras/den.rs: a den beside an own workforce skyhook (skill in the sov skill plan), infomorph extraction and listing (no NPC buyer), Start when capacity allows, the activity's site run as a guard post; BT sov_den.rs
+- [ ] Bot raiders steal the unsecured reagents of an enemy's skyhook in its theft window, and stewards raise the alarm for a link on an own silo: *built-unproved*, eve-bot sov_bot/extras/raid.rs: the planner's Raid candidate (open or opening window with time for a link, owner at war or R <= ATTACK_R, never blue, own or unowned), guards by the existing Duty::Guard, the raider calls the silo's InitiateLink only in range in a frigate-class hull, holds range until the silo's slim says the link is over, hauls what the hold gained into an own hub's bay or sells it; the steward-side watch reads the silo slim (park.rs link state) and the planner defends first (Kind::Rescue); pure unit tests; no socket test of a raid yet
 - [ ] Bot logins at a process rate (token bucket) instead of a serial stagger; GM spawns exempt: *built-unproved*, eve-bot/src/login_gate.rs (Bucket, reserve_now; unit tests), eve-bots --login-rate (default 2/s [A], 0 = old stagger), driver Bot::queue_with (stop or release during the queue exits cleanly); measurable with bench-ramp.sh --login-rate; not yet run at 1,000
 - [ ] Bots online budget: --max-online with an hour-of-day profile; bots leased to a human's system first, then fleets: *built-unproved*, eve-bot budget.rs (budget::tests incl. a turnover day with a dropping limit), bubble::is_busy shared with the bubble's shed, driver await_budget and the Slot guard. proof: tools/soak.sh --society --day-secs 3600, 1000 personas, --max-online 300: [soc] online never above 300
 - [ ] Each bot keeps a short decision log under --state (career switch, goal push/pop, corp join/leave, budget wait, release, park, bubble lease, shed and wake); /bots inspect shows the last 20: *built-unproved*, eve-bot persona_log.rs (rotates at 256 kB [A], keeps one .1; never blocks a turn on disk errors), state::log_path_for (safe file names), control.rs inspect; every scale-1000 L7 kind is wired in driver.rs (#273); a soak must show the Wallet-key rule holds (no goal line per pass)
