@@ -75,7 +75,9 @@ pub fn holds_origin(w: &Registry, c: i64) -> bool {
 pub fn record(w: &mut Registry, c: i64) {
     // ABYSS-1: a pilot in an abyssal run keeps the spot they came from; the
     // pocket does not outlive the server.
-    if crate::abyss::in_run(w, c) {
+    // #65: so is a Proving Grounds fighter, in an arena or on the way (a pilot
+    // between the jump's start and landing has no roster entry).
+    if crate::abyss::in_run(w, c) || crate::proving::arena::in_arena(w, c) {
         return;
     }
     w.advance_character(c);

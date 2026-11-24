@@ -93,7 +93,8 @@
 //!   `pvpFilamentController.LeaveQueue` does not catch a `UserError`
 //!   **[V]**.
 //! - **`AbyssalPVPEndGateActivation`**, a third `pvpFilamentMgr` call
-//!   (`movementFunctions.py`), is unrouted and answers no-such-method.
+//!   (`movementFunctions.py`), is [`arena::end_gate`] (#65, PG-2b); the
+//!   match itself is [`matchmaker`] and [`arena`].
 //! - **Rows with no match type.** A row that is not QA is served only with a
 //!   match type: with a blank one the window would call `GetName(0)` and
 //!   `GetByMessageID(None)`. A row with no fitting match type is dropped at
@@ -867,6 +868,7 @@ pub fn push_statistics(
     known
 }
 
+pub mod arena;
 pub mod matchmaker;
 pub mod queue;
 

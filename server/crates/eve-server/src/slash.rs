@@ -158,6 +158,12 @@ pub const COMMANDS: &[Command] = &[
         usage: "/abyss enter <tier 0-6> | leave | status | clear | cloud [clear] | expire <seconds>",
         run: crate::abyss::slash,
     },
+    // #65 PG-2b: the Proving Grounds match in play.
+    Command {
+        name: "pg",
+        usage: "/pg status | expire <seconds> | decide",
+        run: crate::proving::arena::slash,
+    },
     Command {
         name: "escalate",
         usage: "/escalate [dungeonID]",

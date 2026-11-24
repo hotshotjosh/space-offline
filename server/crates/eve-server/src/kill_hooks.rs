@@ -150,6 +150,11 @@ pub const PLAYER: &[Row] = &[
         name: "map_stats_on_kill",
         run: crate::map_stats::on_kill,
     },
+    // #65 PG-2b: a Proving Grounds fighter's ship or pod dies in the arena.
+    Row {
+        name: "proving_arena_on_kill",
+        run: crate::proving::arena::on_kill,
+    },
 ];
 
 /// Every hook an NPC's death runs, in order. Coordinator-only.

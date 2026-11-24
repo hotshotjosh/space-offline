@@ -1196,7 +1196,8 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 // ---------------------------------------------------------------------------
 
 /// The population record the site path takes an instance from.
-fn site_of(system: i64, site_id: i64, dungeon: i64, ft: BlueTime) -> Site {
+// #65: the Proving Grounds arena makes its room the same way.
+pub(crate) fn site_of(system: i64, site_id: i64, dungeon: i64, ft: BlueTime) -> Site {
     Site {
         system,
         row: 0,
@@ -1493,7 +1494,8 @@ fn ensure_pocket(reg: &mut Registry, run: &Run, p: &mut Pocket, ft: BlueTime) ->
     true
 }
 
-fn next_site(reg: &mut Registry) -> i64 {
+// #65: an arena's site id comes from this band too, so `site::tick` leaves it alone.
+pub(crate) fn next_site(reg: &mut Registry) -> i64 {
     let s = reg.ext_mut::<AbyssState>();
     let n = s.next_site;
     s.next_site += 1;
@@ -1531,6 +1533,8 @@ fn alloc_pocket(
         return Err("the bundle has no abyssal room (dungeons, archetype 51)".to_owned());
     };
     let mut taken = systems_taken(reg);
+    // #65: the Proving Grounds arenas hold void systems too.
+    taken.extend(crate::proving::arena::systems_taken(reg));
     // A system with a wreck or an abandoned ship in it is not reused: the
     // pocket's leavings stay where they fell (abandoned ships stay for good).
     taken.extend(reg.combat().wrecks().map(|w| w.solar_system_id));

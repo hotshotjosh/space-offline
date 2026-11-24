@@ -341,6 +341,15 @@ pub const STAGES: &[Stage] = &[
         phase: 0,
         run: crate::abyss::tick,
     },
+    // #65 PG-2b: the Proving Grounds arenas: a pilot who landed is told, the
+    // match decided, a room the site stage dropped comes back. Before `site`,
+    // like the Abyss's pockets.
+    Stage {
+        name: "proving_arena",
+        every: 1,
+        phase: 0,
+        run: crate::proving::arena::tick,
+    },
     // After `site_spawn` of the tick before (it queues the escalations) and
     // before `site`: an escalation is opened and a pilot who reached one gets
     // its room through the site path (Y-ESCAL).

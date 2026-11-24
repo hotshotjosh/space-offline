@@ -171,6 +171,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::hypernet::SLOT,
     // #64 PG-1c: who waits in the Proving Grounds queue.
     crate::proving::queue::SLOT,
+    // #65 PG-2b: the Proving Grounds matches in play.
+    crate::proving::arena::SLOT,
 ];
 
 /// The slots' state, keyed by type.

@@ -55,6 +55,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             }
             Ok(PyValue::None)
         }
+        // #65: the conduit of a decided match sends its pilot home.
+        "AbyssalPVPEndGateActivation" => proving::arena::end_gate(reg, req),
         _ => Err(reg.no_method(req)),
     }
 }

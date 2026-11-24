@@ -249,6 +249,11 @@ pub const RULES: &[StageRule] = &[
         "an arrivals check in a system with no pilot in space and no wormhole instance does nothing",
     ),
     r("abyss", Rule::Every, "Abyss pockets in use only"),
+    r(
+        "proving_arena",
+        Rule::Every,
+        "Proving Grounds matches in play only (#65)",
+    ),
     r("escalation", Rule::Every, "open escalations only"),
     r(
         "site",

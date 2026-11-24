@@ -71,6 +71,8 @@ pub const SOURCES: &[Source] = &[
     crate::ess::slim_extras,
     // EM-3 (#207): a ship with an enabled emblem carries `cosmeticsItems`.
     crate::emblem::slim,
+    // #65 PG-2b: a Proving Grounds ring carries `startTime`, `endTime`, `kill`, `eventComplete`.
+    crate::proving::arena::slim_extras,
 ];
 
 /// Every source's extras for `ids`, concatenated in table order.

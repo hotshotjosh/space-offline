@@ -806,14 +806,6 @@ pub fn match_round(reg: &mut Registry, q: &mut Queue, ft: i64, open: Open, launc
     }
 }
 
-/// The arena the queue opens matches in **(PG-2b)**; until the arena exists
-/// every formed match stays queued.
-fn open_arena(_: &mut Registry, _: &Event, _: &[Team], _: i64) -> Result<u64, String> {
-    Err("there is no arena yet (PG-2b)".to_owned())
-}
-
-fn launch_arena(_: &mut Registry, _: u64, _: i64) {}
-
 /// `tick::STAGES` row (coordinator): [`sweep`], then [`match_round`], over
 /// [`SLOT`]'s state. One comparison while nobody waits.
 pub fn tick(reg: &mut Registry, _: Instant, now: i64) {
@@ -822,7 +814,13 @@ pub fn tick(reg: &mut Registry, _: Instant, now: i64) {
     }
     let mut q = std::mem::take(reg.ext_mut::<Queue>());
     sweep(reg, &mut q, now);
-    match_round(reg, &mut q, now, open_arena, launch_arena);
+    match_round(
+        reg,
+        &mut q,
+        now,
+        crate::proving::arena::open,
+        crate::proving::arena::launch,
+    );
     *reg.ext_mut::<Queue>() = q;
 }
 
