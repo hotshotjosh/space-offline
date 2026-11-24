@@ -1121,6 +1121,73 @@ class ServerSettingsFolder(Base):
         self.assertNotIn("NOT APPLIED", out)
 
 
+class CacheFolder(Base):
+    """verify reads the prefix's CACHEFOLDER (invented user.reg) and never writes it."""
+
+    def reg(self, body):
+        r = self.drive_c.parent / "user.reg"
+        r.write_text(body)
+        return r
+
+    def applied(self):
+        self.assertEqual(self.cmd("apply")[0], 0)
+
+    SEC = '[Software\\\\CCP\\\\EVEONLINE] 1700000000\n#time=1\n"CACHEFOLDER"="%s"\n\n[Other]\n"x"="1"\n'
+
+    def test_set_and_holding_resfiles_passes(self):
+        self.applied()
+        self.reg(self.SEC % "C:\\\\CCP\\\\EVE\\\\")
+        code, out = self.cmd("verify")
+        self.assertEqual(code, 0, out)
+        self.assertIn("holds ResFiles: ok", out)
+
+    def test_unset_fails_with_the_exact_fix(self):
+        self.applied()
+        reg = self.reg('[Other]\n"x"="1"\n')
+        before = reg.read_bytes()
+        code, out = self.cmd("verify")
+        self.assertEqual(code, 1, out)
+        self.assertIn("CACHEFOLDER is unset", out)
+        self.assertIn(f"WINEPREFIX={self.drive_c.parent} wine reg add 'HKCU\\Software\\CCP\\EVEONLINE' /v CACHEFOLDER /t REG_SZ /d 'C:\\CCP\\EVE\\' /f", out)
+        self.assertEqual(reg.read_bytes(), before)
+
+    def test_a_folder_without_resfiles_fails(self):
+        self.applied()
+        (self.drive_c / "empty").mkdir()
+        self.reg(self.SEC % "C:\\\\empty\\\\")
+        code, out = self.cmd("verify")
+        self.assertEqual(code, 1, out)
+        self.assertIn("has no ResFiles directory", out)
+
+    def test_no_user_reg_is_a_note_not_a_failure(self):
+        self.applied()
+        code, out = self.cmd("verify")
+        self.assertEqual(code, 0, out)
+        self.assertIn("cachefolder: skipped", out)
+
+    def test_status_shows_it(self):
+        self.reg('[Other]\n"x"="1"\n')
+        self.assertIn("CACHEFOLDER is unset", self.cmd("status")[1])
+
+
+class ServerArgChecks(Base):
+    def test_strict_server_names(self):
+        for bad in ("127.0.0.1\n", "a.b.", "-x", "a b"):
+            with self.assertRaises(ep.Refuse, msg=repr(bad)):
+                ep.check_server(bad)
+        self.assertEqual(ep.check_server("127.0.0.1"), "127.0.0.1")
+
+    def test_launch_env_hint_only_with_server(self):
+        self.assertNotIn("pass --server", self.cmd("launch-env")[1])
+        self.assertIn("if you start the client with /server:10.1.2.3, pass --server 10.1.2.3 to apply and verify",
+                      self.cmd("launch-env", "--server", "10.1.2.3")[1])
+
+    def test_revert_ignores_server(self):
+        self.assertEqual(self.cmd("apply")[0], 0)
+        self.assertEqual(self.cmd("revert", "--server", "127.0.0.1")[0], 0)
+        self.assertEqual(self.prefs.read_bytes(), b"windowed=1\r\nbreakpadUpload=1\r\n")
+
+
 class AuthorRehash(unittest.TestCase):
     """locate --merge rehashes B0 and P0 (invented bytes only)."""
 

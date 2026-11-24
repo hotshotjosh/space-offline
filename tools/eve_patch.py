@@ -732,7 +732,7 @@ def settings_suffix(server):
 
 
 def check_server(server):
-    if not re.match(r"^[A-Za-z0-9.\-]+$", server):
+    if not re.fullmatch(r"[A-Za-z0-9.\-]+", server) or server.endswith(".") or server.startswith("-"):
         raise Refuse(f"--server {server!r}: a host name or IPv4 address")
     return server
 
@@ -1075,6 +1075,42 @@ def check_resfiles(c):
     return ok, lines
 
 
+def cachefolder_check(client):
+    """(ok or None when skipped, lines) for the client's CACHEFOLDER registry value.
+
+    [V] tools/client2-setup.sh's own record: the client reads
+    `HKCU\\Software\\CCP\\EVEONLINE\\CACHEFOLDER`, appends `ResFiles`, and with no value
+    falls back to `C:\\ProgramData\\CCP\\EVE\\SharedCache` (empty). Read only, never written.
+    """
+    drive_c, _ = prefs_folder(client)
+    if drive_c is None:
+        return None, ["cachefolder: skipped (the install is not under a Wine drive_c)"]
+    prefix = drive_c.parent
+    reg = prefix / "user.reg"
+    if not reg.is_file():
+        return None, [f"cachefolder: skipped (no user.reg beside drive_c in {prefix})"]
+    rel = os.path.relpath(Path(os.path.abspath(client)).parent, drive_c)
+    want = "C:\\" + ("" if rel == "." else rel.replace("/", "\\") + "\\")
+    fix = f"WINEPREFIX={prefix} wine reg add 'HKCU\\Software\\CCP\\EVEONLINE' /v CACHEFOLDER /t REG_SZ /d '{want}' /f"
+    value, in_sec = None, False
+    for ln in reg.read_text(errors="replace").splitlines():
+        if ln.startswith("["):
+            in_sec = ln.lower().startswith("[software\\\\ccp\\\\eveonline]")
+        elif in_sec:
+            m = re.match(r'^"CACHEFOLDER"="(.*)"\s*$', ln, re.I)
+            if m:
+                value = m.group(1).replace("\\\\", "\\")
+                break
+    if not value:
+        return False, ["cachefolder: CACHEFOLDER is unset: the client will look in ProgramData and find no ResFiles", f"          fix: {fix}"]
+    if not re.match(r"^[Cc]:\\", value):
+        return False, [f"cachefolder: CACHEFOLDER is {value!r}, not a C:\\ path this check can map", f"          fix: {fix}"]
+    unix = drive_c / value[3:].replace("\\", "/").strip("/")
+    if not (unix / "ResFiles").is_dir():
+        return False, [f"cachefolder: CACHEFOLDER {value} has no ResFiles directory ({unix / 'ResFiles'})", f"          fix: {fix}"]
+    return True, [f"cachefolder: CACHEFOLDER {value} holds ResFiles: ok"]
+
+
 def do_verify(c, st=None, out=print):
     st = st or states(c)
     code = 0
@@ -1104,6 +1140,11 @@ def do_verify(c, st=None, out=print):
             code = max(code, 1)
     res_only = False
     if not c.args.no_resfiles:
+        ok, lines = cachefolder_check(c.client)
+        for ln in lines:
+            out(("ok   " if ln.endswith(": ok") else "note " if ok is None else "FAIL " if ln.startswith("cachefolder") else "") + ln)
+        if ok is False:
+            code = max(code, 1)
         ok, lines = check_resfiles(c)
         for ln in lines:
             out(("ok   " if ln.endswith("present") else "FAIL ") + ln)
@@ -1141,6 +1182,9 @@ def cmd_status(c):
         print(f"{s['id']:<3} {s['tier']}  {s['state']:<8} backup {s['backup']:<7} {rel}{extra}")
         if tmp_of(s["path"]).exists():
             print(f"         stale {TMP} present (removed by the next apply/revert)")
+    _, cl = cachefolder_check(c.client)
+    for ln in cl:
+        print(ln)
     found, create = prefs_targets(c.client, c.args.prefs, c.server)
     if not found:
         print(f"prefs:    none found{f' (apply creates {create})' if create else ''}")
@@ -1271,7 +1315,7 @@ def cmd_revert(c):
         p = c.client / rel
         atomic_write(p, backup_of(p).read_bytes(), e["sha256_stock"])
         print(f"restored {rel} from {rel}{BACKUP}")
-    found, _ = prefs_targets(c.client, c.args.prefs, c.server)
+    found, _ = prefs_targets(c.client, c.args.prefs)
     ours = c.m.get("prefs", {}).get("set", {})
     for p in found:
         prior = p.with_name(p.name + PRIOR)
@@ -1336,7 +1380,8 @@ def cmd_launch_env(c):
         print(json.dumps(blk, indent=1))
         return 0
     print(f"# eve_patch launch-env: build {blk['build']}, server {server}")
-    print(f"# pass the same --server {server} to apply and verify: the client reads its prefs.ini from a folder named for the server")
+    if c.args.server:
+        print(f"# if you start the client with /server:{server}, pass --server {server} to apply and verify")
     print("# 'env K=V' must be set exactly; 'arg X' must be passed; 'forbid-arg X' must never be.")
     for k, v in blk["env"].items():
         print(f"env {k}={v}")
@@ -1369,7 +1414,7 @@ def parser():
     ap.add_argument("--resfiles", help="the ResFiles directory (default: ../ResFiles beside the install)")
     ap.add_argument("--no-resfiles", action="store_true", help="skip the ResFiles completeness check")
     ap.add_argument("--allow-real", action="store_true", help="allow writing an install named tq")
-    ap.add_argument("--server", help="our server address: launch-env (default from the manifest); apply/verify/plan/status pick that server's settings folder (default tranquility)")
+    ap.add_argument("--server", help="our server address (revert ignores it and reverts every prefs.ini it finds): launch-env (default from the manifest); apply/verify/plan/status pick that server's settings folder (default tranquility)")
     ap.add_argument("--json", action="store_true", help="launch-env: JSON instead of lines")
     ap.add_argument("--check-args", help="launch-env: exit 3 if this argument string holds a forbidden arg")
     return ap

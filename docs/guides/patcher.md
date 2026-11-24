@@ -137,6 +137,15 @@ wins. The Windows rule is a unit test and has not met a real Windows install.
 fails when it is missing or lacks the keys, even if a `_tranquility` one passes. Without
 `--server` nothing changes: any `<folder>_*` is found and `_tranquility` is created.
 
+**ResFiles registry value (Wine installs).** The client finds its ResFiles through the
+prefix's `HKCU\Software\CCP\EVEONLINE\CACHEFOLDER` plus `ResFiles`, and with no value it
+falls back to an empty `C:\ProgramData\CCP\EVE\SharedCache`, so every loader comes up
+empty and the client dies at start `[V]` (the record in `tools/client2-setup.sh`). For an
+install under `drive_c`, `verify` reads `user.reg` beside `drive_c` and FAILS unless that
+folder holds a `ResFiles` directory, printing the exact `wine reg add` fix; `status` shows
+it too. It is skipped with a note when there is no `user.reg` or the install is not under
+`drive_c`. The patcher only reads it; it never writes the registry.
+
 `verify` ends `INCOMPLETE` (exit 1) when every patch is applied and only ResFiles rows
 are missing: run the launcher's "download all resources".
 
