@@ -2,9 +2,9 @@
 //! match, and why a join is refused.
 //!
 //! The wire arms are `service/proving.rs` (`JoinPVPQueue`, `LeavePVPQueue`);
-//! the rules are here. There is no matchmaker yet (PG-2): a pilot who joins
-//! waits until they leave, dock, jump, change ship, lose the key, log off or
-//! the event ends.
+//! the rules are here. A pilot who joins waits until a match forms
+//! ([`match_round`], with [`super::matchmaker`]) or they leave, dock, jump,
+//! change ship, change fleet, lose the key, log off or the event ends.
 //!
 //! ## What the client does
 //!
@@ -45,14 +45,25 @@
 //! ## The [A]s (each with its falsifier)
 //!
 //! - **A join never spends the key**: the filament is consumed at the match,
-//!   not at the queue (`docs/re/proving-grounds.md` §8 `[A]` 3). Falsified by
-//!   the owner ruling that a join costs the filament.
+//!   one per pilot, with no refund (`docs/re/proving-grounds.md` §8 `[A]` 3,
+//!   owner Q1, 2026-11-24). Falsified by the owner ruling that a join costs
+//!   the filament or that a match that never opens refunds it.
 //! - **A filament must be in the pilot's ship** ([`KEY_NOT_IN_SHIP`]): the
 //!   window is opened from the ship's cargo. Falsified by a client run where
 //!   a filament in a hangar opens the window and the join is wanted.
-//! - **A fleet format needs the pilot in a fleet** ([`FLEET_NEEDED`]), nothing more:
-//!   no size or role check until teams are formed (PG-2). Falsified by TQ
-//!   material, or a client label text saying otherwise.
+//! - **A fleet format needs the pilot in a fleet** ([`FLEET_NEEDED`]) of at
+//!   most `fleet_size` pilots ([`FLEET_TOO_BIG`], the size as the argument);
+//!   a fleet of fewer waits for the rest to queue. Falsified by TQ material,
+//!   or a client label text saying otherwise.
+//! - **The hull must be in the match type's `ship_restrictions` typelist**
+//!   ([`INVALID_SHIP_TYPE`], the pilot as the argument), at the join and again
+//!   at the match; a type or group over the match type's cap in a team
+//!   fails the team at the match (`matchmaker::composition_errors`). Fit
+//!   rules (meta levels, banned and limited modules) are PG-2c. Falsified by
+//!   a client label text that names other arguments.
+//! - **A match-time failure leaves only the failing pilot's team**: the
+//!   failing pilot is told why, their teammates [`FLEET_SIZE_CHANGED`] (31);
+//!   every other team stays queued. Falsified by TQ material.
 //! - **A pilot who moves (another system or ship) is dropped with
 //!   [`DROP_MOVED`]**, a docked one with [`DROP_DOCKED`] and one whose event
 //!   ended with [`DROP_ENDED`]. Falsified by a client label text that names a better code.
@@ -65,7 +76,8 @@
 
 use crate::abyss::Refusal;
 use crate::notify::Push;
-use crate::proving::{Catalogue, Event};
+use crate::proving::matchmaker::{self, Team};
+use crate::proving::{Catalogue, Event, MatchType};
 use crate::service::{Registry, ServiceError};
 use crate::world_ext::{Boxed, SlotSpec};
 use eve_marshal::PyValue;
@@ -86,6 +98,7 @@ pub mod err {
     pub const IN_ABYSS_SYSTEM: i64 = 1;
     pub const INVALID_KEY_TYPE: i64 = 2;
     pub const INVALID_OWNER: i64 = 3;
+    pub const INVALID_SHIP_TYPE: i64 = 4;
     pub const ITEM_NOT_REACHABLE: i64 = 5;
     pub const KEY_NOT_FOUND: i64 = 6;
     pub const PVP_TIMER_ACTIVE: i64 = 8;
@@ -100,6 +113,8 @@ pub mod err {
     pub const SHIP_NOT_FOUND: i64 = 21;
     pub const UNKNOWN_ERROR: i64 = 22;
     pub const SHIP_NOT_IN_FLEET: i64 = 23;
+    pub const TOO_MANY_IN_FLEET: i64 = 24;
+    pub const FLEET_SIZE_CHANGED: i64 = 31;
     pub const ALREADY_IN_QUEUE: i64 = 32;
     pub const EVENT_NOT_ACTIVE: i64 = 33;
 }
@@ -130,6 +145,22 @@ pub const KEY_NOT_IN_SHIP: i64 = err::ITEM_NOT_REACHABLE;
 /// role check until teams are formed, PG-2). Falsified by TQ material, or a
 /// client label text saying otherwise.
 pub const FLEET_NEEDED: i64 = err::SHIP_NOT_IN_FLEET;
+
+/// A hull outside the match type's `ship_restrictions` list is refused with
+/// `INVALID_SHIP_TYPE` (4), the pilot as the argument **[V]** code and
+/// argument shape (§4), **[A]** that the ship list is the one named by
+/// `ship_restrictions`. Falsified by a label text that names another list.
+pub const INVALID_SHIP_TYPE: i64 = err::INVALID_SHIP_TYPE;
+
+/// A fleet larger than the format's `fleet_size` is refused with
+/// `TOO_MANY_IN_FLEET` (24), the format's size as the argument **[V]** (§4).
+pub const FLEET_TOO_BIG: i64 = err::TOO_MANY_IN_FLEET;
+
+/// A teammate who failed at the match, or a pilot whose fleet changed while
+/// queued, leaves with `FLEET_SIZE_CHANGED` (31) **[V]** (§4, "matchmaking
+/// failure"). **[A]** for the fleet-changed use. Falsified by a label text
+/// that names a better code.
+pub const FLEET_SIZE_CHANGED: i64 = err::FLEET_SIZE_CHANGED;
 
 /// The filament item group **[V]** `docs/content/schema.md`
 /// (`proving/match_types.tsv`: "every filament type is group 4050").
@@ -171,6 +202,10 @@ pub struct JoinFacts {
     pub asked_type: i64,
     /// The format has more than one pilot per fleet.
     pub fleet_format: bool,
+    /// The pilot's fleet is larger than the format's `fleet_size`: the size.
+    pub fleet_over: Option<i64>,
+    /// The pilot's hull is on the match type's ship list (true when it has none).
+    pub ship_allowed: bool,
     /// The filament has an active event.
     pub event_active: bool,
     pub already_queued: bool,
@@ -202,6 +237,12 @@ pub fn join_errors(char_id: i64, f: &Facts, j: &JoinFacts) -> Vec<Refusal> {
     }
     if j.fleet_format && !f.in_fleet {
         e.push((FLEET_NEEDED, vec![]));
+    }
+    if let Some(size) = j.fleet_over {
+        e.push((FLEET_TOO_BIG, vec![size]));
+    }
+    if !j.ship_allowed {
+        e.push((INVALID_SHIP_TYPE, who()));
     }
     match &j.key {
         None => e.push((err::KEY_NOT_FOUND, vec![])),
@@ -264,12 +305,17 @@ pub struct Entry {
     pub ship_id: i64,
     pub system_id: i64,
     pub since: i64,
+    /// The fleet the pilot queued in; 0 outside one.
+    pub fleet_id: i64,
 }
 
 /// Everyone waiting, at most one entry per pilot, oldest first.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queue {
     entries: Vec<Entry>,
+    /// The last reason a formed match could not open was logged (once, not
+    /// every tick).
+    warned: bool,
 }
 
 impl Queue {
@@ -334,11 +380,16 @@ pub struct Now {
     /// `(match type, schedule)` of the filament's active event, if any.
     pub event: Option<(i64, i64)>,
     pub key_held: bool,
+    /// The pilot's fleet now (0: none).
+    pub fleet_id: i64,
+    /// The event's format has more than one pilot per fleet.
+    pub fleet_format: bool,
 }
 
 /// Why `e` must leave the queue, if it must **[A]** (module doc). Docked
 /// first (16, the pilot's id), then a changed system or ship or a lost key
-/// (22), then an event that ended or changed (33).
+/// (22), then an event that ended or changed (33), then a fleet that changed
+/// in a fleet format (31).
 pub fn drop_reason(e: &Entry, now: &Now) -> Option<Refusal> {
     if now.docked {
         return Some((DROP_DOCKED, vec![e.char_id]));
@@ -348,6 +399,9 @@ pub fn drop_reason(e: &Entry, now: &Now) -> Option<Refusal> {
     }
     if now.event != Some((e.match_type_id, e.schedule_id)) {
         return Some((DROP_ENDED, vec![]));
+    }
+    if now.fleet_format && now.fleet_id != e.fleet_id {
+        return Some((FLEET_SIZE_CHANGED, vec![]));
     }
     None
 }
@@ -424,6 +478,58 @@ fn event_of(reg: &Registry, ft: i64, filament: i64) -> Option<Event> {
     cat(reg).by_filament(ft, filament)
 }
 
+/// Whether `ship_id`'s type is on the match type's `ship_restrictions` list
+/// (**[I]** true when the match type has none, or the bundle lacks the list,
+/// as `abyss::ship_allowed` does). Falsified by a client run that refuses a
+/// hull this accepts.
+fn ship_ok(reg: &Registry, mt: &MatchType, ship_id: i64) -> bool {
+    let Some(list_id) = mt.ship_restrictions else {
+        return true;
+    };
+    let Some(list) = reg
+        .content()
+        .try_get::<crate::dungeon_data::Table>()
+        .and_then(|t| t.typelists.get(&list_id))
+    else {
+        return true;
+    };
+    let Some(item) = reg.store().get(ship_id) else {
+        return false;
+    };
+    list.contains(item.type_id, item.group_id, item.category_id)
+}
+
+/// What a join (or the match's re-check) asks about the key, the event, the
+/// fleet and the hull of `char_id`.
+fn join_facts(
+    reg: &Registry,
+    event: Option<&Event>,
+    char_id: i64,
+    item_id: i64,
+    type_id: i64,
+    already_queued: bool,
+) -> JoinFacts {
+    let fleet_size = event.map_or(1, |e| e.match_type.fleet_size);
+    let ship = reg.character(char_id).map_or(0, |c| c.ship_id);
+    let members = reg
+        .fleets()
+        .fleet_of(char_id)
+        .map_or(0, |f| i64::try_from(f.members.len()).unwrap_or(i64::MAX));
+    JoinFacts {
+        key: key_facts(reg, char_id, item_id),
+        asked_type: type_id,
+        fleet_format: fleet_size > 1,
+        fleet_over: (fleet_size > 1 && members > fleet_size).then_some(fleet_size),
+        ship_allowed: event.is_none_or(|e| ship_ok(reg, &e.match_type, ship)),
+        event_active: event.is_some(),
+        already_queued,
+    }
+}
+
+fn fleet_id_of(reg: &Registry, char_id: i64) -> i64 {
+    reg.fleets().fleet_of(char_id).map_or(0, |f| f.fleet_id)
+}
+
 /// `JoinPVPQueue(itemID, typeID)` for `char_id`: the refusals, or `Ok(0)`,
 /// the estimate "unknown". **Never spends the key** **[A]**.
 pub fn join(
@@ -436,13 +542,14 @@ pub fn join(
 ) -> Result<i64, Vec<Refusal>> {
     let f = facts(reg, char_id, ft);
     let event = event_of(reg, ft, type_id);
-    let j = JoinFacts {
-        key: key_facts(reg, char_id, item_id),
-        asked_type: type_id,
-        fleet_format: event.as_ref().is_some_and(|e| e.match_type.fleet_size > 1),
-        event_active: event.is_some(),
-        already_queued: q.of(char_id).is_some(),
-    };
+    let j = join_facts(
+        reg,
+        event.as_ref(),
+        char_id,
+        item_id,
+        type_id,
+        q.of(char_id).is_some(),
+    );
     let errors = join_errors(char_id, &f, &j);
     if !errors.is_empty() {
         return Err(errors);
@@ -459,6 +566,7 @@ pub fn join(
         ship_id: reg.character(char_id).map_or(0, |c| c.ship_id),
         system_id: p.solar_system_id,
         since: ft,
+        fleet_id: fleet_id_of(reg, char_id),
     });
     Ok(0)
 }
@@ -466,11 +574,16 @@ pub fn join(
 /// What is true of `e`'s pilot now.
 pub fn now_of(reg: &Registry, e: &Entry, ft: i64) -> Now {
     let here = reg.roster().get(e.char_id);
+    let event = event_of(reg, ft, e.type_id);
     Now {
         docked: here.is_none() && !reg.jumps().contains(e.char_id),
         system_id: here.map_or(0, |p| p.solar_system_id),
         ship_id: reg.character(e.char_id).map_or(0, |c| c.ship_id),
-        event: event_of(reg, ft, e.type_id).map(|ev| (ev.match_type.id, ev.schedule.id)),
+        fleet_format: event
+            .as_ref()
+            .is_some_and(|ev| ev.match_type.fleet_size > 1),
+        event: event.map(|ev| (ev.match_type.id, ev.schedule.id)),
+        fleet_id: fleet_id_of(reg, e.char_id),
         key_held: key_facts(reg, e.char_id, e.item_id)
             .is_some_and(|k| k.in_ship && k.owned && k.stack >= 1 && k.type_id == e.type_id),
     }
@@ -513,14 +626,203 @@ pub fn leave_slot(reg: &mut Registry, char_id: i64) -> bool {
     reg.ext_mut::<Queue>().remove(char_id)
 }
 
-/// `tick::STAGES` row (coordinator): [`sweep`] over [`SLOT`]'s state. One
-/// comparison while nobody waits.
+/// `OnMatchFound()` **[V]** `pvpFilamentController.py:294`: the window
+/// closes. No arguments.
+#[derive(Debug)]
+pub struct MatchFound {
+    pub to: i64,
+}
+
+impl Push for MatchFound {
+    fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+        ("OnMatchFound", vec![])
+    }
+    fn audience(&self) -> Option<Vec<i64>> {
+        Some(vec![self.to])
+    }
+}
+
+/// `OnProvingGroundsMatchFound()` **[V]** `audioService.py:1036`: the
+/// "opponent matched" sound. No arguments.
+#[derive(Debug)]
+pub struct ArenaSound {
+    pub to: i64,
+}
+
+impl Push for ArenaSound {
+    fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+        ("OnProvingGroundsMatchFound", vec![])
+    }
+    fn audience(&self) -> Option<Vec<i64>> {
+        Some(vec![self.to])
+    }
+}
+
+/// What a match round asks of the arena: make it (`Err` for the log: no free
+/// system, no room), and, once the keys are paid and the pilots told, send
+/// the pilots in. Parameters so the round is testable on its own.
+pub type Open = fn(&mut Registry, &Event, &[Team], i64) -> Result<u64, String>;
+pub type Launch = fn(&mut Registry, u64, i64);
+
+/// A pilot's errors at the match: the queue's own drop reasons, then every
+/// join check run again (a modified client, a key that moved, a ship that
+/// changed) with the pilot not counted as queued.
+fn pilot_errors(reg: &Registry, ev: &Event, e: &Entry, ft: i64) -> Vec<Refusal> {
+    if let Some(r) = drop_reason(e, &now_of(reg, e, ft)) {
+        return vec![r];
+    }
+    let f = facts(reg, e.char_id, ft);
+    let j = join_facts(reg, Some(ev), e.char_id, e.item_id, e.type_id, false);
+    join_errors(e.char_id, &f, &j)
+}
+
+fn fail(reg: &mut Registry, q: &mut Queue, who: i64, errors: Vec<Refusal>) {
+    q.remove(who);
+    reg.schedule(Duration::ZERO, MatchFailure { to: who, errors });
+}
+
+/// The key of every pilot of `teams`, one each **[A]** (module doc): a stack
+/// of one is destroyed, a larger stack is reduced by one.
+fn consume_keys(reg: &mut Registry, teams: &[Team]) {
+    for e in teams.iter().flat_map(|t| &t.members) {
+        let stack = reg.store().get(e.item_id).map_or(0, |i| i.quantity);
+        let edit = if stack <= 1 {
+            crate::item::Edit::Destroy { item_id: e.item_id }
+        } else {
+            crate::item::Edit::Consume {
+                item_id: e.item_id,
+                quantity: 1,
+            }
+        };
+        if let Err(err) = reg.apply_items(&[edit]) {
+            crate::errln!(
+                "[proving] key {} of {} not taken: {err:?}",
+                e.item_id,
+                e.char_id
+            );
+        }
+    }
+}
+
+/// One step for one event: a failed pilot (and their team) leaves, or a match
+/// forms and starts. `true` when something happened, so the caller looks again.
+fn round_one(
+    reg: &mut Registry,
+    q: &mut Queue,
+    ev: &Event,
+    ft: i64,
+    open: Open,
+    launch: Launch,
+) -> bool {
+    let teams = matchmaker::teams(q.entries(), &ev.match_type, ev.schedule.id);
+    let formed = matchmaker::form(&teams, &ev.match_type);
+    if formed.is_empty() {
+        return false;
+    }
+    // Every pilot is checked again; a team with a failing pilot is out, the
+    // failing pilot told why and the teammates told the team broke.
+    let mut broke = false;
+    for t in &formed {
+        let bad: Vec<(i64, Vec<Refusal>)> = t
+            .members
+            .iter()
+            .map(|e| (e.char_id, pilot_errors(reg, ev, e, ft)))
+            .filter(|(_, errors)| !errors.is_empty())
+            .collect();
+        if !bad.is_empty() {
+            for e in &t.members {
+                let errors = match bad.iter().find(|(c, _)| *c == e.char_id) {
+                    Some((_, errors)) => errors.clone(),
+                    None => vec![(FLEET_SIZE_CHANGED, vec![])],
+                };
+                fail(reg, q, e.char_id, errors);
+            }
+            broke = true;
+            continue;
+        }
+        let hulls: Vec<(i64, i64, i64)> = t
+            .members
+            .iter()
+            .filter_map(|e| {
+                let ship = reg.character(e.char_id)?.ship_id;
+                let i = reg.store().get(ship)?;
+                Some((e.char_id, i.type_id, i.group_id))
+            })
+            .collect();
+        let errors = matchmaker::composition_errors(&hulls, &ev.match_type);
+        if !errors.is_empty() {
+            for e in &t.members {
+                fail(reg, q, e.char_id, errors.clone());
+            }
+            broke = true;
+        }
+    }
+    if broke {
+        return true;
+    }
+    let arena = match open(reg, ev, &formed, ft) {
+        Ok(id) => id,
+        Err(why) => {
+            if !q.warned {
+                q.warned = true;
+                crate::errln!(
+                    "[proving] a match of event {} is formed but cannot open: {why}",
+                    ev.event_id()
+                );
+            }
+            return false;
+        }
+    };
+    q.warned = false;
+    consume_keys(reg, &formed);
+    for e in formed.iter().flat_map(|t| &t.members) {
+        q.remove(e.char_id);
+        reg.schedule(Duration::ZERO, MatchFound { to: e.char_id });
+        reg.schedule(Duration::ZERO, ArenaSound { to: e.char_id });
+    }
+    launch(reg, arena, ft);
+    true
+}
+
+/// **A match round**: for each waiting event, in the order of its oldest
+/// waiting pilot, form the matches that can be formed ([`matchmaker`]) and
+/// start them through `open` and `launch`.
+pub fn match_round(reg: &mut Registry, q: &mut Queue, ft: i64, open: Open, launch: Launch) {
+    let mut events: Vec<(i64, i64, i64)> = Vec::new();
+    for e in q.entries() {
+        let k = (e.match_type_id, e.schedule_id, e.type_id);
+        if !events.contains(&k) {
+            events.push(k);
+        }
+    }
+    for (m, s, t) in events {
+        let Some(ev) = event_of(reg, ft, t) else {
+            continue;
+        };
+        if ev.match_type.id != m || ev.schedule.id != s {
+            continue;
+        }
+        while round_one(reg, q, &ev, ft, open, launch) {}
+    }
+}
+
+/// The arena the queue opens matches in **(PG-2b)**; until the arena exists
+/// every formed match stays queued.
+fn open_arena(_: &mut Registry, _: &Event, _: &[Team], _: i64) -> Result<u64, String> {
+    Err("there is no arena yet (PG-2b)".to_owned())
+}
+
+fn launch_arena(_: &mut Registry, _: u64, _: i64) {}
+
+/// `tick::STAGES` row (coordinator): [`sweep`], then [`match_round`], over
+/// [`SLOT`]'s state. One comparison while nobody waits.
 pub fn tick(reg: &mut Registry, _: Instant, now: i64) {
     if reg.ext::<Queue>().is_empty() {
         return;
     }
     let mut q = std::mem::take(reg.ext_mut::<Queue>());
     sweep(reg, &mut q, now);
+    match_round(reg, &mut q, now, open_arena, launch_arena);
     *reg.ext_mut::<Queue>() = q;
 }
 

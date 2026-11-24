@@ -9,11 +9,14 @@
 use super::*;
 use crate::item::Item;
 use crate::model::{Character, SandboxConfig};
-use crate::proving::MatchType;
+use crate::proving::matchmaker::Team;
+use crate::proving::{Event, MatchType};
 use crate::space_state::{Motion, Presence};
 
 const ALICE: i64 = 90_882_001;
 const BOB: i64 = 90_882_002;
+const CAROL: i64 = 90_882_003;
+const DAVE: i64 = 90_882_004;
 const HOME: i64 = 30_882_001;
 const AWAY: i64 = 30_882_002;
 const FIL: i64 = 990_882_001;
@@ -23,6 +26,8 @@ const MATCH: i64 = 883_001;
 const KEY: i64 = 100_882_001;
 const HANGAR_KEY: i64 = 100_882_002;
 const BOBS_KEY: i64 = 100_882_003;
+const CAROLS_KEY: i64 = 100_882_005;
+const DAVES_KEY: i64 = 100_882_006;
 const NOT_A_KEY: i64 = 100_882_004;
 const NOT_A_KEY_TYPE: i64 = 990_882_900;
 const GROUP_OTHER: i64 = 990_882_901;
@@ -91,7 +96,7 @@ fn world(cat: Catalogue) -> Registry {
     let mut content = crate::content::Content::fixture();
     content.insert("proving_events", cat);
     let mut reg = Registry::new(SandboxConfig {
-        characters: [ALICE, BOB]
+        characters: [ALICE, BOB, CAROL, DAVE]
             .into_iter()
             .map(|id| Character {
                 character_id: id,
@@ -107,6 +112,15 @@ fn world(cat: Catalogue) -> Registry {
     items.push(cargo(KEY, ALICE, ship(ALICE), FIL, FILAMENT_GROUP, 3));
     items.push(cargo(HANGAR_KEY, ALICE, HANGAR, FIL, FILAMENT_GROUP, 1));
     items.push(cargo(BOBS_KEY, BOB, ship(BOB), FIL, FILAMENT_GROUP, 1));
+    items.push(cargo(
+        CAROLS_KEY,
+        CAROL,
+        ship(CAROL),
+        FIL,
+        FILAMENT_GROUP,
+        1,
+    ));
+    items.push(cargo(DAVES_KEY, DAVE, ship(DAVE), FIL, FILAMENT_GROUP, 1));
     items.push(cargo(
         NOT_A_KEY,
         ALICE,
@@ -155,6 +169,8 @@ fn clean_join() -> JoinFacts {
         }),
         asked_type: FIL,
         fleet_format: false,
+        fleet_over: None,
+        ship_allowed: true,
         event_active: true,
         already_queued: false,
     }
@@ -325,6 +341,7 @@ fn entry(who: i64) -> Entry {
         ship_id: ship(who),
         system_id: HOME,
         since: 1,
+        fleet_id: 0,
     }
 }
 
@@ -359,6 +376,8 @@ fn drop_reasons_follow_the_documented_order() {
         ship_id: ship(ALICE),
         event: Some((MATCH, SCHED)),
         key_held: true,
+        fleet_id: 0,
+        fleet_format: false,
     };
     assert_eq!(drop_reason(&e, &ok), None);
     let docked = Now {
@@ -710,4 +729,430 @@ fn the_registered_tick_stage_and_logoff_row_empty_the_queue() {
     (row.run)(&mut reg, BOB);
     assert!(reg.ext::<Queue>().is_empty());
     assert_eq!(failures(&mut reg).len(), 1, "only the docked pilot is told");
+}
+
+// ---- the match (PG-2a) ------------------------------------------------------
+
+thread_local! {
+    /// The teams `fake_open` was asked to open, as characters.
+    static OPENED: std::cell::RefCell<Vec<Vec<Vec<i64>>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    static LAUNCHED: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+const ARENA: u64 = 7;
+
+fn fake_open(_: &mut Registry, _: &Event, t: &[Team], _: i64) -> Result<u64, String> {
+    OPENED.with(|o| {
+        o.borrow_mut().push(
+            t.iter()
+                .map(|t| t.members.iter().map(|e| e.char_id).collect())
+                .collect(),
+        )
+    });
+    Ok(ARENA)
+}
+
+fn fake_launch(_: &mut Registry, id: u64, _: i64) {
+    LAUNCHED.with(|l| l.borrow_mut().push(id));
+}
+
+fn no_room(_: &mut Registry, _: &Event, _: &[Team], _: i64) -> Result<u64, String> {
+    Err("no free system".to_owned())
+}
+
+fn opened() -> Vec<Vec<Vec<i64>>> {
+    OPENED.with(|o| std::mem::take(&mut *o.borrow_mut()))
+}
+
+fn launched() -> Vec<u64> {
+    LAUNCHED.with(|l| std::mem::take(&mut *l.borrow_mut()))
+}
+
+fn join_all(reg: &mut Registry, q: &mut Queue, who: &[(i64, i64)], at: i64) {
+    for (i, (c, key)) in who.iter().enumerate() {
+        stand(reg, *c, HOME);
+        join(reg, q, *c, *key, FIL, at + i as i64).expect("the join is accepted");
+    }
+}
+
+fn four(reg: &mut Registry, q: &mut Queue) {
+    join_all(
+        reg,
+        q,
+        &[
+            (ALICE, KEY),
+            (BOB, BOBS_KEY),
+            (CAROL, CAROLS_KEY),
+            (DAVE, DAVES_KEY),
+        ],
+        noon(0),
+    );
+}
+
+fn sent(reg: &mut Registry) -> Vec<(&'static str, Vec<i64>)> {
+    reg.take_due(Instant::now() + Duration::from_secs(60))
+        .iter()
+        .map(|p| (p.to_push().0, p.audience().unwrap()))
+        .collect()
+}
+
+fn make_fleet(reg: &mut Registry, boss: i64, others: &[i64]) -> i64 {
+    let id = reg.fleets_mut().create(boss).expect("created");
+    reg.fleets_mut()
+        .init(boss, id, Some(NOT_A_KEY_TYPE), None, None)
+        .expect("init");
+    for who in others {
+        reg.fleets_mut()
+            .invite(boss, id, *who, None, None, None)
+            .expect("invited");
+        reg.fleets_mut()
+            .accept_invite(*who, id, Some(NOT_A_KEY_TYPE), None, None)
+            .expect("accepted");
+    }
+    id
+}
+
+/// Four pilots, a keyed filament each, in a world of one QA event of
+/// `format` over `mt` and the given typelist table.
+fn custom_world(mt: MatchType, format: &str, table: crate::dungeon_data::Table) -> Registry {
+    let text = format!(
+        "{}{SCHED}\t{format}\t\t\t\t1\ttest\n",
+        super::super::tests::header_for_queue()
+    );
+    let mut content = crate::content::Content::fixture();
+    content.insert(
+        "proving_events",
+        Catalogue::parse(&text, vec![mt]).expect("the rows parse"),
+    );
+    content.insert("dungeons", table);
+    let mut reg = Registry::new(SandboxConfig {
+        characters: [ALICE, BOB, CAROL, DAVE]
+            .into_iter()
+            .map(|id| Character {
+                character_id: id,
+                ship_id: ship(id),
+                solar_system_id: Some(HOME),
+                ..Character::default()
+            })
+            .collect(),
+        ..SandboxConfig::default()
+    })
+    .with_content(std::sync::Arc::new(content));
+    let mut items = reg.store().items().to_vec();
+    for (id, key) in [
+        (ALICE, KEY),
+        (BOB, BOBS_KEY),
+        (CAROL, CAROLS_KEY),
+        (DAVE, DAVES_KEY),
+    ] {
+        items.push(cargo(key, id, ship(id), FIL, FILAMENT_GROUP, 1));
+    }
+    reg.apply_snapshot(crate::store::Snapshot {
+        items,
+        next_item_id: 100_883_000,
+        ..crate::store::Snapshot::default()
+    });
+    reg
+}
+
+fn set_hull(reg: &mut Registry, who: i64, type_id: i64, group: i64) {
+    let mut items = reg.store().items().to_vec();
+    for i in items.iter_mut().filter(|i| i.item_id == ship(who)) {
+        i.type_id = type_id;
+        i.group_id = group;
+    }
+    reg.apply_snapshot(crate::store::Snapshot {
+        items,
+        next_item_id: 100_883_000,
+        ..crate::store::Snapshot::default()
+    });
+}
+
+#[test]
+fn a_formed_match_takes_one_key_each_at_the_match_and_never_at_the_join() {
+    let stack = |reg: &Registry, id: i64| reg.store().get(id).map(|i| i.quantity);
+    let mut reg = world(qa_catalogue(2, 1));
+    let mut q = Queue::default();
+    join_all(&mut reg, &mut q, &[(ALICE, KEY), (BOB, BOBS_KEY)], noon(0));
+    assert_eq!(stack(&reg, KEY), Some(3), "the join spends nothing");
+    assert_eq!(stack(&reg, BOBS_KEY), Some(1));
+    let _ = (opened(), launched(), sent(&mut reg));
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert_eq!(opened(), vec![vec![vec![ALICE], vec![BOB]]]);
+    assert_eq!(launched(), vec![ARENA]);
+    assert_eq!(
+        stack(&reg, KEY),
+        Some(2),
+        "a stack of three is reduced by one"
+    );
+    assert_eq!(stack(&reg, BOBS_KEY), None, "a stack of one is destroyed");
+    assert!(q.is_empty(), "both leave the queue");
+    assert_eq!(
+        sent(&mut reg),
+        vec![
+            ("OnMatchFound", vec![ALICE]),
+            ("OnProvingGroundsMatchFound", vec![ALICE]),
+            ("OnMatchFound", vec![BOB]),
+            ("OnProvingGroundsMatchFound", vec![BOB]),
+        ]
+    );
+}
+
+#[test]
+fn a_match_that_cannot_open_keeps_everyone_queued_with_their_keys() {
+    let mut reg = world(qa_catalogue(2, 1));
+    let mut q = Queue::default();
+    join_all(&mut reg, &mut q, &[(ALICE, KEY), (BOB, BOBS_KEY)], noon(0));
+    let _ = (sent(&mut reg), launched());
+    match_round(&mut reg, &mut q, noon(0), no_room, fake_launch);
+    assert_eq!(q.len(), 2);
+    assert_eq!(reg.store().get(KEY).map(|i| i.quantity), Some(3));
+    assert!(reg.store().get(BOBS_KEY).is_some());
+    assert!(sent(&mut reg).is_empty(), "nobody is told");
+    assert!(launched().is_empty());
+}
+
+#[test]
+fn one_pilot_alone_forms_no_match() {
+    let mut reg = world(qa_catalogue(2, 1));
+    let mut q = Queue::default();
+    join_all(&mut reg, &mut q, &[(ALICE, KEY)], noon(0));
+    let _ = opened();
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert!(opened().is_empty());
+    assert_eq!(q.len(), 1);
+}
+
+#[test]
+fn a_match_time_failure_drops_that_pilot_only() {
+    let mut reg = world(qa_catalogue(2, 1));
+    let mut q = Queue::default();
+    join_all(&mut reg, &mut q, &[(ALICE, KEY), (BOB, BOBS_KEY)], noon(0));
+    // Alice changed ship after queueing.
+    reg.character_mut(ALICE).unwrap().ship_id = ship(BOB);
+    let _ = (opened(), failures(&mut reg));
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert!(opened().is_empty(), "no match without her");
+    assert!(q.of(ALICE).is_none());
+    assert!(q.of(BOB).is_some(), "the other pilot waits on");
+    let f = failures(&mut reg);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].0, vec![ALICE]);
+    assert_eq!(f[0].1, errors_value(&[(DROP_MOVED, vec![])]));
+    assert_eq!(
+        reg.store().get(KEY).map(|i| i.quantity),
+        Some(3),
+        "nothing was paid"
+    );
+}
+
+#[test]
+fn a_teammate_of_a_failed_pilot_is_told_the_team_broke_and_the_other_team_waits() {
+    let mut reg = world(qa_catalogue(2, 2));
+    let mut q = Queue::default();
+    make_fleet(&mut reg, ALICE, &[BOB]);
+    make_fleet(&mut reg, CAROL, &[DAVE]);
+    four(&mut reg, &mut q);
+    assert_eq!(q.len(), 4);
+    // Bob docks.
+    let _ = reg.roster_mut().leave(BOB);
+    let _ = (opened(), failures(&mut reg));
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert!(opened().is_empty());
+    let mut f = failures(&mut reg);
+    f.sort_by_key(|(to, _)| to[0]);
+    assert_eq!(f.len(), 2);
+    assert_eq!(f[0].0, vec![ALICE]);
+    assert_eq!(
+        f[0].1,
+        errors_value(&[(FLEET_SIZE_CHANGED, vec![])]),
+        "the teammate"
+    );
+    assert_eq!(f[1].0, vec![BOB]);
+    assert_eq!(
+        f[1].1,
+        errors_value(&[(DROP_DOCKED, vec![BOB])]),
+        "the failing pilot"
+    );
+    assert_eq!(q.len(), 2, "the other fleet stays");
+    assert!(q.of(CAROL).is_some() && q.of(DAVE).is_some());
+}
+
+#[test]
+fn a_full_2x2_forms_with_both_fleets_as_teams() {
+    let mut reg = world(qa_catalogue(2, 2));
+    let mut q = Queue::default();
+    make_fleet(&mut reg, ALICE, &[BOB]);
+    make_fleet(&mut reg, CAROL, &[DAVE]);
+    four(&mut reg, &mut q);
+    let _ = opened();
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert_eq!(opened(), vec![vec![vec![ALICE, BOB], vec![CAROL, DAVE]]]);
+    assert!(q.is_empty());
+}
+
+#[test]
+fn a_fleet_change_drops_with_31_in_a_fleet_format_only() {
+    let e = Entry {
+        fleet_id: 7,
+        ..entry(ALICE)
+    };
+    let ok = Now {
+        system_id: HOME,
+        ship_id: ship(ALICE),
+        event: Some((MATCH, SCHED)),
+        key_held: true,
+        fleet_id: 7,
+        fleet_format: true,
+        docked: false,
+    };
+    assert_eq!(drop_reason(&e, &ok), None);
+    for fleet_id in [0, 8] {
+        let changed = Now {
+            fleet_id,
+            ..ok.clone()
+        };
+        assert_eq!(
+            drop_reason(&e, &changed),
+            Some((FLEET_SIZE_CHANGED, vec![])),
+            "fleet {fleet_id}"
+        );
+    }
+    let solo = Now {
+        fleet_id: 0,
+        fleet_format: false,
+        ..ok
+    };
+    assert_eq!(drop_reason(&e, &solo), None, "a solo format ignores fleets");
+}
+
+#[test]
+fn the_sweep_drops_a_pilot_who_left_the_fleet_they_queued_in() {
+    let mut reg = world(qa_catalogue(2, 2));
+    let mut q = Queue::default();
+    let fleet = make_fleet(&mut reg, ALICE, &[BOB]);
+    join_all(&mut reg, &mut q, &[(ALICE, KEY), (BOB, BOBS_KEY)], noon(0));
+    assert_eq!(q.of(BOB).map(|e| e.fleet_id), Some(fleet));
+    reg.fleets_mut().leave(BOB, fleet).expect("left");
+    let _ = failures(&mut reg);
+    let gone = sweep(&mut reg, &mut q, noon(0));
+    assert_eq!(gone, vec![BOB]);
+    assert_eq!(
+        failures(&mut reg)[0].1,
+        errors_value(&[(FLEET_SIZE_CHANGED, vec![])])
+    );
+}
+
+#[test]
+fn a_fleet_larger_than_the_format_is_refused_with_its_size() {
+    let j = JoinFacts {
+        fleet_format: true,
+        fleet_over: Some(2),
+        ..clean_join()
+    };
+    let f = Facts {
+        in_fleet: true,
+        ..clean_facts()
+    };
+    assert_eq!(join_errors(ALICE, &f, &j), vec![(FLEET_TOO_BIG, vec![2])]);
+    // And through the world: three pilots in a fleet for a 2x2.
+    let mut reg = world(qa_catalogue(2, 2));
+    make_fleet(&mut reg, ALICE, &[BOB, CAROL]);
+    stand(&mut reg, ALICE, HOME);
+    let mut q = Queue::default();
+    assert_eq!(
+        join(&reg, &mut q, ALICE, KEY, FIL, noon(0)),
+        Err(vec![(FLEET_TOO_BIG, vec![2])])
+    );
+}
+
+#[test]
+fn a_hull_off_the_list_is_refused_with_the_pilot_at_join_and_at_match() {
+    const LIST: i64 = 990_903;
+    const GOOD: i64 = 990_904;
+    const BAD: i64 = 990_905;
+    let j = JoinFacts {
+        ship_allowed: false,
+        ..clean_join()
+    };
+    assert_eq!(
+        join_errors(ALICE, &clean_facts(), &j),
+        vec![(INVALID_SHIP_TYPE, vec![ALICE])]
+    );
+    let mut table = crate::dungeon_data::Table::default();
+    table.typelists.insert(
+        LIST,
+        crate::dungeon_data::TypeList {
+            inc_types: vec![GOOD],
+            ..Default::default()
+        },
+    );
+    let mt = MatchType {
+        ship_restrictions: Some(LIST),
+        ..match_type(2, 1)
+    };
+    let mut reg = custom_world(mt, "2x1", table);
+    set_hull(&mut reg, ALICE, GOOD, 0);
+    set_hull(&mut reg, BOB, BAD, 0);
+    stand(&mut reg, ALICE, HOME);
+    stand(&mut reg, BOB, HOME);
+    let mut q = Queue::default();
+    assert_eq!(
+        join(&reg, &mut q, BOB, BOBS_KEY, FIL, noon(0)),
+        Err(vec![(INVALID_SHIP_TYPE, vec![BOB])]),
+        "at the join"
+    );
+    assert_eq!(join(&reg, &mut q, ALICE, KEY, FIL, noon(0)), Ok(0));
+    // A modified client that skipped the join's check is caught at the match.
+    q.add(Entry {
+        item_id: BOBS_KEY,
+        since: noon(0) + 1,
+        ..entry(BOB)
+    });
+    let _ = (opened(), failures(&mut reg));
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert!(opened().is_empty());
+    let f = failures(&mut reg);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].0, vec![BOB]);
+    assert_eq!(f[0].1, errors_value(&[(INVALID_SHIP_TYPE, vec![BOB])]));
+    assert!(q.of(ALICE).is_some());
+}
+
+#[test]
+fn a_team_over_the_composition_cap_fails_as_a_team() {
+    const SAME: i64 = 990_906;
+    const OTHER_A: i64 = 990_907;
+    const OTHER_B: i64 = 990_908;
+    let mt = MatchType {
+        max_of_ship_type_restriction: Some(1),
+        ..match_type(2, 2)
+    };
+    let mut reg = custom_world(mt, "2x2", crate::dungeon_data::Table::default());
+    // Alice's and Bob's hulls are one type; Carol's and Dave's differ.
+    for (who, t) in [
+        (ALICE, SAME),
+        (BOB, SAME),
+        (CAROL, OTHER_A),
+        (DAVE, OTHER_B),
+    ] {
+        set_hull(&mut reg, who, t, 0);
+    }
+    make_fleet(&mut reg, ALICE, &[BOB]);
+    make_fleet(&mut reg, CAROL, &[DAVE]);
+    let mut q = Queue::default();
+    four(&mut reg, &mut q);
+    let _ = (opened(), failures(&mut reg));
+    match_round(&mut reg, &mut q, noon(0), fake_open, fake_launch);
+    assert!(opened().is_empty());
+    let mut f = failures(&mut reg);
+    f.sort_by_key(|(to, _)| to[0]);
+    assert_eq!(f.len(), 2);
+    assert_eq!(f[0].0, vec![ALICE]);
+    assert_eq!(f[1].0, vec![BOB]);
+    for (_, errors) in &f {
+        assert_eq!(*errors, errors_value(&[(36, vec![1, SAME])]));
+    }
+    assert_eq!(q.len(), 2, "the other team waits");
 }

@@ -867,6 +867,7 @@ pub fn push_statistics(
     known
 }
 
+pub mod matchmaker;
 pub mod queue;
 
 #[cfg(test)]
