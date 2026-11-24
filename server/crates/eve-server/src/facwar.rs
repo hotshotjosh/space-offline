@@ -177,6 +177,25 @@ pub fn parse_capture_point_line(line: &str) -> Result<(i64, CapturePointRow), St
     ))
 }
 
+/// A row with a non-positive `seconds` or `range` loses that field (the
+/// server then uses its assumed value), with a note saying so.
+pub fn sanitized_capture_row(mut row: CapturePointRow) -> (CapturePointRow, Vec<String>) {
+    let mut notes = Vec::new();
+    if let Some(v) = row.seconds.filter(|v| *v <= 0) {
+        notes.push(format!(
+            "seconds {v} is not positive, the assumed value stands"
+        ));
+        row.seconds = None;
+    }
+    if let Some(v) = row.range.filter(|v| *v <= 0) {
+        notes.push(format!(
+            "range {v} is not positive, the assumed value stands"
+        ));
+        row.range = None;
+    }
+    (row, notes)
+}
+
 /// This module's registration row, one line in `TABLES` in
 /// `content_tables.rs` (coordinator-only).
 pub const WARZONES: TableSpec = TableSpec {
@@ -205,6 +224,10 @@ fn boxed_load(src: &Sources) -> Result<Boxed, String> {
         }
         for line in b.data_lines(CAPTURE_POINTS_FILE, CAPTURE_POINTS_HEADER)? {
             let (t, row) = parse_capture_point_line(&line)?;
+            let (row, notes) = sanitized_capture_row(row);
+            for n in notes {
+                eprintln!("[content] {CAPTURE_POINTS_FILE}: type {t}: {n}");
+            }
             table.capture_points.insert(t, row);
         }
         for line in b.data_lines(SYSTEMS_FILE, SYSTEMS_HEADER)? {
@@ -350,6 +373,11 @@ impl Table {
     pub fn with_capture_points(mut self, rows: BTreeMap<i64, CapturePointRow>) -> Table {
         self.capture_points = rows;
         self
+    }
+
+    /// The capture point types the bundle lists, ascending.
+    pub fn capture_point_types(&self) -> Vec<i64> {
+        self.capture_points.keys().copied().collect()
     }
 
     /// A capture point type's attributes, if the bundle lists the type.
@@ -1330,6 +1358,28 @@ pub(crate) mod tests {
         ] {
             assert!(parse_capture_point_line(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_non_positive_seconds_or_range_falls_back_with_a_note() {
+        let row = CapturePointRow {
+            seconds: Some(0),
+            range: Some(-5),
+            point_value: Some(2),
+            ..CapturePointRow::default()
+        };
+        let (got, notes) = sanitized_capture_row(row);
+        assert_eq!(
+            (got.seconds, got.range, got.point_value),
+            (None, None, Some(2))
+        );
+        assert_eq!(notes.len(), 2);
+        let ok = CapturePointRow {
+            seconds: Some(1),
+            range: Some(1),
+            ..CapturePointRow::default()
+        };
+        assert_eq!(sanitized_capture_row(ok), (ok, vec![]));
     }
 
     #[test]

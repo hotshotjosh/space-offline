@@ -2,7 +2,10 @@
 //!
 //! The client's space component `fwCapturePoint` ([V]
 //! `spacecomponents/client/components/fwCapturePoint.py`, decompiled from
-//! 3662168) shows a capture point as a bracket (`CapturePointUI`) in one of
+//! 3662168; the `:N` line numbers below are as read on 3662168, and on the
+//! current build `GetState` starts at `:81`, the capturing test is at
+//! `:92-99` and the blocking one at `:93`, `:100-102`) shows a capture point
+//! as a bracket (`CapturePointUI`) in one of
 //! three states, worked out on the client from who is within `range` of the
 //! point (`GetState`, `:78-112`):
 //!
@@ -62,8 +65,13 @@
 //! ([V] `:87`) and the two list ids as `typelist` ids a type must be in:
 //! first the capturing list ([V] `:92`, `:95`), else the blocking one ([V]
 //! `:93`, `:100`); `pointValue` and `looping` the client component does not
-//! read ([I] as above). A GM override ([`State::set_params`], `/fwcapture`)
-//! wins over the table.
+//! read ([I] as above). **[A]** a row's `looping` is used only at a
+//! battlefield (archetype 68); a complex keeps the looping behaviour it had
+//! (assumed) until a client run proves what `looping` means. Falsified by a
+//! client run in which a complex's capture point with `looping` 0 completes
+//! the complex once (then the row's `looping` is honoured everywhere). A
+//! GM override ([`State::set_params`]) wins over the table; `/fwcapture
+//! <seconds>` overrides the cycle only, on top of the row.
 
 use crate::damage::BlueTime;
 use crate::service::Registry;
@@ -126,10 +134,20 @@ pub fn assumed() -> Params {
 }
 
 /// The parameters of a capture point of type `type_id` (`None`: no object,
-/// a complex judged at its anchor): a GM override first, else the bundle's
-/// row for the type over [`assumed`], field by field.
-pub fn params_for(reg: &Registry, type_id: Option<i64>) -> Params {
+/// a complex judged at its anchor): a full GM override, else the bundle's
+/// row for the type over [`assumed`], field by field; then the `/fwcapture`
+/// seconds override. The row's `looping` counts only at a `battlefield`
+/// **[A]** (the module docs).
+pub fn params_for(reg: &Registry, type_id: Option<i64>, battlefield: bool) -> Params {
     let st = reg.ext::<crate::facwar::Facwar>().capture();
+    let mut p = params_from_row(reg, type_id, battlefield, st);
+    if let Some(s) = st.seconds_override {
+        p.seconds = s;
+    }
+    p
+}
+
+fn params_from_row(reg: &Registry, type_id: Option<i64>, battlefield: bool, st: &State) -> Params {
     if let Some(p) = &st.params {
         return p.clone();
     }
@@ -143,7 +161,9 @@ pub fn params_for(reg: &Registry, type_id: Option<i64>) -> Params {
         p.seconds = r.seconds.unwrap_or(p.seconds);
         p.range = r.range.map_or(p.range, |v| v as f64);
         p.point_value = r.point_value.unwrap_or(p.point_value);
-        p.looping = r.looping.unwrap_or(p.looping);
+        if battlefield {
+            p.looping = r.looping.unwrap_or(p.looping);
+        }
         p.capturing_list = r.capturing;
         p.blocking_list = r.blocking;
     }
@@ -160,11 +180,14 @@ fn in_list(reg: &Registry, list: i64, hull: i64) -> Option<bool> {
         .try_get::<crate::dungeon_data::Table>()?
         .typelists
         .get(&list)?;
-    let (group, category) = crate::typedata::installed_in(reg.content())
+    // A hull the type data lacks is in no list.
+    let Some(r) = crate::typedata::installed_in(reg.content())
         .table()
         .get(hull)
-        .map_or((0, 0), |r| (r.group_id, r.category_id));
-    Some(l.contains(hull, group, category))
+    else {
+        return Some(false);
+    };
+    Some(l.contains(hull, r.group_id, r.category_id))
 }
 
 /// The client's three states (`CapturePointUI`).
@@ -296,6 +319,8 @@ pub fn next_point(p: &Point, params: &Params, now: BlueTime) -> Option<BlueTime>
 #[derive(Debug, Clone, Default)]
 pub struct State {
     params: Option<Params>,
+    /// `/fwcapture <seconds>`: the cycle, over whatever else applies.
+    seconds_override: Option<i64>,
     /// Keyed by `(site_id, item_id)`; a complex with no point object keeps
     /// one point under item 0.
     points: BTreeMap<(i64, i64), Point>,
@@ -343,7 +368,11 @@ pub fn slim_extras(reg: &Registry, ids: &[i64]) -> crate::slim_extra::SlimExtras
     ids.iter()
         .filter_map(|id| {
             let p = st.points.values().find(|p| p.item_id == Some(*id))?;
-            let params = params_for(reg, crate::site::object(reg, *id).map(|(o, _)| o.type_id));
+            let params = params_for(
+                reg,
+                crate::site::object(reg, *id).map(|(o, _)| o.type_id),
+                false,
+            );
             let mut v = vec![(
                 KEY_FACTION_INFO,
                 PyValue::Tuple(vec![PyValue::Int(p.attacker), PyValue::Int(p.occupier)]),
@@ -358,11 +387,15 @@ pub fn slim_extras(reg: &Registry, ids: &[i64]) -> crate::slim_extra::SlimExtras
 
 /// The pilots near a point: `(character, faction)` for each enlisted pilot
 /// in the system within `range` of `position` whose hull may capture, and
-/// the factions of those whose hull blocks.
+/// the factions of those whose hull blocks. The range is a **surface**
+/// distance, strictly inside, as the client's `GetBallsInRange` tests it
+/// ([V] `:87`; michelle `GetSurfaceDist < range`, [I]): the centre distance
+/// less the point's radius and the ship's.
 fn near(
     reg: &Registry,
     system: i64,
     position: [f64; 3],
+    point_radius: f64,
     params: &Params,
     now: BlueTime,
 ) -> (Vec<i64>, Vec<i64>) {
@@ -371,24 +404,27 @@ fn near(
         let Some(p) = reg.roster().get(c) else {
             continue;
         };
-        if crate::space_state::distance(p.motion.position, position) > params.range {
+        let hull = reg.pilot(c).map(|x| x.ship_type_id).unwrap_or(0);
+        let ship_radius = f64::from(crate::destiny::hull::of_in(reg.content(), hull).radius);
+        let surface =
+            crate::space_state::distance(p.motion.position, position) - point_radius - ship_radius;
+        if surface >= params.range {
             continue;
         }
         let Some(f) = crate::service::facwar_mgr::my_faction(reg, c, now) else {
             continue;
         };
-        let hull = reg.pilot(c).map(|x| x.ship_type_id).unwrap_or(0);
         let can = params
             .capturing_list
             .and_then(|l| in_list(reg, l, hull))
             .unwrap_or_else(|| params.capturing.as_ref().is_none_or(|s| s.contains(&hull)));
-        let blocks = params
-            .blocking_list
-            .and_then(|l| in_list(reg, l, hull))
-            .unwrap_or_else(|| params.blocking.contains(&hull));
         if can {
             capturing.push(f);
-        } else if blocks {
+        } else if params
+            .blocking_list
+            .and_then(|l| in_list(reg, l, hull))
+            .unwrap_or_else(|| params.blocking.contains(&hull))
+        {
             blocking.push(f);
         }
     }
@@ -397,7 +433,8 @@ fn near(
 
 // **[A]** NPC blockers are not seen: the client counts NPC items in range by
 // their `ownerID` (`:86-88`, `:114-118`), `near` sees only enlisted pilots.
-// Moot while no blocking list is set (the assumed rule has none). Falsified by a capture point type whose real
+// Live now that a row can name a blocking list: a list holding an NPC hull
+// never blocks here. Falsified by a capture point type whose real
 // blocking list holds an NPC hull.
 
 /// **Interim rule for an empty complex [A].** 3707965's FW complexes carry no
@@ -455,33 +492,57 @@ pub(crate) fn push_slim(reg: &mut Registry, item: i64) {
     );
 }
 
-/// `/fwcapture [<seconds> | reset]`: show or set the capture cycle (GM; the
-/// client-CI scenario shortens it). Keeps the other [`assumed`] values.
+/// `/fwcapture [<seconds> | reset]`: show the effective capture parameters,
+/// or set the cycle (GM; the client-CI scenario shortens it). The seconds
+/// override only the cycle, over the table row or the [`assumed`] values.
 pub fn slash(
     w: &mut Registry,
     _actor: Option<i64>,
     words: &[&str],
 ) -> Result<PyValue, crate::service::ServiceError> {
     let say = |s: &str| Ok(crate::pyutil::bstr(s));
-    let st = w.ext_mut::<crate::facwar::Facwar>().capture_mut();
     match words {
         [] => {
-            let p = st.params();
-            say(&format!(
-                "capture cycle {} s, {} point(s), range {} m, looping {}",
-                p.seconds, p.point_value, p.range, p.looping
-            ))
+            let line = |label: String, p: &Params| {
+                format!(
+                    "{label}: {} s, {} point(s), range {} m, looping {}",
+                    p.seconds, p.point_value, p.range, p.looping
+                )
+            };
+            let types: Vec<i64> = w
+                .content()
+                .try_get::<crate::facwar::Table>()
+                .map(|t| t.capture_point_types())
+                .unwrap_or_default();
+            let over = w
+                .ext::<crate::facwar::Facwar>()
+                .capture()
+                .seconds_override
+                .map_or("no seconds override".to_owned(), |s| {
+                    format!("seconds override {s}")
+                });
+            let mut lines = vec![over];
+            if types.is_empty() {
+                lines.push(line("assumed".to_owned(), &params_for(w, None, false)));
+            } else {
+                lines.push("table rows apply".to_owned());
+                for t in types.iter().take(8) {
+                    lines.push(line(format!("type {t}"), &params_for(w, Some(*t), true)));
+                }
+            }
+            say(&lines.join("; "))
         }
         ["reset"] => {
+            let st = w.ext_mut::<crate::facwar::Facwar>().capture_mut();
             st.params = None;
-            say("capture params back to the assumed values")
+            st.seconds_override = None;
+            say("capture params back to the table values (or assumed)")
         }
         [n] => match n.parse::<i64>() {
             Ok(secs) if (1..=86_400).contains(&secs) => {
-                st.set_params(Params {
-                    seconds: secs,
-                    ..assumed()
-                });
+                w.ext_mut::<crate::facwar::Facwar>()
+                    .capture_mut()
+                    .seconds_override = Some(secs);
                 say(&format!("capture cycle is now {secs} s"))
             }
             _ => say("seconds are 1 to 86400"),
@@ -491,7 +552,7 @@ pub fn slash(
 }
 
 /// A live complex: site, system, dungeon, anchor, and its point object.
-type Live = (i64, i64, i64, [f64; 3], Vec<(i64, [f64; 3], i64)>);
+type Live = (i64, i64, i64, [f64; 3], Vec<(i64, [f64; 3], i64, f64)>);
 
 /// **The stage** (called from `facwar::tick`): every [`CHECK_EVERY`], each
 /// live FW complex in a warzone system has its point judged and advanced;
@@ -518,7 +579,7 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                     .objects
                     .iter()
                     .filter(|o| npc.is_some_and(|n| n.has_component(o.type_id, COMPONENT)))
-                    .map(|o| (o.item_id, o.position, o.type_id))
+                    .map(|o| (o.item_id, o.position, o.type_id, o.radius))
                     .collect();
                 (i.site_id, i.system, i.dungeon_id, i.anchor, obj)
             })
@@ -568,15 +629,18 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
         }
         // One point per capture-point object; a complex without one is judged
         // at its anchor under item 0.
-        let targets: Vec<(Option<i64>, [f64; 3], Option<i64>)> = if objs.is_empty() {
-            vec![(None, anchor, None)]
+        type Target = (Option<i64>, [f64; 3], Option<i64>, f64);
+        let targets: Vec<Target> = if objs.is_empty() {
+            vec![(None, anchor, None, 0.0)]
         } else {
-            objs.iter().map(|o| (Some(o.0), o.1, Some(o.2))).collect()
+            objs.iter()
+                .map(|o| (Some(o.0), o.1, Some(o.2), o.3))
+                .collect()
         };
-        for (item, position, kind) in targets {
+        for (item, position, kind, radius) in targets {
             let empty = objs.is_empty() && crate::site_spawn::is_empty_pocket(reg, site_id);
-            let params = interim_params(&params_for(reg, kind), empty);
-            let (capturing, blocking) = near(reg, system, position, &params, ft);
+            let params = interim_params(&params_for(reg, kind, battlefield), empty);
+            let (capturing, blocking) = near(reg, system, position, radius, &params, ft);
             let (phase, holder) = judge(o.attacker, o.occupier, &capturing, &blocking);
             let (awards, before, after) = {
                 let st = reg.ext_mut::<crate::facwar::Facwar>().capture_mut();
@@ -629,8 +693,13 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                         // value and never completes the slot: the board's win
                         // does (#8) **[A]**.
                         if battlefield {
-                            let value = params_for(reg, kind).point_value;
-                            crate::fw_scoreboard::credit(reg, site_id, holder, value, ft);
+                            crate::fw_scoreboard::credit(
+                                reg,
+                                site_id,
+                                holder,
+                                params.point_value,
+                                ft,
+                            );
                         } else if crate::population::complete(reg, system, site_id, ft) {
                             // Paid only when the slot was still live to take.
                             crate::fw_lp::on_complete(reg, site_id, system, anchor, ft);
@@ -923,6 +992,8 @@ mod tests {
     /// Invented typelist ids for the gating tests.
     const LIST_YES: i64 = 990_201;
     const LIST_NO: i64 = 990_202;
+    /// The typedata fixture's frigate: a hull the type data knows.
+    const HULL: i64 = 990_000_001;
 
     fn row() -> crate::facwar::CapturePointRow {
         crate::facwar::CapturePointRow {
@@ -939,7 +1010,7 @@ mod tests {
     fn the_tables_values_are_used_and_a_missing_row_falls_back() {
         use crate::facwar::tests as fx;
         let reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
-        let p = params_for(&reg, Some(CP_TYPE));
+        let p = params_for(&reg, Some(CP_TYPE), true);
         assert_eq!(
             (p.seconds, p.range, p.point_value, p.looping),
             (45, 7_000.0, 2, false)
@@ -948,15 +1019,19 @@ mod tests {
             (p.capturing_list, p.blocking_list),
             (Some(LIST_YES), Some(LIST_NO))
         );
-        assert_eq!(params_for(&reg, Some(CP_TYPE + 1)), assumed(), "no row");
-        assert_eq!(params_for(&reg, None), assumed(), "no object");
+        assert_eq!(
+            params_for(&reg, Some(CP_TYPE + 1), true),
+            assumed(),
+            "no row"
+        );
+        assert_eq!(params_for(&reg, None, true), assumed(), "no object");
         // An empty field keeps its own assumed value.
         let part = crate::facwar::CapturePointRow {
             seconds: Some(5),
             ..Default::default()
         };
         let reg = fx::world_with_points([(CP_TYPE, part)].into(), |_, _, _, _| ());
-        let p = params_for(&reg, Some(CP_TYPE));
+        let p = params_for(&reg, Some(CP_TYPE), true);
         assert_eq!(
             (p.seconds, p.range, p.looping),
             (5, assumed().range, assumed().looping)
@@ -964,7 +1039,19 @@ mod tests {
     }
 
     #[test]
-    fn a_gm_override_wins_over_the_table() {
+    fn a_rows_looping_counts_at_a_battlefield_only() {
+        use crate::facwar::tests as fx;
+        let reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
+        assert!(!params_for(&reg, Some(CP_TYPE), true).looping);
+        assert_eq!(
+            params_for(&reg, Some(CP_TYPE), false).looping,
+            assumed().looping,
+            "a complex keeps the assumed behaviour"
+        );
+    }
+
+    #[test]
+    fn a_full_gm_override_wins_over_the_table() {
         use crate::facwar::tests as fx;
         let mut reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
         let over = Params {
@@ -974,7 +1061,30 @@ mod tests {
         reg.ext_mut::<crate::facwar::Facwar>()
             .capture_mut()
             .set_params(over.clone());
-        assert_eq!(params_for(&reg, Some(CP_TYPE)), over);
+        assert_eq!(params_for(&reg, Some(CP_TYPE), true), over);
+    }
+
+    #[test]
+    fn fwcapture_seconds_override_only_the_cycle_on_top_of_the_row() {
+        use crate::facwar::tests as fx;
+        let mut reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
+        slash(&mut reg, None, &["9"]).expect("sets");
+        let p = params_for(&reg, Some(CP_TYPE), true);
+        assert_eq!(
+            (p.seconds, p.range, p.point_value),
+            (9, 7_000.0, 2),
+            "the row's other values stay"
+        );
+        let shown = slash(&mut reg, None, &[]).expect("shows");
+        let PyValue::Bytes(bytes) = shown else {
+            panic!("the slash answers bytes");
+        };
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(text.contains("seconds override 9"), "{text}");
+        assert!(text.contains("table rows apply"), "{text}");
+        assert!(text.contains(&format!("type {CP_TYPE}")), "{text}");
+        slash(&mut reg, None, &["reset"]).expect("resets");
+        assert_eq!(params_for(&reg, Some(CP_TYPE), true).seconds, 45);
     }
 
     fn list_of(hull: i64) -> crate::dungeon_data::TypeList {
@@ -984,81 +1094,88 @@ mod tests {
         }
     }
 
-    /// One enlisted pilot of side B at the point, hull `hull`, and the
-    /// factions `near` sees there when the two lists hold `yes` and `no`.
-    fn seen_with(yes: i64, no: i64) -> (Vec<i64>, Vec<i64>) {
+    /// A world whose pilot ME flies [`HULL`], with the two lists holding
+    /// `yes` and `no`.
+    fn listed_world(yes: i64, no: i64) -> Registry {
         use crate::facwar::tests as fx;
         let mut reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, dun, _, _| {
             dun.typelists.insert(LIST_YES, list_of(yes));
             dun.typelists.insert(LIST_NO, list_of(no));
         });
+        reg.character_mut(fx::ME).expect("a pilot").ship_type_id = HULL;
         let now = reg.world().birth;
         crate::service::facwar_mgr::enlist(&mut reg, fx::ME, fx::B, now).expect("enlists");
         put_pilot(&mut reg, [0.0; 3]);
-        let p = params_for(&reg, Some(CP_TYPE));
-        near(&reg, fx::S1, [0.0; 3], &p, now)
+        reg
+    }
+
+    fn seen_with(yes: i64, no: i64) -> (Vec<i64>, Vec<i64>) {
+        use crate::facwar::tests as fx;
+        let reg = listed_world(yes, no);
+        let p = params_for(&reg, Some(CP_TYPE), true);
+        near(&reg, fx::S1, [0.0; 3], 0.0, &p, reg.world().birth)
     }
 
     #[test]
     fn the_capturing_and_blocking_lists_say_who_captures_and_who_blocks() {
         use crate::facwar::tests as fx;
-        let reg = fx::world();
-        let hull = reg.pilot(fx::ME).expect("a pilot").ship_type_id;
-        let other = hull + 1;
+        let other = HULL + 1;
         assert_eq!(
-            seen_with(hull, other),
+            seen_with(HULL, other),
             (vec![fx::B], vec![]),
             "in the capturing list"
         );
         assert_eq!(
-            seen_with(other, hull),
+            seen_with(other, HULL),
             (vec![], vec![fx::B]),
             "in the blocking list"
         );
         assert_eq!(seen_with(other, other), (vec![], vec![]), "in neither");
         assert_eq!(
-            seen_with(hull, hull),
+            seen_with(HULL, HULL),
             (vec![fx::B], vec![]),
             "the capturing list is asked first"
         );
     }
 
     #[test]
-    fn a_list_the_bundle_does_not_hold_leaves_the_assumed_rule() {
+    fn a_hull_the_type_data_lacks_is_in_no_list() {
         use crate::facwar::tests as fx;
-        // The row names lists, the dungeon table has none: any ship captures.
-        let mut reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
-        let now = reg.world().birth;
-        crate::service::facwar_mgr::enlist(&mut reg, fx::ME, fx::B, now).expect("enlists");
-        put_pilot(&mut reg, [0.0; 3]);
-        let p = params_for(&reg, Some(CP_TYPE));
-        assert_eq!(near(&reg, fx::S1, [0.0; 3], &p, now), (vec![fx::B], vec![]));
+        let mut reg = listed_world(HULL, HULL);
+        reg.character_mut(fx::ME).expect("a pilot").ship_type_id = HULL + 500;
+        assert_eq!(in_list(&reg, LIST_YES, HULL + 500), Some(false));
+        assert_eq!(in_list(&reg, LIST_YES, HULL), Some(true));
+        assert_eq!(in_list(&reg, 1, HULL), None, "a list the bundle lacks");
     }
 
     #[test]
-    fn the_tables_range_decides_who_is_near() {
+    fn a_row_naming_lists_the_bundle_lacks_does_not_panic_and_keeps_the_ids() {
+        use crate::facwar::tests as fx;
+        let reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
+        let p = params_for(&reg, Some(CP_TYPE), true);
+        assert_eq!(p.capturing_list, Some(LIST_YES));
+        assert_eq!(p.blocking_list, Some(LIST_NO));
+    }
+
+    #[test]
+    fn the_range_is_a_strict_surface_distance() {
         use crate::facwar::tests as fx;
         let mut reg = fx::world_with_points([(CP_TYPE, row())].into(), |_, _, _, _| ());
+        reg.character_mut(fx::ME).expect("a pilot").ship_type_id = HULL;
         let now = reg.world().birth;
         crate::service::facwar_mgr::enlist(&mut reg, fx::ME, fx::B, now).expect("enlists");
-        put_pilot(&mut reg, [6_000.0, 0.0, 0.0]);
-        let p = params_for(&reg, Some(CP_TYPE));
-        assert_eq!(
-            near(&reg, fx::S1, [0.0; 3], &p, now).0,
-            vec![fx::B],
-            "inside 7 km"
-        );
-        let assumed_p = params_for(&reg, None);
-        assert_eq!(near(&reg, fx::S1, [0.0; 3], &assumed_p, now).0.len(), 1);
-        put_pilot(&mut reg, [8_000.0, 0.0, 0.0]);
-        assert!(
-            near(&reg, fx::S1, [0.0; 3], &p, now).0.is_empty(),
-            "outside 7 km"
-        );
-        assert_eq!(
-            near(&reg, fx::S1, [0.0; 3], &assumed_p, now).0.len(),
-            1,
-            "the assumed 10 km would still count it"
-        );
+        let p = params_for(&reg, Some(CP_TYPE), true);
+        assert_eq!(p.range, 7_000.0);
+        let ship_r = f64::from(crate::destiny::hull::of_in(reg.content(), HULL).radius);
+        let point_r = 400.0;
+        let at = |d: f64, reg: &mut Registry| {
+            put_pilot(reg, [d, 0.0, 0.0]);
+            near(reg, fx::S1, [0.0; 3], point_r, &p, now).0
+        };
+        // Centre distance = range + both radii is the surface edge: out.
+        let edge = p.range + point_r + ship_r;
+        assert_eq!(at(edge - 1.0, &mut reg), vec![fx::B], "just inside");
+        assert!(at(edge, &mut reg).is_empty(), "exactly at the range: out");
+        assert!(at(edge + 1.0, &mut reg).is_empty(), "outside");
     }
 }

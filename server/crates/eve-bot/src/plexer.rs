@@ -315,11 +315,23 @@ pub const HOLD_SHARE: f64 = 0.5;
 /// it), or leaving before a cycle pays (raise it).
 pub const HOLD_FOR: Duration = Duration::from_secs(20 * 60);
 
-/// The capture range the bot plays by, metres: the server's own parameter
-/// ([`eve_server::fw_capture::assumed`] **[A]**, 10 km) until the
-/// component's attributes are extracted. The client does not send it.
+/// The assumed capture range, metres ([`eve_server::fw_capture::assumed`]
+/// **[A]**, 10 km): what stands where the bundle has no row.
 pub fn point_range() -> f64 {
     eve_server::fw_capture::assumed().range
+}
+
+/// The capture range of a point of `type_id`, metres, **surface to surface**
+/// (the client's `GetBallsInRange` tests surface distance): the bundle's row
+/// when `content` has one, else [`point_range`]. The client does not send it.
+pub fn range_for(content: Option<&eve_server::content::Content>, type_id: Option<i64>) -> f64 {
+    content
+        .and_then(|c| c.try_get::<eve_server::facwar::Table>())
+        .zip(type_id)
+        .and_then(|(t, ty)| t.capture_point_of(ty))
+        .and_then(|r| r.range)
+        .filter(|r| *r > 0)
+        .map_or_else(point_range, |r| r as f64)
 }
 
 /// A capture point on the grid, from its slim ([`crate::park::SlimInfo::capture`]).
@@ -332,9 +344,11 @@ pub struct PointView {
     pub occupier: i64,
     /// Centre distance from the bot, metres.
     pub distance_m: f64,
-    /// The point's own radius, metres (the range is tested centre to
-    /// centre, the orbit is surface to surface).
+    /// The point's own radius, metres (the range and the orbit are both
+    /// surface to surface).
     pub radius: f64,
+    /// The capture range, metres, surface to surface ([`range_for`]).
+    pub range: f64,
 }
 
 /// What the bot does about a capture point.
@@ -352,10 +366,11 @@ pub enum PointAct {
 
 /// The orbit distance to order, metres, **surface to surface** (the order's
 /// range is the client's `surfaceDist`): [`HOLD_SHARE`] of the point's
-/// range, less both radii, so the bot's centre stays inside the range
-/// (`fw_capture` tests centre separation against it).
-pub fn orbit_m(view: &PointView, ego_radius: f64) -> f64 {
-    (point_range() * HOLD_SHARE - view.radius - ego_radius).max(0.0)
+/// range, which is also a surface distance (the server's `near` and the
+/// client's `GetBallsInRange` both test surface distance), so the bot stays
+/// inside it.
+pub fn orbit_m(view: &PointView, _ego_radius: f64) -> f64 {
+    (view.range * HOLD_SHARE).max(0.0)
 }
 
 /// **What a plexer does about the capture point on its grid** (module
@@ -384,7 +399,7 @@ pub fn point_step(
         return PointAct::Leave;
     }
     let orbit_m = orbit_m(v, ego_radius);
-    if v.distance_m > point_range() {
+    if v.distance_m - v.radius - ego_radius >= v.range {
         return PointAct::Approach {
             point: v.id,
             orbit_m,
@@ -398,10 +413,12 @@ pub fn point_step(
 
 /// The humans within the point's range of it.
 fn enemies_at(view: &PointView, humans: &[Ball]) -> usize {
-    let range = point_range();
+    let range = view.range;
     humans
         .iter()
-        .filter(|h| eve_server::space_state::distance(h.position, view.position) <= range)
+        .filter(|h| {
+            eve_server::space_state::distance(h.position, view.position) - view.radius < range
+        })
         .count()
 }
 
@@ -1707,6 +1724,7 @@ mod tests {
             occupier,
             distance_m,
             radius: 300.0,
+            range: point_range(),
         }
     }
 

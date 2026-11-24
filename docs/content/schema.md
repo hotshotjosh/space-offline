@@ -3121,10 +3121,10 @@ A listed system whose own `faction_id` is not a militia of its warzone is logged
 | column | type | source and meaning |
 |---|---|---|
 | `type_id` | `i64` | a type whose `spacecomponentsbytype` row has `fwCapturePoint` |
-| `seconds` | `i64?` | `numberOfSeconds`: the client counts the bracket's countdown over it [V `spacecomponents/client/components/fwCapturePoint.py:54`] |
-| `range` | `i64?` | `range`, metres: `GetBallsInRange(itemID, range)` picks who counts [V `:87`] |
+| `seconds` | `i64?` | `numberOfSeconds`: the client counts the bracket's countdown over it [V `spacecomponents/client/components/fwCapturePoint.py:54`]; a value <= 0 is dropped with a log line |
+| `range` | `i64?` | `range`, metres: `GetBallsInRange(itemID, range)` picks who counts [V `:87`]; the server tests it as a strict surface distance [I]; a value <= 0 is dropped with a log line and the assumed one stands |
 | `point_value` | `i64?` | `pointValue`: the client's component does not read it; the server pays it per cycle [I] |
-| `looping` | `0`/`1`/empty | `looping`: not read by the client's component; the server repeats a looping point and ends a non-looping one [I] |
+| `looping` | `0`/`1`/empty | `looping`: not read by the client's component; the server uses it only at a battlefield (archetype 68) [A]; a complex keeps the assumed behaviour until a client run proves the meaning; a value outside 0 and 1 is a writer problem |
 | `capturing` | `i64?` | `capturingTypeListID`, a `types/typelists.tsv` id, not expanded: a ship whose type is in it, piloted and in a militia, is a capturing force [V `:92`, `:95-99`] |
 | `blocking` | `i64?` | `blockingTypeListID`, likewise: an item whose type is in it (and not in the capturing list) is a blocking force [V `:93`, `:100-102`] |
 

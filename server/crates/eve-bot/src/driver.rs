@@ -3788,6 +3788,10 @@ impl Bot {
                         ego.motion.position,
                     ),
                     radius: b.radius,
+                    range: crate::plexer::range_for(
+                        self.config.content.as_deref(),
+                        b.slim?.type_id,
+                    ),
                 })
             })
             .min_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
