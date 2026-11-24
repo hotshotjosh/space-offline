@@ -403,7 +403,12 @@ End-to-end confirmation from a real 3619879 boot log `[V]`:
 `%LOCALAPPDATA%\CCP\EVE\<utillib.GetClientUniqueFolderName()>\`, where that
 name is `blue.paths.ResolvePath('app:/')` lowercased with separators replaced
 `[V]` — the real directory on this machine is
-`c_ccp_eve_tq-offline_tranquility`. **Launch from a different CWD and, if the
+`c_ccp_eve_tq-offline_tranquility`. The suffix after the install folder name is the
+server name (`GetServerName()` takes the `/server:` argument over start.ini's `server`),
+lowercased, spaces to `_`, a `*.servers.eveonline.com` name cut to its first label, so a
+client started with `/server:127.0.0.1` uses `c_ccp_eve_tq-offline_127.0.0.1` `[V]`
+(decompiled `utillib.GetClientUniqueFolderName` / `GetServerNameForSettingsFolder`, build
+3739102). **Launch from a different CWD and, if the
 manifest somehow passes, you silently get a different settings and cache
 namespace** and the client looks factory-reset.
 

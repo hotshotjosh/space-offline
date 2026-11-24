@@ -1082,6 +1082,45 @@ class WinePrefs(unittest.TestCase):
             self.assertEqual(ep.prefs_targets(str(client), None), ([p], None))
 
 
+class ServerSettingsFolder(Base):
+    """`--server` picks the `<folder>_<suffix>` settings folder the client reads."""
+
+    def server_prefs(self, suffix):
+        return self.drive_c / "users" / "steamuser" / "AppData" / "Local" / "CCP" / "EVE" / f"c_ccp_eve_fake-offline_{suffix}" / "settings" / "prefs.ini"
+
+    def test_suffix_rule(self):
+        for name, want in (("Tranquility", "tranquility"), ("127.0.0.1", "127.0.0.1"),
+                           ("My Server", "my_server"), ("tranquility.servers.eveonline.com", "tranquility")):
+            self.assertEqual(ep.settings_suffix(name), want)
+
+    def test_apply_with_server_creates_that_servers_prefs(self):
+        code, out = self.cmd("apply", "--server", "127.0.0.1")
+        self.assertEqual(code, 0, out)
+        p = self.server_prefs("127.0.0.1")
+        self.assertEqual(p.read_bytes(), b"breakpadUpload=0\r\nsentry_io_dsn=http://0@127.0.0.1:9/0\r\n")
+        # the tranquility file is not touched
+        self.assertEqual(self.prefs.read_bytes(), b"windowed=1\r\nbreakpadUpload=1")
+        self.assertEqual(self.cmd("verify", "--server", "127.0.0.1")[0], 0)
+
+    def test_verify_with_server_fails_when_only_tranquility_has_prefs(self):
+        self.assertEqual(self.cmd("apply")[0], 0)
+        self.assertEqual(self.cmd("verify")[0], 0)
+        code, out = self.cmd("verify", "--server", "127.0.0.1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("no prefs.ini found", out)
+
+    def test_bad_server_is_refused(self):
+        self.assertEqual(self.cmd("verify", "--server", "a b;c")[0], 2)
+
+    def test_resfiles_only_gap_is_incomplete(self):
+        self.assertEqual(self.cmd("apply")[0], 0)
+        (self.client.parent / "ResFiles" / "ab" / "x").unlink()
+        code, out = self.cmd("verify")
+        self.assertEqual(code, 1)
+        self.assertIn("verify: INCOMPLETE", out)
+        self.assertNotIn("NOT APPLIED", out)
+
+
 class AuthorRehash(unittest.TestCase):
     """locate --merge rehashes B0 and P0 (invented bytes only)."""
 

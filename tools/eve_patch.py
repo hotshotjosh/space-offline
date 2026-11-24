@@ -8,10 +8,10 @@ client bytes. O17: the recipes are per build, one JSON manifest per build in
 [V]/[I] marks, is `out/research/R-PATCH.md`; the operator doc is
 `docs/guides/patcher.md`.
 
-    python3 -I tools/eve_patch.py status     --client DIR
-    python3 -I tools/eve_patch.py verify     --client DIR
-    python3 -I tools/eve_patch.py plan       --client DIR
-    python3 -I tools/eve_patch.py apply      --client DIR [--tier A,P,B,C] [--only B0,B1]
+    python3 -I tools/eve_patch.py status     --client DIR [--server ADDR]
+    python3 -I tools/eve_patch.py verify     --client DIR [--server ADDR]
+    python3 -I tools/eve_patch.py plan       --client DIR [--server ADDR]
+    python3 -I tools/eve_patch.py apply      --client DIR [--server ADDR] [--tier A,P,B,C] [--only B0,B1]
     python3 -I tools/eve_patch.py revert     --client DIR
     python3 -I tools/eve_patch.py launch-env --client DIR [--server ADDR] [--json]
                                              [--check-args "ARGS"]
@@ -718,8 +718,34 @@ def prefs_folder(client):
     return Path(*parts[: i + 1]), folder
 
 
-def prefs_targets(client, explicit):
-    """(existing prefs.ini paths, a path to create when there are none)."""
+def settings_suffix(server):
+    """The client's settings-folder suffix for a server name.
+
+    [V] decompiled utillib.GetClientUniqueFolderName / GetServerNameForSettingsFolder,
+    build 3739102: lowercased, spaces -> `_`, a `*.servers.eveonline.com` name cut
+    to its first label.
+    """
+    name = server.strip().lower().replace(" ", "_")
+    if name.endswith(".servers.eveonline.com"):
+        name = name.split(".", 1)[0]
+    return name
+
+
+def check_server(server):
+    if not re.match(r"^[A-Za-z0-9.\-]+$", server):
+        raise Refuse(f"--server {server!r}: a host name or IPv4 address")
+    return server
+
+
+def prefs_targets(client, explicit, server=None):
+    """(existing prefs.ini paths, a path to create when there are none).
+
+    With `server`, only that server's `<folder>_<suffix>` is looked at; without,
+    any `<folder>_*` is found and `_tranquility` is created.
+    """
+    suffix = settings_suffix(server) if server else None
+    pat_suffix = glob.escape(suffix) if suffix else "*"
+    new_suffix = suffix or "tranquility"
     if explicit:
         return [Path(p) for p in explicit if Path(p).exists()], next(
             (Path(p) for p in explicit if not Path(p).exists()), None
@@ -727,18 +753,18 @@ def prefs_targets(client, explicit):
     win = prefs_windows(client)
     if win is not None:
         root, folder = win
-        found = sorted(Path(p) for p in glob.glob(str(root / (glob.escape(folder) + "_*") / "settings*" / "prefs.ini")))
-        create = None if found else root / f"{folder}_tranquility" / "settings" / "prefs.ini"
+        found = sorted(Path(p) for p in glob.glob(str(root / (glob.escape(folder) + "_" + pat_suffix) / "settings*" / "prefs.ini")))
+        create = None if found else root / f"{folder}_{new_suffix}" / "settings" / "prefs.ini"
         return found, create
     drive_c, folder = prefs_folder(client)
     if drive_c is None:
         return [], None
-    pat = str(drive_c / "users" / "*" / "AppData" / "Local" / "CCP" / "EVE" / f"{glob.escape(folder)}_*" / "settings*" / "prefs.ini")
+    pat = str(drive_c / "users" / "*" / "AppData" / "Local" / "CCP" / "EVE" / f"{glob.escape(folder)}_{pat_suffix}" / "settings*" / "prefs.ini")
     found = sorted(Path(p) for p in glob.glob(pat))
     create = None
     user = None if found else wine_user(drive_c)
     if user is not None:
-        create = drive_c / "users" / user / "AppData" / "Local" / "CCP" / "EVE" / f"{folder}_tranquility" / "settings" / "prefs.ini"
+        create = drive_c / "users" / user / "AppData" / "Local" / "CCP" / "EVE" / f"{folder}_{new_suffix}" / "settings" / "prefs.ini"
     return found, create
 
 
@@ -848,6 +874,7 @@ class Ctx:
 def open_ctx(args, need_client=True):
     c = Ctx()
     c.args = args
+    c.server = check_server(args.server) if getattr(args, "server", None) else None
     client = args.client or os.environ.get("EVE_CLIENT") or None
     c.client = Path(client).expanduser().resolve() if client else None
     if need_client and c.client is None:
@@ -940,7 +967,7 @@ def make_plan(c, st):
         actions.append(("patch", rel))
         planned.add(rel)
     if "P" in c.tiers and c.m.get("prefs", {}).get("set"):
-        found, create = prefs_targets(c.client, c.args.prefs)
+        found, create = prefs_targets(c.client, c.args.prefs, c.server)
         for p in found:
             data = p.read_bytes()
             ch = {k: v for k, v in c.m["prefs"]["set"].items() if prefs_get(data, k) != v}
@@ -988,7 +1015,7 @@ def check_prefs(c):
     """(ok, lines) for the P tier."""
     if not c.m.get("prefs"):
         return True, []
-    found, _ = prefs_targets(c.client, c.args.prefs)
+    found, _ = prefs_targets(c.client, c.args.prefs, c.server)
     if not found:
         return False, ["prefs: no prefs.ini found for this install (run apply; if apply cannot place it, pass --prefs PATH to both)"]
     ok, lines = True, []
@@ -1075,13 +1102,18 @@ def do_verify(c, st=None, out=print):
             out(("ok   " if ln.endswith(": ok") else "FAIL ") + ln)
         if not ok:
             code = max(code, 1)
+    res_only = False
     if not c.args.no_resfiles:
         ok, lines = check_resfiles(c)
         for ln in lines:
             out(("ok   " if ln.endswith("present") else "FAIL ") + ln)
         if not ok:
+            res_only = code == 0
             code = max(code, 1)
-    out(f"verify: {['ok', 'NOT APPLIED', 'UNKNOWN FILES'][code]} (build {c.build})")
+    if res_only:
+        out(f"verify: INCOMPLETE (resfiles missing: run the launcher's \"download all resources\") (build {c.build})")
+    else:
+        out(f"verify: {['ok', 'NOT APPLIED', 'UNKNOWN FILES'][code]} (build {c.build})")
     return code
 
 
@@ -1109,7 +1141,7 @@ def cmd_status(c):
         print(f"{s['id']:<3} {s['tier']}  {s['state']:<8} backup {s['backup']:<7} {rel}{extra}")
         if tmp_of(s["path"]).exists():
             print(f"         stale {TMP} present (removed by the next apply/revert)")
-    found, create = prefs_targets(c.client, c.args.prefs)
+    found, create = prefs_targets(c.client, c.args.prefs, c.server)
     if not found:
         print(f"prefs:    none found{f' (apply creates {create})' if create else ''}")
     for p in found:
@@ -1239,7 +1271,7 @@ def cmd_revert(c):
         p = c.client / rel
         atomic_write(p, backup_of(p).read_bytes(), e["sha256_stock"])
         print(f"restored {rel} from {rel}{BACKUP}")
-    found, _ = prefs_targets(c.client, c.args.prefs)
+    found, _ = prefs_targets(c.client, c.args.prefs, c.server)
     ours = c.m.get("prefs", {}).get("set", {})
     for p in found:
         prior = p.with_name(p.name + PRIOR)
@@ -1284,8 +1316,7 @@ def forbidden_arg(arg, forbid):
 
 
 def launch_block(m, server):
-    if not re.match(r"^[A-Za-z0-9.\-]+$", server):
-        raise Refuse(f"--server {server!r}: a host name or IPv4 address")
+    check_server(server)
     launch = m["launch"]
     env = {k: v.replace("{server}", server) for k, v in launch.get("env", {}).items()}
     return {"build": m["build"], "server": server, "env": env,
@@ -1305,6 +1336,7 @@ def cmd_launch_env(c):
         print(json.dumps(blk, indent=1))
         return 0
     print(f"# eve_patch launch-env: build {blk['build']}, server {server}")
+    print(f"# pass the same --server {server} to apply and verify: the client reads its prefs.ini from a folder named for the server")
     print("# 'env K=V' must be set exactly; 'arg X' must be passed; 'forbid-arg X' must never be.")
     for k, v in blk["env"].items():
         print(f"env {k}={v}")
@@ -1337,7 +1369,7 @@ def parser():
     ap.add_argument("--resfiles", help="the ResFiles directory (default: ../ResFiles beside the install)")
     ap.add_argument("--no-resfiles", action="store_true", help="skip the ResFiles completeness check")
     ap.add_argument("--allow-real", action="store_true", help="allow writing an install named tq")
-    ap.add_argument("--server", help="launch-env: our server address (default from the manifest)")
+    ap.add_argument("--server", help="our server address: launch-env (default from the manifest); apply/verify/plan/status pick that server's settings folder (default tranquility)")
     ap.add_argument("--json", action="store_true", help="launch-env: JSON instead of lines")
     ap.add_argument("--check-args", help="launch-env: exit 3 if this argument string holds a forbidden arg")
     return ap

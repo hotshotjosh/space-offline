@@ -126,6 +126,20 @@ path>_*/settings*/prefs.ini`. On Windows (an install on a drive such as
 the drive letter in front of the same lowercased path. `--prefs PATH` always
 wins. The Windows rule is a unit test and has not met a real Windows install.
 
+**`--server ADDR`: the folder the client really reads.** The settings folder is
+`<install folder name>_<server name>`, and a client started with `/server:ADDR` uses
+`ADDR` there, not `tranquility` `[V]` (decompiled `utillib.GetClientUniqueFolderName` /
+`GetServerNameForSettingsFolder`, build 3739102: the name lowercased, spaces to `_`, a
+`*.servers.eveonline.com` name cut to its first label). So a player who launches with
+`/server:127.0.0.1` needs `apply --server 127.0.0.1` and `verify --server 127.0.0.1`
+(`plan` and `status` take it too); `launch-env --server ADDR` prints a reminder. With
+`--server`, prefs.ini is found, or created, only in that server's folder, and `verify`
+fails when it is missing or lacks the keys, even if a `_tranquility` one passes. Without
+`--server` nothing changes: any `<folder>_*` is found and `_tranquility` is created.
+
+`verify` ends `INCOMPLETE` (exit 1) when every patch is applied and only ResFiles rows
+are missing: run the launcher's "download all resources".
+
 The patcher refuses in these cases:
 
 - an install named `tq` (the live one), unless you pass `--allow-real`;
