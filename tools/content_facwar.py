@@ -1,6 +1,6 @@
 """The `facwar` content section: the client's warzone territory list (FW-3, #99).
 
-`handback/r-fw/report.md` §4. Writes three bundle files:
+`handback/r-fw/report.md` §4. Writes four bundle files:
 
     facwar/systems.tsv   `system_id warzone_id`, one row per system the client
                          draws as warzone territory
@@ -17,6 +17,14 @@
                          `occupierWinsThreshold`), the sign kept, empty when
                          the component leaves one out [V `findings/pyd-schemas.tsv`:
                          struct fwScoreboard, two optional i32].
+    facwar/capture_points.tsv
+                         `type_id seconds range point_value looping capturing
+                         blocking` (#75), one row per type whose
+                         `spacecomponentsbytype` row has an `fwCapturePoint`
+                         component: its attributes, `looping` as 1 or 0, the
+                         two list columns the `typelist` ids the client keeps
+                         (`capturingTypeListID`, `blockingTypeListID`); empty
+                         when absent [V struct fwCapturePoint].
 
 The source is `warzonespositiondata.fsdbinary` [V, R-FW §2]:
 `{warzoneID: {systems: {ssid: {solarSystemId, isVisible, territorySprite,
@@ -43,6 +51,20 @@ SOURCES = ["res:/staticdata/warzonespositiondata.fsdbinary"]
 SCOREBOARD_HEADER = ("type_id", "attacker_wins", "occupier_wins")
 SCOREBOARD_SOURCES = ["res:/staticdata/spacecomponentsbytype.fsdbinary"]
 SCOREBOARD_COMPONENT = "fwScoreboard"
+
+CAPTURE_HEADER = ("type_id", "seconds", "range", "point_value", "looping",
+                  "capturing", "blocking")
+CAPTURE_SOURCES = ["res:/staticdata/spacecomponentsbytype.fsdbinary"]
+CAPTURE_COMPONENT = "fwCapturePoint"
+#: Column -> the struct field it is read from [V `findings/pyd-schemas.tsv`
+#: struct:fwCapturePoint: six fields, all i32 but `looping` (u8)]. The
+#: client reads `numberOfSeconds` (`fwCapturePoint.py:54`), `range` (`:87`),
+#: `capturingTypeListID` (`:92`) and `blockingTypeListID` (`:93`) from the
+#: component's attributes; the two list ids name `typelist` rows.
+CAPTURE_FIELDS = (("seconds", "numberOfSeconds"), ("range", "range"),
+                  ("point_value", "pointValue"), ("looping", "looping"),
+                  ("capturing", "capturingTypeListID"),
+                  ("blocking", "blockingTypeListID"))
 
 MAX_LP_HEADER = ("group_id", "max_lp")
 MAX_LP_SOURCES = ["pyc:eve/common/lib/appConst.pyc", "pyc:inventorycommon/const.pyc"]
@@ -181,6 +203,42 @@ def _scoreboards(ctx):
     return derive_scoreboards(components)
 
 
+def derive_capture_points(components):
+    """`(rows, problems)` from `{type_id: {component: {attr: value}}}`.
+
+    A type is a capture point when it has the `fwCapturePoint` component.
+    Each column is an int (`looping` a bool, written 1 or 0), empty when the
+    component leaves the field out. The two list columns are `typelist` ids
+    as the client stores them, not expanded. A value of the wrong kind is a
+    problem and written empty."""
+    rows, problems = [], []
+    for tid in sorted(components):
+        comp = (components[tid] or {}).get(CAPTURE_COMPONENT)
+        if comp is None:
+            continue
+        vals = []
+        for col, name in CAPTURE_FIELDS:
+            v = comp.get(name)
+            if col == "looping" and isinstance(v, bool):
+                v = int(v)
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+                problems.append("type %s: %s is %r, not an int" % (tid, name, v))
+                v = None
+            vals.append(v)
+        rows.append((int(tid),) + tuple(vals))
+    return rows, problems
+
+
+def _capture_points(ctx):
+    fsd = _content()._imp("fsd")  # noqa: SLF001
+    components = {}
+    for t, r in fsd.rows(ctx.client, "spacecomponentsbytype").items():
+        r = dict(r)
+        if r.get(CAPTURE_COMPONENT) is not None:
+            components[t] = {CAPTURE_COMPONENT: dict(r[CAPTURE_COMPONENT])}
+    return derive_capture_points(components)
+
+
 def _content():
     if _HERE not in sys.path:
         sys.path.append(_HERE)
@@ -212,6 +270,11 @@ def section(ctx):
             raise ValueError("facwar: " + "; ".join(sb_problems[:20]))
         ctx.note("facwar/scoreboards.tsv: %d scoreboard types" % len(sb))
         out.append(("facwar/scoreboards.tsv", SCOREBOARD_HEADER, sb, SCOREBOARD_SOURCES))
+    cp, cp_problems = _capture_points(ctx)
+    if cp_problems:
+        raise ValueError("facwar: " + "; ".join(cp_problems[:20]))
+    ctx.note("facwar/capture_points.tsv: %d capture point types" % len(cp))
+    out.append(("facwar/capture_points.tsv", CAPTURE_HEADER, cp, CAPTURE_SOURCES))
     got = _max_lp()
     if got is None:
         ctx.note("facwar/max_lp.tsv: out/pyc is not unpacked, not written")
@@ -244,6 +307,12 @@ def check(ctx):
             if have_sb != [content.encode_row(r).split("\t") for r in sb]:
                 bad.append("facwar/scoreboards.tsv: differs from a fresh derive (%d vs %d rows)"
                            % (len(have_sb), len(sb)))
+    cp, cp_problems = _capture_points(ctx)
+    bad.extend(cp_problems)
+    have_cp = list(content.read_rows(ctx.path("facwar/capture_points.tsv")))
+    if have_cp != [content.encode_row(r).split("\t") for r in cp]:
+        bad.append("facwar/capture_points.tsv: differs from a fresh derive (%d vs %d rows)"
+                   % (len(have_cp), len(cp)))
     got_lp = _max_lp()
     if got_lp is not None:
         lp, lp_problems = got_lp

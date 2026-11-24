@@ -193,6 +193,7 @@ comment exactly as shown.
 | `facwar/systems.tsv` | FW-3 (`content_facwar.py`, the `facwar` section) | `facwar` (`facwar::Table`: the warzone territory list) |
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
 | `facwar/scoreboards.tsv` | #8 FW-7 (`content_facwar.py`) | `facwar` (`facwar::Table::scoreboard_of`: a battlefield scoreboard type's win thresholds) |
+| `facwar/capture_points.tsv` | #75 FW-7A (`content_facwar.py`) | `facwar` (`facwar::Table::capture_point_of`: a capture point type's cycle, range, value, looping and type lists) |
 | `mining/geodes.tsv` | L6A GEODES (`content_geodes.py`, the `geodes` section) | L6A (`eve-mod-econ` `geode`: the geode crate types) |
 | `mining/geode-candidates.tsv` | L6A GEODES (`content_geodes.py`) | the owner, to pick from; the server does not read it |
 | `proving/match_types.tsv` | #64 PG-1a (`content_proving.py`, the `proving` section) | #64 PG-1d (`proving::TABLE`) |
@@ -3106,6 +3107,26 @@ A listed system whose own `faction_id` is not a militia of its warzone is logged
 | `type_id` | `i64` | a type whose `spacecomponentsbytype` row has `fwScoreboard` |
 | `attacker_wins` | `i64?` | `attackerWinsThreshold`, sign kept; empty when the component leaves it out |
 | `occupier_wins` | `i64?` | `occupierWinsThreshold`, sign kept; empty when absent (the server reads the magnitude) |
+
+### `facwar/capture_points.tsv` (#75, FW-7A)
+
+- **Writer:** `tools/content_facwar.py`, the `facwar` section of `content.py`. Input: the client's `spacecomponentsbytype` table, the `fwCapturePoint` struct of each type [V `findings/pyd-schemas.tsv`: `blockingTypeListID`, `capturingTypeListID`, `numberOfSeconds`, `pointValue`, `range` (i32) and `looping` (u8)]. **Adding it needs a full bundle regeneration** (the manifest gains a file).
+- **Readers:** `facwar.rs` (`Table::capture_point_of`, read through the `facwar` table's `boxed_load`), `fw_capture::params_for`. Optional: with no file, a type with no row, or an empty field, the server uses `fw_capture::assumed` [A] for that value.
+- **Key:** `type_id`; sorted ascending.
+
+```
+#type_id	seconds	range	point_value	looping	capturing	blocking
+```
+
+| column | type | source and meaning |
+|---|---|---|
+| `type_id` | `i64` | a type whose `spacecomponentsbytype` row has `fwCapturePoint` |
+| `seconds` | `i64?` | `numberOfSeconds`: the client counts the bracket's countdown over it [V `spacecomponents/client/components/fwCapturePoint.py:54`] |
+| `range` | `i64?` | `range`, metres: `GetBallsInRange(itemID, range)` picks who counts [V `:87`] |
+| `point_value` | `i64?` | `pointValue`: the client's component does not read it; the server pays it per cycle [I] |
+| `looping` | `0`/`1`/empty | `looping`: not read by the client's component; the server repeats a looping point and ends a non-looping one [I] |
+| `capturing` | `i64?` | `capturingTypeListID`, a `types/typelists.tsv` id, not expanded: a ship whose type is in it, piloted and in a militia, is a capturing force [V `:92`, `:95-99`] |
+| `blocking` | `i64?` | `blockingTypeListID`, likewise: an item whose type is in it (and not in the capturing list) is a blocking force [V `:93`, `:100-102`] |
 
 ### `content/pochven/filaments.tsv`
 

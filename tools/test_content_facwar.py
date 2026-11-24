@@ -103,5 +103,33 @@ class Scoreboards(unittest.TestCase):
         self.assertEqual((rows, len(problems)), ([(990001, None, None)], 1))
 
 
+class CapturePoints(unittest.TestCase):
+    FULL = {"numberOfSeconds": 45, "range": 7000, "pointValue": 2,
+            "looping": 1, "capturingTypeListID": 990101,
+            "blockingTypeListID": 990102}
+
+    def test_a_type_with_the_component_is_a_row_in_column_order(self):
+        comps = {990001: {"fwCapturePoint": self.FULL},
+                 990002: {"fwScoreboard": {}}}
+        rows, problems = F.derive_capture_points(comps)
+        self.assertEqual((rows, problems),
+                         ([(990001, 45, 7000, 2, 1, 990101, 990102)], []))
+
+    def test_a_bool_looping_is_one_and_an_absent_field_is_empty(self):
+        comps = {990009: {"fwCapturePoint": {"looping": False, "range": 5}},
+                 990003: {"fwCapturePoint": {"looping": True}}}
+        rows, problems = F.derive_capture_points(comps)
+        self.assertEqual(rows, [(990003, None, None, None, 1, None, None),
+                                (990009, None, 5, None, 0, None, None)])
+        self.assertEqual(problems, [])
+        self.assertEqual(F._content().encode_row(rows[0]), "990003\t\t\t\t1\t\t")
+
+    def test_a_non_int_field_is_a_problem(self):
+        rows, problems = F.derive_capture_points(
+            {990001: {"fwCapturePoint": {"range": "far"}}})
+        self.assertEqual((rows, len(problems)),
+                         ([(990001, None, None, None, None, None, None)], 1))
+
+
 if __name__ == "__main__":
     unittest.main()
