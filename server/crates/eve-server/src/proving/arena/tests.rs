@@ -357,14 +357,16 @@ fn a_room_is_an_arena_by_its_centre_its_locators_and_no_aoe() {
 #[test]
 fn team_i_stands_at_locator_2i_and_members_two_km_apart() {
     let e = ENTRY_AT.to_vec();
+    let n = e.len();
     assert_eq!(spot_for(&e, 0, 0), e[0]);
-    assert_eq!(spot_for(&e, 1, 0), e[2], "two locators along");
-    assert_eq!(spot_for(&e, 2, 0), e[4]);
-    assert_eq!(spot_for(&e, 0, 1)[0], e[0][0] + 2_000.0);
-    // Past n/2 teams the circle is used again, shifted.
-    let lap = spot_for(&e, 3, 0);
-    assert_eq!(lap[0], e[1][0], "6 mod 5 is locator 1");
-    assert_ne!(lap[1], e[1][1], "and 5 km along y");
+    assert_eq!(spot_for(&e, 1, 0), e[TEAM_STRIDE % n], "a stride along");
+    assert_eq!(spot_for(&e, 2, 0), e[(2 * TEAM_STRIDE) % n]);
+    assert_eq!(spot_for(&e, 0, 1)[0], e[0][0] + MEMBER_STEP);
+    // Past the first lap the locators are used again, shifted.
+    let team = n / TEAM_STRIDE + 1;
+    let lap = spot_for(&e, team, 0);
+    assert_eq!(lap[0], e[(team * TEAM_STRIDE) % n][0]);
+    assert_ne!(lap[1], e[(team * TEAM_STRIDE) % n][1], "shifted along y");
 }
 
 fn fighter(out: Option<Out>, out_at: BlueTime) -> Fighter {
@@ -379,6 +381,9 @@ fn fighter(out: Option<Out>, out_at: BlueTime) -> Fighter {
         pod_home_at: None,
         pod_die_at: None,
         absent_since: None,
+        clocked: false,
+        pod_ship: 0,
+        session: None,
     }
 }
 
@@ -403,6 +408,8 @@ fn arena_of_teams(teams: Vec<Vec<Fighter>>) -> Arena {
         launched: true,
         expired: false,
         last_player_damage: 0,
+        starts_at: NOW + 18 * T,
+        site_warned: false,
     }
 }
 
@@ -470,10 +477,15 @@ fn two_pilots_share_the_highest_free_void_system_at_two_locators_apart() {
     let a = get(&reg, id).unwrap();
     assert_eq!(a.system, VOID[2], "the highest, the Abyss takes the lowest");
     assert_eq!(a.teams[0][0].spot, ENTRY_AT[0]);
-    assert_eq!(a.teams[1][0].spot, ENTRY_AT[2], "two locators along");
-    assert!(
-        distance(a.teams[0][0].spot, a.teams[1][0].spot) >= 10_000.0,
-        "far enough apart to not land on each other"
+    assert_eq!(
+        a.teams[1][0].spot,
+        ENTRY_AT[TEAM_STRIDE % ENTRY_AT.len()],
+        "a stride along"
+    );
+    assert_eq!(
+        distance(a.teams[0][0].spot, a.teams[1][0].spot),
+        distance(ENTRY_AT[0], ENTRY_AT[TEAM_STRIDE % ENTRY_AT.len()]),
+        "apart as the locators are"
     );
     for who in [ALICE, BOB] {
         assert!(reg.jumps().contains(who), "{who} is on the jump");
@@ -594,9 +606,12 @@ fn the_clock_is_fifteen_minutes_and_eighteen_seconds_and_the_ring_counts_fifteen
     let mut reg = world();
     let id = duel(&mut reg);
     let a = get(&reg, id).unwrap();
-    assert_eq!(a.ends_at - a.formed_at, (15 * 60 + 18) * 10_000_000);
+    assert_eq!(
+        a.ends_at - a.formed_at,
+        (DURATION_S + JUMP_DELAY_S) * FILETIME_PER_S
+    );
     let v = ring_vars(&reg, id);
-    assert_eq!(v["endTime"] - v["startTime"], 15 * 60 * 10_000_000);
+    assert_eq!(v["endTime"] - v["startTime"], DURATION_S * FILETIME_PER_S);
     assert_eq!(v["endTime"], a.ends_at);
     assert_eq!((v["kill"], v["eventComplete"]), (0, 0));
 }
@@ -753,31 +768,49 @@ fn a_mutual_kill_in_one_instant_is_a_draw() {
 }
 
 #[test]
-fn the_losers_capsule_goes_home_three_seconds_after_the_ship_and_the_row_clears_on_landing() {
+fn the_losers_capsule_goes_home_after_the_delay_and_the_row_clears_on_landing() {
     let mut reg = world();
     let id = duel(&mut reg);
     killed(&mut reg, BOB, at(2));
     assert!(origin_row(&reg, BOB));
-    tick(&mut reg, Instant::now(), at(4));
-    assert!(!reg.jumps().contains(BOB), "not yet: 2 s after");
-    tick(&mut reg, Instant::now(), at(5));
-    assert!(reg.jumps().contains(BOB), "3 s after the ship died");
+    tick(&mut reg, Instant::now(), at(2 + POD_HOME_S - 1));
+    assert!(!reg.jumps().contains(BOB), "not yet");
+    let _ = sent(&mut reg);
+    tick(&mut reg, Instant::now(), at(2 + POD_HOME_S));
+    assert!(reg.jumps().contains(BOB), "the delay after the ship died");
     assert!(in_arena(&reg, BOB));
     assert!(
-        reg.roster()
-            .get(BOB)
-            .is_none_or(|p| p.solar_system_id == get(&reg, id).unwrap().system),
-        "still in the arena until the jump takes him"
+        reg.roster().get(BOB).is_none(),
+        "the jump has taken the pod out of the arena"
+    );
+    // The timer ends on his client before the jump.
+    let s = sent(&mut reg);
+    let done: Vec<&Sent> = s
+        .iter()
+        .filter(|p| p.0 == "OnAbyssalContentFinished" && p.2 == Some(vec![BOB]))
+        .collect();
+    assert_eq!(done.len(), 1, "the loser's timer 14 ends");
+    assert_eq!(
+        done[0].1,
+        vec![
+            PyValue::Int(get(&reg, id).unwrap().site_id),
+            PyValue::Int(TIMER_PVP_EXPIRATION)
+        ]
     );
     // The pod lands home.
     land(&mut reg, BOB, HOME, [0.0; 3]);
-    tick(&mut reg, Instant::now(), at(7));
+    tick(&mut reg, Instant::now(), at(4 + POD_HOME_S));
     assert!(
         !origin_row(&reg, BOB),
         "the origin row is cleared on landing"
     );
-    assert!(!in_arena(&reg, BOB) || get(&reg, id).is_some());
     assert!(reg.ext::<ArenaState>().returning.is_empty());
+    tick(&mut reg, Instant::now(), at(5 + POD_HOME_S));
+    assert!(!in_arena(&reg, BOB));
+    assert!(
+        arena_of(&reg, BOB).is_none() || get(&reg, id).is_none_or(|a| a.fighter(BOB).is_none()),
+        "pruned once out and landed home"
+    );
 }
 
 #[test]
@@ -785,10 +818,135 @@ fn the_server_never_kills_a_waiting_capsule() {
     let mut reg = world();
     let _ = duel(&mut reg);
     killed(&mut reg, BOB, at(2));
-    // The capsule would die only to a shot; the stage alone leaves it.
+    let pod_id = reg.character(BOB).unwrap().ship_id;
+    assert_eq!(pod_id, pod(BOB), "the pilot flies the capsule now");
+    crate::proving::arena::FIRED.with(|f| f.borrow_mut().clear());
+    // Through the delay, the departure and the landing: no tick kills the pod.
+    for k in 3..(4 + POD_HOME_S) {
+        tick(&mut reg, Instant::now(), at(k));
+        assert!(reg.store().get(pod_id).is_some(), "the capsule item stays");
+    }
+    assert_eq!(reg.character(BOB).unwrap().ship_id, pod_id);
+    assert!(reg.jumps().contains(BOB), "it went home instead");
+    // The contrast: the clock's end does kill it.
+    let a = arena_of(&reg, ALICE).unwrap().clone();
+    tick(&mut reg, Instant::now(), a.ends_at);
+    assert!(reg.store().get(ship(ALICE)).is_none());
+}
+
+#[test]
+fn a_loser_who_queued_again_uses_the_conduit_of_the_arena_they_stand_in() {
+    let mut reg = world();
+    // Arena one: Alice against Bob and Carol; Bob's ship dies, his team
+    // stands on with Carol, so Bob is still listed there.
+    let one = begin(&mut reg, &[&[ALICE], &[BOB, CAROL]]);
+    arrive_all(&mut reg, one);
+    tick(&mut reg, Instant::now(), at(1));
+    killed(&mut reg, BOB, at(2));
     tick(&mut reg, Instant::now(), at(3));
-    tick(&mut reg, Instant::now(), at(4));
-    assert!(reg.roster().get(BOB).is_some(), "Bob's pod is still there");
+    assert!(get(&reg, one).unwrap().fighter(BOB).is_some());
+    // Bob is home and queues again: arena two, Bob against Carol's side.
+    stand(&mut reg, BOB, HOME, [0.0; 3]);
+    let two = open(&mut reg, &event(), &teams(&[&[BOB], &[CAROL]]), at(4)).unwrap();
+    launch(&mut reg, two, at(4));
+    assert!(two > one);
+    assert_eq!(arena_of(&reg, BOB).unwrap().id, two, "on the way to two");
+    let b = get(&reg, two).unwrap();
+    land(&mut reg, BOB, b.system, b.teams[0][0].spot);
+    assert_eq!(arena_of(&reg, BOB).unwrap().id, two, "standing in two");
+    // Carol is out of arena two.
+    let mut b2 = get(&reg, two).unwrap();
+    b2.teams[1][0].out = Some(Out::Left);
+    b2.teams[1][0].out_at = at(5);
+    put(&mut reg, b2);
+    tick(&mut reg, Instant::now(), at(6));
+    let conduit = get(&reg, two).unwrap().conduit;
+    assert_ne!(conduit, 0, "Bob won arena two");
+    assert_eq!(
+        dispatch_gate(&mut reg, BOB, conduit),
+        Ok(PyValue::None),
+        "the conduit of two, though arena one still lists him"
+    );
+    assert!(reg.jumps().contains(BOB));
+}
+
+#[test]
+fn a_late_lander_after_the_clock_is_killed_not_stranded() {
+    let mut reg = world();
+    let id = begin(&mut reg, &[&[ALICE], &[BOB]]);
+    tick(&mut reg, Instant::now(), at(1));
+    assert!(say(slash(&mut reg, Some(ALICE), &["expire", "0"])).contains("0 s"));
+    tick(&mut reg, Instant::now(), at(2));
+    let a = get(&reg, id).unwrap();
+    assert!(a.expired);
+    assert!(get(&reg, id).is_some(), "pilots are on the way, it stays");
+    assert!(reg.store().get(ship(ALICE)).is_some());
+    // Alice lands after the end.
+    land(&mut reg, ALICE, a.system, a.teams[0][0].spot);
+    let _ = sent(&mut reg);
+    tick(&mut reg, Instant::now(), at(3));
+    assert!(reg.store().get(ship(ALICE)).is_none(), "her ship dies");
+    let s = sent(&mut reg);
+    assert!(
+        s.iter()
+            .any(|p| p.0 == "OnAbyssalContentFinished" && p.2 == Some(vec![ALICE]))
+    );
+    assert!(
+        reg.store().get(ship(BOB)).is_some(),
+        "Bob is still on the way"
+    );
+}
+
+#[test]
+fn the_clocks_end_writes_the_pods_row_and_clears_it_when_the_pod_dies() {
+    let mut reg = world();
+    let id = duel(&mut reg);
+    let a = get(&reg, id).unwrap();
+    tick(&mut reg, Instant::now(), a.ends_at);
+    let row = reg
+        .deltas()
+        .of(crate::logoff_spot::KIND)
+        .get(&vec![ALICE.to_string()])
+        .cloned()
+        .expect("a row names the pending pod");
+    assert_eq!(row[0], reg.character(ALICE).unwrap().ship_id.to_string());
+    assert_eq!(row[1], a.system.to_string());
+    tick(&mut reg, Instant::now(), a.ends_at + POD_HOME_S * T);
+    assert!(!origin_row(&reg, ALICE), "gone with the pod");
+    assert!(reg.roster().get(ALICE).is_none());
+}
+
+#[test]
+fn a_pilot_who_boarded_another_hull_loses_it_before_the_pod() {
+    let mut reg = world();
+    let id = duel(&mut reg);
+    let a = get(&reg, id).unwrap();
+    tick(&mut reg, Instant::now(), a.ends_at);
+    // Ship dead, pod waiting; Alice boards a third hull in the arena.
+    let other = 100_900_000 + ALICE;
+    let mut items = reg.store().items().to_vec();
+    items.push(Item {
+        item_id: other,
+        type_id: HULL,
+        owner_id: ALICE,
+        location_id: ship(ALICE),
+        flag_id: 0,
+        quantity: 1,
+        group_id: HULL_GROUP,
+        category_id: 6,
+        singleton: true,
+    });
+    let _ = items;
+    // The pod is her ship_id at the clock's end; claim a different hull.
+    let pod_id = reg.character(ALICE).unwrap().ship_id;
+    let mut state = get(&reg, id).unwrap();
+    state.teams[0][0].pod_ship = pod_id + 1;
+    put(&mut reg, state);
+    tick(&mut reg, Instant::now(), a.ends_at + POD_HOME_S * T);
+    assert!(
+        reg.roster().get(ALICE).is_none(),
+        "the hull and then the pod, both killed in one pass"
+    );
 }
 
 // ---- the end gate ----------------------------------------------------------
@@ -882,7 +1040,7 @@ fn at_the_clocks_end_two_standing_teams_draw_and_everyone_inside_dies() {
             .all(|p| p.1[1] == PyValue::Int(TIMER_PVP_EXPIRATION))
     );
     // A moment later the pods die too, and nobody goes home.
-    tick(&mut reg, Instant::now(), a.ends_at + 3 * T);
+    tick(&mut reg, Instant::now(), a.ends_at + POD_HOME_S * T);
     for who in [ALICE, BOB] {
         assert!(reg.roster().get(who).is_none(), "{who} is in a clone");
         assert!(!reg.jumps().contains(who));
@@ -896,7 +1054,7 @@ fn at_the_clocks_end_two_standing_teams_draw_and_everyone_inside_dies() {
             .all(|(_, r)| *r == MatchResult::Draw)
     );
     // And the arena closes, its wrecks with it.
-    tick(&mut reg, Instant::now(), a.ends_at + 4 * T);
+    tick(&mut reg, Instant::now(), a.ends_at + (POD_HOME_S + 1) * T);
     assert!(get(&reg, id).is_none());
     assert!(reg.combat().wrecks().all(|w| w.solar_system_id != a.system));
 }
@@ -912,8 +1070,11 @@ fn a_pilot_absent_for_sixty_seconds_outside_a_jump_is_out() {
     assert_eq!(get(&reg, id).unwrap().teams[0][0].out, None, "59 s");
     tick(&mut reg, Instant::now(), at(10 + ABSENT_S));
     let a = get(&reg, id).unwrap();
-    assert_eq!(a.teams[0][0].out, Some(Out::Left));
     assert_eq!(a.outcome, Some(Outcome::Win(1)), "Bob's team is the last");
+    assert!(
+        a.fighter(ALICE).is_none(),
+        "out, gone and decided: no longer the arena's"
+    );
 }
 
 #[test]
@@ -1105,4 +1266,77 @@ fn the_wire_arm_is_routed() {
         matches!(r, Err(ServiceError::Raise(_))),
         "the arm's own refusal, not no-such-method: {r:?}"
     );
+}
+
+#[test]
+fn a_logged_off_fighters_ship_stays_in_space_until_the_arena_ends() {
+    let mut reg = world();
+    let id = duel(&mut reg);
+    reg.session_closed(1);
+    assert!(crate::crimewatch::logged_off(&mut reg, ALICE, at(2)));
+    let mid = at(2) + 5 * crate::crimewatch::LOGOFF_MINIMUM;
+    let ends = get(&reg, id).unwrap().ends_at;
+    assert!(mid < ends);
+    crate::crimewatch::release_holds(&mut reg, mid);
+    assert!(
+        reg.roster().get(ALICE).is_some(),
+        "held: a pocket is no exit"
+    );
+    // The clock's end kills ship and pod at once, nobody is there to see it.
+    tick(&mut reg, Instant::now(), ends);
+    assert!(reg.roster().get(ALICE).is_none());
+    crate::crimewatch::release_holds(&mut reg, ends);
+    assert!(reg.combat().crimewatch().held_until(ALICE).is_none());
+}
+
+#[test]
+fn the_jump_arm_of_the_logoff_guard_is_for_fighters_not_yet_out_or_told() {
+    let mut reg = world();
+    let id = begin(&mut reg, &[&[ALICE], &[BOB, CAROL]]);
+    assert!(in_arena(&reg, ALICE), "on the way in");
+    arrive_all(&mut reg, id);
+    tick(&mut reg, Instant::now(), at(1));
+    killed(&mut reg, BOB, at(2));
+    tick(&mut reg, Instant::now(), at(2 + POD_HOME_S));
+    assert!(reg.jumps().contains(BOB));
+    assert!(in_arena(&reg, BOB), "returning keeps it");
+    reg.ext_mut::<ArenaState>().returning.clear();
+    assert!(
+        !in_arena(&reg, BOB),
+        "out and told, on a jump the arena no longer tracks"
+    );
+}
+
+#[test]
+fn a_new_session_in_the_arena_is_told_again() {
+    let mut reg = world();
+    let _ = duel(&mut reg);
+    let _ = sent(&mut reg);
+    reg.session_closed(1);
+    reg.session_opened(crate::session_table::SessionEntry {
+        client_id: 9,
+        session_id: 9,
+        user_id: 1,
+        character_id: Some(ALICE),
+    });
+    tick(&mut reg, Instant::now(), at(2));
+    let s = sent(&mut reg);
+    let told = |who: i64| {
+        s.iter()
+            .filter(|p| p.0 == "OnAbyssalLocationEntered" && p.2 == Some(vec![who]))
+            .count()
+    };
+    assert_eq!(told(ALICE), 1, "the relogged pilot hears again");
+    assert_eq!(told(BOB), 0, "Bob does not");
+}
+
+#[test]
+fn expire_moves_only_the_end_of_the_ring() {
+    let mut reg = world();
+    let id = duel(&mut reg);
+    let before = ring_vars(&reg, id);
+    let _ = slash(&mut reg, Some(ALICE), &["expire", "30"]).unwrap();
+    let after = ring_vars(&reg, id);
+    assert_eq!(after["startTime"], before["startTime"]);
+    assert_ne!(after["endTime"], before["endTime"]);
 }

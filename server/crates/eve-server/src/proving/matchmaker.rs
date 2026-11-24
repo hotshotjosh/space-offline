@@ -16,6 +16,9 @@
 //!   and the first `numberOfFleets` that do not share a fleet play. One
 //!   fleet never faces itself in a solo format. Falsified by a match on TQ
 //!   between two members of one fleet.
+//! - **A fleet larger than `fleet_size` fails at the match too** (24, the
+//!   join's check run again), so a team that grew after queueing leaves
+//!   with the refusal, its teammates with 31.
 //! - **The amount in a composition refusal is the cap**, not the count in
 //!   the team ([`composition_errors`]).
 

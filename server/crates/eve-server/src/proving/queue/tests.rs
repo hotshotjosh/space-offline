@@ -790,9 +790,12 @@ fn four(reg: &mut Registry, q: &mut Queue) {
     );
 }
 
+/// Everything pushed: what `push` queued, then what `schedule` did.
 fn sent(reg: &mut Registry) -> Vec<(&'static str, Vec<i64>)> {
-    reg.take_due(Instant::now() + Duration::from_secs(60))
-        .iter()
+    let mut all: Vec<Box<dyn crate::notify::Push>> =
+        reg.take_pending().into_iter().map(|(_, p)| p).collect();
+    all.extend(reg.take_due(Instant::now() + Duration::from_secs(60)));
+    all.iter()
         .map(|p| (p.to_push().0, p.audience().unwrap()))
         .collect()
 }
@@ -888,8 +891,12 @@ fn a_formed_match_takes_one_key_each_at_the_match_and_never_at_the_join() {
     );
     assert_eq!(stack(&reg, BOBS_KEY), None, "a stack of one is destroyed");
     assert!(q.is_empty(), "both leave the queue");
+    let told: Vec<_> = sent(&mut reg)
+        .into_iter()
+        .filter(|(n, _)| n.contains("Match"))
+        .collect();
     assert_eq!(
-        sent(&mut reg),
+        told,
         vec![
             ("OnMatchFound", vec![ALICE]),
             ("OnProvingGroundsMatchFound", vec![ALICE]),

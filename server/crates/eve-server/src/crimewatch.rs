@@ -1534,7 +1534,10 @@ pub fn release_holds(w: &mut Registry, now: BlueTime) {
         // run's clock kills ship and pod as for anyone still there. The
         // hold stays, checked again each tick; the run goes (or the ship is
         // gone) and the usual release follows. A restart has no run.
-        if crate::abyss::in_run(w, c) && w.roster().get(c).is_some() {
+        // #65: so is a Proving Grounds fighter's, until the arena lets them go.
+        if (crate::abyss::in_run(w, c) || crate::proving::arena::in_arena(w, c))
+            && w.roster().get(c).is_some()
+        {
             let cw = w.combat_mut().crimewatch_mut();
             if cw.abyss_noted.insert(c) {
                 crate::outln!(

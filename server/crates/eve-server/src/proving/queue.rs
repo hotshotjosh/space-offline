@@ -777,8 +777,10 @@ fn round_one(
     consume_keys(reg, &formed);
     for e in formed.iter().flat_map(|t| &t.members) {
         q.remove(e.char_id);
-        reg.schedule(Duration::ZERO, MatchFound { to: e.char_id });
-        reg.schedule(Duration::ZERO, ArenaSound { to: e.char_id });
+        // `push`, not `schedule`: they are drained before the jump's
+        // effects, so the pilot hears of the match before the drive fires (A7).
+        reg.push(MatchFound { to: e.char_id });
+        reg.push(ArenaSound { to: e.char_id });
     }
     launch(reg, arena, ft);
     true

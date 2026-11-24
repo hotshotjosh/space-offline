@@ -120,6 +120,8 @@ pub const POD_HOME_S: i64 = 3;
 const RETURN_GRACE_S: i64 = 120;
 /// Where the nth team stands: entry locator `(2n) mod count` **[A]**.
 const MEMBER_STEP: f64 = 2_000.0;
+/// Team `i` stands at entry locator `(TEAM_STRIDE * i) mod n` **[A]**.
+pub const TEAM_STRIDE: usize = 2;
 const LAP_STEP: f64 = 5_000.0;
 
 /// Why a pilot is out.
@@ -147,6 +149,13 @@ pub struct Fighter {
     /// When the pod of a pilot caught by the clock's end dies.
     pub pod_die_at: Option<BlueTime>,
     pub absent_since: Option<BlueTime>,
+    /// The clock's end has been dealt with for this pilot.
+    pub clocked: bool,
+    /// The capsule that is to die at the clock's end (a pilot who boarded
+    /// another hull meanwhile loses it first, as the Abyss's collapse does).
+    pub pod_ship: i64,
+    /// The session the pilot was told on; a new one is told again.
+    pub session: Option<i64>,
 }
 
 /// How a match ended: a winning team, or the teams that drew.
@@ -185,6 +194,11 @@ pub struct Arena {
     pub expired: bool,
     /// `[A]` Not recorded in PG-2 (PG-2d): the last player damage.
     pub last_player_damage: BlueTime,
+    /// The ring's `startTime`, fixed when the match forms: `/pg expire`
+    /// moves only the end.
+    pub starts_at: BlueTime,
+    /// The room could not be made again, and that was said.
+    pub site_warned: bool,
 }
 
 impl Arena {
@@ -198,7 +212,7 @@ impl Arena {
 
     /// The ring's `startTime`, when the countdown began.
     pub fn start_time(&self) -> BlueTime {
-        self.ends_at - DURATION_S * FILETIME_PER_S
+        self.starts_at
     }
 }
 
@@ -234,9 +248,20 @@ pub fn arenas(w: &Registry) -> impl Iterator<Item = &Arena> {
     w.ext::<ArenaState>().arenas.values()
 }
 
-/// The arena `character` plays in.
+/// The arena `character` plays in: with more than one (a loser who queued
+/// again while the first arena still lists them), the one whose system they
+/// stand in, then the one they are on the way to, then the newest.
 pub fn arena_of(w: &Registry, character: i64) -> Option<&Arena> {
-    arenas(w).find(|a| a.fighter(character).is_some())
+    arenas(w)
+        .filter(|a| a.fighter(character).is_some())
+        .max_by_key(|a| {
+            let rank = if present(w, a, character) {
+                2
+            } else {
+                u8::from(w.jumps().contains(character))
+            };
+            (rank, a.id)
+        })
 }
 
 fn present(w: &Registry, a: &Arena, character: i64) -> bool {
@@ -252,8 +277,12 @@ fn present(w: &Registry, a: &Arena, character: i64) -> bool {
 pub fn in_arena(w: &Registry, character: i64) -> bool {
     w.ext::<ArenaState>().returning.contains_key(&character)
         || arenas(w).any(|a| {
-            a.fighter(character)
-                .is_some_and(|_| present(w, a, character) || w.jumps().contains(character))
+            a.fighter(character).is_some_and(|f| {
+                present(w, a, character)
+                    // On a jump, and still to land for the match: one who is out
+                    // and told is on the way home, which `returning` holds.
+                    || (w.jumps().contains(character) && (f.out.is_none() || !f.told))
+            })
         })
 }
 
@@ -311,8 +340,11 @@ pub fn room_of(d: &Dungeon) -> Option<Room> {
 /// Where member `member` of team `team` lands **[A]** (module doc).
 pub fn spot_for(entries: &[[f64; 3]], team: usize, member: usize) -> [f64; 3] {
     let n = entries.len().max(1);
-    let at = entries.get((team * 2) % n).copied().unwrap_or([0.0; 3]);
-    let lap = (team * 2 / n) as f64;
+    let at = entries
+        .get((team * TEAM_STRIDE) % n)
+        .copied()
+        .unwrap_or([0.0; 3]);
+    let lap = (team * TEAM_STRIDE / n) as f64;
     [
         at[0] + MEMBER_STEP * member as f64,
         at[1] + LAP_STEP * lap,
@@ -553,6 +585,9 @@ pub fn open(reg: &mut Registry, ev: &Event, teams: &[Team], ft: BlueTime) -> Res
         pod_home_at: None,
         pod_die_at: None,
         absent_since: None,
+        clocked: false,
+        pod_ship: 0,
+        session: None,
     };
     let fighters = teams
         .iter()
@@ -587,6 +622,8 @@ pub fn open(reg: &mut Registry, ev: &Event, teams: &[Team], ft: BlueTime) -> Res
             launched: false,
             expired: false,
             last_player_damage: 0,
+            starts_at: ft + JUMP_DELAY_S * FILETIME_PER_S,
+            site_warned: false,
         },
     );
     crate::outln!(
@@ -786,7 +823,19 @@ pub fn tick(reg: &mut Registry, at: Instant, ft: BlueTime) {
     }
 }
 
-fn depart_home(reg: &mut Registry, f: &Fighter, ship_id: i64, from: i64, ft: BlueTime) {
+/// Send a pilot home: the PvP timer ends on their client first, then the jump.
+fn depart_home(
+    reg: &mut Registry,
+    f: &Fighter,
+    ship_id: i64,
+    from: i64,
+    content_id: i64,
+    ft: BlueTime,
+) {
+    reg.push(PvpFinished {
+        to: f.character,
+        content_id,
+    });
     crate::jump_drive::depart(
         reg,
         f.character,
@@ -813,18 +862,26 @@ fn land_returning(reg: &mut Registry, ft: BlueTime) {
         if reg.jumps().contains(c) {
             continue;
         }
+        let gave_up = ft - since >= RETURN_GRACE_S * FILETIME_PER_S;
         match reg.roster().get(c).copied() {
             Some(p) if crate::celestial::VOID_SYSTEMS.contains(&p.solar_system_id) => {
-                if ft - since < RETURN_GRACE_S * FILETIME_PER_S {
+                if !gave_up {
                     crate::jump_drive::depart(reg, c, p.ship_id, p.solar_system_id, system, spot);
                     continue;
                 }
+                // The Abyss's rescue needs the origin row to name this very
+                // ship, which a capsule's never does: say so, keep the row (the
+                // next login restores the origin) and let go.
+                crate::errln!(
+                    "[proving] {c}: still in void system {} after {RETURN_GRACE_S} s; the origin row is kept",
+                    p.solar_system_id
+                );
             }
             // Landed: the row has done its work.
             Some(_) => crate::logoff_spot::clear(reg, c),
-            None if ft - since < RETURN_GRACE_S * FILETIME_PER_S && !sessions_gone(reg, c) => {
-                continue;
-            }
+            None if !gave_up && !sessions_gone(reg, c) => continue,
+            // Given up with a session: they are docked or gone, nothing to return to.
+            None if !sessions_gone(reg, c) => crate::logoff_spot::clear(reg, c),
             None => {}
         }
         reg.ext_mut::<ArenaState>().returning.remove(&c);
@@ -840,15 +897,34 @@ fn tick_arena(reg: &mut Registry, id: u64, ft: BlueTime) {
         .fighters()
         .map(|f| present(reg, &a, f.character))
         .collect();
-    if here.iter().any(|h| *h) && !ensure_site(reg, &mut a, ft) {
-        crate::errln!("[proving] arena {id}: the room could not be made again");
+    if here.iter().any(|h| *h) {
+        if ensure_site(reg, &mut a, ft) {
+            a.site_warned = false;
+        } else if !a.site_warned {
+            a.site_warned = true;
+            crate::errln!("[proving] arena {id}: the room could not be made again");
+        }
     }
+    let sids: Vec<Option<i64>> = a
+        .fighters()
+        .map(|f| {
+            reg.sessions()
+                .of_character(f.character)
+                .first()
+                .map(|s| s.session_id)
+        })
+        .collect();
     let mut ring = false;
     // The news: a pilot who has landed is told once.
     let (cid, ends_at) = (a.site_id, a.ends_at);
     for (k, f) in a.teams.iter_mut().flatten().enumerate() {
+        // A new session in the arena's system knows nothing: told again.
+        if here[k] && f.told && sids[k].is_some() && f.session.is_some() && sids[k] != f.session {
+            f.told = false;
+        }
         if here[k] && !f.told {
             f.told = true;
+            f.session = sids[k];
             reg.push(abyss::Entered {
                 to: f.character,
                 content_id: cid,
@@ -860,6 +936,13 @@ fn tick_arena(reg: &mut Registry, id: u64, ft: BlueTime) {
                 to: f.character,
                 end_time: ends_at,
             });
+            // Absent for a minute and out, and only now landed: the timer ends.
+            if f.out == Some(Out::Left) {
+                reg.push(PvpFinished {
+                    to: f.character,
+                    content_id: cid,
+                });
+            }
         }
         // Absent: not in the arena's system and not in a jump.
         if f.out.is_none() {
@@ -899,15 +982,18 @@ fn tick_arena(reg: &mut Registry, id: u64, ft: BlueTime) {
             .copied()
             .filter(|p| p.solar_system_id == a.system)
         {
-            depart_home(reg, &f, p.ship_id, p.solar_system_id, ft);
+            depart_home(reg, &f, p.ship_id, p.solar_system_id, a.site_id, ft);
         }
     }
     // The clock.
-    let mut kill_all = false;
     if !a.expired && ft >= a.ends_at {
         a.expired = true;
-        kill_all = true;
     }
+    // Once out of time, anyone found inside who has not been dealt with (one
+    // who landed late) is killed at once.
+    let kill_all = a.expired
+        && a.fighters()
+            .any(|f| !f.clocked && present(reg, &a, f.character));
     // The decision.
     if a.outcome.is_none()
         && let Some(o) = decide(&a, a.expired)
@@ -922,6 +1008,25 @@ fn tick_arena(reg: &mut Registry, id: u64, ft: BlueTime) {
         a.reported = true;
         report(reg, &a);
     }
+    // A pilot who is out, has left and has landed is no longer the arena's,
+    // once the match is decided (the result is kept above).
+    if a.outcome.is_some() {
+        let home: BTreeSet<i64> = reg.ext::<ArenaState>().returning.keys().copied().collect();
+        let system = a.system;
+        for team in &mut a.teams {
+            team.retain(|f| {
+                f.out.is_none()
+                    || f.pod_home_at.is_some()
+                    || f.pod_die_at.is_some()
+                    || home.contains(&f.character)
+                    || reg.jumps().contains(f.character)
+                    || reg
+                        .roster()
+                        .get(f.character)
+                        .is_some_and(|p| p.solar_system_id == system)
+            });
+        }
+    }
     put(reg, a.clone());
     if ring {
         push_ring(reg, &a);
@@ -934,66 +1039,102 @@ fn tick_arena(reg: &mut Registry, id: u64, ft: BlueTime) {
 }
 
 /// **The clock's end**: everyone inside gets the timer's end and dies, ship
-/// then pod, as the Abyss's collapse does (owner Q3). The pilot is the cause
-/// **[A]** (the same kill as a self-destruct).
+/// then pod, as the Abyss's collapse does (`abyss::kill_pilot`; owner Q3). The
+/// pilot is the cause **[A]** (the same kill as a self-destruct). The pod of a
+/// pilot who is watching dies after a moment, and until then the pilot's
+/// logoff row names the pod in this void system, so a restart sweeps it.
 fn clock_out(reg: &mut Registry, id: u64, ft: BlueTime) {
-    let Some(a) = get(reg, id) else { return };
+    let Some(mut a) = get(reg, id) else { return };
+    let system = a.system;
     let victims: Vec<i64> = a
-        .fighters()
-        .filter(|f| present(reg, &a, f.character))
-        .map(|f| f.character)
+        .teams
+        .iter_mut()
+        .flatten()
+        .filter(|f| {
+            !f.clocked
+                && reg
+                    .roster()
+                    .get(f.character)
+                    .is_some_and(|p| p.solar_system_id == system)
+        })
+        .map(|f| {
+            f.clocked = true;
+            f.pod_home_at = None;
+            f.character
+        })
         .collect();
+    let cid = a.site_id;
+    put(reg, a);
     for c in &victims {
         reg.push(PvpFinished {
             to: *c,
-            content_id: a.site_id,
+            content_id: cid,
         });
         crate::outln!("[proving] arena {id}: {c}: the clock has run out");
         crate::combat::self_destruct_kill(reg, *c, ft);
     }
     for c in victims {
-        // The pod dies at once for a pilot nobody is watching; else after a
-        // moment, so the client does not see both in one tick (#241).
-        if reg.roster().get(c).is_none() {
+        let Some(p) = reg.roster().get(c).copied() else {
+            crate::logoff_spot::clear(reg, c);
+            continue;
+        };
+        if sessions_gone(reg, c) {
+            // Nobody is there to see it, and a delay would let the log-off
+            // hold take the pod out of space alive: it dies now.
+            crate::combat::self_destruct_kill(reg, c, ft);
+            crate::logoff_spot::clear(reg, c);
             continue;
         }
-        if sessions_gone(reg, c) {
-            crate::combat::self_destruct_kill(reg, c, ft);
-        } else if let Some(mut a) = get(reg, id) {
+        let pod = reg.character(c).map_or(0, |ch| ch.ship_id);
+        if let Some(mut a) = get(reg, id) {
             if let Some(f) = a.teams.iter_mut().flatten().find(|f| f.character == c) {
                 f.pod_die_at = Some(ft + POD_HOME_S * FILETIME_PER_S);
+                f.pod_ship = pod;
             }
             put(reg, a);
         }
+        crate::logoff_spot::set(
+            reg,
+            c,
+            crate::logoff_spot::Spot {
+                ship_id: pod,
+                system: p.solar_system_id,
+                position: p.motion.position,
+            },
+        );
     }
 }
 
-/// The pods whose time has come die (a pilot still in the arena's system).
+/// The pods whose time has come die. A pilot who flies something else by then
+/// loses that hull first, then the pod; one who has left the system is let
+/// off. The origin row goes either way (`abyss::kill_due_pods`).
 fn pods_die(reg: &mut Registry, id: u64, ft: BlueTime) {
     let Some(mut a) = get(reg, id) else { return };
-    let due: Vec<i64> = a
+    let due: Vec<(i64, i64)> = a
         .fighters()
         .filter(|f| f.pod_die_at.is_some_and(|at| ft >= at))
-        .map(|f| f.character)
+        .map(|f| (f.character, f.pod_ship))
         .collect();
     if due.is_empty() {
         return;
     }
     for f in a.teams.iter_mut().flatten() {
-        if due.contains(&f.character) {
+        if due.iter().any(|(c, _)| *c == f.character) {
             f.pod_die_at = None;
         }
     }
     let system = a.system;
     put(reg, a);
-    for c in due {
-        if reg
-            .roster()
-            .get(c)
-            .is_some_and(|p| p.solar_system_id == system)
-        {
+    for (c, pod) in due {
+        let here = reg.roster().get(c).copied();
+        if here.is_some_and(|p| p.solar_system_id == system) {
+            let other_hull = reg.character(c).is_some_and(|ch| ch.ship_id != pod);
             crate::combat::self_destruct_kill(reg, c, ft);
+            if other_hull && reg.roster().get(c).is_some() {
+                crate::combat::self_destruct_kill(reg, c, ft);
+            }
         }
+        crate::logoff_spot::clear(reg, c);
     }
 }
 
@@ -1087,10 +1228,6 @@ pub fn end_gate(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
     else {
         return Err(notify("Your ship is not in the arena."));
     };
-    reg.push(PvpFinished {
-        to: actor,
-        content_id: a.site_id,
-    });
     let cid = a.site_id;
     let Some(f) = a.teams.iter_mut().flatten().find(|f| f.character == actor) else {
         return Ok(PyValue::None);
@@ -1101,7 +1238,7 @@ pub fn end_gate(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
     }
     let f = f.clone();
     put(reg, a);
-    depart_home(reg, &f, p.ship_id, p.solar_system_id, ft);
+    depart_home(reg, &f, p.ship_id, p.solar_system_id, cid, ft);
     crate::outln!("[proving] {actor}: home from arena (content {cid})");
     Ok(PyValue::None)
 }
