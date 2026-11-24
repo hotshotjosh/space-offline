@@ -161,7 +161,7 @@ pub const COMMANDS: &[Command] = &[
     // #65 PG-2b: the Proving Grounds match in play.
     Command {
         name: "pg",
-        usage: "/pg status | expire <seconds> | decide",
+        usage: "/pg status | expire <seconds> | decide | stats [charID] | board | history | award [scheduleID]",
         run: crate::proving::arena::slash,
     },
     Command {

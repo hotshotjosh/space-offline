@@ -399,6 +399,11 @@ pub const KINDS: &[(&str, &str)] = &[
     // title description`, `opt id n -> text parameter parameter1 parameter2`,
     // `cast id voter -> option weight`, a corporation vote.
     ("corpvote", "corp_votes"),
+    // #66 PG-3: Proving Grounds results. `s match_type schedule char -> wins
+    // losses draws reached_at awarded`, `m seq -> match_type schedule at
+    // char:result,...` (the match history), `next -> n`, `e match_type
+    // schedule -> awarded_at` (an event's award marker).
+    ("pgstat", "proving::results"),
 ];
 
 /// Whether `kind` has a row in [`KINDS`] or in a module's kinds

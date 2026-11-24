@@ -31,9 +31,9 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
                 return Err(ar.expected("(matchTypeID, scheduleID)"));
             };
             if req.method == "GetLeaderboard" {
-                proving::push_leaderboard(reg, now, m, s);
+                proving::push_leaderboard(reg, now, m, s, req.actor);
             } else {
-                proving::push_statistics(reg, now, m, s);
+                proving::push_statistics(reg, now, m, s, req.actor);
             }
             Ok(PyValue::None)
         }

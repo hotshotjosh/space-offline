@@ -509,6 +509,8 @@ fn the_pushes_are_empty_and_zero() {
     let (name, args) = LeaderboardPush {
         match_type_id: MATCH_X,
         schedule_id: SCHED_A,
+        entries: Vec::new(),
+        to: None,
     }
     .to_push();
     assert_eq!(name, "OnPVPFilamentsLeaderboard");
@@ -524,6 +526,11 @@ fn the_pushes_are_empty_and_zero() {
     let (name, args) = StatisticsPush {
         match_type_id: MATCH_X,
         schedule_id: SCHED_A,
+        rank: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        to: None,
     }
     .to_push();
     assert_eq!(name, "OnPVPFilamentsCharacterStatistics");

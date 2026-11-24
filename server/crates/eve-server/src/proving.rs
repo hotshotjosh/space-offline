@@ -775,11 +775,15 @@ pub fn refusal(code: i64) -> crate::service::ServiceError {
 // ---------------------------------------------------------------------------
 
 /// `OnPVPFilamentsLeaderboard(info)`: `info['entries']`, keyed by event
-/// **[V]** `pvpFilamentSvc.OnPVPFilamentsLeaderboard`. Empty: nobody has played.
+/// **[V]** `pvpFilamentSvc.OnPVPFilamentsLeaderboard`. #66 (PG-3): the
+/// entries [`results::board`] builds; empty when nobody has played. `to` is
+/// the pilot it is for; `None` is the acting session.
 #[derive(Debug, Clone)]
 pub struct LeaderboardPush {
     pub match_type_id: i64,
     pub schedule_id: i64,
+    pub entries: Vec<results::BoardEntry>,
+    pub to: Option<i64>,
 }
 
 impl Push for LeaderboardPush {
@@ -789,20 +793,34 @@ impl Push for LeaderboardPush {
             vec![pydict(vec![
                 ("matchTypeID", PyValue::Int(self.match_type_id)),
                 ("scheduleID", PyValue::Int(self.schedule_id)),
-                ("entries", PyValue::List(Vec::new())),
+                (
+                    "entries",
+                    PyValue::List(self.entries.iter().map(|e| e.to_value()).collect()),
+                ),
             ])],
         )
+    }
+
+    fn audience(&self) -> Option<Vec<i64>> {
+        self.to.map(|c| vec![c])
     }
 }
 
 /// `OnPVPFilamentsCharacterStatistics(info)`: `info['statistics']` with
 /// `rank`, `wins`, `losses` and `draws` **[V]** `character_statistics.py`.
-/// All zero: rank 0 is "unranked" and stops the client asking for the
-/// leaderboard again.
+/// #66 (PG-3): the pilot's real tally from [`results`]; all zero for a pilot
+/// who has not played, where rank 0 is "unranked" and stops the client asking
+/// for the leaderboard again. `to` is the pilot it is for; `None` is the
+/// acting session.
 #[derive(Debug, Clone)]
 pub struct StatisticsPush {
     pub match_type_id: i64,
     pub schedule_id: i64,
+    pub rank: i64,
+    pub wins: i64,
+    pub losses: i64,
+    pub draws: i64,
+    pub to: Option<i64>,
 }
 
 impl Push for StatisticsPush {
@@ -815,55 +833,57 @@ impl Push for StatisticsPush {
                 (
                     "statistics",
                     pydict(vec![
-                        ("rank", PyValue::Int(0)),
-                        ("wins", PyValue::Int(0)),
-                        ("losses", PyValue::Int(0)),
-                        ("draws", PyValue::Int(0)),
+                        ("rank", PyValue::Int(self.rank)),
+                        ("wins", PyValue::Int(self.wins)),
+                        ("losses", PyValue::Int(self.losses)),
+                        ("draws", PyValue::Int(self.draws)),
                     ]),
                 ),
             ])],
         )
     }
+
+    fn audience(&self) -> Option<Vec<i64>> {
+        self.to.map(|c| vec![c])
+    }
 }
 
-/// Queue the empty leaderboard for `(match type, schedule)` if the client can
-/// know it. Returns whether it was queued.
+/// Queue the leaderboard of `(match type, schedule)` for the acting pilot
+/// `actor` if the client can know it. Returns whether it was queued.
 pub fn push_leaderboard(
     reg: &mut crate::service::Registry,
     now: i64,
     match_type_id: i64,
     schedule_id: i64,
+    actor: Option<i64>,
 ) -> bool {
     let known = reg
         .content()
         .get::<Catalogue>()
         .known(now, match_type_id, schedule_id);
     if known {
-        reg.push(LeaderboardPush {
-            match_type_id,
-            schedule_id,
-        });
+        let p = results::leaderboard_push(reg.deltas(), match_type_id, schedule_id, actor, None);
+        reg.push(p);
     }
     known
 }
 
-/// Queue the zero statistics for `(match type, schedule)` if the client can
-/// know it. Returns whether it was queued.
+/// Queue the statistics of `actor` in `(match type, schedule)` if the client
+/// can know it. Returns whether it was queued.
 pub fn push_statistics(
     reg: &mut crate::service::Registry,
     now: i64,
     match_type_id: i64,
     schedule_id: i64,
+    actor: Option<i64>,
 ) -> bool {
     let known = reg
         .content()
         .get::<Catalogue>()
         .known(now, match_type_id, schedule_id);
     if known {
-        reg.push(StatisticsPush {
-            match_type_id,
-            schedule_id,
-        });
+        let p = results::statistics_push(reg.deltas(), match_type_id, schedule_id, actor, None);
+        reg.push(p);
     }
     known
 }
@@ -871,6 +891,8 @@ pub fn push_statistics(
 pub mod arena;
 pub mod matchmaker;
 pub mod queue;
+// #66: the statistics, the leaderboard and the rewards.
+pub mod results;
 
 #[cfg(test)]
 mod tests;

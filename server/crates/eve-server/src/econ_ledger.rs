@@ -193,6 +193,13 @@ pub const REFS: &[(i64, Flow, &str)] = &[
     (144, Flow::Held, "HyperNet payout"),
     (145, Flow::System, "HyperNet fee (a sink)"),
     (146, Flow::Held, "HyperNet refund"),
+    // #66 PG-3: a Proving Grounds reward in ISK, granted by an NPC issuer
+    // (`crate::proving::results`), a faucet.
+    (
+        147,
+        Flow::System,
+        "redeemed ISK token (Proving Grounds reward)",
+    ),
     // #89 ESS-1: a share of the ESS main bank paid back to a ratter
     // (`crate::ess`); the bank's cut was never a journal row, so this is a
     // faucet when it lands.

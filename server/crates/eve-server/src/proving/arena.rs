@@ -443,9 +443,10 @@ pub struct MatchFinished {
     pub results: Vec<(Vec<i64>, MatchResult)>,
 }
 
-/// Every consumer of a finished match, fired once per match. PG-3 adds the
-/// leaderboard and the statistics here (coordinator).
-pub const ON_FINISHED: &[fn(&mut Registry, &MatchFinished)] = &[log_only];
+/// Every consumer of a finished match, fired once per match. #66 (PG-3): the
+/// statistics and the leaderboard of `proving::results`.
+pub const ON_FINISHED: &[fn(&mut Registry, &MatchFinished)] =
+    &[log_only, crate::proving::results::on_finished];
 
 #[cfg(test)]
 thread_local! {
@@ -1243,7 +1244,8 @@ pub fn end_gate(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, Servic
     Ok(PyValue::None)
 }
 
-/// `/pg status | expire <seconds> | decide`: a GM door to the match for the
+/// `/pg status | expire <seconds> | decide` (and `proving::results`'s
+/// `stats`, `board`, `history`, `award`): a GM door to the match for the
 /// scenarios and testers.
 pub fn slash(
     reg: &mut Registry,
@@ -1251,10 +1253,17 @@ pub fn slash(
     args: &[&str],
 ) -> Result<PyValue, ServiceError> {
     let say = |t: &str| Ok(crate::pyutil::bstr(t));
-    let usage = "usage: /pg status | expire <seconds> | decide";
+    let usage = crate::proving::results::USAGE;
     let Some(actor) = actor else {
         return say("no character");
     };
+    // #66: the results commands work anywhere, in an arena or out of one.
+    if args
+        .first()
+        .is_some_and(|w| crate::proving::results::is_subcommand(w))
+    {
+        return crate::proving::results::slash(reg, Some(actor), args);
+    }
     let Some(id) = arena_of(reg, actor).map(|a| a.id) else {
         return say("you are not in an arena");
     };

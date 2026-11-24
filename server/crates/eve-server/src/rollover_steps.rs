@@ -141,6 +141,13 @@ pub const STEPS: &[Step] = &[
         name: "hypernet_prune",
         run: Run::Once(crate::hypernet::on_rollover),
     },
+    // #66 (PG-3): pay the Proving Grounds rewards of every event that is over
+    // and not yet paid, and prune the match history. Its count is the pilots
+    // paid.
+    Step {
+        name: "proving_awards",
+        run: Run::Once(crate::proving::results::on_rollover),
+    },
     // MINE-UI: drop Mining Ledger rows older than the window. Its count is the rows dropped.
     Step {
         name: "mining_ledger",
