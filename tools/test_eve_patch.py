@@ -1018,6 +1018,52 @@ class WindowsPrefs(unittest.TestCase):
             self.assertEqual(ep.prefs_targets("C:\\CCP\\EVE\\tq", None), ([], None))
 
 
+class WinePrefs(unittest.TestCase):
+    """Where apply creates prefs.ini in a Wine prefix that has none yet."""
+
+    def prefix(self, t, *users):
+        drive_c = pathlib.Path(t) / "pfx" / "drive_c"
+        for u in users:
+            (drive_c / "users" / u).mkdir(parents=True)
+        client = drive_c / "CCP" / "EVE" / "tq-offline"
+        client.mkdir(parents=True)
+        return drive_c, client
+
+    def target(self, drive_c, user):
+        return drive_c / "users" / user / "AppData" / "Local" / "CCP" / "EVE" / "c_ccp_eve_tq-offline_tranquility" / "settings" / "prefs.ini"
+
+    def test_a_proton_prefix_uses_steamuser(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "steamuser", "Public", "alice")
+            self.assertEqual(ep.prefs_targets(str(client), None), ([], self.target(drive_c, "steamuser")))
+
+    def test_a_plain_wine_prefix_uses_the_login_folder(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "Public", "alice", "bob")
+            with mock.patch("getpass.getuser", return_value="alice"):
+                self.assertEqual(ep.prefs_targets(str(client), None)[1], self.target(drive_c, "alice"))
+
+    def test_one_user_folder_besides_public_is_the_one(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "Public", "carol")
+            with mock.patch("getpass.getuser", return_value="someone-else"):
+                self.assertEqual(ep.prefs_targets(str(client), None)[1], self.target(drive_c, "carol"))
+
+    def test_two_candidates_and_no_login_folder_is_no_guess(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "Public", "carol", "dave")
+            with mock.patch("getpass.getuser", return_value="someone-else"):
+                self.assertEqual(ep.prefs_targets(str(client), None), ([], None))
+
+    def test_an_existing_prefs_file_wins_over_creating_one(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "Public", "carol")
+            p = self.target(drive_c, "carol")
+            p.parent.mkdir(parents=True)
+            p.write_bytes(b"a=1")
+            self.assertEqual(ep.prefs_targets(str(client), None), ([p], None))
+
+
 class AuthorRehash(unittest.TestCase):
     """locate --merge rehashes B0 and P0 (invented bytes only)."""
 

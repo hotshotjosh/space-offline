@@ -736,9 +736,37 @@ def prefs_targets(client, explicit):
     pat = str(drive_c / "users" / "*" / "AppData" / "Local" / "CCP" / "EVE" / f"{glob.escape(folder)}_*" / "settings*" / "prefs.ini")
     found = sorted(Path(p) for p in glob.glob(pat))
     create = None
-    if not found and (drive_c / "users" / "steamuser").is_dir():
-        create = drive_c / "users" / "steamuser" / "AppData" / "Local" / "CCP" / "EVE" / f"{folder}_tranquility" / "settings" / "prefs.ini"
+    user = None if found else wine_user(drive_c)
+    if user is not None:
+        create = drive_c / "users" / user / "AppData" / "Local" / "CCP" / "EVE" / f"{folder}_tranquility" / "settings" / "prefs.ini"
     return found, create
+
+
+def wine_user(drive_c):
+    """The prefix's own user folder under `drive_c/users`, or None.
+
+    Proton's prefixes have `steamuser`; a plain Wine prefix names the folder
+    after the Unix login. `Public` and the like are never it: with no
+    `steamuser` and no folder for this login, exactly one other folder must
+    be there, or the answer is None (pass --prefs).
+    """
+    users = drive_c / "users"
+    if (users / "steamuser").is_dir():
+        return "steamuser"
+    try:
+        import getpass
+
+        me = getpass.getuser()
+    except (KeyError, OSError, ImportError):
+        me = None
+    if me and (users / me).is_dir():
+        return me
+    try:
+        dirs = [d.name for d in users.iterdir() if d.is_dir() and not d.is_symlink()]
+    except OSError:
+        return None
+    dirs = [d for d in dirs if d.lower() not in ("public", "default", "all users", "default user")]
+    return dirs[0] if len(dirs) == 1 else None
 
 
 # --------------------------------------------------------------------------
