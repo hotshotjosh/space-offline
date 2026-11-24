@@ -368,6 +368,11 @@ EXPECT_BY_BUILD = {
     3731714: ({"dungeons.tsv": 5653, "objects.tsv": 262371, "spawns.tsv": 30229,
                "archetypes.tsv": 73, "resources.tsv": 1227, "room-rocks.tsv": 3058},
               {"high": 7, "low": 16, "null": 16, SPECIAL: 89}),
+    # 3739102 [V] by content.py --check notes and bundle-diff against 3731714 (same
+    # extractor): every dungeons/ file equal, so the counts and ore bands are 3731714's.
+    3739102: ({"dungeons.tsv": 5653, "objects.tsv": 262371, "spawns.tsv": 30229,
+               "archetypes.tsv": 73, "resources.tsv": 1227, "room-rocks.tsv": 3058},
+              {"high": 7, "low": 16, "null": 16, SPECIAL: 89}),
 }
 VERIFIED_BASE_BUILDS = (3619879, 3628513, 3662168)
 

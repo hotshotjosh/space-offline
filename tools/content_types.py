@@ -225,6 +225,10 @@ EXPECT_BY_BUILD = {
     # 3731714 [V] by bundle-diff against 3720952 (same line): every types/ file equal.
     3731714: {"types/market.tsv": 53941, "types/marketgroups.tsv": 2125,
               "types/typelists.tsv": 477, "types/compress.tsv": 220},
+    # 3739102 [V] by content.py --check notes and bundle-diff against 3731714 (same
+    # extractor): every types/ count equal; typedata.tsv changes one type name only.
+    3739102: {"types/market.tsv": 53941, "types/marketgroups.tsv": 2125,
+              "types/typelists.tsv": 477, "types/compress.tsv": 220},
 }
 #: Builds whose counts are verified: `EXPECT` is 3619879's, 3628513 shares it,
 #: and `EXPECT_BY_BUILD` holds the rest. Any other build (the next client, before
