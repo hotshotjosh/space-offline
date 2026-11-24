@@ -29,9 +29,13 @@ The ones that would change how the game feels are:
 - probe-scan strength against ships.
 
 Even for those, one capture shows what one run produced, not the table behind
-it. Taking a capture is a new maintainer decision: our setup keeps the client
-isolated from CCP, a live capture would come from a later client build than the pinned one,
-and its contents are CCP's data, so they could live only in `out/`.
+it. **Recorded Tranquility data may be committed** (owner ruling,
+2026-11-24): what a live server sent, as recorded, can go in `content/` or a
+Rust table. Mark it `[V-TQ]` and say what was recorded: the client build, the
+place and the date. Keep ids and numbers. Leave out client strings such as
+type names, because those are the client's own data (`content/README.md`).
+A capture can come from a later client build than the pinned one, so its
+build goes with it.
 
 ## How to read this
 

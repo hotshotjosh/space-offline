@@ -9,7 +9,9 @@ the checks pass, a peer review, and the owner's approval.
 ## Hard rules
 
 - **No extracted client data in git, tests included.** Tests use invented ids and rows;
-  real values go in `out/` (gitignored).
+  real values go in `out/` (gitignored). Recorded Tranquility server data is not client
+  data: it may be committed, marked `[V-TQ]` with its build, place and date, with ids
+  and numbers only, never client names (`content/README.md`).
 - **Crates only through the allowlist, and no `unsafe` in our code.** A crate comes in by
   an owner decision, listed with every crate it pulls in in `server/deps.allow`, from the
   build image's apt registry. `tools/check_deps.py` checks the table in the gate, and its

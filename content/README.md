@@ -12,6 +12,7 @@ both before you add a file.
 | A: protocol vocabulary | ids and constants the wire and logic need (group ids, enum values, attribute ids) | Rust source, cited [V] |
 | B: client content rows | anything read out of the client: type numbers, materials, blueprints, names, counts | `out/content/` only, written by `tools/content.py`. **Never here, never in the repo** |
 | C: what we invent | policy tables and tuning | **here**, as TSV (a table), or a Rust const (a single number) |
+| D: recorded Tranquility data | what a live server sent, as recorded (fleets, waves, values) | **here** or a Rust table, marked `[V-TQ]` with the client build, place and date it was recorded; ids and numbers only, no client names (owner ruling, 2026-11-24) |
 
 - **No extracted client tables.** No extracted row set, count or name list.
   If a table came out of the client, it belongs in the bundle, not in this
