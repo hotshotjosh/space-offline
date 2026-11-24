@@ -2857,6 +2857,7 @@ fn user_error_key(v: &PyValue) -> String {
 mod tests {
     use super::*;
     use crate::store::Store as _;
+    use std::sync::mpsc;
 
     /// The UserError log line carries the error key, `-` when the value is no
     /// UserError.
@@ -2866,7 +2867,6 @@ mod tests {
         assert_eq!(user_error_key(&e), "InventedTestKey");
         assert_eq!(user_error_key(&PyValue::None), "-");
     }
-    use std::sync::mpsc;
 
     fn world() -> Arc<RwLock<Registry>> {
         Arc::new(RwLock::new(Registry::new(
