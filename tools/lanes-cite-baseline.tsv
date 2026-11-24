@@ -906,6 +906,8 @@ tools/client-ci/scenarios/fci_fw_kill_lp.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_fw_kill_lp.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_fw_refuse.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_fw_refuse.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fw_scoreboard.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fw_scoreboard.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_gang_summon.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_gang_summon.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_gang_summon.py	docs/lanes/f-ci.md	1
