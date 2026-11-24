@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 369) · **95% built** (351 of 369) · 1 parked, not counted.
+**63% proved** (232 of 369) · **95% built** (352 of 369) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -59,7 +59,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 - [ ] Compression in a structure: *built-unproved*, structureCompressionMgr answers its three methods: compress and gas decompression work in a structure that has an online Standup Reprocessing Facility (the structure share is the module's 3262 plus the hull's 3261, the pilot's the skill's 3260), and refuse with the client's own keys without one; compression.rs tests; fci_upwell_compress written, not yet run
 - [ ] Structure hull industry bonuses: *built-unproved*, industry/modifier-sources.tsv and industry/target-filters.tsv are two optional bundle files (content_econ.py; absent from a bundle until the coordinator regenerates it, and the server loads without them): the hull's time, material and cost multipliers are read from the type's attributes and sent as HULL 5-tuples; structure_industry::hull_terms; no rig modifiers yet (#59)
-- [ ] Moon drills: *missing*, no moonExtractions service; moon_extract.rs pure core (timing, yields, KeyVal), uncalled (bc2a9a1e); beacons in the bundle (#52)
+- [ ] Moon drills: *built-unproved*, moon_extract.rs world part and moonExtractions (schedule, cancel, resources, corp list): the extraction row, notices 202-204 (oreVolumeByType an integer-keyed dict), the corporation calendar event, the crater on the moon slim, /extraction advance, /world moonyield (default 1, retail); the drill going offline ends it; unit tests only, fci_moon_schedule written, not yet run on a client. Not built: the chunk, the fracture and the field (#54); FractureChunkWithStructure refuses with ExtractionNotAvailableForFracture
 - [ ] Metenox moon mining: *missing*, no autoMoonMining service
 - [ ] Industry in structures: *built-unproved*, structure_industry.rs, fci_upwell_industry (written, not yet run): a pilot docked in a structure with an online industry service module (Standup Manufacturing Plant, laboratory, reactor) gets a facility row whose typeID is the structure's type, tax None and serviceAccess {service: rate}; only the online services' activities are listed, FACILITY_ACTIVITY (33) and FACILITY_DENIED (41) refuse the rest; the owner corp pays 0 and a guest the lowest profile rate of its groups [A] A11, credited to the owner corp's Master Wallet as a transfer (the rest of the fee is a sink); a finished job is never cancelled by an unfit; a job pauses when its service goes offline and resumes with the lost time added, and is cancelled when its module is unfitted [A] A12 (paused-job notifications 210/211 wait on the structure notification module); a structure with no online industry module has no facility, as before (#56)
 - [ ] State machine, timers, upkeep rules: *built-unproved*, fci_upwell_timers (regress-w27d): the deploy timer, onlining, full-power upkeep and the unanchor timer and its cancel, read by the client; structure.rs unit tests; repair pauses on Env::under_fire (#43); structure_combat sets it from the Fire window; per-structure Env (under_fire, 5770, 5771); reinforce lengths by size, class and Triglavian space (structure_space::reinforce_secs); structureVulnerability incl. the client's weekday 255; notifications 182, 183, 185, 186, 187, 209 (structure_notify.rs); /upwell timer; fci_upwell_timers steps 6-8 (green 110/110 on 11-15, steps 6-8 included; notifications 182, 183, 185 and 187, the repair pause and the Triglavian reinforce lengths are not in the scenario); slim, add and remove pushes from the clock go on the clock's queue, not `pending` (structure_space.rs, #44); a player-anchored structure leaves 102 with its core (structure_bays.rs, #42). has_service_module is real behind /world freeupkeep (default on), #41
@@ -197,7 +197,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Modules | 13 | 4 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 45 | 2 | 0 | 2 |
-| Industry and mining | 17 | 3 | 0 | 2 | 0 |
+| Industry and mining | 17 | 4 | 0 | 1 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
@@ -508,7 +508,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] A planetary colony: *client-proved*, fci_pi_colony W10
 - [x] Invention: *client-proved*, fci_invention 2026-11-04 (40 checks, 8 runs at 60x: the job carries the requested runs, T2 copies with the quoted ME, TE and runs, the source copy used up, a second CompleteJob refused); unit tests
 - [x] Reactions: *client-proved*, fci_reactions 11-03
-- [ ] Moon drills: *missing*, no moonExtractions service; moon_extract.rs pure core (timing, yields, KeyVal), uncalled (bc2a9a1e); beacons in the bundle (#52)
+- [ ] Moon drills: *built-unproved*, moon_extract.rs world part and moonExtractions (schedule, cancel, resources, corp list): the extraction row, notices 202-204 (oreVolumeByType an integer-keyed dict), the corporation calendar event, the crater on the moon slim, /extraction advance, /world moonyield (default 1, retail); the drill going offline ends it; unit tests only, fci_moon_schedule written, not yet run on a client. Not built: the chunk, the fracture and the field (#54); FractureChunkWithStructure refuses with ExtractionNotAvailableForFracture
 - [x] Moon mining beacons: a refinery anchors by a moon, warp to the mining point: *client-proved*, moon/beacons.tsv (content_moon.py); structure::find_deployment_conflict ports the drill exemption; moon_beacon::warp_target; fci_moon_beacon green on 11-08 (ci-1108b)
 - [ ] Metenox moon mining: *missing*, no autoMoonMining service
 - [ ] Industry in structures: *built-unproved*, structure_industry.rs, fci_upwell_industry (written, not yet run): a pilot docked in a structure with an online industry service module (Standup Manufacturing Plant, laboratory, reactor) gets a facility row whose typeID is the structure's type, tax None and serviceAccess {service: rate}; only the online services' activities are listed, FACILITY_ACTIVITY (33) and FACILITY_DENIED (41) refuse the rest; the owner corp pays 0 and a guest the lowest profile rate of its groups [A] A11, credited to the owner corp's Master Wallet as a transfer (the rest of the fee is a sink); a finished job is never cancelled by an unfit; a job pauses when its service goes offline and resumes with the lost time added, and is cancelled when its module is unfitted [A] A12 (paused-job notifications 210/211 wait on the structure notification module); a structure with no online industry module has no facility, as before (#56)

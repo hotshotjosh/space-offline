@@ -139,6 +139,17 @@ pub const SETTINGS: &[Setting] = &[
             Ok(())
         },
     },
+    // #53: the moon extraction yield. Default 1 (retail's), so today's behaviour.
+    Setting {
+        name: "moonyield",
+        usage: "moon extraction yield, times retail's (0.01 to 100; default 1); applies to extractions started from then on",
+        kind: Kind::Live,
+        get: |r| r.moon_yield_mult,
+        set: |r, v| {
+            r.moon_yield_mult = v;
+            Ok(())
+        },
+    },
     Setting {
         name: "deletetime",
         usage: "seconds a character waits between asking to be deleted and the delete (whole number, 0 to 2592000); applies from the next ask",

@@ -73,10 +73,13 @@ pub(crate) const SERVICES: &[&str] = &[
     "structureControl",
     // L4 (#47): the reinforcement window a corporation sets.
     "structureVulnerability",
+    // #53: scheduling a moon extraction from a drilling platform's controls.
+    "moonExtractions",
 ];
 
 mod deploy;
 mod dock;
+mod moon;
 pub(crate) mod safety;
 mod vulnerability;
 
@@ -386,6 +389,8 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
         "structureGuests" => guests(reg, req),
         "structureDeployment" => deploy::dispatch(reg, req),
         "structureVulnerability" => vulnerability::dispatch(reg, req),
+        // #53
+        "moonExtractions" => moon::dispatch(reg, req),
         "structureDocking" | "structureHangarViewMgr" | "structureControl" => {
             dock::dispatch(reg, req)
         }
@@ -817,7 +822,7 @@ pub(crate) fn slash(
     actor: Option<i64>,
     args: &[&str],
 ) -> Result<PyValue, ServiceError> {
-    const USAGE: &str = "/upwell spawn <astrahus|raitaru|athanor|typeID> <name> | /upwell give <type> | /upwell list | /upwell damage <id> <shield> <armor> <hull> | /upwell state <id> <code|name> | /upwell timer <id> <secs> | /upwell fit <id> <typeID> | /upwell services <id>";
+    const USAGE: &str = "/upwell spawn <astrahus|raitaru|athanor|typeID> <name> | /upwell give <type> | /upwell list | /upwell damage <id> <shield> <armor> <hull> | /upwell state <id> <code|name> | /upwell timer <id> <secs> | /upwell fit <id> <typeID> | /upwell services <id> | /upwell moon list";
     let Some(actor) = actor else {
         return Ok(bstr("no character"));
     };
@@ -860,6 +865,10 @@ pub(crate) fn slash(
                 type_id,
                 crate::pyutil::filetime_now(),
             )))
+        }
+        // #53: every moon extraction row, for a GM.
+        Some("moon") if args.get(1) == Some(&"list") => {
+            Ok(bstr(&crate::moon_extract::list_text(reg)))
         }
         Some("services") => {
             let Some(id) = args.get(1).and_then(|w| w.parse::<i64>().ok()) else {

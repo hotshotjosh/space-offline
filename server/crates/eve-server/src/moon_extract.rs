@@ -1,10 +1,15 @@
-//! Moon mining extractions (#53, pure core): the client's model, with no world.
+//! Moon mining extractions (#53): the client's model, and the world part that
+//! schedules one.
 //!
-//! Spec: `parity-moon-drills.md` §2 and §L2.1 (the lane specs). This file holds what
-//! can be decided without a `Registry`: the client's constants, the extraction
-//! record, the duration and yield rules, the stage, the row text and the
-//! `KeyVal` the client reads. The world part (start, cancel, tick, pushes,
-//! notifications) comes in a later lane, once structures exist.
+//! Spec: `parity-moon-drills.md` §2 and §L2.1 (the lane specs). The first half of
+//! this file decides what needs no `Registry`: the client's constants, the
+//! extraction record, the duration and yield rules, the stage, the row text and
+//! the `KeyVal` the client reads. The second half ("The world part") is the
+//! rows ([`get`], [`put`]), [`start`], [`cancel`], [`end`], the clock's [`tick`]
+//! (arrival and the ends), the pushes and notices 202-204, the calendar event,
+//! the crater on the moon's slim and `/extraction`; its wire is
+//! `service/structures/moon.rs` (`moonExtractions`). The chunk, the fracture and
+//! the field are #54's.
 //!
 //! ## Provenance tags
 //!
@@ -19,10 +24,24 @@
 //! so that a compressed clock shortens the deadlines and not the stamps'
 //! unit, as `game_clock.rs` explains.
 
+use std::time::{Duration, Instant};
+
 use eve_marshal::PyValue;
 
+use crate::calendar;
+use crate::damage::BlueTime;
+use crate::delta::Deltas;
 use crate::moon::Share;
-use crate::pyutil::keyval;
+use crate::notifications::{Data, Value, data};
+use crate::notify::Push;
+use crate::pyutil::{bstr, keyval};
+use crate::service::{Registry, ServiceError};
+use crate::slim_extra::SlimExtras;
+use crate::structure::{self, SECOND};
+use crate::structure_dock::control;
+use crate::structure_profile as sp;
+use crate::structure_services as svc;
+use crate::world_ext::{Boxed, SlotSpec};
 
 // ---------------------------------------------------------------------------
 // moonmining.const [V] (C:moonmining/const.py:6-25)
@@ -473,6 +492,684 @@ pub fn parse(structure_id: i64, f: &[String]) -> Option<Extraction> {
         field_seq: opt_parse(&f[14])?,
     })
 }
+
+// ---------------------------------------------------------------------------
+// The world part (#53 MOON-SCHEDULE)
+// ---------------------------------------------------------------------------
+
+/// The first id of a chunk ball: the id of the extraction added to it. The
+/// ball itself is #54's (the fracture lane); until then the client finds no ball
+/// and returns quietly [V] (`planet.py:102-104`). [I] the band is the one
+/// `parity-moon-drills.md` §L3.2 names, past `moon_belt`'s and below the NPC
+/// orders; falsifier: #54 picks another band and the crater names a ball that
+/// is not the chunk.
+pub const CHUNK_BASE: i64 = 9_700_100_000_000;
+
+/// The automatic fracture delay when the structure type is missing from the
+/// type table altogether, in seconds. A type that is in the table always has a
+/// value (the data's own default for 2698 is three hours), so the fallback never
+/// applies to a real drilling platform. [A] two days; falsifier: a drilling
+/// platform whose type row is absent and whose retail delay differs.
+pub const FALLBACK_AUTO_FRACTURE_S: i64 = 172_800;
+
+/// The type the client builds a character link with (`showinfo:1373//<id>`).
+/// [A] any character type id opens the character's info; falsifier: the link
+/// opens nothing.
+const CHARACTER_LINK_TYPE: i64 = 1_373;
+
+/// What the world slot keeps: the stamp of the last tick. The rows are the
+/// truth, a restart rebuilds from [`KIND`].
+#[derive(Debug, Default)]
+pub struct Cache {
+    pub last_tick: i64,
+    /// The stamp of the last full drill check ([`DRILL_CHECK_EVERY`]).
+    pub last_check: i64,
+    /// `structure -> (name, type)` as last seen, so a notice for a structure
+    /// that is gone still names it.
+    pub names: std::collections::BTreeMap<i64, (String, i64)>,
+}
+
+/// How often the tick runs the full drill check (`online_with`), in seconds. The
+/// hook ([`on_services_changed`]) ends an extraction the moment its drill goes
+/// offline; this is the safety net for a change that bypassed it (a restored
+/// row). [A] a minute; falsifier: a drill offline for longer than that with its
+/// extraction still running.
+pub const DRILL_CHECK_EVERY: i64 = 60;
+
+/// The [`Cache`] world slot (`world_ext::SLOTS`).
+pub const SLOT: SlotSpec = SlotSpec {
+    name: "moon_extract",
+    make: |_| Box::new(Cache::default()) as Boxed,
+};
+
+fn row_key(structure_id: i64) -> Vec<String> {
+    vec![structure_id.to_string()]
+}
+
+/// The extraction of `structure_id`, if it has one.
+pub fn get(d: &Deltas, structure_id: i64) -> Option<Extraction> {
+    parse(structure_id, d.of(KIND).get(&row_key(structure_id))?)
+}
+
+/// Every extraction, in structure-id string order. A row that does not parse
+/// is skipped here; [`tick`] logs and drops it.
+pub fn all(d: &Deltas) -> Vec<Extraction> {
+    d.of(KIND)
+        .iter()
+        .filter(|(k, _)| k.len() == 1 && k[0] != "next")
+        .filter_map(|(k, v)| parse(k[0].parse().ok()?, v))
+        .collect()
+}
+
+/// The extractions of `corp`.
+pub fn of_corp(d: &Deltas, corp: i64) -> Vec<Extraction> {
+    all(d)
+        .into_iter()
+        .filter(|e| e.owner_corp == corp)
+        .collect()
+}
+
+/// Write one extraction's row.
+pub fn put(d: &mut Deltas, e: &Extraction) {
+    d.put(KIND, row_key(e.structure_id), row(e));
+}
+
+/// Delete the row of `structure_id`.
+pub fn remove(d: &mut Deltas, structure_id: i64) {
+    d.del(KIND, &row_key(structure_id));
+}
+
+/// Take the next extraction id (1, 2, ...), as [`calendar::alloc_id`] does.
+fn alloc_id(d: &mut Deltas) -> i64 {
+    let key = vec!["next".to_owned()];
+    let n = d
+        .of(KIND)
+        .get(&key)
+        .and_then(|v| v.first())
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(1);
+    d.put(KIND, key, vec![(n + 1).to_string()]);
+    n
+}
+
+/// Why a call is refused. [`Denied::key`] is the client's own `UserError` key
+/// where the client has one [V] (`findings/user-errors.tsv`); where it has none
+/// the refusal is a `CustomNotify` with our own words [A text].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Denied {
+    /// The pilot is not at the controls of the structure asked about.
+    NotControlling,
+    /// The structure is not a drilling platform (or does not exist).
+    NotDrillingPlatform,
+    /// No online Standup Moon Drill.
+    DrillOffline,
+    /// No mining beacon within 250 km.
+    NoBeacon,
+    /// The structure has an extraction already.
+    Busy,
+    /// The duration is out of range.
+    Duration(Refusal),
+    /// The moon has no makeup to extract.
+    NothingToExtract,
+    /// The pilot may not stop the extraction (no station manager role of the owner corporation).
+    NotAllowed,
+    /// `CancelExtraction` with no extraction.
+    NoExtraction,
+    /// `CancelExtraction` after the chunk arrived (the client shows Stop only in transit).
+    NotInTravel,
+    /// `GetMoonResourcesForStructure` with no online drill.
+    ResourcesNeedDrill,
+    /// `GetMoonResourcesForStructure` with no beacon.
+    ResourcesNeedBeacon,
+    /// `FractureChunkWithStructure` before #54 (the fracture lane) exists.
+    NotYetFracturable,
+}
+
+impl Denied {
+    /// The `UserError` key of the refusal.
+    pub fn key(self) -> &'static str {
+        match self {
+            Denied::NotControlling
+            | Denied::NotAllowed
+            | Denied::NoExtraction
+            | Denied::NotInTravel => "StructureMoonminingDenied",
+            Denied::NotDrillingPlatform => "StructureServiceUnavailable",
+            Denied::DrillOffline => "CannotStartExtractionMustHaveOnlineMoonDrill",
+            Denied::NoBeacon => "CannotStartExtractionMustBeNearMoonMiningBeacon",
+            Denied::Busy => "CannotStartExtractionAnotherExtractionInProgress",
+            Denied::Duration(Refusal::TooShort) => "MoonminingEventTooShort",
+            Denied::Duration(Refusal::TooLong) | Denied::NothingToExtract => "CustomNotify",
+            Denied::ResourcesNeedDrill => "CannotGetResourcesMustHaveOnlineMoonDrill",
+            Denied::ResourcesNeedBeacon => "CannotGetResourcesMustBeNearMoonMiningBeacon",
+            Denied::NotYetFracturable => "ExtractionNotAvailableForFracture",
+        }
+    }
+
+    /// The error the wire raises.
+    pub fn into_error(self) -> ServiceError {
+        let text = match self {
+            Denied::Duration(Refusal::TooLong) => Some(format!(
+                "An extraction cannot last longer than {} days.",
+                MAXIMUM_EXTRACTION_DURATION / 86_400
+            )),
+            Denied::NothingToExtract => Some("This moon has nothing to extract.".to_owned()),
+            _ => None,
+        };
+        match text {
+            Some(t) => crate::modules::user_error("CustomNotify", vec![("notify", bstr(&t))]),
+            None => crate::modules::user_error(self.key(), vec![]),
+        }
+    }
+}
+
+/// The hull group of a structure type: its type row's, else the profile's table
+/// (as `structure_services` reads it).
+fn hull_group(reg: &Registry, type_id: i64) -> i64 {
+    crate::typedata::installed_in(reg.content())
+        .table()
+        .get(type_id)
+        .map_or_else(|| sp::group_of(type_id), |t| t.group_id)
+}
+
+/// A structure that exists and is a drilling platform, as the client's
+/// `IsDrillingPlatform` reads the group [V].
+fn drilling_platform(reg: &Registry, sid: i64) -> Option<structure::Structure> {
+    structure::get(reg.deltas(), sid)
+        .filter(|s| structure::is_drilling_platform(hull_group(reg, s.type_id)))
+}
+
+/// Start an extraction at `structure_id` for `actor`, at the controls, in the
+/// order the wire table lists: control, a drilling platform, an online drill, a
+/// beacon, no extraction yet, the duration, a makeup. Anyone at the controls may
+/// start (the controls already needed setting 17 or the owner's bypass): the
+/// client lets a pilot without the station manager role start after its own
+/// warning that he cannot stop it [V] (`schedulingSvc.py:61-63`); only stopping
+/// needs the role ([`cancel`]). Then
+/// the row, the calendar event when asked, notification 202, the push and the
+/// crater. With the fuel burn on, a start past the fuel expiry is allowed [V]
+/// (the client asked the pilot already, `schedulingSvc.py:59`).
+pub fn start(
+    reg: &mut Registry,
+    actor: i64,
+    structure_id: i64,
+    duration_s: i64,
+    add_to_calendar: bool,
+    now: BlueTime,
+) -> Result<Extraction, Denied> {
+    if control::controlling(reg, actor) != Some(structure_id) {
+        return Err(Denied::NotControlling);
+    }
+    let s = drilling_platform(reg, structure_id).ok_or(Denied::NotDrillingPlatform)?;
+    if !svc::online_with(reg, structure_id, SERVICE_MOONMINING) {
+        return Err(Denied::DrillOffline);
+    }
+    let moon = crate::moon_beacon::moon_in_range(reg, s.system, s.pos).ok_or(Denied::NoBeacon)?;
+    if get(reg.deltas(), structure_id).is_some() {
+        return Err(Denied::Busy);
+    }
+    check_duration(duration_s).map_err(Denied::Duration)?;
+    if crate::moon_scan::makeup(reg, moon).is_none_or(|m| m.is_empty()) {
+        return Err(Denied::NothingToExtract);
+    }
+    let content = reg.content();
+    let auto_s = crate::typedata::attribute_in(content, s.type_id, ATTR_AUTO_FRACTURE_DELAY)
+        .map_or(FALLBACK_AUTO_FRACTURE_S, |v| v as i64);
+    // [A] no rig or skill modifies it until structure rigs exist; falsifier: the
+    // planning window's `GetYieldMultiplier(structureID)`, read from the client's
+    // dogma, differs from `yieldMultiplier` after the start.
+    let yield_mult = crate::typedata::attribute_in(content, s.type_id, ATTR_YIELD_MULTIPLIER)
+        .unwrap_or(1.0)
+        * reg.config().rules.moon_yield_mult;
+    let clock = crate::game_clock::of(reg);
+    let p = plan(now, duration_s, auto_s, |sec| clock.span(sec * SECOND));
+    let calendar_event = add_to_calendar.then(|| {
+        let id = calendar::alloc_id(reg.deltas_mut());
+        let title: String = format!("Moon extraction: {}", s.name)
+            .chars()
+            .take(calendar::MAX_TITLE)
+            .collect();
+        let ev = calendar::Event {
+            id,
+            owner_id: s.owner_corp,
+            creator_id: actor,
+            scope: calendar::Scope::Corp,
+            date_time: p.chunk_available,
+            duration: None,
+            title,
+            description: String::new(),
+            importance: 0,
+            auto_event_type: Some(CALENDAR_AUTO_EVENT_MOON_EXTRACTION),
+            deleted: false,
+            modified: now,
+            invitees: Vec::new(),
+        };
+        calendar::put(reg.deltas_mut(), &ev);
+        // The client's calendar learns of it as of any shared event.
+        crate::service::calendar::announce_new(reg, &ev);
+        id
+    });
+    let e = Extraction {
+        id: alloc_id(reg.deltas_mut()),
+        structure_id,
+        moon_id: moon,
+        system_id: s.system,
+        owner_corp: s.owner_corp,
+        started_by: actor,
+        started: now,
+        start_move: p.start_move,
+        chunk_available: p.chunk_available,
+        natural_decay: p.natural_decay,
+        duration_s,
+        yield_mult,
+        calendar_event,
+        phase: Phase::Travel,
+        chunk_pos: None,
+        field_seq: None,
+    };
+    put(reg.deltas_mut(), &e);
+    reg.mark_dirty();
+    reg.ext_mut::<Cache>()
+        .names
+        .insert(structure_id, (s.name.clone(), s.type_id));
+    let by = character_link(reg, Some(actor));
+    tell(
+        reg,
+        &e,
+        NOTE_STARTED,
+        data([
+            ("startedBy", Value::Int(actor)),
+            ("startedByLink", by),
+            ("readyTime", Value::Int(e.chunk_available)),
+            ("autoTime", Value::Int(e.natural_decay)),
+            ("oreVolumeByType", ore_volume_value(reg, &e)),
+        ]),
+    );
+    push_update(reg, &e, to_keyval(&e));
+    announce_moon(reg, e.moon_id, e.system_id);
+    Ok(e)
+}
+
+/// Stop the extraction of the structure `actor` controls: only while the chunk is
+/// on its way (the client shows Stop only then, `scheduling.py:217-226` [V]), only
+/// the owner corporation's station manager, director or CEO (`may_launch`; the
+/// client disables the button otherwise [V]). Ends with [`Reason::Manual`].
+pub fn cancel(reg: &mut Registry, actor: i64, now: BlueTime) -> Result<(), Denied> {
+    let sid = control::controlling(reg, actor).ok_or(Denied::NotControlling)?;
+    let e = get(reg.deltas(), sid).ok_or(Denied::NoExtraction)?;
+    let in_corp = reg.character(actor).map(|c| c.corporation_id) == Some(e.owner_corp);
+    if !in_corp || !crate::service::sov_hub::may_launch(reg, actor) {
+        return Err(Denied::NotAllowed);
+    }
+    if stage(&e, now) != Phase::Travel {
+        return Err(Denied::NotInTravel);
+    }
+    end(reg, sid, Reason::Manual, Some(actor), now);
+    Ok(())
+}
+
+/// End the extraction of `structure_id`: delete the row and its calendar event
+/// (marked deleted, the row kept as the calendar does), clear the crater, push
+/// `OnMoonExtractionUpdate(None)`, and send 203 for [`Reason::Manual`],
+/// [`Reason::Offlined`] and [`Reason::Invalid`] (`cancelledBy` is `by`, `None`
+/// for the last two). [A] 203 also for the two automatic ends; falsifier: a TQ
+/// corp receiving no mail when a drill runs dry. A no-op without a row.
+pub fn end(reg: &mut Registry, structure_id: i64, reason: Reason, by: Option<i64>, now: BlueTime) {
+    let Some(e) = get(reg.deltas(), structure_id) else {
+        return;
+    };
+    remove(reg.deltas_mut(), structure_id);
+    if let Some(ev) = e
+        .calendar_event
+        .and_then(|id| calendar::get(reg.deltas(), id))
+    {
+        let ev = calendar::Event {
+            deleted: true,
+            modified: now,
+            ..ev
+        };
+        calendar::put(reg.deltas_mut(), &ev);
+        crate::service::calendar::announce_removed(reg, &ev);
+    }
+    reg.mark_dirty();
+    announce_moon(reg, e.moon_id, e.system_id);
+    push_update(reg, &e, PyValue::None);
+    if matches!(reason, Reason::Manual | Reason::Offlined | Reason::Invalid) {
+        let link = character_link(reg, by);
+        tell(
+            reg,
+            &e,
+            NOTE_CANCELLED,
+            data([
+                ("cancelledBy", by.map_or(Value::None, Value::Int)),
+                ("cancelledByLink", link),
+            ]),
+        );
+    }
+    reg.ext_mut::<Cache>().names.remove(&structure_id);
+}
+
+/// A service of `sid` changed (`structure_services::on_services_changed`, the #53
+/// hook line): the drill going offline ends the running extraction with
+/// [`Reason::Offlined`].
+pub fn on_services_changed(reg: &mut Registry, sid: i64) {
+    if get(reg.deltas(), sid).is_some() && !svc::online_with(reg, sid, SERVICE_MOONMINING) {
+        end(
+            reg,
+            sid,
+            Reason::Offlined,
+            None,
+            crate::pyutil::filetime_now(),
+        );
+    }
+}
+
+/// Every second, for every row: a row that does not parse is logged and dropped;
+/// the structure gone or no longer a drilling platform ends it with
+/// [`Reason::Invalid`]; a `Travel` row reaching `chunk_available` becomes
+/// `Ready`, notice 204 and a push. Every [`DRILL_CHECK_EVERY`] seconds the drill
+/// not online ends it with [`Reason::Offlined`] too (the hook does it at once). `Ready`
+/// reaching `natural_decay` is #54's (the automatic fracture), and does nothing
+/// here (and logs nothing: it would repeat every second).
+pub fn tick(reg: &mut Registry, _: Instant, now: BlueTime) {
+    let check = {
+        let c = reg.ext_mut::<Cache>();
+        c.last_tick = now;
+        let due = now - c.last_check >= DRILL_CHECK_EVERY * SECOND;
+        if due {
+            c.last_check = now;
+        }
+        due
+    };
+    let bad: Vec<Vec<String>> = reg
+        .deltas()
+        .of(KIND)
+        .iter()
+        .filter(|(k, v)| {
+            k.len() == 1
+                && k[0] != "next"
+                && k[0]
+                    .parse()
+                    .ok()
+                    .is_none_or(|id: i64| parse(id, v).is_none())
+        })
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in bad {
+        crate::errln!("[moonextract] dropping a row that does not parse: {k:?}");
+        reg.deltas_mut().del(KIND, &k);
+        reg.mark_dirty();
+    }
+    for mut e in all(reg.deltas()) {
+        let Some(s) = drilling_platform(reg, e.structure_id) else {
+            end(reg, e.structure_id, Reason::Invalid, None, now);
+            continue;
+        };
+        reg.ext_mut::<Cache>()
+            .names
+            .insert(e.structure_id, (s.name, s.type_id));
+        if check && !svc::online_with(reg, e.structure_id, SERVICE_MOONMINING) {
+            end(reg, e.structure_id, Reason::Offlined, None, now);
+        } else if arrive(&mut e, now) {
+            put(reg.deltas_mut(), &e);
+            reg.mark_dirty();
+            tell(
+                reg,
+                &e,
+                NOTE_FINISHED,
+                data([
+                    ("autoTime", Value::Int(e.natural_decay)),
+                    ("oreVolumeByType", ore_volume_value(reg, &e)),
+                ]),
+            );
+            push_update(reg, &e, to_keyval(&e));
+        }
+    }
+}
+
+// -- what the client reads ------------------------------------------------------
+
+/// `<a href="showinfo:T//I">name</a>`, the client's link [V]
+/// (`linkUtil.py`).
+fn link(type_id: i64, id: i64, name: &str) -> String {
+    format!("<a href=\"showinfo:{type_id}//{id}\">{name}</a>")
+}
+
+/// A character's link as a notification value; empty text for no character.
+fn character_link(reg: &Registry, id: Option<i64>) -> Value {
+    // The client's formatter makes the link of `None` as an empty text.
+    let Some(id) = id else {
+        return Value::Text(String::new());
+    };
+    let name = reg
+        .character(id)
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
+    Value::Text(link(CHARACTER_LINK_TYPE, id, &name))
+}
+
+/// The base data of 202-206 [V] (`moonmining.py` `GetBaseData`): `structureID`,
+/// `structureName`, `structureTypeID`, `solarSystemID`, `moonID`, and
+/// `structureLink` (which the formatter builds itself; ours is harmless).
+fn data_base(reg: &Registry, e: &Extraction) -> Data {
+    let (name, type_id) = structure::get(reg.deltas(), e.structure_id)
+        .map(|s| (s.name, s.type_id))
+        .or_else(|| reg.ext::<Cache>().names.get(&e.structure_id).cloned())
+        .unwrap_or_default();
+    data([
+        ("structureID", Value::Int(e.structure_id)),
+        (
+            "structureLink",
+            Value::Text(link(type_id, e.structure_id, &name)),
+        ),
+        ("structureName", Value::Text(name)),
+        ("structureTypeID", Value::Int(type_id)),
+        ("solarSystemID", Value::Int(e.system_id)),
+        ("moonID", Value::Int(e.moon_id)),
+    ])
+}
+
+/// `oreVolumeByType`: `{oreTypeID: m3}` with integer keys [V]
+/// (`evetypes.GetName(oreTypeID)` in `GetOreText`), from the moon's makeup and
+/// the extraction's yield.
+fn ore_volume_value(reg: &Registry, e: &Extraction) -> Value {
+    let shares = crate::moon_scan::makeup(reg, e.moon_id).unwrap_or_default();
+    let total = total_yield_m3(e.duration_s, e.yield_mult);
+    Value::IntDict(
+        ore_volumes(&shares, total)
+            .into_iter()
+            .map(|(ore, m3)| (ore, Value::Real(m3)))
+            .collect(),
+    )
+}
+
+/// One notification of `type_id` with the base data and `extra`, to the owner
+/// corporation's managers ([`crate::structure_notify::tell_corp`]; [A] every
+/// member with `may_launch`, online or not, the corporation the sender;
+/// falsifier: a TQ corp member without the role receiving them).
+fn tell(reg: &mut Registry, e: &Extraction, type_id: i64, extra: Data) {
+    let mut d = data_base(reg, e);
+    d.extend(extra);
+    crate::structure_notify::tell_corp(reg, e.owner_corp, type_id, d);
+}
+
+/// `OnMoonExtractionUpdate(extraction | None)` [V] (`schedulingSvc.py:130`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtractionUpdate {
+    pub to: Vec<i64>,
+    pub value: PyValue,
+}
+
+impl Push for ExtractionUpdate {
+    fn to_push(&self) -> (&'static str, Vec<PyValue>) {
+        ("OnMoonExtractionUpdate", vec![self.value.clone()])
+    }
+
+    fn audience(&self) -> Option<Vec<i64>> {
+        Some(self.to.clone())
+    }
+}
+
+/// Who hears the update **[A]**: the pilot at the structure's controls and every
+/// member of the owner corporation docked in it. Falsifier: a TQ corp member in
+/// the structure browser not updated.
+fn update_audience(reg: &Registry, e: &Extraction) -> Vec<i64> {
+    let mut to: Vec<i64> = control::pilot_of(reg, e.structure_id).into_iter().collect();
+    for c in reg.characters_at_station(e.structure_id) {
+        if c.corporation_id == e.owner_corp && !to.contains(&c.character_id) {
+            to.push(c.character_id);
+        }
+    }
+    to
+}
+
+/// Push the update on the clock, as the other structure pushes are: the tick
+/// runs outside any call, where a plain push would reach whoever spoke next.
+fn push_update(reg: &mut Registry, e: &Extraction, value: PyValue) {
+    let to = update_audience(reg, e);
+    if !to.is_empty() {
+        reg.schedule(Duration::ZERO, ExtractionUpdate { to, value });
+    }
+}
+
+/// The crater on the moon's slim: `("ExtractionCrater", (direction, started,
+/// chunk_id))` for each moon of `ids` with an extraction. `direction` is the unit
+/// vector from the moon's centre to the structure [I] (the client's crater faces
+/// `impactDirection`, and its drill component aims from the structure to the
+/// moon, `moonDrillComponent.py:98-104`); `started` the row's stamp; `chunk_id`
+/// [`CHUNK_BASE`] plus the extraction id. Falsifier: the crater on the wrong side
+/// of the moon.
+pub fn slim_extras(w: &Registry, ids: &[i64]) -> SlimExtras {
+    let rows = all(w.deltas());
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    ids.iter()
+        .filter_map(|moon| {
+            let e = rows.iter().find(|e| e.moon_id == *moon)?;
+            let at = w.celestials().get(*moon)?.position;
+            let s = structure::get(w.deltas(), e.structure_id)?;
+            let d = [s.pos[0] - at[0], s.pos[1] - at[1], s.pos[2] - at[2]];
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            let unit = if len > 0.0 && len.is_finite() {
+                [d[0] / len, d[1] / len, d[2] / len]
+            } else {
+                [0.0, 0.0, 1.0]
+            };
+            let crater = PyValue::Tuple(vec![
+                PyValue::Tuple(unit.iter().map(|v| PyValue::Real(*v)).collect()),
+                PyValue::Long(e.started),
+                PyValue::Int(CHUNK_BASE + e.id),
+            ]);
+            Some((*moon, vec![(MOON_CRATER_SLIMITEM_NAME, crater)]))
+        })
+        .collect()
+}
+
+/// `OnSlimItemChange` of the moon, to the pilots in its system, so a crater
+/// appears without a re-jump **[I]** (a celestial's slim can change like a hub's;
+/// falsifier: no crater after the push while one appears after a re-jump). A
+/// crater that goes is only dropped from the slim: the client never removes one
+/// it has drawn until the chunk ball of #54 exists (falsifier: a crater that
+/// vanishes on the push). The slim is the celestial's (owner 1, no character or corporation).
+fn announce_moon(reg: &mut Registry, moon_id: i64, system: i64) {
+    let to = crate::structure_space::in_space(reg, system);
+    if to.is_empty() {
+        return;
+    }
+    let Some(type_id) = reg.celestials().get(moon_id).map(|c| c.type_id) else {
+        return;
+    };
+    let extras = crate::slim_extra::for_slims(reg, &[moon_id])
+        .into_iter()
+        .filter(|(id, _)| *id == moon_id)
+        .flat_map(|(_, x)| x)
+        .collect();
+    let stamp = reg.next_destiny_stamp();
+    reg.schedule(
+        Duration::ZERO,
+        crate::sov_hub::HubSlimChange {
+            to,
+            stamp,
+            slim: crate::destiny::Slim {
+                item_id: moon_id,
+                type_id,
+                owner_id: 1,
+                char_id: None,
+                corp_id: None,
+                response_thresholds: None,
+            },
+            extras,
+        },
+    );
+}
+
+/// `/upwell moon list`: every extraction, for a GM.
+pub fn list_text(reg: &Registry) -> String {
+    let rows = all(reg.deltas());
+    if rows.is_empty() {
+        return "no extractions".to_owned();
+    }
+    rows.iter()
+        .map(|e| {
+            format!(
+                "{} structure {} moon {} corp {} {:?} ready {} decay {}",
+                e.id,
+                e.structure_id,
+                e.moon_id,
+                e.owner_corp,
+                e.phase,
+                e.chunk_available,
+                e.natural_decay
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `/extraction advance mid|stop|ready|decay`: the window's GM buttons [V names]
+/// on the controlled structure's extraction (see [`advance`]); the row is pushed.
+/// `stop` is not modelled (the chunk keeps travelling) and says so.
+pub(crate) fn slash(
+    reg: &mut Registry,
+    actor: Option<i64>,
+    args: &[&str],
+) -> Result<PyValue, ServiceError> {
+    const USAGE: &str = "/extraction advance mid|stop|ready|decay";
+    let Some(actor) = actor else {
+        return Ok(bstr("no character"));
+    };
+    let (Some("advance"), Some(mode), 2) = (
+        args.first().copied(),
+        args.get(1).and_then(|w| Advance::parse(w)),
+        args.len(),
+    ) else {
+        return Ok(bstr(USAGE));
+    };
+    let Some(sid) = control::controlling(reg, actor) else {
+        return Ok(bstr("you are not at the controls of a structure"));
+    };
+    let Some(mut e) = get(reg.deltas(), sid) else {
+        return Ok(bstr("that structure has no extraction"));
+    };
+    let now = crate::pyutil::filetime_now();
+    let clock = crate::game_clock::of(reg);
+    if !advance(&mut e, mode, now, |sec| clock.span(sec * SECOND)) {
+        return Ok(bstr(match mode {
+            Advance::Stop => "stop is not modelled: the chunk keeps travelling",
+            _ => "nothing changed: the extraction is not in a phase that moves",
+        }));
+    }
+    put(reg.deltas_mut(), &e);
+    reg.mark_dirty();
+    push_update(reg, &e, to_keyval(&e));
+    Ok(bstr(&format!(
+        "extraction {}: chunk ready {}, decay {}",
+        e.id, e.chunk_available, e.natural_decay
+    )))
+}
+
+#[cfg(test)]
+mod world_tests;
 
 #[cfg(test)]
 mod tests {

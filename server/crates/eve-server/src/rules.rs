@@ -77,7 +77,18 @@ pub struct Rules {
     /// decides D2 otherwise. Off, nothing burns, onlining costs nothing, and
     /// the browser's fuel expiry is still computed.
     pub structure_fuel_burn: bool,
+    /// The multiplier on the yield of a moon extraction, times the structure's
+    /// own 2704 (`moon_extract`; `/world moonyield`, #53). **[A]** 1.0, retail's
+    /// yield, so the default changes nothing; falsifier: the soak's `[econ]`
+    /// goo glut asks for another default. Read when an extraction starts: one
+    /// already running keeps the value it started with.
+    pub moon_yield_mult: f64,
 }
+
+/// The default [`Rules::moon_yield_mult`]: retail's yield (#53).
+pub const DEFAULT_MOON_YIELD_MULT: f64 = 1.0;
+/// The bounds of [`Rules::moon_yield_mult`]. **[A]** only a sanity bound.
+pub const MOON_YIELD_MULT_RANGE: std::ops::RangeInclusive<f64> = 0.01..=100.0;
 
 /// The defaults of the asset safety timers and fee. **[A]**, falsifier: the
 /// owner decision on the numbers (issue #49).
@@ -123,6 +134,7 @@ impl Default for Rules {
             safety_fee_pct: DEFAULT_SAFETY_FEE_PCT,
             structure_core_required: true,
             structure_fuel_burn: false,
+            moon_yield_mult: DEFAULT_MOON_YIELD_MULT,
         }
     }
 }
@@ -177,6 +189,14 @@ impl Rules {
                 self.safety_auto_secs,
                 SAFETY_SECS_RANGE.start(),
                 SAFETY_SECS_RANGE.end()
+            ));
+        }
+        if !MOON_YIELD_MULT_RANGE.contains(&self.moon_yield_mult) {
+            return Err(format!(
+                "rules.moon_yield_mult {} is outside {}..={}",
+                self.moon_yield_mult,
+                MOON_YIELD_MULT_RANGE.start(),
+                MOON_YIELD_MULT_RANGE.end()
             ));
         }
         if !self.safety_fee_pct.is_finite() || !(0.0..=100.0).contains(&self.safety_fee_pct) {
@@ -270,6 +290,15 @@ mod tests {
         for bad in [0, 59, 604_801, -5] {
             let r = Rules {
                 upwell_anchor_secs: bad,
+                ..Rules::default()
+            };
+            assert!(r.validate().is_err(), "{bad}");
+        }
+        // New in #53: retail's yield, so today's behaviour; the bounds hold.
+        assert_eq!(r.moon_yield_mult, DEFAULT_MOON_YIELD_MULT);
+        for bad in [0.0, 0.009, 100.5, f64::NAN, f64::INFINITY, -1.0] {
+            let r = Rules {
+                moon_yield_mult: bad,
                 ..Rules::default()
             };
             assert!(r.validate().is_err(), "{bad}");

@@ -137,6 +137,12 @@ pub const RULES: &[StageRule] = &[
         Rule::Every,
         "per live system, returns at once while its window is laid out",
     ),
+    // #53: the extraction rows are the whole input.
+    r(
+        "moon_extract",
+        Rule::Every,
+        "running extractions only, read from their rows; no row, no work; each second only its arrival and that its structure exists, the drill check once a minute (the hook ends one at once)",
+    ),
     r(
         "moon_scan",
         Rule::Every,

@@ -85,6 +85,15 @@ pub const STAGES: &[Stage] = &[
         phase: 0,
         run: crate::moon_belt::tick,
     },
+    // #53 MOON-SCHEDULE: after `moon_belt`: a moon extraction's chunk arrives
+    // (204), and one whose drill went offline or whose structure is gone ends.
+    // Reads only the `moonextract` rows, so a world with none pays one row scan.
+    Stage {
+        name: "moon_extract",
+        every: 1,
+        phase: 0,
+        run: crate::moon_extract::tick,
+    },
     // MN-D: survey probes whose time is up report to the Moon Analysis window.
     Stage {
         name: "moon_scan",

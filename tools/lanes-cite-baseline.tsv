@@ -1025,6 +1025,9 @@ tools/client-ci/scenarios/fci_mobile_bubble.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_moon_beacon.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_moon_beacon.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_moon_beacon.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_moon_schedule.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_moon_schedule.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_moon_schedule.py	docs/lanes/f-ci.md	1
 tools/client-ci/scenarios/fci_motherlode.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_motherlode.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_mtu.py	docs/archive/plan-client-ci.md	1

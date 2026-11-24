@@ -462,6 +462,16 @@ pub fn services_of_with(
     )
 }
 
+/// Whether `service` is **online** on the structure `sid` right now: the
+/// service is given by an online module (or the hull) and the hull is online
+/// ([`services_of`]). False for a structure that does not exist. #53 asks it
+/// of `SERVICE_MOONMINING` (the moon drill) before an extraction starts and on
+/// every tick of a running one.
+pub(crate) fn online_with(reg: &Registry, sid: i64, service: i64) -> bool {
+    structure::get(reg.deltas(), sid)
+        .is_some_and(|s| services_of(reg, &s).get(&service) == Some(&SERVICE_STATE_ONLINE))
+}
+
 /// The multiplier on a structure's shield and armour points right now: at full
 /// power the highest 2744 over its online modules; at low or no power the
 /// hull's own 2743 (default 1.0) **[I]**. At full power with no module online
@@ -928,7 +938,9 @@ pub fn on_services_changed(reg: &mut Registry, sid: i64) {
             reg.push(crate::service::structures::CorpStructuresUpdated { to: corp });
         }
     }
-    // One line each, where #53 (moon drills) learns that a module changed.
+    // #53: the moon drill going offline ends the running extraction
+    // (`Reason::Offlined`); a no-op for a structure with no extraction.
+    crate::moon_extract::on_services_changed(reg, sid);
     // #42 part b's fuel burn needs no hook: it reads the online rows on its
     // own clock and starts a module's burn at the next hour
     // (`structure_fuel::pay_online`).

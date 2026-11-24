@@ -253,6 +253,9 @@ pub enum Value {
     /// (`('showinfo', typeID, id)`, `(itemID, name, typeID)`).
     Tuple(Vec<Value>),
     Dict(Data),
+    /// A Python dict with integer keys, `(key, value)` in order: the data a
+    /// formatter indexes by an id (#53: `oreVolumeByType`, `{oreTypeID: m3}`).
+    IntDict(Vec<(i64, Value)>),
 }
 
 /// A notification's `data`: the formatter's keys and their values, in the
@@ -276,6 +279,12 @@ impl Value {
             Value::List(v) => PyValue::List(v.iter().map(Value::to_py).collect()),
             Value::Tuple(v) => PyValue::Tuple(v.iter().map(Value::to_py).collect()),
             Value::Dict(d) => dict_py(d),
+            // #53: integer keys, wire order value then key.
+            Value::IntDict(d) => PyValue::Dict(
+                d.iter()
+                    .map(|(k, v)| (v.to_py(), PyValue::Int(*k)))
+                    .collect(),
+            ),
         }
     }
 
@@ -312,6 +321,18 @@ impl Value {
                 }
             }
             Value::Dict(d) => encode_dict(d, out),
+            // #53: tag `D`, `D<len>:` then `i<key>;` and the value per entry.
+            Value::IntDict(d) => {
+                out.push('D');
+                out.push_str(&d.len().to_string());
+                out.push(':');
+                for (k, v) in d {
+                    out.push('i');
+                    out.push_str(&k.to_string());
+                    out.push(';');
+                    v.encode(out);
+                }
+            }
         }
     }
 
@@ -342,6 +363,20 @@ impl Value {
                 Value::Tuple(v)
             }
             b'd' => Value::Dict(decode_dict_body(s, at)?),
+            // #53: the integer-keyed dict.
+            b'D' => {
+                let n: usize = until(s, at, b':')?.parse().ok()?;
+                let mut d = Vec::with_capacity(n.min(64));
+                for _ in 0..n {
+                    if s.as_bytes().get(*at) != Some(&b'i') {
+                        return None;
+                    }
+                    *at += 1;
+                    let k: i64 = until(s, at, b';')?.parse().ok()?;
+                    d.push((k, Value::decode(s, at)?));
+                }
+                Value::IntDict(d)
+            }
             _ => return None,
         })
     }
@@ -1011,6 +1046,45 @@ mod tests {
             T,
             data([("charID", Value::Int(who))]),
         )
+    }
+
+    /// #53: an integer-keyed dict (`oreVolumeByType`) round-trips through the
+    /// field and marshals with `Int` keys, never text keys; a field cut inside
+    /// an entry is refused. Fails without `Value::IntDict`.
+    #[test]
+    fn int_dict_round_trips_and_marshals_int_keys() {
+        let d = data([(
+            "oreVolumeByType",
+            Value::IntDict(vec![
+                (-5, Value::Real(1.5)),
+                (9_000_001, Value::Real(2.0e6)),
+                (0, Value::Int(3)),
+            ]),
+        )]);
+        let field = encode_data(&d);
+        assert_eq!(decode_data(&field), Some(d.clone()));
+        let escaped = crate::store::unesc(&crate::store::esc(&field));
+        assert_eq!(decode_data(&escaped), Some(d.clone()));
+        assert_eq!(decode_data(&field[..field.len() - 1]), None);
+        assert_eq!(
+            Value::IntDict(Vec::new()).to_py(),
+            PyValue::Dict(Vec::new())
+        );
+        let PyValue::Dict(entries) = d[0].1.to_py() else {
+            panic!("a dict");
+        };
+        let keys: Vec<&PyValue> = entries.iter().map(|(_, k)| k).collect();
+        assert_eq!(
+            keys,
+            vec![
+                &PyValue::Int(-5),
+                &PyValue::Int(9_000_001),
+                &PyValue::Int(0)
+            ]
+        );
+        assert_eq!(entries[0].0, PyValue::Real(1.5));
+        // A bad key is refused.
+        assert_eq!(decode_data("d1:s1:aD1:s1:x"), None);
     }
 
     /// Every value shape round-trips through the delta field, text with the

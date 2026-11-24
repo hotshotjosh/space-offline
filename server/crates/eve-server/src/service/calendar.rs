@@ -164,6 +164,29 @@ fn new_args(e: &Event) -> Vec<PyValue> {
     ]
 }
 
+/// `OnNewCalendarEvent` to everyone who can see the event `e`, for an event the
+/// server made itself (#53: a moon extraction's), as `create` does for a shared one.
+pub(crate) fn announce_new(reg: &mut Registry, e: &Event) {
+    let to = audience(reg, e);
+    tell(reg, to, "OnNewCalendarEvent", new_args(e));
+}
+
+/// `OnRemoveCalendarEvent` to everyone who can see `e`, for an event the server
+/// deleted itself (#53), as `delete` does.
+pub(crate) fn announce_removed(reg: &mut Registry, e: &Event) {
+    let to = audience(reg, e);
+    tell(
+        reg,
+        to,
+        "OnRemoveCalendarEvent",
+        vec![
+            PyValue::Int(e.id),
+            PyValue::Int(e.date_time),
+            PyValue::Bool(true),
+        ],
+    );
+}
+
 fn visible(reg: &Registry, me: i64, id: i64) -> Result<Event, ServiceError> {
     cal::get(reg.deltas(), id)
         .filter(|e| viewer(reg, me).can_see(e))

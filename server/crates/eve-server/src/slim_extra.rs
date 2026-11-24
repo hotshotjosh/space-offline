@@ -71,6 +71,8 @@ pub const SOURCES: &[Source] = &[
     crate::ess::slim_extras,
     // EM-3 (#207): a ship with an enabled emblem carries `cosmeticsItems`.
     crate::emblem::slim,
+    // #53 MOON-SCHEDULE: a moon with a running extraction carries `ExtractionCrater`.
+    crate::moon_extract::slim_extras,
     // #65 PG-2b: a Proving Grounds ring carries `startTime`, `endTime`, `kill`, `eventComplete`.
     crate::proving::arena::slim_extras,
 ];

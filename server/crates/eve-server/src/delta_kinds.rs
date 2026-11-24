@@ -352,6 +352,11 @@ pub const KINDS: &[(&str, &str)] = &[
     // the UTC hour (FILETIME) a structure's modules last paid their fuel for,
     // and whether the low-fuel mail went out for this crossing.
     ("strfuel", "structure_fuel"),
+    // #53 MOON-SCHEDULE: `structure_id -> id moon system owner_corp started_by
+    // started start_move chunk_available natural_decay duration_s yield_mult
+    // calendar_event phase chunk_pos field_seq`, one running moon extraction
+    // per drilling structure (`moon_extract::row`); `next -> n` is the next id.
+    ("moonextract", "moon_extract"),
     // ASSET-SAFETY-1 (#49): `wrap_item_id -> owner system origin created
     // name`, an asset safety wrap of a structure that left space.
     ("safetywrap", "asset_safety"),

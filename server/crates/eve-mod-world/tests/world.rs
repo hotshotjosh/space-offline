@@ -453,6 +453,29 @@ fn the_fuel_burn_is_live_a_switch_and_off_by_default() {
     assert!(!reg.config().rules.structure_fuel_burn);
 }
 
+/// #53: `/world moonyield` is live, bounded, and retail's 1.0 by default.
+#[test]
+fn the_moon_yield_is_live_bounded_and_retail_by_default() {
+    let mut reg = world();
+    settings::startup(&mut reg).expect("starts");
+    assert_eq!(
+        reg.config().rules.moon_yield_mult,
+        rules::DEFAULT_MOON_YIELD_MULT
+    );
+    info(slash(&mut reg, GM, "/world moonyield 2.5"));
+    assert_eq!(reg.config().rules.moon_yield_mult, 2.5);
+    assert_eq!(stored(&reg, "moonyield").as_deref(), Some("2.5"));
+    for line in [
+        "/world moonyield 0",
+        "/world moonyield 101",
+        "/world moonyield -1",
+        "/world moonyield nan",
+    ] {
+        info(slash(&mut reg, GM, line));
+        assert_eq!(reg.config().rules.moon_yield_mult, 2.5, "{line}");
+    }
+}
+
 #[test]
 fn the_delete_wait_is_live_and_bounded() {
     let mut reg = world();

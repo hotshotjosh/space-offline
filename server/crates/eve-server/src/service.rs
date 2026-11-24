@@ -318,8 +318,9 @@ mod stance;
 mod store;
 mod super_weapon;
 mod tales;
-// GAP-CALENDAR: `calendarProxy` and `calendarMgr`.
-mod calendar;
+// GAP-CALENDAR: `calendarProxy` and `calendarMgr`. #53: `pub(crate)` for the moon
+// extraction's event pushes (`announce_new`, `announce_removed`).
+pub(crate) mod calendar;
 // SOC-MEDALS: the `corporationSvc` medal calls.
 mod corp_medals;
 // S7: corp shares and dividends, the `corpRegistry` share calls.

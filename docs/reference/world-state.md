@@ -94,6 +94,7 @@ the list changes the world-format hash, which the policy above already covers.
 | `jumpfat` | `jump_fatigue` | per character `activation_until fatigue_until last_updated`, wall FILETIMEs; dropped once both are over | `cap-f` |
 | `agent` | `econ_agents` | the parked state of a logged-off bot career, so a restart keeps it (lazy settlement) | `e1-settle` |
 | `moonrock` | `moon_belt` | what is left of a moon belt's rocks; a moon belt writes no `rock` row | `mn-b` |
+| `moonextract` | `moon_extract` | one running moon extraction per drilling structure (key the structure id; the deadlines, yield, phase and calendar event id); `next` holds the next extraction id | `moon-schedule` |
 | `corpoff` | `corp_office` | a corporation's office rental: office item id, station, paid-until | `corp-o` |
 | `shipcfg` | `ship_config` | one short row per ship whose fleet-hangar or maintenance-bay switches are off the default | `cap-h` |
 | `cnode` | `command_nodes` | a live command node of a sov campaign | `sov-d3b` |

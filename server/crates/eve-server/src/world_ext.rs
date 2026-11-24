@@ -67,6 +67,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::population::SLOT,
     crate::site::SLOT,
     crate::moon_belt::SLOT,
+    // #53 MOON-SCHEDULE: the moon extraction tick's last stamp (the rows are the truth).
+    crate::moon_extract::SLOT,
     // MN-D: every survey probe out (R-MOON MN-D).
     crate::moon_scan::SLOT,
     crate::dungeon_tracking::SLOT,

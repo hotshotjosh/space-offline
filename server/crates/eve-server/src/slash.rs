@@ -313,6 +313,12 @@ pub const COMMANDS: &[Command] = &[
         usage: "/strfuel <structureID> hours <n>",
         run: crate::structure_fuel::slash,
     },
+    // #53 MOON-SCHEDULE: the client's own GM buttons of the extraction window.
+    Command {
+        name: "extraction",
+        usage: "/extraction advance mid|stop|ready|decay",
+        run: crate::moon_extract::slash,
+    },
     // ANSI-1 (#85): aim an Ansiblex by hand.
     Command {
         name: "jbridge",
