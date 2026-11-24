@@ -62,12 +62,13 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="250.0" y="61.5" width="3" height="3" class="built"/>
 <rect x="254.0" y="61.5" width="3" height="3" class="built"/>
 <rect x="258.0" y="61.5" width="3" height="3" class="built"/>
-<rect x="262.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="262.0" y="63.0" width="3" height="1.5" class="part-f"/>
+<rect x="262.0" y="61.5" width="3" height="3" class="built"/>
 <rect x="266.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="266.0" y="63.0" width="3" height="1.5" class="part-f"/>
-<rect x="270.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<rect x="270.5" y="62.0" width="2" height="2" fill="none" class="part-o"/><rect x="270.0" y="63.0" width="3" height="1.5" class="part-f"/>
 <rect x="274.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
 <rect x="278.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
-<text x="286.0" y="66.0" class="s xs">9</text>
+<rect x="282.5" y="62.0" width="2" height="2" fill="none" class="missing"/>
+<text x="290.0" y="66.0" class="s xs">10</text>
 <text x="16.0" y="82.0" class="t">3.5 PvE</text>
 <rect x="246.0" y="77.5" width="3" height="3" class="built"/>
 <rect x="250.0" y="77.5" width="3" height="3" class="built"/>

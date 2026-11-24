@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 367) · **95% built** (348 of 367) · 1 parked, not counted.
+**63% proved** (232 of 368) · **95% built** (349 of 368) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -57,6 +57,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 
 ### 3.4 Upwell
 
+- [ ] Compression in a structure: *built-unproved*, structureCompressionMgr answers its three methods: compress and gas decompression work in a structure that has an online Standup Reprocessing Facility (the structure share is the module's 3262 plus the hull's 3261, the pilot's the skill's 3260), and refuse with the client's own keys without one; compression.rs tests; fci_upwell_compress written, not yet run
 - [ ] Moon drills: *missing*, no moonExtractions service; moon_extract.rs pure core (timing, yields, KeyVal), uncalled (bc2a9a1e); beacons in the bundle (#52)
 - [ ] Metenox moon mining: *missing*, no autoMoonMining service
 - [ ] Industry in structures: *missing*, research report r-upwell-war; docked in a structure gives no industry facility, not a station's (industry_facility guard, #56); structure service modules still missing
@@ -195,7 +196,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Modules | 13 | 4 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 45 | 2 | 0 | 2 |
-| Industry and mining | 17 | 0 | 0 | 3 | 0 |
+| Industry and mining | 17 | 1 | 0 | 3 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
@@ -486,7 +487,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Industry and mining</b>: 17 of 20 proved, 3 open</summary>
+<details><summary><b>Industry and mining</b>: 17 of 21 proved, 4 open</summary>
 
 - [x] Mining and the mining hold: *client-proved*, fci_mining_hold W10
 - [x] Ice: *client-proved*, fci_x_ice W10
@@ -494,6 +495,7 @@ Closed by default; each line says how much of the system is proved.
 - [x] Mining crits and residue: *client-proved*, fci_mine_crit W10
 - [x] Moon survey: *client-proved*, fci_mn_d W10
 - [x] Compression in space: *client-proved*, fci_prog_mine W10
+- [ ] Compression in a structure: *built-unproved*, structureCompressionMgr answers its three methods: compress and gas decompression work in a structure that has an online Standup Reprocessing Facility (the structure share is the module's 3262 plus the hull's 3261, the pilot's the skill's 3260), and refuse with the client's own keys without one; compression.rs tests; fci_upwell_compress written, not yet run
 - [x] Fleet hangar: a fleet miner compresses at a fleet compressor: *client-proved*, fci_fleet_hangar (regress-w30a, --with-bots): the client's Orca opens its fleet hangar and a spawned fleet miner fills it with ore; tests/bots/fleet_hangar.rs
 - [x] Gas clouds use the client's linear radius law: *client-proved*, fci_gas_cloud (w27b): a gas site by signature, each cloud's radius equals the client's law of its SURVEYED quantity (Venture with a survey chipset); commit d7b0892; unit tests
 - [x] Belts sized from ore-anomaly rooms, full reset at downtime: *client-proved*, fci_belt_rocks: 136 rocks each on the client's radius law at a whole quantity, an offset field; survey: an online Mining Survey Chipset raises the ship's scanner tier, now served to the client, and perform_scan answers from tier 1 (#138; fci_belt_rocks w25a: 136 of 136 rocks surveyed, each quantity gives its rock's radius by the client's law); downtime reset stays a unit test

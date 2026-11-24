@@ -453,3 +453,5 @@ fci_proving_queue
 fci_proving_duel --with-second -- --character Alice --character Bob
 # PG-3 (#66): two pilots duel in a 2x1 Proving Grounds match; each client reads its statistics pushed unasked, the winner sees the leaderboard, is paid by /pg award (queue push, redeem tokens, Kredits), claims an item in the hangar, and a second award grants nothing (written, not yet run on a client)
 fci_proving_results --with-second -- --character Alice --character Bob
+# (#58) structureCompressionMgr in a spawned Astrahus: refuses cleanly while no reprocessing module is online (a raised UserError, decompress never None, efficiency (0,0)); with /upwell fit the module is fitted (written, not yet run on a client)
+fci_upwell_compress

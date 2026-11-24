@@ -1274,6 +1274,9 @@ tools/client-ci/scenarios/fci_upwell_anchor.py	docs/lanes/f-ci.md	1
 tools/client-ci/scenarios/fci_upwell_clone.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_upwell_clone.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_upwell_clone.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_compress.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_compress.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_compress.py	docs/lanes/f-ci.md	1
 tools/client-ci/scenarios/fci_upwell_control.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_upwell_control.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_upwell_control.py	docs/lanes/f-ci.md	1
