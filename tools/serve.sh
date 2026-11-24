@@ -161,8 +161,18 @@ echo "== eve-server build: $PROFILE"
 # flag would run the remote listener as GMs (or refuse it at boot).
 want=--world-accounts
 [[ -n $ACCOUNTS ]] && want=--accounts
-"$SERVER" --help 2>&1 | grep -q -- "$want" \
-    || deny "this eve-server has no $want yet; refusing to serve without accounts"
+help_out=$(mktemp "$VAR/help.XXXXXX" 2>/dev/null || mktemp)
+help_rc=0
+"$SERVER" --help >"$help_out" 2>&1 || help_rc=$?
+if (( help_rc != 0 )); then
+    echo "serve.sh: $SERVER --help failed (exit $help_rc):" >&2
+    head -n 5 "$help_out" | sed 's/^/   /' >&2
+    rm -f "$help_out"
+    die "the server binary is built in the Docker image and runs on the host, which needs glibc 2.35 or newer (Ubuntu 22.04 or newer); a loader error above means this host is older"
+fi
+grep -q -- "$want" "$help_out" && have_want=1 || have_want=0
+rm -f "$help_out"
+(( have_want )) || deny "this eve-server has no $want yet; refusing to serve without accounts"
 
 # Your own client's login, checked before the boot (run-client.sh reads it).
 if (( CLIENT )) && [[ -z $ACCOUNTS && -z ${EVE_SSO_TOKEN+set} ]]; then
@@ -342,14 +352,21 @@ while :; do
     started=$(date +%s)
     "$SERVER" "${ARGS[@]}" >"$LOG" 2>&1 9>&- &
     PID=$!
-    if (( first && CLIENT )); then
+    if (( first )); then
+        wait_host=127.0.0.1; (( CLIENT )) && wait_host=$HOST_IP
+        listening=0
         for _ in $(seq 120); do
-            timeout 1 bash -c "exec 3<>/dev/tcp/$HOST_IP/26000" 2>/dev/null && break
+            timeout 1 bash -c "exec 3<>/dev/tcp/$wait_host/26000" 2>/dev/null && { listening=1; break; }
             kill -0 "$PID" 2>/dev/null || break; sleep 1
         done
-        "$REPO/tools/run-client.sh" & CLIENT_PID=$!
+        if (( ! listening )) && kill -0 "$PID" 2>/dev/null; then
+            echo "serve.sh: eve-server is running but not listening on $wait_host:26000 after 120s; last lines:" >&2
+            tail -n 5 "$LOG" | sed 's/^/   /' >&2
+            die "eve-server never listened"
+        fi
+        (( CLIENT )) && { "$REPO/tools/run-client.sh" & CLIENT_PID=$!; }
+        (( listening )) && echo "== ready: eve-server listening on $wait_host:26000; serving, Ctrl-C to stop"
     fi
-    (( first )) && echo "serving; Ctrl-C to stop"
     # `wait` returns early when a trapped signal arrives; wait again for the exit.
     status=0; wait "$PID" || status=$?
     while kill -0 "$PID" 2>/dev/null; do status=0; wait "$PID" || status=$?; done

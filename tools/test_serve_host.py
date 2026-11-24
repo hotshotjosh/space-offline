@@ -119,6 +119,19 @@ class ServeTree(unittest.TestCase):
         self.assertIn("MANIFEST.tsv", r.stderr)
         self.assertFalse(os.path.exists(self.out), "the server must not start")
 
+    def test_a_loader_failure_in_help_is_not_reported_as_a_missing_flag(self) -> None:
+        write(
+            os.path.join(self.dir, "server/target/release/eve-offline-server"),
+            "#!/usr/bin/env bash\necho 'version GLIBC_2.99 not found' >&2\nexit 1\n",
+            0o755,
+        )
+        r = self.serve("--bundle-frozen")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("GLIBC_2.99", r.stderr)
+        self.assertIn("glibc 2.35", r.stderr)
+        self.assertNotIn("has no --world-accounts", r.stderr)
+        self.assertFalse(os.path.exists(self.out), "the server must not start")
+
     def test_remote_brings_a_third_owner_listener(self) -> None:
         r = self.serve("--bundle-frozen", "--remote")
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -43,6 +43,8 @@ Every flag and `EVE_*` variable is in
 
 - Linux, and WSL2 with Ubuntu 24.04, run the server, the tools and the gate.
 - Python 3.11 or newer.
+- glibc 2.35 or newer on the host: the server binary is built in the Docker image and
+  runs on the host (`tools/serve.sh`); an older host fails at the dynamic loader.
 - Docker, for `tools/dev.sh` (builds and tests) and `tools/analysis.sh`.
 - Ubuntu 22.04 (Python 3.10) and macOS are not supported.
 - The client does not run under WSL. It needs Linux with Steam and Proton,
