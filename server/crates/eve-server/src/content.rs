@@ -323,17 +323,30 @@ fn bundle_accepted(
     if !matches!(of.status, Status::Pinned | Status::Equivalent) {
         return None;
     }
-    accepted
+    // Every provisional build it serves is named: two can be open at once
+    // (a second hotfix before the first is measured).
+    let mut prov: Vec<u32> = accepted
         .iter()
-        .find(|b| {
-            entry_of(**b).is_some_and(|e| e.status == Status::Provisional && e.line == of.line)
+        .copied()
+        .filter(|b| {
+            entry_of(*b).is_some_and(|e| e.status == Status::Provisional && e.line == of.line)
         })
-        .map(|b| {
-            format!(
-                "serving provisional build {b} on the bundle of build {}",
-                of.build
-            )
-        })
+        .collect();
+    prov.sort_unstable();
+    prov.dedup();
+    let names: Vec<String> = prov.iter().map(u32::to_string).collect();
+    match names.len() {
+        0 => None,
+        1 => Some(format!(
+            "serving provisional build {} on the bundle of build {}",
+            names[0], of.build
+        )),
+        _ => Some(format!(
+            "serving provisional builds {} on the bundle of build {}",
+            names.join(", "),
+            of.build
+        )),
+    }
 }
 
 impl Bundle {
@@ -1144,6 +1157,22 @@ mod tests {
         assert_eq!(
             why,
             "serving provisional build 11 on the bundle of build 10"
+        );
+        // Two provisional builds served at once are both named, in order.
+        let two = [
+            BuildEntry {
+                build: 13,
+                line: &REFERENCE_LINE,
+                status: Status::Provisional,
+                data_hash: None,
+            },
+            rows[0],
+            rows[1],
+        ];
+        let entry_two = |b: u32| two.iter().find(|e| e.build == b).copied();
+        assert_eq!(
+            bundle_accepted(&bundle_of(10), &[13, 11], &no_hash, &entry_two).as_deref(),
+            Some("serving provisional builds 11, 13 on the bundle of build 10")
         );
         // A bundle of another line is refused.
         assert_eq!(
