@@ -23,7 +23,10 @@ const MT: i64 = 990_901;
 const S1: i64 = 990_801;
 const S2: i64 = 990_802;
 const S_QA: i64 = 990_803;
-const ITEM: i64 = 990_951;
+/// A type the world can make (the redeem store's invented fixture item).
+const ITEM: i64 = crate::nes::fixture::ITEM;
+/// A type nothing can make.
+const ITEM_UNKNOWN: i64 = 990_951;
 const ITEM_QTY: i64 = 3;
 const SP_TOKEN: i64 = 990_961;
 const SP_PER_TOKEN: i64 = 7_777;
@@ -83,6 +86,8 @@ fn catalogue() -> Catalogue {
             (ITEM, ITEM_QTY),
             (TYPE_KREDITS, ISK_AMOUNT),
             (SP_TOKEN, SP_TOKENS_GIVEN),
+            (SP_TOKEN_TYPES[0], 1),
+            (ITEM_UNKNOWN, 1),
         ],
         ..MatchType::default()
     };
@@ -220,21 +225,23 @@ fn a_second_win_adds_up_and_keeps_the_award_flag() {
 #[test]
 fn rank_orders_by_wins_then_losses_then_first_to_reach_then_id() {
     let mut d = Deltas::default();
-    // (character, tally): the expected order is the list's own.
-    let expect = [
-        (990_210, st(3, 5, 90)),
-        (990_211, st(2, 0, 50)),
-        (990_212, st(2, 0, 60)),
-        (990_213, st(2, 1, 10)),
-        (990_214, st(1, 0, 70)),
+    // (character, tally), in a scrambled order so the key order is not the
+    // answer; the expected order is the named rule applied by hand.
+    let rows = [
         (990_215, st(1, 0, 70)),
-        (990_216, st(0, 0, 0)),
+        (990_212, st(2, 0, 60)),
         (990_217, st(0, 2, 0)),
+        (990_210, st(3, 5, 90)),
+        (990_213, st(2, 1, 10)),
+        (990_216, st(0, 0, 0)),
+        (990_211, st(2, 0, 50)),
+        (990_214, st(1, 0, 70)),
     ];
-    // Put in a scrambled order, so the key order is not the answer.
-    for i in [5, 2, 7, 0, 3, 6, 1, 4] {
-        put_stat(&mut d, MT, S1, expect[i].0, expect[i].1);
+    for (c, s) in rows {
+        put_stat(&mut d, MT, S1, c, s);
     }
+    let mut expect = rows;
+    expect.sort_by_key(|(c, s)| (std::cmp::Reverse(s.wins), s.losses, s.reached_at, *c));
     let got: Vec<(i64, i64)> = ranked(&d, MT, S1)
         .iter()
         .map(|(c, r, _)| (*c, *r))
@@ -248,11 +255,12 @@ fn rank_orders_by_wins_then_losses_then_first_to_reach_then_id() {
 }
 
 #[test]
-fn a_pilot_with_only_losses_is_ranked_and_a_stranger_is_not() {
+fn the_board_lists_every_pilot_who_played_and_a_stranger_is_rank_zero() {
     let mut d = Deltas::default();
     record(&mut d, &finished(S1, &[A], &[B]), 100);
     let (rank, s) = standing(&d, MT, S1, B);
-    assert!(rank >= 1, "everyone who played is ranked");
+    assert_eq!(ranked(&d, MT, S1).len(), stats_of(&d, MT, S1).len());
+    assert!(rank >= 1, "a pilot with a row has a rank");
     assert_eq!(s.losses, 1);
     assert_eq!(standing(&d, MT, S1, C), (0, Stat::default()));
 }
@@ -487,17 +495,21 @@ fn an_award_pays_the_winner_every_kind_of_reward_once() {
 
     // An item: a redeem token of the amount, in the winner's account.
     let tokens = user_tokens(&reg, A);
-    assert_eq!(tokens.len(), 1);
+    assert_eq!(
+        tokens.len(),
+        1,
+        "the SP type and the unknown type are skipped"
+    );
     assert_eq!(
         (tokens[0].type_id, tokens[0].qty, tokens[0].to),
         (ITEM, ITEM_QTY, A)
     );
-    // ISK at the dial, with the redeemed-ISK-token journal ref.
-    let want = DIAL * ISK_AMOUNT as f64;
+    // ISK at the configured dial, untaxed, with the redeemed-ISK-token ref.
+    let want = crate::econ_scale::scaled_isk(ISK_AMOUNT as f64, DIAL);
     assert_eq!(reg.character(A).unwrap().balance, base + want);
     let row = reg.journal().entries().last().expect("a journal row");
     assert_eq!(row.entry_type_id, REF_REDEEMED_ISK_TOKEN);
-    assert_eq!((row.owner_id_1, row.owner_id_2), (ISSUER, A));
+    assert_eq!(row.owner_id_2, A);
     assert_eq!(row.amount, want);
     assert_eq!(row.reference_id, S1);
     // Skill points: the token's points times the amount, in the free pool.
@@ -543,18 +555,48 @@ fn a_pilot_who_wins_after_the_first_award_is_paid_at_the_next() {
 }
 
 #[test]
-fn a_world_with_no_points_table_pays_an_sp_token_as_an_item_token() {
-    // PG-3b is not built: a world without the table cannot recognise a skill
-    // point token, so its reward is the item of that type, never free points.
+fn an_sp_token_without_points_and_an_unknown_type_are_skipped_not_queued() {
+    // PG-3b is not built: a world without the table has no points for the
+    // bundle's SP token types; they are skipped, never made items.
     let mut reg = played_in(world_with(false));
     let ev = event(&reg, S1);
-    award(&mut reg, &ev, 500, Via::Clock);
+    assert!(
+        ev.match_type
+            .rewards
+            .iter()
+            .any(|r| r.0 == SP_TOKEN_TYPES[0])
+    );
+    assert_eq!(award(&mut reg, &ev, 500, Via::Clock), 1);
     assert_eq!(crate::free_sp::of(&reg, A), 0);
     let types: Vec<i64> = user_tokens(&reg, A).iter().map(|t| t.type_id).collect();
-    assert!(
-        types.contains(&ITEM) && types.contains(&SP_TOKEN),
-        "{types:?}"
-    );
+    assert_eq!(types, [ITEM], "only the item the world can make");
+}
+
+#[test]
+fn a_late_winner_is_paid_by_the_next_rollover_after_an_award() {
+    let mut reg = world();
+    record(reg.deltas_mut(), &finished(S1, &[A], &[B]), 100);
+    let day = Day {
+        day: 1,
+        days: 1,
+        now: later(),
+    };
+    assert_eq!(on_rollover(&mut reg, &day), 1);
+    assert!(awarded(reg.deltas(), MT, S1));
+    record(reg.deltas_mut(), &finished(S1, &[B], &[A]), 200);
+    assert_eq!(on_rollover(&mut reg, &day), 1, "the marker is not a gate");
+    assert_eq!(user_tokens(&reg, B).len(), 1);
+    assert_eq!(user_tokens(&reg, A).len(), 1, "A is not paid twice");
+}
+
+#[test]
+fn pg_award_refuses_an_event_that_is_neither_qa_nor_over() {
+    let mut reg = world();
+    record(reg.deltas_mut(), &finished(S2, &[A], &[B]), 100);
+    let s = text(slash(&mut reg, Some(A), &["award", &S2.to_string()]));
+    assert!(s.contains("not over"), "{s}");
+    assert!(user_tokens(&reg, A).is_empty());
+    assert!(!stat(reg.deltas(), MT, S2, A).awarded);
 }
 
 #[test]

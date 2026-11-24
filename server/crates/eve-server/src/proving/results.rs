@@ -39,10 +39,14 @@
 //!   reward), skill point tokens go to the free pool, and every other reward
 //!   is a **redeem token** the pilot claims into a station hangar, as the
 //!   client's own redeem window does for TQ's rewards **[I]**.
-//! - **[A]** A skill point token with no entry in [`SpTokens`] is treated as
-//!   an item token. The table is **not built** (PG-3b): the content tool
-//!   reads fsd data, not the client's code, and the points live in
-//!   `redeem/data.py`. Falsified by a bundle row in the table's place.
+//! - A skill point token with no entry in [`SpTokens`] is **skipped and logged
+//!   once**, never made an item. The table is **not built** (PG-3b): the
+//!   content tool reads fsd data, not the client's code, and the points live
+//!   in `redeem/data.py`; [`SP_TOKEN_TYPES`] names the bundle's three types so
+//!   they are recognised without it. A reward type the world cannot resolve
+//!   as an item is skipped and logged too, never queued.
+//! - Only the participants of a match are pushed their numbers; another
+//!   pilot's cached rank refreshes with the client's one-minute board cache.
 //!
 //! ## The rows (delta kind [`KIND`])
 //!
@@ -59,7 +63,7 @@ use crate::proving::{Catalogue, Event, LeaderboardPush, StatisticsPush};
 use crate::service::corp_wallet::{self, Via};
 use crate::service::{Registry, ServiceError};
 use eve_marshal::PyValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 /// The delta kind this module owns (`delta_kinds::KINDS`).
@@ -384,7 +388,8 @@ pub fn on_finished(reg: &mut Registry, m: &MatchFinished) {
     if kept.results.is_empty() {
         return;
     }
-    record(reg.deltas_mut(), &kept, crate::pyutil::filetime_now());
+    let at = crate::proving::arena::now(reg);
+    record(reg.deltas_mut(), &kept, at);
     let (mt, sched) = (m.match_type_id, m.schedule_id);
     for ch in kept.results.iter().flat_map(|(c, _)| c.iter().copied()) {
         let stats = statistics_push(reg.deltas(), mt, sched, Some(ch), Some(ch));
@@ -398,9 +403,14 @@ pub fn on_finished(reg: &mut Registry, m: &MatchFinished) {
 // The rewards
 // ---------------------------------------------------------------------------
 
+/// The skill point token types of the bundle's Proving Grounds rewards **[V]**:
+/// keys of `get_redeem_data` (`redeem/data.pyc`; points 250000, 500000 and
+/// 5000). Recognised so they are never made items; their points are PG-3b's.
+pub const SP_TOKEN_TYPES: [i64; 3] = [43_680, 52_269, 54_650];
+
 /// The points of each skill point token type, from the bundle. **Not built**
-/// (PG-3b, module doc): no loader fills it, so a world has none and every
-/// non-ISK reward is an item token. A test inserts its own.
+/// (PG-3b, module doc): no loader fills it, so a world has none and the
+/// [`SP_TOKEN_TYPES`] are skipped. A test inserts its own.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpTokens(pub BTreeMap<i64, i64>);
 
@@ -410,6 +420,23 @@ fn sp_points(reg: &Registry, type_id: i64) -> Option<i64> {
         .0
         .get(&type_id)
         .copied()
+}
+
+/// Log a skipped reward type once per process.
+fn skip_once(type_id: i64, why: &str) {
+    static SEEN: std::sync::Mutex<BTreeSet<i64>> = std::sync::Mutex::new(BTreeSet::new());
+    let first = SEEN.lock().map(|mut s| s.insert(type_id)).unwrap_or(false);
+    if first {
+        crate::outln!("[proving] {why}");
+    }
+}
+
+/// Can the world make this type as an item (what `nes::claim` needs)?
+fn is_item(reg: &Registry, type_id: i64) -> bool {
+    crate::item::find_in(reg.content(), type_id).is_some()
+        || crate::skins::item_types_in(reg.content())
+            .iter()
+            .any(|t| t.type_id == type_id)
 }
 
 fn event_key(mt: i64, sched: i64) -> Vec<String> {
@@ -445,6 +472,16 @@ fn grant(reg: &mut Registry, ch: i64, ev: &Event, via: Via) {
             );
         } else if let Some(points) = sp_points(reg, type_id) {
             crate::free_sp::grant(reg, ch, points.saturating_mul(amount));
+        } else if SP_TOKEN_TYPES.contains(&type_id) {
+            skip_once(
+                type_id,
+                &format!("SP reward {type_id} skipped: no points table"),
+            );
+        } else if !is_item(reg, type_id) {
+            skip_once(
+                type_id,
+                &format!("reward {type_id} skipped: not a type the world can make"),
+            );
         } else {
             let user = crate::nes_vault::key_of(reg, ch);
             let name = crate::implants::type_name(reg, type_id);
@@ -474,7 +511,8 @@ fn grant(reg: &mut Registry, ch: i64, ev: &Event, via: Via) {
 }
 
 /// Pay the event's rewards once to every pilot with [`MIN_WINS`] wins who has
-/// not been paid, and set the event's marker. The count of pilots paid.
+/// not been paid (each pilot's own flag makes it idempotent), and record the
+/// event's marker. The count of pilots paid.
 pub(crate) fn award(reg: &mut Registry, ev: &Event, now: i64, via: Via) -> usize {
     let (mt, sched) = (ev.match_type.id, ev.schedule.id);
     let due: Vec<i64> = stats_of(reg.deltas(), mt, sched)
@@ -489,19 +527,23 @@ pub(crate) fn award(reg: &mut Registry, ev: &Event, now: i64, via: Via) -> usize
         s.awarded = true;
         put_stat(reg.deltas_mut(), mt, sched, ch, s);
     }
+    // The marker is a record for the GM and the log, never a gate.
     reg.deltas_mut()
         .put(KIND, event_key(mt, sched), vec![now.to_string()]);
-    crate::outln!(
-        "[proving] awarded {} pilot(s) for {}",
-        due.len(),
-        ev.event_id()
-    );
+    if !due.is_empty() {
+        crate::outln!(
+            "[proving] awarded {} pilot(s) for {}",
+            due.len(),
+            ev.event_id()
+        );
+    }
     due.len()
 }
 
 /// **The `rollover_steps` row `proving_awards`**: pay every event that is over
-/// and not yet paid, then prune the history. QA events are never over, so
-/// they are paid by `/pg award` only. The count is the pilots paid.
+/// (a pilot who won after an earlier payout is paid now), then prune the
+/// history. QA events are never over, so they are paid by `/pg award` only.
+/// The count is the pilots paid.
 pub fn on_rollover(w: &mut Registry, d: &crate::rollover::Day) -> usize {
     let over = w
         .content()
@@ -509,9 +551,7 @@ pub fn on_rollover(w: &mut Registry, d: &crate::rollover::Day) -> usize {
         .map_or_else(Vec::new, |c| c.over(d.now));
     let mut paid = 0;
     for ev in over {
-        if !awarded(w.deltas(), ev.match_type.id, ev.schedule.id) {
-            paid += award(w, &ev, d.now, Via::Clock);
-        }
+        paid += award(w, &ev, d.now, Via::Clock);
     }
     prune_history(w.deltas_mut(), HISTORY_KEEP);
     paid
@@ -597,17 +637,21 @@ pub fn slash(
                     Err(_) => return say(USAGE.to_owned()),
                 },
             };
-            let now = crate::pyutil::filetime_now();
-            let ev = sched.and_then(|id| {
-                reg.content()
-                    .try_get::<Catalogue>()?
-                    .all(now)
-                    .into_iter()
-                    .find(|e| e.schedule.id == id)
+            let now = crate::proving::arena::now(reg);
+            let found = sched.and_then(|id| {
+                let cat = reg.content().try_get::<Catalogue>()?;
+                let over = cat.over(now).iter().any(|e| e.schedule.id == id);
+                let ev = cat.all(now).into_iter().find(|e| e.schedule.id == id)?;
+                Some((ev, over))
             });
-            let Some(ev) = ev else {
+            let Some((ev, over)) = found else {
                 return say("no such event".to_owned());
             };
+            // The GM door pays a QA event, which never ends; any other event
+            // is paid by the rollover after it is over.
+            if !ev.schedule.qa && !over {
+                return say("that event is not over yet".to_owned());
+            }
             let n = award(reg, &ev, now, Via::Call);
             say(format!("awarded {n} pilot(s) for {}", ev.event_id()))
         }

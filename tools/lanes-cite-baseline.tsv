@@ -1116,6 +1116,9 @@ tools/client-ci/scenarios/fci_proving_duel.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_proving_queue.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_proving_queue.py	docs/guides/human-checks.md	1
 tools/client-ci/scenarios/fci_proving_queue.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_proving_results.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_proving_results.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_proving_results.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_pvp_concord.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_pvp_concord.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_pvp_concord.py	docs/lanes/pvp-ci.md	1

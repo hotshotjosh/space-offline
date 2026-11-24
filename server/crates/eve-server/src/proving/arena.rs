@@ -235,7 +235,7 @@ pub struct ArenaState {
 
 /// The time on the stage's clock now: its last tick's time plus what has
 /// passed since; the wall clock before any tick.
-fn now(reg: &Registry) -> BlueTime {
+pub(super) fn now(reg: &Registry) -> BlueTime {
     let s = reg.ext::<ArenaState>();
     match s.clock_at {
         Some(at) => s.clock + (crate::game_clock::clock::since(at).as_nanos() / 100) as BlueTime,

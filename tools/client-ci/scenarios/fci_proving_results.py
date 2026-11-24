@@ -34,7 +34,7 @@ failing on what it names:
 Server-side, declared below: the `[proving] awarded` line, no `panicked at`, no `UNANSWERED`
 for `pvpFilamentMgr`, `userSvc`, `slash` or `skillMgr`.
 
-NOT here: free skill points (the bundle's skill point tokens are item tokens until PG-3b
+NOT here: free skill points (the server skips the bundle's skill point tokens until PG-3b
 builds the points table), the end-of-event payout at the rollover (unit-tested), the clock's
 end, a person's look at the window (`docs/guides/human-checks.md`).
 [A]s: `eventData.leaderboard` being the list of entries as the push sends it, `/tr me
@@ -1710,6 +1710,9 @@ def eoci_main(EOCI_NAME):
     STAT_WAIT_MS = 20000            # a push after the match, with no new call
     REWARD_WAIT_MS = 20000
     KREDITS_DEFAULT = 52996         # const.typeKredits [V] (inventorycommon/const.py:1657)
+    # The skill point token types of the rewards [V] (get_redeem_data keys): the server skips
+    # them without a points table, so they are never claimed.
+    SP_TYPES = (43680, 52269, 54650)
 
     def event_key(ev):
         """`GetEventID(info)`: '<matchTypeID>_<scheduleID>' [V] (util.py:146)."""
@@ -1878,7 +1881,8 @@ def eoci_main(EOCI_NAME):
         """The QA event never ends, so the GM pays it: `/pg award <scheduleID>`."""
         rewards = reward_rows(ev)
         kredits = const_of('typeKredits', KREDITS_DEFAULT)
-        item_types = sorted(set([t for t, _a in rewards if t != kredits]))
+        item_types = sorted(set([t for t, _a in rewards
+                                 if t != kredits and t not in SP_TYPES]))
         has_isk = kredits in [t for t, _a in rewards]
         wealth_before = wealth()
         before_queue = spy['OnRedeemingQueueUpdated']
