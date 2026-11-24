@@ -4898,7 +4898,7 @@ fn every_read_method_is_answered_by_its_read_arm() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 11);
+    assert_eq!(seen, 13); // #248: + the two marketProxy price-history halves
     // Not in the table: no read arm, and not eligible.
     let req = Request {
         service: "config",

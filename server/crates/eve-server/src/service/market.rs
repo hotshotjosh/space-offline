@@ -41,6 +41,43 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
     }
 }
 
+/// The calls [`dispatch_ro`] answers (#248): the two price-history halves of
+/// one type. [V] by reading the chain: `book_call` returns `None` for them
+/// before `sweep`, and their arm below calls only `&Registry` helpers
+/// (`history_region`, `history_halves`).
+pub(crate) const READ_METHODS: &[(&str, &str)] = &[
+    ("marketProxy", "GetOldPriceHistory"),
+    ("marketProxy", "GetNewPriceHistory"),
+];
+
+/// The read twin of the `GetOldPriceHistory` / `GetNewPriceHistory` arm: the
+/// same expression, from `&Registry`.
+pub(crate) fn dispatch_ro(
+    reg: &Registry,
+    _caller: Caller,
+    req: &Request<'_>,
+) -> Option<Result<RoValue, ServiceError>> {
+    match (req.service, req.method) {
+        ("marketProxy", "GetOldPriceHistory" | "GetNewPriceHistory") => {
+            Some(Ok(RoValue::Owned(price_history_half(reg, req))))
+        }
+        _ => None,
+    }
+}
+
+/// One half of a type's price history: old for `GetOldPriceHistory`, new
+/// otherwise. Shared by the write arm and its read twin.
+fn price_history_half(reg: &Registry, req: &Request<'_>) -> PyValue {
+    let type_id = Args::new(req).int_trunc(0).unwrap_or(0);
+    let now = crate::pyutil::filetime_now();
+    let (old, new) = history_halves(reg, history_region(reg, req), type_id, now);
+    if req.method == "GetOldPriceHistory" {
+        old
+    } else {
+        new
+    }
+}
+
 /// The `marketProxy` methods that do not touch the order book.
 fn other_market_call(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceError> {
     match req.method {
@@ -91,16 +128,7 @@ fn other_market_call(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, S
         // CP42: the two non-PLEX halves carry the caller's region's
         // history (`history_halves`); PLEX has none, for the
         // `GetPlexOrders` reason.
-        "GetOldPriceHistory" | "GetNewPriceHistory" => {
-            let type_id = Args::new(req).int_trunc(0).unwrap_or(0);
-            let now = crate::pyutil::filetime_now();
-            let (old, new) = history_halves(reg, history_region(reg, req), type_id, now);
-            Ok(if req.method == "GetOldPriceHistory" {
-                old
-            } else {
-                new
-            })
-        }
+        "GetOldPriceHistory" | "GetNewPriceHistory" => Ok(price_history_half(reg, req)),
         "GetPlexOldPriceHistory" | "GetPlexNewPriceHistory" => Ok(empty_price_history()),
         // **The order book**: issue #2, `marketProxy GetOrders(17682)
         // -> None`, and 0.1 s later

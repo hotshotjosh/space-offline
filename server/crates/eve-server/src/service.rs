@@ -527,6 +527,8 @@ pub(crate) const READS: &[(&[(&str, &str)], DomainRead)] = &[
     (sites::READ_METHODS, sites::dispatch_ro),
     (character::READ_METHODS, character::dispatch_ro),
     (inventory::READ_METHODS, inventory::dispatch_ro),
+    // #248: marketProxy price-history halves; maintainer-authorised line.
+    (market::READ_METHODS, market::dispatch_ro),
 ];
 
 /// Who is making the call being dispatched (`docs/lanes/account-spec.md`

@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 369) · **95% built** (352 of 369) · 1 parked, not counted.
+**63% proved** (232 of 370) · **95% built** (353 of 370) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -155,6 +155,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 - [ ] An FW complex pocket with no squad, rock or can never counts as cleared; a complex with no squad and no capture-point object is taken after one held capture cycle and pays militia LP (3707965 complexes carry no static spawns): *built-unproved*, site_spawn.rs step guard and is_empty_pocket; fw_capture.rs interim_params; tests an_empty_fw_complex_pocket_is_never_cleared_and_pays_no_lp, an_empty_complex_is_judged_as_a_non_looping_point, an_empty_complex_is_taken_by_holding_it_and_pays_militia_lp (enlisted pilot paid, invented rows); the capture rule is an interim [A] until the Conquests lane authors defenders. falsifier: Conquests defender spawns landing
 - [ ] A trader watches only published minerals: *built-unproved*, eve-bot trader.rs watch_set; test watch_set_skips_an_unpublished_mineral (invented rows)
 - [ ] The Amarr militia headquarters is a system the 3707965 map still holds for Amarr: *built-unproved*, content/facwar/warzones.tsv hq_a; chosen by rule (nearest warzone-1 system still Amarr-held), not named by the client [A]. falsifier: the FW dashboard or Agency naming another Amarr HQ
+- [ ] marketProxy GetOldPriceHistory and GetNewPriceHistory are read turns: answered under the world read lock with the write arm bytes: *built-unproved*, service/market.rs READ_METHODS and dispatch_ro (price_history_half shared with the write arm), registered in service.rs READS; dispatch.rs price_history_halves_are_read_turns_with_the_same_bytes (byte-identical replies, read_turns_served +1); no soak yet. [A] a world-lock hold from these calls was the ticker queueing behind writers; falsifier: read_turns_served stays 0 for them in a soak
 
 ### 3.8 Remote clients, hosting
 
@@ -195,7 +196,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 31 | 11 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 4 | 0 | 0 | 0 |
-| Market and wallet | 24 | 8 | 0 | 0 | 0 |
+| Market and wallet | 24 | 9 | 0 | 0 | 0 |
 | Bots | 11 | 45 | 2 | 0 | 2 |
 | Industry and mining | 17 | 4 | 0 | 1 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
@@ -386,7 +387,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 24 of 32 proved, 8 open</summary>
+<details><summary><b>Market and wallet</b>: 24 of 33 proved, 9 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
 - [x] The wallet journal's Type column names every entry type, from the content bundle's table: *client-proved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types: green 32/32 on 11-15
@@ -420,6 +421,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] HyperCores drop from elite and heavy NPCs, the only source: *built-unproved*, eve-mod-econ hypercores.rs (kill and settled rows, day budget)
 - [x] HyperNet offers: create with HyperCores, buy tickets, draw, claim, expire: *client-proved*, hypernet.rs + service/hypernet.rs (raffleProxy), escrow band 3e12, 5 % fee as a sink, draw salted with process entropy, running ids kept in the slot; fci_hypernet green 33/33 11-15: create, buy, the taken-number refusal and expiry through the real client; fci_hypernet --with-second green 11-17 (A 55/55, B 26/26): a second pilot sells the offer out, both hear the draw, the winner claims and the loser is refused, the compacted rows still answer; finished offers compacted, 8/9 pruned after 30 days [A] (#276)
 - [ ] The sales tax and the broker commission are halved at the one station the 3707965 client gives a fee modifier: *built-unproved*, market_fees.rs station_fee_factor, applied in service/market.rs sales_tax_due and broker_rate_at; unit test on an invented station; applies to every client line [A]
+- [ ] marketProxy GetOldPriceHistory and GetNewPriceHistory are read turns: answered under the world read lock with the write arm bytes: *built-unproved*, service/market.rs READ_METHODS and dispatch_ro (price_history_half shared with the write arm), registered in service.rs READS; dispatch.rs price_history_halves_are_read_turns_with_the_same_bytes (byte-identical replies, read_turns_served +1); no soak yet. [A] a world-lock hold from these calls was the ticker queueing behind writers; falsifier: read_turns_served stays 0 for them in a soak
 
 </details>
 

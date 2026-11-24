@@ -3906,6 +3906,38 @@ mod tests {
         crate::test_clock::thaw();
     }
 
+    /// #248: `marketProxy` `GetOldPriceHistory` / `GetNewPriceHistory` are read
+    /// turns; the bytes equal the write path's, for a pilot in space and for
+    /// an id with no history.
+    #[test]
+    fn price_history_halves_are_read_turns_with_the_same_bytes() {
+        crate::test_clock::freeze(Duration::from_secs(1_800_000_000));
+        let world = read_world();
+        let (mut ro, mut rw) = read_pair(&world);
+        let mut served = 0;
+        for (i, (method, type_id)) in [
+            ("GetOldPriceHistory", 34),
+            ("GetNewPriceHistory", 34),
+            ("GetOldPriceHistory", 999_999_001),
+            ("GetNewPriceHistory", 999_999_001),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let bytes = service_call("marketProxy", method, vec![PyValue::Int(type_id)]);
+            SERIAL.with(|c| c.set(200 + i as i64));
+            let a = ro.on_payload(&bytes).expect("ro");
+            SERIAL.with(|c| c.set(200 + i as i64));
+            let b = rw.on_payload(&bytes).expect("rw");
+            assert_eq!(a, b, "{method} {type_id}");
+            assert!(!a.payloads[0].is_empty());
+            served += 1;
+            assert_eq!(ro.read_turns_served(), served, "{method} {type_id}");
+            assert_eq!(rw.read_turns_served(), 0);
+        }
+        crate::test_clock::thaw();
+    }
+
     #[test]
     fn a_read_turn_leaves_the_world_as_it_found_it() {
         crate::test_clock::freeze(Duration::from_secs(1_800_000_000));
