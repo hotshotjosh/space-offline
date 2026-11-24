@@ -1429,6 +1429,35 @@ mod tests {
         assert!(b.slims.iter().any(|s| s.item_id == inst.objects[0].item_id));
     }
 
+    /// **The bind's state is the old path's** with a site on the grid and
+    /// with the pilot far from it: sites are collected once, then filtered.
+    #[test]
+    fn a_bind_with_a_site_is_the_old_paths_state() {
+        for at in [ANCHOR, [0.0; 3]] {
+            let mut reg = world();
+            reg.roster_mut().leave(ALICE);
+            let d = ore();
+            assert!(instantiate(&mut reg, &site(d.id)));
+            reg.roster_mut().arrive(Presence::arriving(
+                ALICE,
+                ALICE_SHIP,
+                SYSTEM,
+                Motion::arrived(at, [0.0; 3]),
+            ));
+            let b = crate::destiny::bootstrap_for(&mut reg, ALICE).expect("a state");
+            let old = crate::destiny::bootstrap_oracle(&reg, ALICE, b.stamp).expect("oracle");
+            assert_eq!(format!("{:?}", b.to_push()), format!("{:?}", old.to_push()));
+            let inst = reg.ext::<Sites>().get(SITE_ID).cloned().unwrap();
+            let held: BTreeSet<i64> = b.park.balls.iter().map(|x| x.ball_id).collect();
+            let first = inst
+                .objects
+                .iter()
+                .find(|p| p.rock.is_none())
+                .expect("an object");
+            assert_eq!(held.contains(&first.item_id), at == ANCHOR);
+        }
+    }
+
     /// **Every site slim carries `dunObjectID` and `entityGroupID`**, in the
     /// `AddBalls2` and in the bootstrap; `dunObjectID` is the catalogue's
     /// object id; no slim carries `objectiveTargetGroup` (erratum 12: the

@@ -2362,3 +2362,125 @@ pub(crate) fn the_queued_removal_reached_alice(reg: &mut Registry) -> bool {
         .count();
     n == 1
 }
+
+// -- the bind builds only what the grid keeps (#248) ---------------------------------------------
+
+/// The bind's `SetState`, as it would leave, against the pre-change path
+/// (whole scene, then `retain_balls`), built from the same roster.
+fn bind_matches_oracle(reg: &mut Registry, who: i64) -> crate::destiny::Bootstrap {
+    let state = bootstrap_for(reg, who).expect("a state");
+    let old = crate::destiny::bootstrap_oracle(reg, who, state.stamp).expect("the oracle");
+    assert_eq!(
+        format!("{:?}", state.to_push()),
+        format!("{:?}", old.to_push()),
+        "the bind's SetState is the old path's, byte for byte"
+    );
+    assert_eq!(ids(&state), ids(&old));
+    state
+}
+
+fn rock_built() -> usize {
+    crate::destiny::ROCK_BALLS_BUILT.with(std::cell::Cell::get)
+}
+
+fn reset_rock_built() {
+    crate::destiny::ROCK_BALLS_BUILT.with(|c| c.set(0));
+}
+
+/// `n` invented rocks of `SYSTEM`, 1e9 m from belt A.
+fn far_rocks(n: i64) -> Vec<crate::asteroid::Rock> {
+    (0..n)
+        .map(|k| crate::asteroid::Rock {
+            id: crate::asteroid::MIN_ROCK_ID + 10_000 + k,
+            type_id: 1230,
+            belt_id: BELT_B,
+            solar_system_id: SYSTEM,
+            quantity: 1_000,
+            radius: 500.0,
+            position: plus(BELT_A_AT, [1.0e9 + 10_000.0 * k as f64, 0.0, 0.0]),
+            law: crate::asteroid::Law {
+                growth: 0.5,
+                unit_size: 90.0,
+                max_radius: 16_255.0,
+            },
+        })
+        .collect()
+}
+
+/// **A bind builds the rocks on the grid and no others**: three near, 2,000
+/// far, and the count of rock balls built is three; with no far rocks, still
+/// three. The state is the old path's.
+#[test]
+fn a_bind_builds_only_the_rocks_on_the_grid() {
+    for far in [2_000, 0] {
+        let mut reg = world();
+        for r in far_rocks(far) {
+            reg.rocks_mut().add(r);
+        }
+        undock(&mut reg, ALICE);
+        put(&mut reg, ALICE, BELT_A_AT);
+        let state = bind_matches_oracle(&mut reg, ALICE);
+        // The oracle built the whole system too; the new path alone is
+        // measured with the counter reset just before it.
+        reset_rock_built();
+        let _ = bootstrap_for(&mut reg, ALICE).expect("a state");
+        assert_eq!(rock_built(), 3, "{far} far rocks");
+        // The old path built every rock of the system: both belts' and the far ones.
+        reset_rock_built();
+        let _ = crate::destiny::bootstrap_oracle(&reg, ALICE, state.stamp).expect("the oracle");
+        assert_eq!(rock_built(), 6 + far as usize, "the oracle's whole scene");
+        let held = ids(&state);
+        assert!(rocks_a().iter().all(|r| held.contains(r)));
+        assert!(rocks_b().iter().all(|r| !held.contains(r)));
+    }
+}
+
+/// The scene's other filtered kinds and pilots: a wreck near and a wreck
+/// far, rocks near and far, two pilots (one following the other), the
+/// viewer at the belt, at the station and in deep space.
+#[test]
+fn a_bind_is_the_old_paths_state_for_every_fixture() {
+    let wreck = |id: i64, at: [f64; 3]| crate::combat::Wreck {
+        wreck_id: id,
+        type_id: 26_557,
+        solar_system_id: SYSTEM,
+        position: at,
+        ship_id: id + 1,
+        owner_id: ALICE,
+        corp_id: 1,
+        fleet_id: None,
+        abandoned: false,
+        expires_at: crate::pyutil::filetime_now().saturating_add(crate::combat::WRECK_LIFETIME),
+    };
+    for (far, at) in [
+        (0, BELT_A_AT),
+        (5, BELT_A_AT),
+        (5, STATION_AT),
+        (5, plus(BELT_B_AT, [0.0, 3.0 * AU, AU])),
+    ] {
+        let mut reg = world();
+        for r in far_rocks(far) {
+            reg.rocks_mut().add(r);
+        }
+        crate::combat::insert_wreck(
+            &mut reg,
+            wreck(777_001, plus(BELT_A_AT, [3_000.0, 0.0, 0.0])),
+        );
+        crate::combat::insert_wreck(&mut reg, wreck(777_003, plus(BELT_A_AT, [9.0e8, 0.0, 0.0])));
+        undock(&mut reg, ALICE);
+        undock(&mut reg, BOB);
+        put(&mut reg, ALICE, at);
+        put(&mut reg, BOB, plus(BELT_A_AT, [20_000.0, 0.0, 0.0]));
+        let state = bind_matches_oracle(&mut reg, ALICE);
+        assert!(state.every_slim_has_a_ball());
+        // Bob follows Alice.
+        let bob = reg.roster_mut().get_mut(BOB).expect("in space");
+        bob.motion.mode = crate::destiny::Mode::Follow {
+            ball_id: ALICE_SHIP,
+            range: 500.0,
+        };
+        bob.motion.velocity = [100.0, 0.0, 0.0];
+        let _ = bind_matches_oracle(&mut reg, ALICE);
+        let _ = bind_matches_oracle(&mut reg, BOB);
+    }
+}

@@ -195,6 +195,18 @@ pub fn on_grid(ego: [f64; 3], ball: [f64; 3], held: bool) -> bool {
 ///
 /// Whatever [`crate::destiny::scene`] builds that is not in here is global.
 pub fn local_balls(w: &Registry, system: i64) -> Vec<(i64, [f64; 3])> {
+    collect_local(w, system).0
+}
+
+/// What [`collect_local`] built along the way and [`crate::destiny::scene_kept`]
+/// reuses: the site and wreck balls, so a bind collects each once.
+pub struct Collected {
+    pub(crate) sites: Vec<(crate::destiny::Ball, crate::destiny::Slim)>,
+    pub(crate) wrecks: Vec<(crate::destiny::Ball, crate::destiny::WreckSlim)>,
+}
+
+/// [`local_balls`], and the site and wreck balls it had to build.
+pub fn collect_local(w: &Registry, system: i64) -> (Vec<(i64, [f64; 3])>, Collected) {
     let mut out: Vec<(i64, [f64; 3])> = w
         .roster()
         .in_system(system)
@@ -202,16 +214,10 @@ pub fn local_balls(w: &Registry, system: i64) -> Vec<(i64, [f64; 3])> {
         .map(|p| (p.ship_id, p.motion.position))
         .collect();
     out.extend(w.rocks().in_system(system).map(|r| (r.id, r.position)));
-    out.extend(
-        crate::combat::wrecks_in(w, system)
-            .iter()
-            .map(|(b, _)| (b.ball_id, b.position)),
-    );
-    out.extend(
-        crate::site::balls_in(w, system)
-            .iter()
-            .map(|(b, _)| (b.ball_id, b.position)),
-    );
+    let wrecks = crate::combat::wrecks_in(w, system);
+    out.extend(wrecks.iter().map(|(b, _)| (b.ball_id, b.position)));
+    let sites = crate::site::balls_in(w, system);
+    out.extend(sites.iter().map(|(b, _)| (b.ball_id, b.position)));
     // CAP-D: a lit cynosural field is a local ball.
     out.extend(
         crate::cyno::balls_in(w, system)
@@ -230,7 +236,7 @@ pub fn local_balls(w: &Registry, system: i64) -> Vec<(i64, [f64; 3])> {
             .iter()
             .map(|(b, _)| (b.ball_id, b.position)),
     );
-    out
+    (out, Collected { sites, wrecks })
 }
 
 /// **The local balls a new state for `ship` at `ego` should hold**: every
@@ -240,8 +246,18 @@ pub fn local_balls(w: &Registry, system: i64) -> Vec<(i64, [f64; 3])> {
 /// The caller keeps every ball *not* in [`local_balls`] -- the global
 /// furniture -- and every id this returns.
 pub fn grid_of(w: &Registry, system: i64, ship: i64, ego: [f64; 3]) -> GridSet {
-    let local = local_balls(w, system);
-    GridSet {
+    grid_and_collected(w, system, ship, ego).0
+}
+
+/// [`grid_of`], with the site and wreck balls it collected on the way.
+pub fn grid_and_collected(
+    w: &Registry,
+    system: i64,
+    ship: i64,
+    ego: [f64; 3],
+) -> (GridSet, Collected) {
+    let (local, collected) = collect_local(w, system);
+    let set = GridSet {
         keep: local
             .iter()
             .filter(|(id, at)| {
@@ -251,7 +267,8 @@ pub fn grid_of(w: &Registry, system: i64, ship: i64, ego: [f64; 3]) -> GridSet {
             .map(|(id, _)| *id)
             .collect(),
         local: local.into_iter().map(|(id, _)| id).collect(),
-    }
+    };
+    (set, collected)
 }
 
 /// What [`grid_of`] answers: which ids are local, and which of those stay.

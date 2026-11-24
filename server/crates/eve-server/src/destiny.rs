@@ -1358,7 +1358,6 @@ pub fn bootstrap_for(w: &mut Registry, actor: i64) -> Option<Bootstrap> {
     // which the first action after it wipes (`FlushSimulationHistory:1375`).
     // See `Registry::next_destiny_stamp` and `docs/lanes/movement.md` §4.
     let stamp = w.next_destiny_stamp();
-    let mut state = scene(w, solar_system_id, ship_id, station, stamp);
     // **The grid, not the system** (GRID-B, `docs/lanes/grid-research.md`
     // §4). The overview and the brackets list every ball in the park with no
     // distance test at all (`overviewWindow.pyc:1270-1272`,
@@ -1373,7 +1372,34 @@ pub fn bootstrap_for(w: &mut Registry, actor: i64) -> Option<Bootstrap> {
         .roster()
         .get(actor)
         .map_or([0.0; 3], |p| p.motion.position);
-    let keep = crate::grid::grid_of(w, solar_system_id, ship_id, ego_at);
+    // **The keep-set first, the balls second**: a rock off the grid is never
+    // built ([`scene_kept`]), and the sites and wrecks the grid collected are
+    // the scene's own.
+    let (keep, collected) = crate::grid::grid_and_collected(w, solar_system_id, ship_id, ego_at);
+    let mut state = scene_kept(
+        w,
+        solar_system_id,
+        ship_id,
+        station,
+        stamp,
+        Some((&keep, collected)),
+    );
+    state.retain_balls(|id| keep.contains(id));
+    Some(state)
+}
+
+/// The pre-change bind path, kept as the byte-identity oracle.
+#[cfg(test)]
+pub(crate) fn bootstrap_oracle(w: &Registry, actor: i64, stamp: u32) -> Option<Bootstrap> {
+    let (ship_id, _) = undock_motion(w, actor)?;
+    // The pilot is in the roster by now (the new path seeded it).
+    let system = w.roster().get(actor)?.solar_system_id;
+    let mut state = scene(w, system, ship_id, None, stamp);
+    let ego_at = w
+        .roster()
+        .get(actor)
+        .map_or([0.0; 3], |p| p.motion.position);
+    let keep = crate::grid::grid_of(w, system, ship_id, ego_at);
     state.retain_balls(|id| keep.contains(id));
     Some(state)
 }
@@ -1414,6 +1440,32 @@ pub fn scene(
     station: Option<(i64, i64, i64)>,
     stamp: u32,
 ) -> Bootstrap {
+    scene_kept(w, solar_system_id, ego, station, stamp, None)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Rock balls [`scene_kept`] has built on this thread.
+    pub(crate) static ROCK_BALLS_BUILT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// [`scene`] for a bind: with `kept` (the grid's keep-set and the sites and
+/// wrecks it collected) a rock the grid drops is never built, and sites and
+/// wrecks are not collected a second time. The caller still applies
+/// [`Bootstrap::retain_balls`]; this only skips work it would discard.
+pub fn scene_kept(
+    w: &Registry,
+    solar_system_id: i64,
+    ego: i64,
+    station: Option<(i64, i64, i64)>,
+    stamp: u32,
+    kept: Option<(&crate::grid::GridSet, crate::grid::Collected)>,
+) -> Bootstrap {
+    let (keep, collected) = match kept {
+        Some((k, c)) => (Some(k), Some(c)),
+        None => (None, None),
+    };
+    let admit = |id: i64| keep.is_none_or(|k| k.contains(&id));
     // One instant for every ship's health, the same one the positions were
     // just brought up to. Blue time, because that is `crate::damage`'s clock.
     let now = crate::pyutil::filetime_now();
@@ -1673,14 +1725,23 @@ pub fn scene(
     // it (`crate::grid`); what a pilot is *sent* is the rocks within
     // `GRID_ENTER` of their ship, and a warp brings the next belt's in by
     // `AddBalls2` (`docs/lanes/grid-research.md` §5).
-    for r in w.rocks().in_system(solar_system_id) {
+    for r in w.rocks().in_system(solar_system_id).filter(|r| admit(r.id)) {
+        #[cfg(test)]
+        ROCK_BALLS_BUILT.with(|c| c.set(c.get() + 1));
         balls.push(rock_ball(r));
         slims.push(rock_slim(r));
     }
     // **The site objects** a pilot instantiated (W14 CP28a): beacons,
     // structures and clouds. Their rocks are in the field, above. No
     // `damage` entry, like a rock.
-    for (ball, slim) in crate::site::balls_in(w, solar_system_id) {
+    let (sites, wreck_rows) = match collected {
+        Some(c) => (c.sites, c.wrecks),
+        None => (
+            crate::site::balls_in(w, solar_system_id),
+            crate::combat::wrecks_in(w, solar_system_id),
+        ),
+    };
+    for (ball, slim) in sites.into_iter().filter(|(b, _)| admit(b.ball_id)) {
         balls.push(ball);
         slims.push(slim);
     }
@@ -1758,7 +1819,7 @@ pub fn scene(
     // which `Wreck.Prepare:74` survives by falling back to a random rotation
     // (`docs/re/damage-death.md` §6) **[V]**.
     let mut wrecks = Vec::new();
-    for (ball, slim) in crate::combat::wrecks_in(w, solar_system_id) {
+    for (ball, slim) in wreck_rows.into_iter().filter(|(b, _)| admit(b.ball_id)) {
         balls.push(ball);
         wrecks.push(slim);
     }
