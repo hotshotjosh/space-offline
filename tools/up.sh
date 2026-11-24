@@ -256,7 +256,7 @@ content_stale() {
     elif [[ $have != "$want" ]]; then
         echo "the extractor changed (manifest ${have:0:8}, tools ${want:0:8})"
     fi
-    if [[ $CONTENT_REL != out/content && -n $EVE_CBUILD ]]; then
+    if [[ -n $EVE_CBUILD ]]; then
         local mb; mb=$(awk -F'\t' '$1=="client_build"{print $2; exit}' "$MANIFEST")
         [[ $mb == "$EVE_CBUILD" ]] || echo "the bundle is build ${mb:-?}, the client is $EVE_CBUILD"
     fi

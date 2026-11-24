@@ -1055,6 +1055,24 @@ class WinePrefs(unittest.TestCase):
             with mock.patch("getpass.getuser", return_value="someone-else"):
                 self.assertEqual(ep.prefs_targets(str(client), None), ([], None))
 
+    def test_getpass_failing_falls_through_to_the_single_folder(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "public", "carol")
+            with mock.patch("getpass.getuser", side_effect=OSError("no login name")):
+                self.assertEqual(ep.prefs_targets(str(client), None)[1], self.target(drive_c, "carol"))
+
+    def test_a_symlinked_folder_is_not_a_candidate(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t, "Public", "carol")
+            (drive_c / "users" / "link").symlink_to(drive_c / "users" / "carol")
+            with mock.patch("getpass.getuser", return_value="someone-else"):
+                self.assertEqual(ep.prefs_targets(str(client), None)[1], self.target(drive_c, "carol"))
+
+    def test_no_users_folder_is_no_guess(self):
+        with tempfile.TemporaryDirectory() as t:
+            drive_c, client = self.prefix(t)
+            self.assertEqual(ep.prefs_targets(str(client), None), ([], None))
+
     def test_an_existing_prefs_file_wins_over_creating_one(self):
         with tempfile.TemporaryDirectory() as t:
             drive_c, client = self.prefix(t, "Public", "carol")

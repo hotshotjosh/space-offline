@@ -630,6 +630,16 @@ class BuildLayouts(unittest.TestCase):
         pinned = [r[0] for r in rows if len(r) > 2 and r[2] == "pinned"]
         self.assertEqual(pinned, [str(fsd.CFSD_REFERENCE_BUILD)])
 
+    def test_every_build_the_tools_accept_has_a_layout(self):
+        # dogma.ACCEPTED_STATUSES opens these without --build; content.py's
+        # schema guard is what refuses one with no layout, so none may lack it.
+        with open(os.path.join(_HERE, "builds.tsv"), encoding="utf-8") as fh:
+            rows = [ln.rstrip("\n").split("\t") for ln in fh if ln.strip() and not ln.startswith("#")]
+        accepted = [r[0] for r in rows if len(r) > 2 and r[2] in ("pinned", "equivalent", "provisional")]
+        self.assertTrue(accepted)
+        for b in accepted:
+            fsd.layout_for_build(b)  # raises for a build with no entry
+
     def test_no_build_is_the_reference_and_a_known_one_is_found(self):
         self.assertEqual(fsd.layout_for_build(None), fsd.layout_for_build(fsd.CFSD_REFERENCE_BUILD))
         self.assertEqual(fsd.layout_for_build("3628513"), fsd.layout_for_build(3619879))

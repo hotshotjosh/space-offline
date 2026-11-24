@@ -87,7 +87,7 @@ build.
 |---|---|
 | build | start.ini `build` |
 | line | release line (start.ini `codename`); a line shares machoVersion, boot.version, codename and region |
-| status | `pinned` (exactly one; the RE corpus is anchored to it), `equivalent` (the delta says so and the human check passed), `provisional` (a build of the served line not yet measured beyond triage: served by default on the line's pinned or equivalent bundle, same line only; registered only with its loader layout and counts, so the content tools take it too, and a player whose launcher has it can build a bundle), `unverified` (seen, refused unless `--client-build` names it) |
+| status | `pinned` (exactly one; the RE corpus is anchored to it), `equivalent` (the delta says so and the human check passed), `provisional` (a build of the served line not yet measured beyond triage: served by default on the line's pinned or equivalent bundle, same line only; the content tools take it too, so a player whose launcher has it can build a bundle: content.py's schema guard refuses a build with no loader layout, and every accepted row must have one), `unverified` (seen, refused unless `--client-build` names it) |
 | data_hash | a bundle `data_hash` proved equal for this build, or `-` |
 | evidence | how the status was earned (findings file, date) |
 

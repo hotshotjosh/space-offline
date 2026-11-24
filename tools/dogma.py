@@ -83,12 +83,13 @@ Usage
     validate              every closure and cross-check in docs/re/dogma.md
 
     --client DIR          which install (no default; or $EVE_CLIENT)
-    --build N | any       the build it must be (default: the pinned one)
+    --build N | any       the build it must be (default: any build tools/builds.tsv
+                          marks pinned, equivalent or provisional)
 
 Flags work on either side of the subcommand -- they did not, see
 `resolve_client` and `main`. Every run names on stderr which install and
-which build it read, and refuses a build other than the pinned one (3662168)
-unless ``--build`` says otherwise. There is no default install.
+which build it read, and refuses a build tools/builds.tsv does not mark
+pinned, equivalent or provisional unless ``--build`` says otherwise. There is no default install.
 """
 
 from __future__ import annotations
@@ -1310,11 +1311,13 @@ BUILDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "builds.tsv")
 #: Registry statuses a tool accepts without ``--build``: the pinned build,
 #: any build `tools/build-delta.py` measured ``equivalent`` to it, and a
-#: ``provisional`` build. A provisional build is registered only after its
-#: loader layout (`fsd.CFSD_BUILD_LAYOUTS`) and its content counts are, so
-#: the extractor reads it as well as an equivalent one; refusing it left a
-#: player whose launcher already has the newest build with no way to build
-#: a bundle (tools/content-lib.sh already gives it `out/content`).
+#: ``provisional`` build. What keeps extraction safe is content.py's schema
+#: guard, which refuses a build with no `fsd.CFSD_BUILD_LAYOUTS` entry and
+#: re-derives every cFSD stem from the install's own loaders (missing content
+#: counts are only notes); `tools/test_fsd_generic.py` holds every accepted
+#: registry row to a layout entry. Refusing it left a player whose launcher
+#: already has the newest build with no way to build a bundle
+#: (tools/content-lib.sh already gives it `out/content`).
 ACCEPTED_STATUSES = ("pinned", "equivalent", "provisional")
 
 
@@ -1441,9 +1444,10 @@ def resolve_client(client=None, resfiles=None, want_build=None, out=None):
         want = want_build
     if want and want != "any" and build != want:
         raise SystemExit(
-            "dogma.py: WRONG BUILD -- this install says %s, the RE corpus is\n"
-            "dogma.py:   anchored to %s (docs/archive/plan-subsystems.md 2a;\n"
-            "dogma.py:   accepted builds are in tools/builds.tsv).\n"
+            "dogma.py: WRONG BUILD -- this install says %s; accepted: %s\n"
+            "dogma.py:   (tools/builds.tsv; the RE corpus is anchored to the\n"
+            "dogma.py:   pinned build, docs/archive/plan-subsystems.md 2a).\n"
+            "dogma.py:   A newer client usually means a `git pull` is due.\n"
             "dogma.py:   Measured 2026-10-24/26 for 3628513: 0 of 203\n"
             "dogma.py:   res:/staticdata rows differ and the 149\n"
             "dogma.py:   bin64/*Loader.pyd differ only in signature (one\n"

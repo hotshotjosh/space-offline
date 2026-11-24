@@ -940,6 +940,12 @@ def make_plan(c, st):
                 actions.append(("prefs", p, ch, False))
         if not found and create is not None:
             actions.append(("prefs", create, dict(c.m["prefs"]["set"]), True))
+        elif not found and prefs_folder(c.client)[0] is not None:
+            # A Wine prefix with several user folders: refuse rather than
+            # patch the files and leave prefs.ini (chat TLS, crash upload) out.
+            refusals.append("prefs: no prefs.ini for this install and no single Wine user "
+                            "folder to create it in; pass --prefs PATH "
+                            "(drive_c/users/<you>/AppData/Local/CCP/EVE/<c_...>_tranquility/settings/prefs.ini)")
     return actions, refusals
 
 
@@ -976,7 +982,7 @@ def check_prefs(c):
         return True, []
     found, _ = prefs_targets(c.client, c.args.prefs)
     if not found:
-        return False, ["prefs: no prefs.ini found for this install (pass --prefs PATH, or run apply)"]
+        return False, ["prefs: no prefs.ini found for this install (run apply; if apply cannot place it, pass --prefs PATH to both)"]
     ok, lines = True, []
     for p in found:
         data = p.read_bytes()

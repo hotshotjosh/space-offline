@@ -202,6 +202,14 @@ mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
 print(mod.extractor_hash())' "$REPO/tools/content.py" 2>/dev/null || true)
     have=$(awk -F'\t' '$1=="extractor"{print $2; exit}' "$MANIFEST")
     [[ -n $want && $have == "$want" ]] || echo "the extractor changed or cannot be hashed"
+    # The bundle must be the client's own build: a pinned client after a
+    # provisional one (or the reverse) re-extracts rather than failing --check
+    # or serving the other build's data. The client is the one analysis.sh mounts.
+    local client=${EVE_CLIENT:-$HOME/.local/share/eve-offline/prefix/pfx/drive_c/CCP/EVE/${EVE_CLIENT_DIR:-tq-offline}}
+    local cb mb
+    cb=$(sed -n 's/^build *= *//p' "$client/start.ini" 2>/dev/null | head -1 | tr -d '\r ')
+    mb=$(awk -F'\t' '$1=="client_build"{print $2; exit}' "$MANIFEST")
+    [[ -z $cb || $mb == "$cb" ]] || echo "the bundle is build ${mb:-?}, the client is $cb"
     while IFS=$'\t' read -r rel sha; do
         [[ -f $REPO/$rel && $(sha256sum "$REPO/$rel" | cut -d' ' -f1) == "$sha" ]] \
             || echo "the authored input $rel changed"

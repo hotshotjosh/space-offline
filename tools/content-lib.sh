@@ -2,8 +2,10 @@
 # told about it. SOURCED, never run: tools/up.sh and tools/client-ci.sh read
 # it, so the choice is made in one place.
 #
-# The bundle at out/content is the PINNED build's (and any build
-# tools/builds.tsv calls `equivalent`: the same data). A build that is only
+# The bundle at out/content is the client's own build when that build is
+# pinned, equivalent or provisional (a provisional build is extracted from its
+# own install; the bundle names it in MANIFEST.tsv `client_build`, and up.sh and
+# serve.sh re-extract when the client's build changes). A build that is only
 # `unverified` has loader layouts nobody has proved equal, so it must never
 # extract into, or boot from, out/content: it gets a directory of its own,
 # out/content-<build>. A mistake here costs the good bundle, which takes
