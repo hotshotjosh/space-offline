@@ -431,6 +431,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_JAIL_HELPER` | `tools/install-jail-helper.sh` | the installed path | the root helper (tests give a fake) | |
 | `EVE_BOOT_WAIT` | `tools/up.sh`, `tools/jail-rootless.sh` | 120 | seconds to wait for the server to accept | `EVE_BOOT_WAIT=300` |
 | `EVE_STOP_TIMEOUT` | `tools/stop-server.sh` | 30 | seconds before SIGTERM after a stop file | `EVE_STOP_TIMEOUT=60` |
+| `EVE_LISTEN_TIMEOUT` | `tools/serve.sh` | 120 | seconds serve.sh waits for eve-server to log that it listens before giving up (`[A]` enough for a healthy boot) | `EVE_LISTEN_TIMEOUT=300` |
 | `EVE_CAPTURE_DIR` | `tools/up.sh`, `tools/evidence.sh` | `captures` | where `--capture` writes | |
 | `EVE_SERVER_BIN` | `tools/up.sh`, `tools/account.sh` | `eve-offline-server` | server binary name | `EVE_SERVER_BIN=eve-server` |
 | `EVE_RL_SLOT` | `tools/jail-rootless.sh` | unset | rootless jail: CI slot | set by `tools/client-ci.sh` |
