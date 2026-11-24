@@ -95,7 +95,8 @@ pub const SCAN_MGR: &str = "scanMgr";
 pub const FULL_STATE: &str = "OnSignalTrackerFullState";
 
 /// `dunArchetypeComplex{Novice,Small,Medium,Large}` [V] (`appConst:569-572`,
-/// R-FW §6). Battlefields (68) are not complexes, and the server spawns none.
+/// R-FW §6). Battlefields (68) are not complexes: the server spawns them
+/// (`fw_battlefield_low`, #8) but a plexer does not run them.
 pub const COMPLEX_ARCHETYPES: [i64; 4] = [33, 34, 35, 36];
 
 /// **The plexer's security floor.** Every system whose security is above

@@ -14,14 +14,19 @@ the ATTACKER of that system.  Then:
 2. a recorder wraps the client's `fwWarzoneSvc.OnFwScoreboardWon`;
 3. undock; `dungeonInstanceCacheMgr.GetFactionWarfareBattlefieldInstances` has
    rows for the system and the row's dungeon is archetype 68;
-4. warp to the battlefield: `fwWarzoneSvc.GetBattleFieldScoreboards()` is not
-   empty, the scoreboard slim's `component_fwScoreboard_score` is an int, the
+4. warp to the battlefield.  Its entry room R1 holds only a beacon and an
+   acceleration gate; the scoreboard and the capture points are in room R2.  So
+   approach the gate and `keeper.ActivateAccelerationGate` it (as
+   `fci_combat_site` does; a hull the gate refuses skips the rest as a
+   precondition), wait for the warp to end, then:
+   `fwWarzoneSvc.GetBattleFieldScoreboards()` is not empty, the scoreboard slim's `component_fwScoreboard_score` is an int, the
    client's own thresholds (`attackerWinsThreshold`, `occupierWinsThreshold`
    of the type's `fwScoreboard` component) equal what `/fwscore` reports, and
    the info panel has a `BattlefieldSection_<itemID>`;
 5. `/fwcapture 15`, warp to a capture point (a slim with factionInfo): the
    board's score on the slim rises;
-6. `/fwscore add <attacker threshold>` fills the gauge: the recorder fires
+6. `/fwscore add <the server's attacker_wins>` (from the `/fwscore` line; the
+   clamp makes more harmless) fills the gauge: the recorder fires
    once with (solarSystemID, scoreboardItemID, the pilot's militia); after
    three cycles and a further `/fwscore add 5` the score is frozen and the
    fanfare has not repeated.
@@ -35,8 +40,8 @@ or the push is wrong); client thresholds different from the server's
 [A]s: the capture values (60 s, 10 km, 1 point, looping, any ship) are the
 server's `assumed()`, only the cycle is changed here; the win audience is the
 system; the board's capture and kill scoring.  Needs a server with no other
-pilot or bot scoring this battlefield.  Not yet run on a client, and not in
-`regress.list`.
+pilot or bot scoring this battlefield.  Written, not yet run on a client (it
+is in `regress.list`).
 """
 
 EOCI_SCENARIO = 'fci_fw_scoreboard'
@@ -1437,6 +1442,7 @@ def eoci_main(EOCI_NAME):
     KEY_SCORE = 'component_fwScoreboard_score'
     BATTLEFIELD_ARCHETYPE = 68
     CYCLE_S = 15
+    MODE_WARP = 3                   # DSTBALL_WARP
     SESSION_WAIT_MS = 30000
     SLIM_WAIT_MS = 90000            # a bound on the push, never a claim
     CYCLE_WAIT_MS = 120000          # a bound on one cycle (15 s) plus the server's check beat
@@ -1710,12 +1716,37 @@ def eoci_main(EOCI_NAME):
         check('the row\'s dungeon is a battlefield (archetype %d)' % BATTLEFIELD_ARCHETYPE,
               archetype == BATTLEFIELD_ARCHETYPE, 'archetype %s' % text(archetype))
 
-        # 4. to the battlefield: the component registers the board
+        # 4. to the battlefield; its room R1 has only a beacon and a gate, the
+        # board is in R2: through the gate first
         site = getattr_safe(rows[0], 'siteID')
         ok, detail = warp_to(park, site)
         check('warped to the battlefield', ok, detail)
         if not ok:
             return
+        gates = slims_where(park, lambda s: getattr_safe(s, 'gateActivationRange') is not None)
+        precondition('the entry room holds an acceleration gate', bool(gates), text(gates)[:200])
+        if not gates:
+            return
+        gate = gates[0][0]
+        rng = float(getattr_safe(gates[0][1], 'gateActivationRange') or 2500.0)
+        ok, detail = approach(park, gate, rng * 0.8)
+        check('the ship closes on the gate (inside its activation range)', ok, detail)
+        if not ok:
+            return
+        ok, v = rcall('keeper', 'ActivateAccelerationGate', gate)
+        refused = (not ok) and ('DunShipCannotWarp' in text(v) or 'DunBlacklistCannotWarp' in text(v))
+        precondition('the gate admits the Rifter', not refused, text(v)[:200])
+        if refused:
+            return
+        check('keeper.ActivateAccelerationGate is accepted', ok, text(v)[:200])
+        if not ok:
+            return
+        ego = park.GetBall(park.ego)
+        went, waited = wait_for(lambda: getattr_safe(ego, 'mode') == MODE_WARP,
+                                timeout_ms=30000)
+        if went:
+            wait_for(lambda: getattr_safe(ego, 'mode') != MODE_WARP,
+                     timeout_ms=120000, step_ms=500)
         got, waited = wait_for(lambda: bool(scoreboards()), timeout_ms=SLIM_WAIT_MS, step_ms=1000)
         boards = scoreboards()
         check('on grid the client lists a scoreboard (GetBattleFieldScoreboards)', bool(boards),
@@ -1741,7 +1772,8 @@ def eoci_main(EOCI_NAME):
               and int(line['occupier_wins']) == abs(client[1] or 0),
               'client %s, /fwscore attacker %s occupier %s' % (
                   text(client), line['attacker_wins'], line['occupier_wins']))
-        att = abs(client[0]) if client and client[0] else int(line['attacker_wins'])
+        # the server's own figure: more than enough, and the clamp makes it safe
+        att = int(line['attacker_wins'])
         got, waited = wait_for(lambda: find_named('BattlefieldSection_%s' % item) is not None,
                                timeout_ms=20000, step_ms=1000)
         check('the info panel has BattlefieldSection_<id>', bool(got),
@@ -1765,7 +1797,7 @@ def eoci_main(EOCI_NAME):
         check('the win has not fired yet', len(won) == 0, text(won))
 
         # 6. the win: the militia's own side, once; then frozen
-        gm_check('GM: /fwscore add <the attacker threshold>', '/fwscore add %d' % att,
+        gm_check('GM: /fwscore add <the server\'s attacker_wins>', '/fwscore add %d' % att,
                  expect=['score is now'])
         fired, waited = wait_for(lambda: len(won) >= 1, timeout_ms=30000, step_ms=500)
         check('OnFwScoreboardWon reached the client', bool(fired), '%s after %s ms' % (text(won), text(waited)))

@@ -40,8 +40,10 @@
 //!   moved) is told with `OnWarzoneOccupationStateUpdated(ssid, state)` [V].
 //!
 //! **Not here.** Kills do not move VP (R-FW §5 names complexes only), so no
-//! `kill_hooks` row. Battlefields (archetype 68) and the bunker
-//! vulnerable/non-vulnerable dialogs are later work (lane note, Not done).
+//! `kill_hooks` row (battlefield scoreboards have their own, `fw_scoreboard`).
+//! The completion scan skips battlefields (archetype 68): `fw_scoreboard`
+//! credits a won one. The bunker vulnerable/non-vulnerable dialogs are later
+//! work (lane note, Not done).
 
 use crate::celestial::{Band, Universe};
 use crate::content::{Boxed, Content, Sources, TableSpec};
@@ -1527,6 +1529,22 @@ pub(crate) mod tests {
         let bf = crate::fw_scoreboard::tests::battlefield(false);
         let (mut reg, now) = (bf.reg, bf.now);
         let vp = vp_for(crate::fw_scoreboard::BATTLEFIELD).expect("worth points");
+        // The fixture picks an occupier-owned battlefield: were the scan not to
+        // skip it, it would raise the score by `vp`, so a flat score proves the
+        // exclusion (an attacker-owned one would floor at 0 and prove nothing).
+        let dungeon = population::sites(&reg, bf.system, now)
+            .sites
+            .iter()
+            .find(|s| s.site_id == bf.site)
+            .expect("the site")
+            .dungeon_id;
+        let owner = reg
+            .content()
+            .get::<dungeon_data::Table>()
+            .dungeons
+            .get(&dungeon)
+            .and_then(|d| d.faction);
+        assert_eq!(owner, occupation(&reg, bf.system).map(|o| o.occupier));
         // The slot completes the way a win completes it, without the win's VP.
         assert!(population::complete(&mut reg, bf.system, bf.site, now + 1));
         assert_eq!(occupation(&reg, bf.system).map(|o| o.score), Some(0));

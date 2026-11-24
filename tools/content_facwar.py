@@ -166,9 +166,15 @@ def derive_scoreboards(components):
 
 
 def _scoreboards(ctx):
+    """`(rows, problems)`, or `None` when the client's `spacecomponentsbytype`
+    layout is not recoverable here (the file is then skipped with a note)."""
     fsd = _content()._imp("fsd")  # noqa: SLF001
     components = {}
-    for t, r in fsd.rows(ctx.client, "spacecomponentsbytype").items():
+    try:
+        table = fsd.rows(ctx.client, "spacecomponentsbytype")
+    except fsd.FsdError:
+        return None
+    for t, r in table.items():
         r = dict(r)
         if r.get(SCOREBOARD_COMPONENT) is not None:
             components[t] = {SCOREBOARD_COMPONENT: dict(r[SCOREBOARD_COMPONENT])}
@@ -197,11 +203,15 @@ def section(ctx):
     ctx.note("facwar/systems.tsv: %d systems (%s)"
              % (len(rows), ", ".join("warzone %d: %d" % kv for kv in sorted(per.items()))))
     out = [("facwar/systems.tsv", HEADER, rows, SOURCES)]
-    sb, sb_problems = _scoreboards(ctx)
-    if sb_problems:
-        raise ValueError("facwar: " + "; ".join(sb_problems[:20]))
-    ctx.note("facwar/scoreboards.tsv: %d scoreboard types" % len(sb))
-    out.append(("facwar/scoreboards.tsv", SCOREBOARD_HEADER, sb, SCOREBOARD_SOURCES))
+    got_sb = _scoreboards(ctx)
+    if got_sb is None:
+        ctx.note("facwar/scoreboards.tsv: no layout for spacecomponentsbytype, not written")
+    else:
+        sb, sb_problems = got_sb
+        if sb_problems:
+            raise ValueError("facwar: " + "; ".join(sb_problems[:20]))
+        ctx.note("facwar/scoreboards.tsv: %d scoreboard types" % len(sb))
+        out.append(("facwar/scoreboards.tsv", SCOREBOARD_HEADER, sb, SCOREBOARD_SOURCES))
     got = _max_lp()
     if got is None:
         ctx.note("facwar/max_lp.tsv: out/pyc is not unpacked, not written")
@@ -222,12 +232,18 @@ def check(ctx):
     if got != [content.encode_row(r).split("\t") for r in rows]:
         bad.append("facwar/systems.tsv: differs from a fresh derive (%d vs %d rows)"
                    % (len(got), len(rows)))
-    sb, sb_problems = _scoreboards(ctx)
-    bad.extend(sb_problems)
-    have_sb = list(content.read_rows(ctx.path("facwar/scoreboards.tsv")))
-    if have_sb != [content.encode_row(r).split("\t") for r in sb]:
-        bad.append("facwar/scoreboards.tsv: differs from a fresh derive (%d vs %d rows)"
-                   % (len(have_sb), len(sb)))
+    got_sb = _scoreboards(ctx)
+    if got_sb is not None:
+        sb, sb_problems = got_sb
+        bad.extend(sb_problems)
+        try:
+            have_sb = list(content.read_rows(ctx.path("facwar/scoreboards.tsv")))
+        except OSError:
+            bad.append("facwar/scoreboards.tsv: missing (re-extract the facwar section)")
+        else:
+            if have_sb != [content.encode_row(r).split("\t") for r in sb]:
+                bad.append("facwar/scoreboards.tsv: differs from a fresh derive (%d vs %d rows)"
+                           % (len(have_sb), len(sb)))
     got_lp = _max_lp()
     if got_lp is not None:
         lp, lp_problems = got_lp

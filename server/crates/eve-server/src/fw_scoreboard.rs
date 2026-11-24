@@ -18,6 +18,7 @@
 //!
 //! **What this module decides ([I] from the gauge, [A] where marked).**
 //!
+//! - One board per site, on the first scoreboard object of its instance.
 //! - The win: `score >= att` is the attacker's, `score <= -abs(occ)` the
 //!   occupier's ([`winner`]) **[I]**: the gauge is full at either end.
 //! - [`credit`] is the only place the score moves: the attacker's side adds,
@@ -92,18 +93,18 @@ pub const ASSUMED: Thresholds = Thresholds {
 
 /// The thresholds from the raw `(attackerWinsThreshold, occupierWinsThreshold)`
 /// of the bundle. The sign is dropped (the client's gauge takes `abs` of the
-/// occupier's, and the attacker's is a distance); a missing or zero one is
-/// [`ASSUMED`]'s.
+/// occupier's, as the client's gauge does: `abs(occupierWinsThreshold) +
+/// attackerWinsThreshold`; the attacker's is taken as it is, never `abs`ed). A
+/// missing one, a zero one (a zero would win at once; whether the client
+/// ever stores one is unknown) and a negative attacker one are [`ASSUMED`]'s.
 pub fn thresholds(raw: Option<(Option<i64>, Option<i64>)>) -> Thresholds {
     let (a, o) = raw.unwrap_or((None, None));
-    let norm = |v: Option<i64>, fallback: i64| {
-        v.map(i64::saturating_abs)
-            .filter(|v| *v > 0)
-            .unwrap_or(fallback)
-    };
     Thresholds {
-        attacker: norm(a, ASSUMED.attacker),
-        occupier: norm(o, ASSUMED.occupier),
+        attacker: a.filter(|v| *v > 0).unwrap_or(ASSUMED.attacker),
+        occupier: o
+            .map(i64::saturating_abs)
+            .filter(|v| *v > 0)
+            .unwrap_or(ASSUMED.occupier),
     }
 }
 
@@ -336,6 +337,7 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                 }
             }
         };
+        let existing = reg.ext::<State>().boards.get(&site_id).cloned();
         let was = b.clone();
         b.item_id = Some(item);
         b.type_id = type_id;
@@ -349,10 +351,21 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
         b.attacker = o.attacker;
         b.occupier = o.occupier;
         let moved = (b.score, b.occupier) != (was.score, was.occupier);
+        // A new board, or one on a re-laid object, tells the grid its score:
+        // the object's `AddBalls2` went out before this board existed.
+        let shown = existing.as_ref().is_none_or(|e| e.item_id != b.item_id);
         reg.ext_mut::<State>().boards.insert(site_id, b.clone());
         if moved {
             store(reg, &b);
+        }
+        if moved || shown {
             push_slim(reg, &b);
+        }
+        // A score clamped to an end by smaller thresholds is a win.
+        if b.won.is_none()
+            && let Some(side) = winner(b.score, th)
+        {
+            win(reg, site_id, side, ft);
         }
     }
 }
@@ -379,14 +392,14 @@ pub fn credit(reg: &mut Registry, site_id: i64, faction: i64, points: i64, ft: B
         return true;
     };
     let score = clamp(b.score.saturating_add(delta), th);
-    if score == b.score {
-        return true;
+    if score != b.score {
+        let mut b = b;
+        b.score = score;
+        reg.ext_mut::<State>().boards.insert(site_id, b.clone());
+        store(reg, &b);
+        push_slim(reg, &b);
     }
-    let mut b = b;
-    b.score = score;
-    reg.ext_mut::<State>().boards.insert(site_id, b.clone());
-    store(reg, &b);
-    push_slim(reg, &b);
+    // Checked even when the score did not move: a board sitting at an end is won.
     if let Some(side) = winner(score, th) {
         win(reg, site_id, side, ft);
     }
@@ -410,6 +423,11 @@ fn win(reg: &mut Registry, site_id: i64, side: Side, ft: BlueTime) {
     b.won_at = ft;
     let b = b.clone();
     store(reg, &b);
+    // The fanfare and the victory points are paid only when the slot was
+    // still live to complete: a slot already done (or gone) was won before.
+    if !crate::population::complete(reg, b.system, b.site_id, ft) {
+        return;
+    }
     let to = crate::facwar::in_system(reg, b.system);
     reg.push(ScoreboardWon {
         to,
@@ -423,14 +441,22 @@ fn win(reg: &mut Registry, site_id: i64, side: Side, ft: BlueTime) {
         Side::Occupier => -vp,
     };
     crate::facwar::add_vp(reg, b.system, delta, ft);
-    crate::population::complete(reg, b.system, b.site_id, ft);
+}
+
+/// Whether site `site_id`'s board has been won (its capture points stop).
+pub fn is_won(reg: &Registry, site_id: i64) -> bool {
+    reg.ext::<State>()
+        .board(site_id)
+        .is_some_and(|b| b.won.is_some())
 }
 
 /// **The `kill_hooks::PLAYER` row.** In a warzone system with a live board:
 /// the killer and the victim are enlisted pilots of the system's two sides,
 /// on different ones, the victim's hull is not a capsule, and the killer is
-/// within [`crate::site::ARRIVAL_RANGE`] of the board: [`KILL_POINTS`] to the
-/// killer's militia **[A]**. NPC kills do not score **[A]**.
+/// within [`crate::site::ARRIVAL_RANGE`] of the board (the victim's position
+/// is read, the killer may have left the grid): [`KILL_POINTS`] to the
+/// killer's militia **[A]**. NPC kills do not score **[A]**, and neither does a
+/// drone's final blow (its roster key is no militia pilot) **[A]**.
 pub fn on_kill(reg: &mut Registry, ev: &crate::kill_hooks::KillEvent) {
     if ev.npc.is_some() || ev.ship_type == crate::damage::CAPSULE_TYPE_ID {
         return;
@@ -451,7 +477,11 @@ pub fn on_kill(reg: &mut Registry, ev: &crate::kill_hooks::KillEvent) {
     if kf == vf || !sides.contains(&kf) || !sides.contains(&vf) {
         return;
     }
-    let Some(at) = reg.roster().get(killer).map(|p| p.motion.position) else {
+    let Some(at) = reg
+        .roster()
+        .get(ev.victim_character)
+        .map(|p| p.motion.position)
+    else {
         return;
     };
     let site = reg
@@ -469,13 +499,28 @@ pub fn on_kill(reg: &mut Registry, ev: &crate::kill_hooks::KillEvent) {
 }
 
 /// The slim extras of scoreboard objects (`slim_extra::SOURCES` row): the
-/// score, 0 at the start.
+/// score of its site's board, else the saved score, else 0. Any placed object
+/// whose type has the component carries it, so the `AddBalls2` that lays the
+/// instance out (before [`tick`] has made the board) already shows the score.
 pub fn slim_extras(reg: &Registry, ids: &[i64]) -> crate::slim_extra::SlimExtras {
-    reg.ext::<State>()
-        .boards()
-        .filter_map(|b| {
-            let id = b.item_id.filter(|i| ids.contains(i))?;
-            Some((id, vec![(KEY_SCORE, PyValue::Int(b.score))]))
+    let Some(npc) = reg.content().try_get::<crate::npc_data::Table>() else {
+        return Vec::new();
+    };
+    let sites = reg.ext::<crate::site::Sites>();
+    ids.iter()
+        .filter_map(|id| {
+            let (placed, system) = crate::site::object(reg, *id)?;
+            if !npc.has_component(placed.type_id, COMPONENT) {
+                return None;
+            }
+            let site = sites.of_item(*id)?.site_id;
+            let score = reg
+                .ext::<State>()
+                .board(site)
+                .map(|b| b.score)
+                .or_else(|| saved(reg, system, site).map(|s| s.0))
+                .unwrap_or(0);
+            Some((*id, vec![(KEY_SCORE, PyValue::Int(score))]))
         })
         .collect()
 }
@@ -720,10 +765,20 @@ pub(crate) mod tests {
     pub(crate) fn battlefield(with_point: bool) -> Bf {
         let mut reg = world();
         let now = reg.world().birth;
+        // The occupier's own dungeon: the completion scan would raise the
+        // score for it, so a test of the scan's exclusion discriminates.
         let site = fx::fw_sites(&reg, fx::S1)
             .into_iter()
-            .find(|s| s.archetype == BATTLEFIELD)
-            .expect("a battlefield in S1");
+            .find(|s| {
+                s.archetype == BATTLEFIELD
+                    && reg
+                        .content()
+                        .get::<crate::dungeon_data::Table>()
+                        .dungeons
+                        .get(&s.dungeon_id)
+                        .is_some_and(|d| d.faction == Some(fx::A))
+            })
+            .expect("an occupier-owned battlefield in S1");
         assert!(crate::site::instantiate(&mut reg, &site));
         let sb = crate::site::add_object(&mut reg, site.site_id, SB_TYPE, site.anchor)
             .expect("the scoreboard is placed");
@@ -760,6 +815,12 @@ pub(crate) mod tests {
         let t = thresholds(Some((Some(RAW_ATT), Some(RAW_OCC))));
         assert_eq!(t, TH, "a negative stored occupier threshold is normalised");
         assert_eq!(thresholds(Some((Some(RAW_ATT), Some(-RAW_OCC)))), TH);
+        // The attacker's is taken as the client's gauge takes it, not `abs`ed:
+        // a negative one is unusable and the assumed one stands.
+        assert_eq!(
+            thresholds(Some((Some(-RAW_ATT), Some(RAW_OCC)))).attacker,
+            ASSUMED.attacker
+        );
         assert_eq!(thresholds(None), ASSUMED);
         assert_eq!(thresholds(Some((None, None))), ASSUMED);
         let half = thresholds(Some((None, Some(RAW_OCC))));
@@ -1017,12 +1078,12 @@ pub(crate) mod tests {
             ),
         );
         assert_eq!(bf.score(), 0, "a capsule");
-        // The killer is off the board's grid.
-        bf.put(fx::ME, far);
+        // The victim died off the board's grid.
+        bf.put(fx::YOU, far);
         on_kill(&mut bf.reg, &kill_of(fx::YOU, fx::ME, HULL, at(bf.now, 1)));
         assert_eq!(bf.score(), 0, "off grid");
         // Back on it: it scores, so the three above were the guards at work.
-        bf.put(fx::ME, bf.anchor);
+        bf.put(fx::YOU, bf.anchor);
         on_kill(&mut bf.reg, &kill_of(fx::YOU, fx::ME, HULL, at(bf.now, 1)));
         assert_eq!(bf.score(), KILL_POINTS);
     }
@@ -1143,5 +1204,141 @@ pub(crate) mod tests {
             .find(|s| s.site_id == bf.site)
             .map(|s| s.state);
         assert_eq!(state, Some(population::State::Live), "not completed");
+    }
+
+    #[test]
+    fn a_new_board_pushes_its_score_and_the_slim_carries_it_before_the_board_exists() {
+        let mut reg = world();
+        let now = reg.world().birth;
+        let site = fx::fw_sites(&reg, fx::S1)
+            .into_iter()
+            .find(|s| s.archetype == BATTLEFIELD)
+            .expect("a battlefield in S1");
+        assert!(crate::site::instantiate(&mut reg, &site));
+        let sb =
+            crate::site::add_object(&mut reg, site.site_id, SB_TYPE, site.anchor).expect("placed");
+        // No board yet: the object still carries its score (0).
+        assert!(reg.ext::<State>().board(site.site_id).is_none());
+        assert_eq!(
+            slim_extras(&reg, &[sb.item_id]),
+            vec![(sb.item_id, vec![(KEY_SCORE, PyValue::Int(0))])]
+        );
+        // A saved score is what it carries, board or not.
+        reg.deltas_mut().put(
+            KIND,
+            key(fx::S1, site.site_id),
+            vec!["7".into(), fx::A.to_string(), String::new(), String::new()],
+        );
+        assert_eq!(
+            slim_extras(&reg, &[sb.item_id]),
+            vec![(sb.item_id, vec![(KEY_SCORE, PyValue::Int(7))])]
+        );
+        // The tick that makes the board pushes the slim to the grid: a pilot
+        // is there to be told.
+        crate::service::facwar_mgr::enlist(&mut reg, fx::ME, fx::B, now).expect("enlists");
+        reg.roster_mut().arrive(Presence::arriving(
+            fx::ME,
+            fx::ME + 100,
+            fx::S1,
+            Motion::arrived(site.anchor, [0.0; 3]),
+        ));
+        let later = std::time::Instant::now() + std::time::Duration::from_secs(600);
+        let _ = reg.take_due(later);
+        tick(&mut reg, now);
+        let pushed = reg.take_due(later);
+        assert!(!pushed.is_empty(), "a new board tells the grid its score");
+        // Nothing moved on the next beat: nothing more is pushed.
+        tick(&mut reg, now + crate::fw_capture::CHECK_EVERY);
+        let again = reg.take_due(later);
+        assert!(again.is_empty(), "no push without a change");
+    }
+
+    #[test]
+    fn a_saved_score_clamped_to_an_end_by_smaller_thresholds_wins_on_the_next_tick() {
+        let mut bf = battlefield(false);
+        // A score saved under bigger thresholds, past this type's attacker end.
+        *bf.reg.ext_mut::<State>() = State::default();
+        bf.reg.deltas_mut().put(
+            KIND,
+            key(bf.system, bf.site),
+            vec![
+                (TH.attacker + 10).to_string(),
+                fx::A.to_string(),
+                String::new(),
+                String::new(),
+            ],
+        );
+        let _ = won_pushes(&mut bf.reg);
+        tick(&mut bf.reg, at(bf.now, 1));
+        let b = bf
+            .reg
+            .ext::<State>()
+            .board(bf.site)
+            .cloned()
+            .expect("board");
+        assert_eq!((b.score, b.won), (TH.attacker, Some(fx::B)));
+        assert_eq!(won_pushes(&mut bf.reg).len(), 1);
+    }
+
+    #[test]
+    fn a_credit_at_an_end_still_wins_and_a_won_board_stops_its_points() {
+        let mut bf = battlefield(true);
+        // Put the board at the end without a win (as a clamp would leave it).
+        bf.reg
+            .ext_mut::<State>()
+            .boards
+            .get_mut(&bf.site)
+            .expect("board")
+            .score = TH.attacker;
+        credit(&mut bf.reg, bf.site, fx::B, 1, at(bf.now, 1));
+        assert!(
+            is_won(&bf.reg, bf.site),
+            "winner() is checked before the early return"
+        );
+        let count = |bf: &Bf| {
+            bf.reg
+                .ext::<crate::facwar::Facwar>()
+                .capture()
+                .points_of(bf.site)
+                .count()
+        };
+        let before = count(&bf);
+        let mut t = at(bf.now, 2);
+        for _ in 0..8 {
+            crate::fw_capture::tick(&mut bf.reg, t);
+            t += crate::fw_capture::CHECK_EVERY;
+        }
+        assert_eq!(
+            before,
+            count(&bf),
+            "no point is made or judged after the win"
+        );
+        assert_eq!(before, 0, "the board was won before any point was judged");
+    }
+
+    #[test]
+    fn a_battlefield_has_no_anchor_point_and_never_pays_the_vp() {
+        // No capture-point object: a complex would be judged at its anchor, a
+        // battlefield has no point at all.
+        let mut bf = battlefield(false);
+        let cycle = crate::fw_capture::assumed().seconds * 10_000_000;
+        let mut t = bf.now;
+        while t < bf.now + 3 * cycle {
+            crate::fw_capture::tick(&mut bf.reg, t);
+            t += crate::fw_capture::CHECK_EVERY;
+        }
+        let points = bf
+            .reg
+            .ext::<crate::facwar::Facwar>()
+            .capture()
+            .points_of(bf.site)
+            .count();
+        assert_eq!(points, 0);
+        assert_eq!(bf.score(), 0);
+        assert_eq!(
+            crate::facwar::occupation(&bf.reg, bf.system).map(|o| o.score),
+            Some(0),
+            "and the VP did not move either"
+        );
     }
 }

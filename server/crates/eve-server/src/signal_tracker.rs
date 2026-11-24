@@ -1590,7 +1590,12 @@ mod tests {
             Some(&PyValue::Int(BF_DUNGEON))
         );
         assert!(dict_get(state, b"dungeonNameID").is_some());
-        assert_eq!(entries(&fw_instances(&reg)).len(), 1);
+        assert_eq!(entries(&v).len(), 1, "one system holds battlefields");
+        let fw = fw_instances(&reg);
+        let Some(PyValue::List(fw_rows)) = of(&fw, NULL) else {
+            panic!("rows: {fw:?}")
+        };
+        assert_eq!(fw_rows.len(), 1, "the complex stays on its own list");
     }
 
     /// The client indexes `GetDungeon` by every row's `dungeonID`, so a site

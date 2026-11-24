@@ -2216,6 +2216,11 @@ mod tests {
                 || upgrades.contains(r.key.as_str())
                 || r.key == "fw_battlefield_low"
         }));
+        assert_eq!(
+            rows.last().map(|r| r.key.as_str()),
+            Some("fw_battlefield_low"),
+            "the battlefield row is the last row, so no earlier slot moved"
+        );
         for want in [
             "wh_combat_anom",
             "wh_relic_sig",

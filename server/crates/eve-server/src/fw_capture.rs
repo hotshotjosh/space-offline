@@ -33,13 +33,19 @@
 //! - A cycle done: a **looping** point awards its holder [`Params::
 //!   point_value`] victory points through [`crate::facwar::add_vp`] (the
 //!   attacker raises the system's score, the occupier lowers it, the same
-//!   direction as `facwar::credit`) and starts again; a **non-looping**
+//!   direction as `facwar::credit`) and starts again; **at a battlefield**
+//!   (archetype 68) it scores the site's scoreboard instead
+//!   ([`crate::fw_scoreboard::credit`], #8) and never the VP, and a battlefield
+//!   has one point per capture-point object (keyed `(site, item)`), none
+//!   until they exist; a **non-looping**
 //!   point is the complex's capture: it completes the complex's population
 //!   slot, which `facwar::tick` credits as before, and pays LP and tells
-//!   the grid through `fw_lp::on_complete`. Once per capture.
-//! - [`State::is_captured`] lets `site_spawn` skip its own clear-the-pocket
-//!   LP for a complex a capture has already paid (coordinator hunk, see the
-//!   lane report).
+//!   the grid through `fw_lp::on_complete`. Once per capture. At a
+//!   battlefield a taken point scores its value and does not complete the
+//!   slot (the board's win does).
+//! - [`State::is_captured`] (any point of the site taken) lets `site_spawn`
+//!   skip its own clear-the-pocket LP for a complex a capture has already
+//!   paid; a battlefield is never completed by either.
 //!
 //! **Not persisted.** Points live in memory: a restart loses every point's
 //! progress and a taken flag (a complex then starts over, and one the
@@ -491,6 +497,12 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
         {
             continue;
         }
+        // A battlefield has no anchor fallback: it has no point until its
+        // point objects exist, and none once its board is won (#8).
+        let battlefield = crate::fw_scoreboard::is_battlefield(reg, site_id);
+        if battlefield && (objs.is_empty() || crate::fw_scoreboard::is_won(reg, site_id)) {
+            continue;
+        }
         // One point per capture-point object; a complex without one is judged
         // at its anchor under item 0.
         let targets: Vec<(Option<i64>, [f64; 3])> = if objs.is_empty() {
@@ -538,7 +550,9 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                     Award::Points { holder, points } => {
                         // A battlefield's points move its scoreboard, not the
                         // system's victory points (#8) **[A]**.
-                        if !crate::fw_scoreboard::credit(reg, site_id, holder, points, ft) {
+                        if battlefield {
+                            crate::fw_scoreboard::credit(reg, site_id, holder, points, ft);
+                        } else {
                             let delta = if holder == o.attacker {
                                 points
                             } else {
@@ -551,7 +565,7 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
                         // A taken point at a battlefield scores the point's
                         // value and never completes the slot: the board's win
                         // does (#8) **[A]**.
-                        if crate::fw_scoreboard::is_battlefield(reg, site_id) {
+                        if battlefield {
                             let value = base_params.point_value;
                             crate::fw_scoreboard::credit(reg, site_id, holder, value, ft);
                         } else if crate::population::complete(reg, system, site_id, ft) {

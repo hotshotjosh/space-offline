@@ -364,6 +364,8 @@ fci_em_heraldry
 fci_fw_kill_lp --with-second -- --character Alice --character Bob --no-concord
 # fix28 (#75): a militia pilot holds an FW capture point on a 15 s cycle: the slim countdown follows and the score rises
 fci_fw_capture -- --character Alice --no-concord
+# fw7 (#8): a militia pilot on a battlefield's grid: the instances dict, the scoreboard on the slim and its thresholds, a held capture point raises the score, /fwscore add wins it and OnFwScoreboardWon fires once (written, not yet run on a client)
+fci_fw_scoreboard -- --character Alice --no-concord
 # w27-orbit (#11): A orbits, then follows, B as B lands on its grid: the order, the ball and the lock survive the landing; two clients
 fci_landing_orbit --with-second -- --character Alice --character Bob
 # w27-cynojam (#87): a Tenebrex cyno jammer marks its system jammed; the panel icon follows GetCynoJammerState and the push; one client
