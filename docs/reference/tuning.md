@@ -147,6 +147,7 @@ section of [schema.md](../content/schema.md) named below. How a table is read:
 | `content/econ/price-overrides.tsv` | fixed reference prices | `content/econ/price-overrides.tsv` | re-extract |
 | `content/econ/recipe-markup.tsv` | the markup on built items' reference price (shipped 1.15 **[A]**) | `content/econ/recipe-markup.tsv` | re-extract |
 | `content/econ/pi-markup.tsv` | the markup on PI items (shipped 1.15 **[A]**) | `content/econ/pi-markup.tsv` | re-extract |
+| `content/econ/pi-anchor.tsv` | the scale on a tier-1 PI good's price, `scale x` the client's per-tier import-tax multiplier (shipped 1.0 **[A]**, #151) | `content/econ/pi-anchor.tsv` | re-extract |
 | `content/econ/meta-mult.tsv` | variant price against its parent, by meta group | `content/econ/meta-mult.tsv` | re-extract |
 | `content/agents/lp-overrides.tsv` | LP and ISK cost of single LP-store offers | `content/agents/lp-overrides.tsv` | re-extract |
 | `content/agents/emblem-prices.tsv` | LP price of emblem offers | `content/agents/emblem-prices.tsv` | re-extract |

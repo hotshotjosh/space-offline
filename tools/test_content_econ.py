@@ -403,6 +403,94 @@ class PiMarkup(unittest.TestCase):
                 E.PI_MARKUP_FILE = old
 
 
+class PiAnchor(unittest.TestCase):
+    S = 0.8  # an invented scale, not the shipped one
+    P0, A1, A1B, A2, A3 = 990500, 990501, 990502, 990503, 990504
+    TAX = {990501: 3.0, 990502: 3.0, 990503: 250.0, 990504: 4000.0}  # invented
+
+    def _o(self, scale, tax=None, overrides=None, pi_markup=1.25):
+        pi = dict(PI)
+        pi[self.A1] = ([(self.P0, 10)], 20)
+        pi[self.A1B] = ([(self.P0, 10)], 20)
+        pi[self.A2] = ([(self.A1, 40), (self.A1B, 40)], 5)
+        pi[self.A3] = ([(self.A2, 2)], 1)
+        m = _market()
+        for t in (self.P0, self.A1, self.A1B, self.A2, self.A3):
+            m[t] = {"base_price": 1.0 if t == self.A1 else 0.0, "portion_size": 1,
+                    "market_group_id": MG}
+        m[self.P0]["base_price"] = 0.0
+        rmap = E.recipes(E.blueprint_rows(_blueprints()))
+        return E.Oracle(m, rmap, pi, MATERIALS, META, overrides,
+                        E.salvage_prices(m, rmap), pi_markup=pi_markup,
+                        pi_anchor=scale, tax_mult=self.TAX if tax is None else tax)
+
+    def test_a_tier_one_product_prices_at_scale_times_its_tax_multiplier(self):
+        o = self._o(self.S)
+        for t in (self.A1, self.A1B):
+            self.assertAlmostEqual(o.price(t)[0], self.S * 3.0)
+            self.assertEqual(o.price(t)[1], "pi")
+
+    def test_the_tiers_above_compound_through_the_markup(self):
+        o, m = self._o(self.S), 1.25
+        p1 = self.S * 3.0
+        p2 = m * (40 * p1 + 40 * p1) / 5
+        self.assertAlmostEqual(o.price(self.A2)[0], p2)
+        self.assertAlmostEqual(o.price(self.A3)[0], m * 2 * p2)
+
+    def test_raw_p0_stays_unpriced(self):
+        self.assertIsNone(self._o(self.S).price(self.P0))
+
+    def test_an_override_still_wins(self):
+        o = self._o(self.S, overrides={self.A1: 77.0})
+        self.assertEqual(o.price(self.A1)[:2], (77.0, "override"))
+
+    def test_a_product_without_a_tax_row_is_not_anchored(self):
+        o = self._o(self.S, tax={})
+        self.assertEqual(o.price(self.A1)[:2], (1.0, "base"))
+
+    def test_a_non_pi_type_is_untouched(self):
+        a, b = self._o(self.S), self._o(None)
+        for t in (P1, MIN_A, FRIG):
+            self.assertEqual(a.price(t), b.price(t), t)
+
+    def test_none_reproduces_todays_output(self):
+        a, b = self._o(None), self._o(None, tax={})
+        for t in _market():
+            self.assertEqual(a.price(t), b.price(t), t)
+        self.assertEqual(a.price(self.A1)[:2], (1.0, "base"))
+        c = _oracle()
+        d = E.Oracle(_market(), E.recipes(E.blueprint_rows(_blueprints())), PI, MATERIALS,
+                     META, None, E.salvage_prices(_market(), E.recipes(
+                         E.blueprint_rows(_blueprints()))), pi_anchor=None,
+                     tax_mult={P1: 9.0, P2: 9.0})
+        for t in _market():
+            self.assertEqual(c.price(t), d.price(t), t)
+
+    def test_read_tax_mult_takes_only_taxmult_rows(self):
+        lines = ["# c\n", "pintype\t990501\t1\n", "taxmult\t990501\t3.0\n",
+                 "taxmult\t990502\tnan\n", "taxmult\t990503\t-1\n",
+                 "taxmult\tx\t1\n", "taxmult\t990504\t4000\n"]
+        self.assertEqual(E.read_tax_mult(lines), {990501: 3.0, 990504: 4000.0})
+
+    def test_the_scale_file_is_one_row_in_range(self):
+        import io
+        ok = "scale\twhy\n0.8\t[A] x\n"
+        self.assertEqual(E.parse_pi_anchor(io.StringIO(ok)), 0.8)
+        for bad in ("scale\twhy\n", "scale\twhy\n1\tx\n1\ty\n", "scale\twhy\nabc\tx\n",
+                    "scale\twhy\nnan\tx\n", "scale\twhy\n0\tx\n",
+                    "scale\twhy\n%r\tx\n" % (E.MAX_PI_ANCHOR + 1.0), "scale\n1\n"):
+            with self.assertRaises(content.ContentError, msg=bad):
+                E.parse_pi_anchor(io.StringIO(bad))
+
+    def test_the_shipped_scale_file_parses(self):
+        with open(E.PI_ANCHOR_FILE, encoding="utf-8") as fh:
+            self.assertIsNone(E.markup_problem(
+                E.parse_pi_anchor(fh), E.MIN_PI_ANCHOR, E.MAX_PI_ANCHOR))
+
+    def test_the_econ_section_depends_on_planets(self):
+        self.assertIn("planets", E.DEPENDS)
+
+
 class BuildMin(unittest.TestCase):
     M = 1.25  # invented
 

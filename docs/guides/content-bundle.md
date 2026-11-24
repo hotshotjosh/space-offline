@@ -70,7 +70,7 @@ steps, for a host that receives a bundle built elsewhere
 **Writes are atomic.** `content.py` writes into `out/content.tmp-<pid>/`,
 writes `MANIFEST.tsv` last, then swaps the directory in, so a crash never
 leaves a half bundle. A bare `--sections` run merges into the existing
-bundle and keeps the other sections. After editing `content/econ/recipe-markup.tsv` or `content/econ/pi-markup.tsv`
+bundle and keeps the other sections. After editing `content/econ/recipe-markup.tsv`, `content/econ/pi-markup.tsv` or `content/econ/pi-anchor.tsv`
 let `tools/up.sh` re-extract; a manual `--sections` run for it must name
 `econ,lp,salvage,explore` together (the sections whose files derive from the
 prices: the sections that depend on `econ`), or `--check` fails on the files
@@ -92,6 +92,7 @@ researched blueprint passes at a lower markup.
 | `out/geode-picks.local.tsv` | a local file, gitignored | written by hand | local only | no |
 | `content/econ/price-overrides.tsv`, `content/econ/meta-mult.tsv` | this repository | in the clone | ours (authored) | no: absent means no rows |
 | `content/econ/recipe-markup.tsv` | this repository | in the clone | ours (authored, `[A]`) | yes, for the `econ` section: the markup a built item's `P_ref` carries over its materials (one row; a missing file or a value outside the sanity range is a refusal). An edit is a manifest `input` change, so the next `tools/up.sh` re-extracts; there is no flag for it |
+| `content/econ/pi-anchor.tsv` | this repository | in the clone | ours (authored, `[A]`) | yes, for the `econ` section: the scale on a tier-1 PI good's anchor price (`scale x` the bundle's import-tax multiplier; one row; a missing file or a value outside the sanity range is a refusal). A manifest `input`, so the next `tools/up.sh` re-extracts |
 | `content/econ/pi-markup.tsv` | this repository | in the clone | ours (authored, `[A]`) | yes, for the `econ` section: the markup a planetary product's `P_ref` carries over its schematic inputs (one row, compounding per tier; a missing file or a value outside the sanity range is a refusal). A manifest `input`, so the next `tools/up.sh` re-extracts |
 | `content/econ/geode-picks.tsv` | this repository | in the clone | ours | yes |
 | `content/store/offers.tsv`, `content/store/categories.tsv` | this repository | in the clone | ours | yes |

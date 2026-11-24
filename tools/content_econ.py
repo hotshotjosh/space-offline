@@ -14,7 +14,8 @@ It reads four authored files, `content/econ/meta-mult.tsv`,
 `content/econ/price-overrides.tsv`, `content/econ/recipe-markup.tsv` and
 `content/econ/pi-markup.tsv` (manifest `input` rows), and two bundle
 files of `types2` (CP12) at extract time: `types/market.tsv` and
-`types/materials.tsv`. With `industry/blueprints.tsv` these replace the
+`types/materials.tsv`, and the `taxmult` rows of `planets/pi-statics.tsv`
+(the P1 anchor, #151; `content/econ/pi-anchor.tsv` is its scale). With `industry/blueprints.tsv` these replace the
 committed `industry/tables.rs` and `reprocess/tables.rs` (tracker §66):
 blueprints, science and invention are `blueprints.tsv`; the adjusted and
 base prices are `prices.tsv`; the per-station reprocessing terms are
@@ -30,7 +31,7 @@ import sqlite3
 import sys
 
 SECTION = "econ"
-DEPENDS = ("types2",)
+DEPENDS = ("types2", "planets")
 #: The cFSD stems the schema guard covers (`schematics` is read through
 #: `dogma`'s hand layout, which the guard checks against the same loader).
 CFSD = ("stationoperations", "schematics")
@@ -109,6 +110,17 @@ PI_MARKUP_HEADER = ("markup", "why")
 #: not a derived bound. Falsifier: an owner decision to run a larger markup.
 MIN_PI_MARKUP = 1.0
 MAX_PI_MARKUP = 2.0
+#: `content/econ/pi-anchor.tsv` carries the P1 anchor scale (#151): a tier-1 PI
+#: product prices at `scale x` the client's own per-tier import-tax multiplier
+#: (`planets/pi-statics.tsv` `taxmult` rows), which the client itself uses to
+#: value PI goods for customs tax **[V]**. The server never reads the file.
+PI_ANCHOR_FILE = os.path.join(AUTHORED, "pi-anchor.tsv")
+PI_ANCHOR_HEADER = ("scale", "why")
+PI_STATICS = "planets/pi-statics.tsv"
+#: [A] The sanity range of the anchor scale: a typo guard, not a derived bound.
+#: Falsifier: an owner decision to run a scale outside it.
+MIN_PI_ANCHOR = 0.05
+MAX_PI_ANCHOR = 4.0
 
 
 def markup_problem(x, lo=None, hi=None):
@@ -207,6 +219,42 @@ def parse_pi_markup(lines):
     if why:
         raise err("%s: the markup %s" % (name, why))
     return rows[0][0]
+
+
+def parse_pi_anchor(lines):
+    """`content/econ/pi-anchor.tsv`: exactly one row. Returns the scale;
+    a bad file or value is a `ContentError` naming the file, never a traceback."""
+    err = _content().ContentError
+    name = "pi-anchor.tsv"
+    try:
+        rows, problems = parse_authored(lines, PI_ANCHOR_HEADER, name, (float,))
+    except EconError as e:
+        raise err(str(e)) from None
+    if problems or len(rows) != 1:
+        raise err("%s: want exactly one row (scale, why); %s"
+                  % (name, "; ".join(problems) or "got %d" % len(rows)))
+    why = markup_problem(rows[0][0], MIN_PI_ANCHOR, MAX_PI_ANCHOR)
+    if why:
+        raise err("%s: the scale %s" % (name, why))
+    return rows[0][0]
+
+
+def read_tax_mult(lines):
+    """`{type_id: importTaxMultiplier}` from the `taxmult` records of
+    `planets/pi-statics.tsv` (`typeID importTaxMultiplier`). Other records,
+    comments and malformed or non-positive rows are skipped."""
+    out = {}
+    for line in lines:
+        f = line.rstrip("\n").split("\t")
+        if len(f) != 3 or f[0] != "taxmult":
+            continue
+        try:
+            t, v = int(f[1]), float(f[2])
+        except ValueError:
+            continue
+        if math.isfinite(v) and v > 0:
+            out[t] = v
+    return out
 
 
 # --- industry/blueprints.tsv ---------------------------------------------------
@@ -315,6 +363,9 @@ class Oracle:
     0. a `price-overrides.tsv` row replaces the derived price;
     1. `recipe`/`reaction`: `markup × Σ P_ref(m)·qty / productQuantity` at ME 0
        when every material prices above 0 (lowest blueprint id first);
+    1b. `pi` anchor: a tier-1 PI product (no input is itself a PI product) with a
+       `tax_mult` row prices at `pi_anchor × tax_mult` (#151; `pi_anchor=None`
+       skips the step);
     2. `pi`: `pi_markup ×` the same over a schematic's inputs and output
        quantity (each tier compounds, through its marked inputs);
     3. `base`: `basePrice` above 0;
@@ -331,7 +382,9 @@ class Oracle:
     `{output: ([(input, q)], out_qty)}`."""
 
     def __init__(self, market, recipe_map, pi, materials, meta_mult,
-                 overrides=None, rule_overrides=None, markup=1.0, pi_markup=1.0):
+                 overrides=None, rule_overrides=None, markup=1.0, pi_markup=1.0,
+                 pi_anchor=None, tax_mult=None):
+        self.pi_anchor, self.tax_mult = pi_anchor, tax_mult or {}
         self.markup = markup
         self.pi_markup = pi_markup
         self.market, self.recipes, self.pi = market, recipe_map, pi
@@ -383,6 +436,9 @@ class Oracle:
                 return self.markup * s / q, "reaction" if aid == REACTION else "recipe"
         if t in self.pi:
             ins, q = self.pi[t]
+            if (self.pi_anchor is not None and t in self.tax_mult
+                    and not any(m in self.pi for m, _q in ins)):
+                return self.pi_anchor * self.tax_mult[t], "pi"
             s = self._sum(ins, depth) if ins and q > 0 else None
             if s is not None:
                 return self.pi_markup * s / q, "pi"
@@ -675,16 +731,30 @@ def pi_markup(ctx):
         return parse_pi_markup(fh)
 
 
+def pi_anchor(ctx):
+    """The scale in `content/econ/pi-anchor.tsv`, read through `ctx.input`
+    (a manifest input, so an edit re-extracts). A missing file is a
+    `ContentError`."""
+    if not os.path.isfile(PI_ANCHOR_FILE):
+        raise _content().ContentError(
+            "%s: missing (the PI anchor scale is authored there)" % PI_ANCHOR_FILE)
+    with open(ctx.input(PI_ANCHOR_FILE), encoding="utf-8") as fh:
+        return parse_pi_anchor(fh)
+
+
 def derive(ctx):
     """`{relpath: rows}`; reads `types2`'s files from this run's bundle."""
     data = gather(ctx)
     bp = blueprint_rows(data["blueprints"])
     market = read_market(ctx.path("types/market.tsv"))
     rmap = recipes(bp)
+    with open(ctx.path(PI_STATICS), encoding="utf-8") as fh:
+        tax_mult = read_tax_mult(fh)
     oracle = Oracle(market, rmap, data["pi"], read_materials(ctx.path("types/materials.tsv")),
                     authored(ctx, META_MULT, parse_meta_mult),
                     authored(ctx, OVERRIDES, parse_overrides), salvage_prices(market, rmap),
-                    markup=recipe_markup(ctx), pi_markup=pi_markup(ctx))
+                    markup=recipe_markup(ctx), pi_markup=pi_markup(ctx),
+                    pi_anchor=pi_anchor(ctx), tax_mult=tax_mult)
     return {
         "industry/blueprints.tsv": bp,
         "stations/stations.tsv": station_rows(data["stations"], data["region_of"], data["ops"]),

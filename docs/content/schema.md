@@ -95,7 +95,7 @@ source	res:/staticdata/systems.static	<md5 hex from resfileindex.txt>
 | `systems` | `all`, or a comma list of system ids | the `--systems` restriction. Exactly one line |
 | `data_hash` | sha256 hex | **format 1.1** (BA-3): sha256 over one `relpath<TAB>sha256<LF>` line per `file` record, **sorted by relpath**. It names the data and nothing else (no build, extractor or source md5), so two extractions hold the same data exactly when it agrees: `content.py --check --against OTHER`. `--check` and `Manifest::parse` refuse one that disagrees with the records. Absent from a 1.0 bundle, which still loads, checks and merges. At most one line |
 | `file` | `relpath rows sha256 sources` | one per bundle file, in write order. `rows` counts data lines only (no header, no `#` lines; for the kind-tagged files, every non-`#` line). `sources` is a comma list of `res:` paths |
-| `input` | `relpath sha256` | **added by X1**: one per authored `content/` file an extractor section read (`npc/region-pirates.tsv`, `econ/price-overrides.tsv`, `econ/meta-mult.tsv`, `econ/recipe-markup.tsv`, `econ/pi-markup.tsv`, `agents/lp-overrides.tsv`). `up.sh` re-extracts when one differs, as it does for `source` and `extractor`. Without it, an edit to an override file would leave the old bundle in use |
+| `input` | `relpath sha256` | **added by X1**: one per authored `content/` file an extractor section read (`npc/region-pirates.tsv`, `econ/price-overrides.tsv`, `econ/meta-mult.tsv`, `econ/recipe-markup.tsv`, `econ/pi-markup.tsv`, `econ/pi-anchor.tsv`, `agents/lp-overrides.tsv`). `up.sh` re-extracts when one differs, as it does for `source` and `extractor`. Without it, an edit to an override file would leave the old bundle in use |
 | `source` | `res-path md5` | one per corpus file read, md5 from `resfileindex.txt` column 3 |
 
 The singleton records come first, in the order shown, then every
@@ -1701,7 +1701,7 @@ Invented example row:
 |---|---|---|
 | `type_id` | `i64` | a priced market type |
 | `ref_price` | `f64` | `P_ref`, C5 §3.2 |
-| `source` | `enum(recipe\|reaction\|pi\|base\|parent\|override)` | the rule that priced it; `recipe` and `reaction` prices are `markup × Σ materials / productQuantity` (the markup is `content/econ/recipe-markup.tsv`, an authored input, so building pays; each tier compounds its margin). `pi` prices are `pi_markup × Σ inputs / outQty` (`content/econ/pi-markup.tsv`, also an authored input; each tier compounds), `override` prices are unmarked; a `parent` price inherits the markup of the price it is built on (compounded with the meta multiplier), and `floor_price` rises for a type that reprocesses into built items or PI goods. What moves with the markup, all by about `X`: the Tier B loot bids (`econ_exchange.rs`, `m_bid × ref_price`; loot income rises about `X` against the Tier B **[A]** falsifier, so a soak should read it), LP offer values, mission item values, repair cost, and the industry EIV and job fees (`adjustedPrice = ref_price`). Tier A orders (from `basePrice`) and NPC bids on products do not move |
+| `source` | `enum(recipe\|reaction\|pi\|base\|parent\|override)` | the rule that priced it; `recipe` and `reaction` prices are `markup × Σ materials / productQuantity` (the markup is `content/econ/recipe-markup.tsv`, an authored input, so building pays; each tier compounds its margin). `pi` prices are `pi_markup × Σ inputs / outQty` (`content/econ/pi-markup.tsv`, also an authored input; each tier compounds), except a tier-1 PI product, which is `pi_anchor × taxmult` (`content/econ/pi-anchor.tsv` and the bundle's `planets/pi-statics.tsv` `taxmult` rows, #151), `override` prices are unmarked; a `parent` price inherits the markup of the price it is built on (compounded with the meta multiplier), and `floor_price` rises for a type that reprocesses into built items or PI goods. What moves with the markup, all by about `X`: the Tier B loot bids (`econ_exchange.rs`, `m_bid × ref_price`; loot income rises about `X` against the Tier B **[A]** falsifier, so a soak should read it), LP offer values, mission item values, repair cost, and the industry EIV and job fees (`adjustedPrice = ref_price`). Tier A orders (from `basePrice`) and NPC bids on products do not move |
 | `floor_price` | `f64` | the step-6 floor |
 | `category_id` | `i64` | category |
 | `group_id` | `i64` | group |
@@ -2395,6 +2395,7 @@ Rules: §1.1's authored form. Every row that carries an `[A]` value states its f
 | `content/econ/meta-mult.tsv` | CP24 | CP24 |
 | `content/econ/recipe-markup.tsv` | #142 | CP24 |
 | `content/econ/pi-markup.tsv` | #144 | CP24 |
+| `content/econ/pi-anchor.tsv` | #151 | CP24 |
 | `content/agents/lp-overrides.tsv` | CP37a | CP37a |
 | `content/agents/emblem-prices.tsv` | #207 | `content_lp.py` |
 | `content/econ/hubs.tsv` | CP35 | CP35 |
@@ -2632,6 +2633,28 @@ A missing file, a second row or a bad value is a `ContentError` naming the file.
 
 ```
 1.3	[A] invented example row
+```
+
+### `content/econ/pi-anchor.tsv`
+
+- **Owner (writer):** #151.
+- **Readers:** CP24's extractor (C5 §3.2 step 1b), read through `ctx.input`, so the manifest lists it as an `input` and `up.sh` re-extracts when it changes. The `econ` section now also depends on `planets`: it reads the `taxmult` records of `planets/pi-statics.tsv` (`typeID importTaxMultiplier`).
+- **Key:** none: exactly one row.
+- **Stable ids and delta keys (ruling 4):** none.
+
+```
+scale	why
+```
+
+| column | type | meaning |
+|---|---|---|
+| `scale` | `f64` | `S`: a tier-1 PI product (a schematic output with no schematic output among its inputs and a `taxmult` row) prices at `S × taxmult`, source `pi` [A]; finite, between `MIN_PI_ANCHOR` and `MAX_PI_ANCHOR` (a sanity range) |
+| `why` | `text` | falsifier |
+
+A missing file, a second row or a bad value is a `ContentError` naming the file. Invented example row:
+
+```
+0.8	[A] invented example row
 ```
 
 ### `content/econ/pi-markup.tsv`

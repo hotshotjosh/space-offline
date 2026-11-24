@@ -1,0 +1,18 @@
+# The P1 anchor scale (C5 §3.2 step 1b), read by tools/content_econ.py when it
+# writes out/content/econ/prices.tsv. The server never reads this file; edit it
+# and tools/up.sh re-extracts (the bundle's manifest records it as an `input`).
+#
+# A tier-1 PI product (a schematic whose inputs are not PI products) prices at
+#   scale x the client's own per-tier import-tax multiplier
+# read from the bundle (planets/pi-statics.tsv `taxmult` rows) at extract time;
+# no client number is written here. Without it the P1 goods price at their
+# basePrice and a PI chain is worth almost nothing. Tiers above compound through
+# pi-markup.tsv as before. A price-overrides.tsv row still wins. Raw P0 stays
+# unpriced. The price ripples into every recipe that uses a PI good.
+# Exactly one row, finite, within content_econ.MIN_PI_ANCHOR .. MAX_PI_ANCHOR.
+#
+# [A] 1.0. Falsifier: a soak where PI chains still earn nothing, or where PI
+# outearns every other career by far, or hulls/implants that use PI goods price
+# out of reach of the bots that build them.
+scale	why
+1.0	[A] the client's own tax multiplier as the reference price; falsifier: PI earns nothing, or outearns every other career, or PI-using products price out of reach
