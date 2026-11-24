@@ -445,3 +445,5 @@ fci_mission_dungeon --serial
 fci_bump_pair --with-second -- --character Alice --character Bob
 # PG-1c (#64): a pilot joins the Proving Grounds queue with a filament, a second join is refused, leaving works, and docking drops the queue; one client (written, not yet run on a client)
 fci_proving_queue
+# PG-2 (#65): two pilots queue a 2x1 Proving Grounds match, land in one arena, one kills the other, the loser's capsule goes home and the winner leaves by the conduit (written, not yet run on a client)
+fci_proving_duel --with-second -- --character Alice --character Bob
