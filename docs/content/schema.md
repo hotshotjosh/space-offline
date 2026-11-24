@@ -192,6 +192,7 @@ comment exactly as shown.
 | `skins/licenses.tsv` | L2 SKINS (`content_skins.py`, the `skins` section) | L2 (`skins`: licence types and their item types) |
 | `skins/skins.tsv` | L2 SKINS (`content_skins.py`) | L2 (`skins`: the hulls a SKIN fits) |
 | `nodegraphs/{graphs,nodes,nodetypes,atoms}.tsv` | #205 (`content_nodegraphs.py`, the `nodegraphs` section) | #205 (`node_graph::data::Library`, the node-graph runtime; run by `air_npe` with `--air-npe`) |
+| `achievements/agent-missions.tsv` | #205 (`content_achievements.py`, the `achievements` section) | #205 (`achievements::TABLE`; served with `--air-npe` only) |
 | `cosmetics/ship-licences.tsv` | #207 EM-3 (`content_lp.py`, the `lp` section) | `emblem` (`emblem::Licences`: the licence types a purchase grants as entitlements) |
 | `facwar/systems.tsv` | FW-3 (`content_facwar.py`, the `facwar` section) | `facwar` (`facwar::Table`: the warzone territory list) |
 | `facwar/max_lp.tsv` | #133 FW-KILLS (`content_facwar.py`) | `facwar` (`facwar::Table::max_lp_of`: the most a kill pays by hull group) |
@@ -2333,6 +2334,42 @@ Invented example rows:
 - `--check` refuses a result type that is also a source, and a type in either column that typedata lacks.
 
 ---
+
+### `achievements/agent-missions.tsv`
+
+- **Writer:** #205 (`tools/content_achievements.py`, the `achievements` section). **Not from the client install:** it reads the achievement definitions the client downloaded from CCP's CDN (`cache/Storage/achievements/data.bin`, a flatbuffer with identifier `ACHV`, from a client that has entered the game on Tranquility), decoded by the slots of the client's generated accessors [V decompiled `achievement_system/client/model/flatbuffer/generated.pyj`]. It reads only `EVE_ACHIEVEMENTS_BIN` if set, else `out/cdn/achievements/data.bin` (copied there by `tools/copy-cdn-achievements.sh CACHE_DIR`); it searches no client or user folder. With neither, the table is empty and the section says so. The manifest lists it as source `cdn:achievements@<version>`.
+- **Readers:** #205 (`achievements::TABLE`): the Career Program achievement state the gateway serves and the AIR NPE's scene 2.5.01 waits on. The gateway arm, the mission hook and the rewards run only on a server started with `--air-npe`.
+- **Definitions versions:** in 1.7.3 the career-agent achievements count a `SET` of `mission` values; in **1.8.0** (Tranquility's, read 20NOV2026) all nine moved to one shared `CumulativeMode` method (progress union tag 1, a counter of completions) with `agent_division`, `agent_type`, `agent_level` and `agent_faction` parameters [V-TQ data.bin 1.8.0]. Both are read. With the shared method the division filter is optional, and an achievement that filters on something else (an agent type) is left out. **[A]** the server counts distinct missions for both; a career agent offers each mission once, so the two counts agree. Falsifier: a career achievement on Tranquility that advances on a repeated mission.
+- **Key:** `(achievement, milestone, reward)`. A milestone with no reward has one row whose `kind` is `NONE` and whose `reward` is empty.
+- **Stable client ids and delta keys (ruling 4):** `achievement` and `milestone` are delta keys of kind `ach`.
+
+```
+#achievement	name	category	divisions	levels	milestone	milestone_name	target	points	reward	kind	amount	type_id
+```
+
+| column | type | source and meaning |
+|---|---|---|
+| `achievement` | uuid | `Achievement.Id` [V] |
+| `name` | text | `Achievement.InternalName` [V] |
+| `category` | uuid | the `Category.Id` that lists it, under the Career Program root [V] |
+| `divisions` | `i64` list | the `agent_division` parameter's `division` values [V] |
+| `levels` | `i64` list | the `agent_level` parameter's `level` values; empty is any level [V] |
+| `milestone` | uuid | `AchievementMilestone.Id` [V] |
+| `milestone_name` | text | `AchievementMilestone.InternalName` [V] |
+| `target` | `u64` | `AchievementMilestone.Target`: missions to reach it (distinct missions in 1.7.3, completions in 1.8.0) [V] |
+| `points` | `u32` | `AchievementMilestone.CategoryPoints` [V] |
+| `reward` | uuid | `Reward.Id` [V] |
+| `kind` | text | `ISK`, `SP`, `ITEM`, `TITLE` (the `RewardPayload` union tag) or `NONE` [V] |
+| `amount` | `u64` | the payload's `Quantity` [V] |
+| `type_id` | `i64?` | `ItemReward.TypeId`; empty for any other kind [V] |
+
+Only achievements whose contribution method takes an `agent_division` parameter and counts missions (a `SET` of `mission` values, or the 1.8.0 cumulative count) are kept.
+
+Invented example row:
+
+```
+11111111-1111-5111-8111-111111111111	invented	66666666-6666-5666-8666-666666666666	98		22222222-2222-5222-8222-222222222222	invented_m1	1	7	77777777-7777-5777-8777-777777777771	ITEM	1	990101
+```
 
 ## 3. The three kind-tagged files (no header line)
 

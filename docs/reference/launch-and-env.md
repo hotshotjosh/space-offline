@@ -377,6 +377,7 @@ Not an environment variable: `EVE_SERVERS_SUFFIX` is a Rust constant in
 | `EVE_CLIENT_DIR` | `tools/analysis.sh` | `tq-offline` | install dir name inside the offline prefix | `EVE_CLIENT_DIR=tq-3619879` |
 | `EVE_PATCH_REAL_CLIENT` | `tools/test_eve_patch.py` | | runs one extra test: `eve_patch.py plan` against this real install (writes nothing) | `EVE_PATCH_REAL_CLIENT=/path/to/tq-offline` |
 | `EVE_RESFILES` | `tools/fsd.py`, `tools/check-resources.sh` | `ResFiles` beside the install | the ResFiles store | `EVE_RESFILES=/path/to/ResFiles` |
+| `EVE_ACHIEVEMENTS_BIN` | `tools/content_achievements.py` | `out/cdn/achievements/data.bin` (put there by `tools/copy-cdn-achievements.sh CACHE_DIR`) | the achievement definitions the `achievements` content section reads (the client downloads them once a character has entered the game on Tranquility; the section looks nowhere else, and with neither it writes an empty table and says so). `tools/analysis.sh` does not pass this variable into its container, so there use the `out/` copy | `EVE_ACHIEVEMENTS_BIN=/path/to/data.bin` |
 | `EVE_CONTENT` | `tools/content-lib.sh`, `tools/bots.sh` | `out/content` | which bundle the tools use (under `out/`) | `EVE_CONTENT=out/content-3619879` |
 | `EVE_CBUILD` | `tools/content-lib.sh` (sets) | | the client's `start.ini` build, for callers | set by the lib |
 | `EVE_CSTATUS` | `tools/content-lib.sh` (sets) | `legacy` | its `tools/builds.tsv` status | set by the lib |
