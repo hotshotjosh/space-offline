@@ -198,6 +198,12 @@ pub const COMMANDS: &[Command] = &[
         usage: "/fwcapture [<seconds> | reset]",
         run: crate::fw_capture::slash,
     },
+    // #8 (FW-7): the battlefield scoreboards.
+    Command {
+        name: "fwscore",
+        usage: "/fwscore [list | add <points> | reset]",
+        run: crate::fw_scoreboard::slash,
+    },
     Command {
         name: "sovfuel",
         usage: "/sovfuel [status [system|here]] | /sovfuel <blocks|all> | /sovfuel burn <days>",

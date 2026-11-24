@@ -33,6 +33,8 @@ pub const SOURCES: &[Source] = &[
     crate::site::slim_extras,
     // FW-7A: a capture point carries its faction info and next point time.
     crate::fw_capture::slim_extras,
+    // #8 (FW-7): a battlefield scoreboard carries its score.
+    crate::fw_scoreboard::slim_extras,
     crate::wormhole::slim_extras,
     // SOC-C1: a pilot's ship carries `allianceID`.
     crate::alliance::slim_extras,

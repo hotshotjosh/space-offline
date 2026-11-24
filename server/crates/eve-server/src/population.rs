@@ -2201,7 +2201,8 @@ mod tests {
             .position(|r| r.band == Band::Wormhole)
             .expect("wormhole rows");
         // The rich rows (L6b) are appended after them, in every band.
-        // The sov-upgrade rows (SOV-UPG-2) come last of all.
+        // The sov-upgrade rows (SOV-UPG-2) come last of all, and the FW
+        // battlefield row (#8) is appended after them.
         let upgrades: BTreeSet<&str> = raw
             .iter()
             .filter(|r| upgrade_band(r.field(1)).is_some())
@@ -2213,6 +2214,7 @@ mod tests {
                 || r.key.contains("rich")
                 || r.pochven
                 || upgrades.contains(r.key.as_str())
+                || r.key == "fw_battlefield_low"
         }));
         for want in [
             "wh_combat_anom",

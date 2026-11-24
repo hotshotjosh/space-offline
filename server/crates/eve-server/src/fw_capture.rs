@@ -360,7 +360,7 @@ fn slim_stale(before: Seen, p: &Point) -> bool {
 
 /// `OnSlimItemChange` for a capture point's object, to the pilots in its
 /// system, with every source's extras (ours among them).
-fn push_slim(reg: &mut Registry, item: i64) {
+pub(crate) fn push_slim(reg: &mut Registry, item: i64) {
     let Some((placed, system)) = crate::site::object(reg, item) else {
         return;
     };
@@ -481,10 +481,12 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
         };
         // Taken by capture, or cleared by killing the pocket (`site_spawn`
         // paid the LP then): nothing more to judge, nothing to pay twice.
-        if reg
+        // A battlefield's other points go on after one is taken (#8).
+        if (reg
             .ext::<crate::facwar::Facwar>()
             .capture()
             .is_captured(site_id)
+            && !crate::fw_scoreboard::is_battlefield(reg, site_id))
             || crate::site_spawn::is_completed(reg, site_id)
         {
             continue;
@@ -534,16 +536,26 @@ pub fn tick(reg: &mut Registry, ft: BlueTime) {
             for a in awards {
                 match a {
                     Award::Points { holder, points } => {
-                        let delta = if holder == o.attacker {
-                            points
-                        } else {
-                            -points
-                        };
-                        crate::facwar::add_vp(reg, system, delta, ft);
+                        // A battlefield's points move its scoreboard, not the
+                        // system's victory points (#8) **[A]**.
+                        if !crate::fw_scoreboard::credit(reg, site_id, holder, points, ft) {
+                            let delta = if holder == o.attacker {
+                                points
+                            } else {
+                                -points
+                            };
+                            crate::facwar::add_vp(reg, system, delta, ft);
+                        }
                     }
-                    Award::Taken { .. } => {
-                        // Pay only when the slot was still live to take.
-                        if crate::population::complete(reg, system, site_id, ft) {
+                    Award::Taken { holder } => {
+                        // A taken point at a battlefield scores the point's
+                        // value and never completes the slot: the board's win
+                        // does (#8) **[A]**.
+                        if crate::fw_scoreboard::is_battlefield(reg, site_id) {
+                            let value = base_params.point_value;
+                            crate::fw_scoreboard::credit(reg, site_id, holder, value, ft);
+                        } else if crate::population::complete(reg, system, site_id, ft) {
+                            // Paid only when the slot was still live to take.
                             crate::fw_lp::on_complete(reg, site_id, system, anchor, ft);
                         }
                     }
@@ -781,7 +793,7 @@ mod tests {
     #[test]
     fn every_capture_point_of_a_site_is_its_own_point() {
         use crate::facwar::tests as fx;
-        let mut reg = fx::world_with(|npc, _, _| {
+        let mut reg = fx::world_with(|npc, _, _, _| {
             npc.components.insert((CP_TYPE, COMPONENT.to_owned()));
         });
         let now = reg.world().birth;
@@ -810,6 +822,12 @@ mod tests {
         assert_eq!(at(two.item_id).cycles, 0);
         assert_eq!(at(two.item_id).phase, Phase::Empty);
         assert!(!st.is_captured(site.site_id));
+        // At a complex a looping point still pays the system's victory points
+        // (at a battlefield it scores the board: `fw_scoreboard`'s tests).
+        assert!(
+            crate::facwar::occupation(&reg, fx::S1).is_some_and(|o| o.score > 0),
+            "the complex's point moved the VP"
+        );
         // Walk to the other point: it is judged and paid on its own.
         put_pilot(&mut reg, far);
         run(&mut reg, now + 2 * cycle, now + 5 * cycle);

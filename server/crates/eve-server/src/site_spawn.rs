@@ -562,7 +562,12 @@ fn step(w: &mut Registry, site_id: i64, ft: BlueTime) {
         // spawns). `is_complete` already says false for it; this keeps the
         // rule explicit and out of reach of a later change to that test.
         let empty = !other_goals && cans == 0;
-        if !empty && site::complete_with_cans(base, other_goals, cans, cans_left) {
+        // A battlefield is won on its scoreboard (`fw_scoreboard::win`), never
+        // by clearing its pocket (#8).
+        if !empty
+            && !crate::fw_scoreboard::is_battlefield(w, site_id)
+            && site::complete_with_cans(base, other_goals, cans, cans_left)
+        {
             p.completed = Some(ft);
             // CP36: the pilots inside hear `OnDungeonCompleted` now, while
             // the instance is still there (it must precede `site::vacate`).
@@ -1165,6 +1170,54 @@ mod tests {
         assert_eq!(p.completed, None);
         assert!(!is_completed(&reg, SITE_ID));
         assert_eq!(reg.character(ALICE).map(|c| c.balance), before);
+    }
+
+    /// #8: a battlefield (archetype 68) is won on its scoreboard, never by
+    /// clearing its pocket: with the same one squad killed, the control
+    /// (a combat site) completes and the battlefield does not.
+    #[test]
+    fn a_cleared_battlefield_pocket_is_not_completed() {
+        let cleared = |archetype: i64| {
+            let mut d = dungeon();
+            d.archetype = archetype;
+            d.spawns = vec![Spawn {
+                spawn_once: true,
+                min_respawn: Some(60),
+                max_respawn: Some(60),
+                ..spawn_row(1, 73)
+            }];
+            let mut table = dungeon_data::Table::fixture();
+            table.dungeons.insert(DUNGEON, d);
+            let mut c = Content::fixture();
+            c.insert("dungeon_data", table);
+            c.insert("npc_data", npc_table());
+            let mut reg = Registry::new(SandboxConfig::default()).with_content(Arc::new(c));
+            reg.roster_mut().arrive(Presence::arriving(
+                ALICE,
+                ALICE_SHIP,
+                SYSTEM,
+                Motion::arrived(ANCHOR, [0.0; 3]),
+            ));
+            drain(&mut reg);
+            let mut inst = site();
+            inst.archetype = archetype;
+            assert!(site::instantiate(&mut reg, &inst));
+            let t0 = 1_000 * BLUE_PER_SECOND;
+            tick(&mut reg, Instant::now(), t0);
+            let ids: Vec<i64> = pocket(&reg)
+                .groups
+                .iter()
+                .flat_map(|g| g.npcs.clone())
+                .collect();
+            assert!(!ids.is_empty(), "the squad came");
+            for id in ids {
+                kill(&mut reg, id, t0);
+            }
+            tick(&mut reg, Instant::now(), t0 + CHECK_EVERY);
+            is_completed(&reg, SITE_ID)
+        };
+        assert!(cleared(24), "the control: a cleared combat site completes");
+        assert!(!cleared(crate::fw_scoreboard::BATTLEFIELD));
     }
 
     /// PV-8: the one squad a spawnless Triglavian dungeon gets is placed at

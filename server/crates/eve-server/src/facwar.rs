@@ -943,6 +943,7 @@ pub fn in_system(reg: &Registry, system: i64) -> Vec<i64> {
 pub fn tick(reg: &mut Registry, _now: Instant, ft: BlueTime) {
     if !reg.ext::<Facwar>().systems.is_empty() {
         crate::fw_capture::tick(reg, ft);
+        crate::fw_scoreboard::tick(reg, ft);
     }
     if reg.ext::<Facwar>().systems.is_empty() || ft < reg.ext::<Facwar>().next_scan {
         return;
@@ -961,7 +962,9 @@ pub fn tick(reg: &mut Registry, _now: Instant, ft: BlueTime) {
             .sites
             .into_iter()
             .filter(|s| s.state == crate::population::State::Done)
+            // A won battlefield is credited by `fw_scoreboard::win`, not here.
             .filter(|s| FW_ARCHETYPES.contains(&s.archetype))
+            .filter(|s| s.archetype != crate::fw_scoreboard::BATTLEFIELD)
             .map(|s| (s.at, s.archetype, s.dungeon_id))
             .collect();
         if done.is_empty() {
@@ -1295,16 +1298,17 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn world() -> Registry {
-        world_with(|_, _, _| ())
+        world_with(|_, _, _, _| ())
     }
 
-    /// [`world`] with `extra` applied to the npc table, the dungeons and the
-    /// population rows before they are shared.
+    /// [`world`] with `extra` applied to the npc table, the dungeons, the
+    /// population rows and the scoreboard thresholds before they are shared.
     pub(crate) fn world_with(
         extra: impl FnOnce(
             &mut crate::npc_data::Table,
             &mut dungeon_data::Table,
             &mut Vec<population::Row>,
+            &mut BTreeMap<i64, (Option<i64>, Option<i64>)>,
         ),
     ) -> Registry {
         let mut c = Content::fixture();
@@ -1313,8 +1317,6 @@ pub(crate) mod tests {
             factions: [A, B],
             hqs: [S1, S2],
         };
-        c.insert("facwar", Table::new(vec![zone]).expect("ok"));
-        c.insert("universe", universe());
         let mut npc = crate::npc_data::Table::default();
         for (f, corp) in [(A, CORP_A), (B, CORP_B)] {
             npc.factions.insert(
@@ -1328,7 +1330,15 @@ pub(crate) mod tests {
             );
         }
         let (mut dun, mut rows) = (dungeons(), population_rows());
-        extra(&mut npc, &mut dun, &mut rows);
+        let mut scoreboards = BTreeMap::new();
+        extra(&mut npc, &mut dun, &mut rows, &mut scoreboards);
+        c.insert(
+            "facwar",
+            Table::new(vec![zone])
+                .expect("ok")
+                .with_scoreboards(scoreboards),
+        );
+        c.insert("universe", universe());
         c.insert("dungeon_data", dun);
         c.insert("population", population::Table::new(rows).expect("rows"));
         c.insert("npc_data", npc);
@@ -1356,7 +1366,7 @@ pub(crate) mod tests {
     }
 
     /// Every push named `event`, as `(args, audience)`.
-    fn pushes(reg: &mut Registry, event: &str) -> Vec<(Vec<PyValue>, Option<Vec<i64>>)> {
+    pub(crate) fn pushes(reg: &mut Registry, event: &str) -> Vec<(Vec<PyValue>, Option<Vec<i64>>)> {
         reg.take_pending()
             .into_iter()
             .filter_map(|(_, p)| {
@@ -1508,6 +1518,29 @@ pub(crate) mod tests {
         tick(&mut reg, Instant::now(), now + 2 * SCAN_EVERY);
         assert_eq!(occupation(&reg, sys).map(|o| o.score), Some(points), "once");
         assert!(pushes(&mut reg, "OnVictoryPointStateUpdated").is_empty());
+    }
+
+    /// A won battlefield is credited by `fw_scoreboard::win` alone: the
+    /// completion scan skips archetype 68, so the system's VP moves once.
+    #[test]
+    fn a_completed_battlefield_is_not_credited_again_by_the_scan() {
+        let bf = crate::fw_scoreboard::tests::battlefield(false);
+        let (mut reg, now) = (bf.reg, bf.now);
+        let vp = vp_for(crate::fw_scoreboard::BATTLEFIELD).expect("worth points");
+        // The slot completes the way a win completes it, without the win's VP.
+        assert!(population::complete(&mut reg, bf.system, bf.site, now + 1));
+        assert_eq!(occupation(&reg, bf.system).map(|o| o.score), Some(0));
+        tick(&mut reg, Instant::now(), now + SCAN_EVERY);
+        assert_eq!(
+            occupation(&reg, bf.system).map(|o| o.score),
+            Some(0),
+            "the scan did not credit the battlefield"
+        );
+        // The win's own credit is still paid, once.
+        let mut bf2 = crate::fw_scoreboard::tests::battlefield(false);
+        crate::fw_scoreboard::credit(&mut bf2.reg, bf2.site, B, 1_000, bf2.now + 1);
+        tick(&mut bf2.reg, Instant::now(), bf2.now + SCAN_EVERY);
+        assert_eq!(occupation(&bf2.reg, bf2.system).map(|o| o.score), Some(vp));
     }
 
     /// **Interim rule [A]** (3707965 FW complexes carry no static spawns): a

@@ -57,6 +57,9 @@ pub const KINDS: &[(&str, &str)] = &[
     ("arc", "epic_arc"),
     // CP53b: `system_id -> score occupier taken_at`.
     ("fwvp", "facwar"),
+    // #8 (FW-7): `system_id site_id -> score sides_occupier won_faction won_at`,
+    // a battlefield scoreboard.
+    ("fwsb", "fw_scoreboard"),
     // CP53a: `char -> faction since cooldown_until`, a direct enlistment.
     ("fwenlist", "facwar_mgr"),
     // CP53a: `char faction -> rank`, the last militia rank seen.

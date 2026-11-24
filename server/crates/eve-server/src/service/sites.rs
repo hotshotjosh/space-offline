@@ -132,7 +132,7 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // `warzoneMapPanel.ConstructBattlefieldMarkers:543` does
             // `.iteritems()` and reads `[0].dungeonNameID` per system
             // (`:548-553`): `{solarSystemID: [row, ...]}`.
-            "GetFactionWarfareBattlefieldInstances" => Ok(PyValue::Dict(vec![])),
+            "GetFactionWarfareBattlefieldInstances" => Ok(st::battlefield_instances(reg)),
             // `pirateinsurgency/client/dashboard/map:124-125` is
             // `solarSystemID in heists and heists[solarSystemID]`: a dict
             // (C2 had the container as unknown).
@@ -414,6 +414,68 @@ mod breaker_sweep_tests {
             "dungeonInstanceCacheMgr",
             "GetFactionWarfareBattlefieldInstances"
         )));
+    }
+
+    /// #8: with a battlefield tracked the dict is `{ssid: [row]}`, which
+    /// `ConstructBattlefieldMarkers:548-553` reads `[0].dungeonNameID` of.
+    #[test]
+    fn fw_battlefield_instances_lists_a_tracked_battlefield() {
+        const SYSTEM: i64 = 39_000_901;
+        const DUNGEON: i64 = 999_368;
+        let dungeon = crate::dungeon_data::Dungeon {
+            id: DUNGEON,
+            archetype: crate::fw_scoreboard::BATTLEFIELD,
+            faction: Some(599_201),
+            name_id: Some(DUNGEON + 1),
+            entry_type: Some(crate::dungeon_data::Entry::Anomaly.type_id()),
+            ..crate::dungeon_data::Dungeon::default()
+        };
+        let mut content = crate::content::Content::fixture();
+        content.insert(
+            "dungeons",
+            crate::dungeon_data::Table {
+                dungeons: [(DUNGEON, dungeon)].into_iter().collect(),
+                ..crate::dungeon_data::Table::default()
+            },
+        );
+        let mut reg =
+            Registry::new(SandboxConfig::default()).with_content(std::sync::Arc::new(content));
+        st::add_site(
+            &mut reg,
+            st::Site {
+                site_id: 7_601,
+                instance_id: 7_602,
+                dungeon_id: DUNGEON,
+                solar_system_id: SYSTEM,
+                position: [1.0e9, 2.0e9, 3.0e9],
+                group_id: st::GROUP_ANOMALY,
+                is_scannable: true,
+                scan_strength_attribute: 9_001,
+                scan_strength_value: 40.0,
+                signature_radius: 100.0,
+                target_id: "ABC-123".to_owned(),
+                allowed_types: vec![],
+            },
+        );
+        let got = dispatch(
+            &mut reg,
+            &Request {
+                service: "dungeonInstanceCacheMgr",
+                method: "GetFactionWarfareBattlefieldInstances",
+                args: &[],
+                kwargs: &[],
+                bind_params: None,
+                actor: None,
+            },
+        )
+        .expect("answered");
+        let PyValue::Dict(items) = got else {
+            panic!("a dict")
+        };
+        assert_eq!(items.len(), 1);
+        // A marshal dict item is `(value, key)`.
+        assert_eq!(items[0].1, PyValue::Int(SYSTEM));
+        assert!(matches!(&items[0].0, PyValue::List(rows) if rows.len() == 1));
     }
 
     /// `pirateinsurgency/client/dashboard/map:124` is `in` plus a subscript.

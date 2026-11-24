@@ -45,6 +45,12 @@ pub const STEPS: &[Step] = &[
         name: "population",
         run: Run::Once(|w, d| crate::population::on_rollover(w, d.day)),
     },
+    // #8 (FW-7): drop the `fwsb` row of every battlefield the population no
+    // longer lists. Its count is the rows dropped.
+    Step {
+        name: "fw_scoreboard",
+        run: Run::Once(|w, d| crate::fw_scoreboard::on_rollover(w, d.day)),
+    },
     // CP54a: drop every `wh` row whose pair has expired or matches no slot.
     // Its count is the rows dropped.
     Step {

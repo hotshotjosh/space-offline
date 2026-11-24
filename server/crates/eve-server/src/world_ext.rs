@@ -98,6 +98,8 @@ pub const SLOTS: &[SlotSpec] = &[
     crate::npc_ewar::SLOT,
     // W17 CP53b: the warzone systems and their gate graph.
     crate::facwar::SLOT,
+    // #8 (FW-7): the battlefield scoreboards.
+    crate::fw_scoreboard::SLOT,
     // W18 CP58c (CA7): the per-ship dogma sheet cache, one per world.
     crate::dogma::SHEETS,
     // MUTA-3 (#71): the override maps of mutated items, by item id.

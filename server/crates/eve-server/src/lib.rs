@@ -139,6 +139,8 @@ pub(crate) mod fleet_warp;
 pub mod free_sp;
 pub mod fw_capture;
 pub mod fw_lp;
+// #8 (FW-7): battlefield scoreboards.
+pub mod fw_scoreboard;
 pub mod fw_stats;
 pub mod gateway;
 pub mod gateway_auth;

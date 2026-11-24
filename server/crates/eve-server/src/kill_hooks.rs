@@ -112,6 +112,11 @@ pub const PLAYER: &[Row] = &[
         name: "fw_stats_on_kill",
         run: crate::fw_stats::on_kill,
     },
+    // #8 (FW-7): a militia kill on a battlefield's grid scores on its board.
+    Row {
+        name: "fw_scoreboard_on_kill",
+        run: crate::fw_scoreboard::on_kill,
+    },
     // #133: a kill of the enemy militia pays the attackers LP by the ISK
     // destroyed; it reads the report `killmail_on_kill` wrote.
     Row {

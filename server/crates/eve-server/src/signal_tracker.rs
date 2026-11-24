@@ -657,6 +657,20 @@ pub fn fw_instances(reg: &Registry) -> PyValue {
     rows_by_system(reg, FW, &|_| true)
 }
 
+/// `GetFactionWarfareBattlefieldInstances` (#8): the battlefields (archetype
+/// 68, `fw_scoreboard::BATTLEFIELD`) of the tracked systems as `{solarSystemID:
+/// [row, ...]}`; `warzoneMapPanel.ConstructBattlefieldMarkers:543` does
+/// `.iteritems()` and reads `[0].dungeonNameID` per system, so rows only
+/// [V]. A cold system is omitted **[A]**, falsified by the warzone map missing
+/// a battlefield pilots find on arrival.
+pub fn battlefield_instances(reg: &Registry) -> PyValue {
+    rows_by_system(
+        reg,
+        Want::Anomalies(&[crate::fw_scoreboard::BATTLEFIELD]),
+        &|_| true,
+    )
+}
+
 /// `GetTriglavianSiteInstances` (PV-8): the invasion sites (archetype 65,
 /// [`TRIGLAVIAN`]) of the tracked Pochven systems as `{solarSystemID: [row,
 /// ...]}`. **Rows only, never ints**: the client's tracker unpacks it with
@@ -1146,6 +1160,7 @@ mod tests {
     const ICE_DUNGEON: i64 = 999_305;
     const FW_DUNGEON: i64 = 999_306;
     const TRIG_DUNGEON: i64 = 999_307;
+    const BF_DUNGEON: i64 = 999_308;
 
     /// Invented dungeons: a combat anomaly and a combat signature the
     /// population fixture's combat rows draw, and an ore and an ice anomaly
@@ -1168,6 +1183,7 @@ mod tests {
             d(ICE_DUNGEON, ARCHETYPE_ICE, None, 1, Entry::Anomaly),
             d(FW_DUNGEON, 33, Some(PIRATE), 1, Entry::Anomaly),
             d(TRIG_DUNGEON, 65, Some(PIRATE), 9, Entry::Anomaly),
+            d(BF_DUNGEON, 68, Some(PIRATE), 4, Entry::Anomaly),
         ];
         crate::dungeon_data::Table {
             dungeons: list.into_iter().map(|d| (d.id, d)).collect(),
@@ -1544,6 +1560,37 @@ mod tests {
             Some(&PyValue::Int(FW_DUNGEON))
         );
         assert!(dict_get(state, b"factionID").is_some());
+    }
+
+    /// #8: `GetFactionWarfareBattlefieldInstances` is `{ssid: [KeyVal, ...]}`
+    /// and holds only archetype 68: a complex (33) and an ore site in the
+    /// same system are left out.
+    #[test]
+    fn battlefield_instances_are_archetype_68_only() {
+        let mut reg = populated();
+        assert!(entries(&battlefield_instances(&reg)).is_empty());
+        let mut add = |id, dungeon_id| {
+            let mut s = site(id, GROUP_ANOMALY);
+            (s.solar_system_id, s.dungeon_id) = (NULL, dungeon_id);
+            add_site(&mut reg, s);
+        };
+        add(7501, BF_DUNGEON);
+        add(7502, FW_DUNGEON);
+        add(7503, ORE_DUNGEON);
+        let v = battlefield_instances(&reg);
+        let Some(PyValue::List(rows)) = of(&v, NULL) else {
+            panic!("rows: {v:?}")
+        };
+        assert_eq!(rows.len(), 1, "the battlefield, not the complex or the ore");
+        let PyValue::Instance { state, .. } = &rows[0] else {
+            panic!("a KeyVal")
+        };
+        assert_eq!(
+            dict_get(state, b"dungeonID"),
+            Some(&PyValue::Int(BF_DUNGEON))
+        );
+        assert!(dict_get(state, b"dungeonNameID").is_some());
+        assert_eq!(entries(&fw_instances(&reg)).len(), 1);
     }
 
     /// The client indexes `GetDungeon` by every row's `dungeonID`, so a site
