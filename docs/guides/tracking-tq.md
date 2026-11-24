@@ -219,9 +219,10 @@ page carries the "Tracking TQ" block.
   bundle.
 - **Code:** `eve_marshal::build::Status::Provisional` (`accepted()` is true, `name()` is
   `provisional`); `content::bundle_accepted` accepts, for a provisional build B, a bundle whose
-  `client_build` is a `pinned` or `equivalent` build **on B's line**, and logs once at start
-  `serving provisional build B on the bundle of build M` (`builds B1, B2 on ...` when more than
-  one provisional build is served: each is named). A provisional row on a line other than
+  `client_build` is a `pinned` or `equivalent` build **on B's line**. When the served set leaves
+  out the bundle's own build (`--client-build` naming only provisional builds), it logs once at
+  start `serving provisional build B on the bundle of build M` (`builds B1, B2 on ...` when more
+  than one provisional build is served: each is named); a default run does not log it. A provisional row on a line other than
   `REFERENCE_LINE` is refused (invariant 2).
 - `[A]` a provisional build served on the previous same-line bundle causes no login-path failure.
   Falsifier: a `cutover.list` red that goes green once the build's own bundle is served.

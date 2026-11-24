@@ -1158,7 +1158,8 @@ mod tests {
             why,
             "serving provisional build 11 on the bundle of build 10"
         );
-        // Two provisional builds served at once are both named, in order.
+        // Two provisional builds served at once are both named, in order;
+        // an unverified build in the served set is not named.
         let two = [
             BuildEntry {
                 build: 13,
@@ -1168,10 +1169,11 @@ mod tests {
             },
             rows[0],
             rows[1],
+            rows[2],
         ];
         let entry_two = |b: u32| two.iter().find(|e| e.build == b).copied();
         assert_eq!(
-            bundle_accepted(&bundle_of(10), &[13, 11], &no_hash, &entry_two).as_deref(),
+            bundle_accepted(&bundle_of(10), &[13, 12, 11], &no_hash, &entry_two).as_deref(),
             Some("serving provisional builds 11, 13 on the bundle of build 10")
         );
         // A bundle of another line is refused.

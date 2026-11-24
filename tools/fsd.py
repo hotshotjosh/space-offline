@@ -2079,7 +2079,7 @@ CFSD_BUILD_LAYOUTS = {
     3731714: (None, CFSD_PRESENCE_FIXES),
     # V24.02, the 2026-11-24 patch. All 8 `schema` rows of
     # `findings/build-delta-3720952-3739102.tsv` are identical; the seven
-    # loaders that differ from 3731714 in code keep their schemas (a
+    # loaders that differ from 3720952 in code keep their schemas (a
     # pyd_schema regen of those tables equals pyd-schemas.tsv's rows).
     3739102: (None, CFSD_PRESENCE_FIXES),
 }

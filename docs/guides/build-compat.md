@@ -97,9 +97,10 @@ Beside the row: `findings/build-delta-<pinned>-<build>.tsv`.
 
 `provisional` is for a build of the **served line** (the line of `REFERENCE_LINE`) that has been
 triaged as T0 or T1 with no must on the login path, and not yet measured further. The server
-serves it by default, on the bundle of a `pinned` or `equivalent` build of the same line, and logs
-`serving provisional build B on the bundle of build M` at start (`builds B1, B2` when more
-than one is served). It is a two-hour step that
+serves it by default, on the bundle of a `pinned` or `equivalent` build of the same line. When
+the served set leaves out the bundle's own build (`--client-build` naming only provisional
+builds), it logs `serving provisional build B on the bundle of build M` at start (`builds B1, B2`
+when more than one is served); a default run, which serves the bundle's build too, does not. It is a two-hour step that
 keeps a friend whose launcher took a hotfix from being refused. Rules:
 
 - same line only: the registry test refuses a `provisional` row on another line, and requires
