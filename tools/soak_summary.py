@@ -54,7 +54,7 @@ PROF_WRITERS = re.compile(
     rf"\({F} kB/s\), passes (\d+) pass mean {F} ms max {F} ms, "
     rf"deflate n (\d+) total {F} ms max {F} ms, writes (\d+) write total {F} ms "
     rf"longest write {F} ms")
-USERERR = re.compile(r"^\[svc\] (\S+?)(?:/\d+)? as \d+ raises UserError")
+USERERR = re.compile(r"^\[svc\] (\S+?)(?:/\d+)? as \d+ raises UserError(?: \(by design\))?(?: key=(\S+))?")
 # The error key in a bot's `refused: ...` outcome. Three forms the bots write:
 # "... answered <v> (KEY)" (verbs.rs), "UserError KEY" (builder.rs) and
 # "Call: KEY" (contracts.rs). A key looks like an identifier that starts upper
@@ -233,15 +233,19 @@ def summarize(out, allow=None):
         row("prof", "lock_total_occupancy_pct_max", f"{max(w[8] for w in prof['lock']):.1f}")
 
     # Refused calls: the server's UserErrors by key, the bots' refusals by kind.
-    users = Counter()
+    users, ukeys = Counter(), Counter()
     for l in logs["server"] or []:
         m = USERERR.match(l)
         if m:
             users[userkey(m.group(1))] += 1
+            if m.group(2):  # older server logs carry no key
+                ukeys[userkey(m.group(1)) + " " + m.group(2)] += 1
     for k, c in users.items():
         row("usererror", k, str(c))
+    for k, c in ukeys.items():
+        row("usererror_key", k, str(c))
     lines.append(f"soak: {sum(users.values())} UserErrors" + (", top:" if users else ""))
-    lines += [f"soak:   {c:5d} {k}" for k, c in users.most_common(8)]
+    lines += [f"soak:   {c:5d} {k}" for k, c in (ukeys or users).most_common(8)]
 
     # Bots: homing Recovery docks, acts that failed or were refused, by kind.
     homing, failed, refused = 0, Counter(), Counter()

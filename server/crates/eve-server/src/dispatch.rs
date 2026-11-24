@@ -776,8 +776,9 @@ impl GpsSession {
             .map_err(DispatchError::Proto)?,
             Err(ServiceError::Raise(e)) => {
                 crate::outln!(
-                    "[svc] slash.SlashCmd/1 as {} raises UserError (by design)",
-                    self.session.character_id.unwrap_or(0)
+                    "[svc] slash.SlashCmd/1 as {} raises UserError (by design) key={}",
+                    self.session.character_id.unwrap_or(0),
+                    user_error_key(&e)
                 );
                 Self::error_reply(&packet, &e)?
                     .payloads
@@ -1165,8 +1166,9 @@ impl GpsSession {
         exception: &PyValue,
     ) -> Result<Reply, DispatchError> {
         crate::outln!(
-            "[svc] {} raises UserError (by design)",
-            Registry::describe(req)
+            "[svc] {} raises UserError (by design) key={}",
+            Registry::describe(req),
+            user_error_key(exception)
         );
         Self::error_reply(packet, exception)
     }
@@ -2833,10 +2835,37 @@ pub fn flush_world(world: &RwLock<Registry>, store: &dyn crate::store::Store) {
     store.close();
 }
 
+/// The key (`msg`) of a `UserError` value, for the log line; `-` for any
+/// other value.
+fn user_error_key(v: &PyValue) -> String {
+    let PyValue::ObjectEx { header, .. } = v else {
+        return "-".to_owned();
+    };
+    let PyValue::Tuple(h) = header.as_ref() else {
+        return "-".to_owned();
+    };
+    let Some(PyValue::Tuple(a)) = h.get(1) else {
+        return "-".to_owned();
+    };
+    match a.first() {
+        Some(PyValue::Bytes(k)) => String::from_utf8_lossy(k).into_owned(),
+        _ => "-".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::Store as _;
+
+    /// The UserError log line carries the error key, `-` when the value is no
+    /// UserError.
+    #[test]
+    fn user_error_key_names_the_key() {
+        let e = eve_proto::user_error("InventedTestKey", vec![]);
+        assert_eq!(user_error_key(&e), "InventedTestKey");
+        assert_eq!(user_error_key(&PyValue::None), "-");
+    }
     use std::sync::mpsc;
 
     fn world() -> Arc<RwLock<Registry>> {

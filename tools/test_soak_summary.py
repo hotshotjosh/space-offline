@@ -65,6 +65,18 @@ class Summary(unittest.TestCase):
                     "refused: foo(x)", "refused: no UserError key", "refused: AB"):
             self.assertEqual(k(bad), "-", bad)
 
+    def test_usererror_keys(self):
+        server = "\n".join(
+            ["[svc] dogmaIM.AddTarget/3 as 90000001 raises UserError (by design) key=InventedKeyA"] * 2
+            + ["[svc] dogmaIM.AddTarget/3 as 90000001 raises UserError (by design) key=InventedKeyB"]
+            + ["[svc] slash.SlashCmd/1 as 5 raises UserError (by design) key=-"])
+        _, lines, rows, _ = run(server, "", "pilots 0")
+        r = {(m, k): v for m, k, v in rows}
+        self.assertEqual(r[("usererror", "dogmaIM.AddTarget")], "3")
+        self.assertEqual(r[("usererror_key", "dogmaIM.AddTarget InventedKeyA")], "2")
+        self.assertEqual(r[("usererror_key", "dogmaIM.AddTarget InventedKeyB")], "1")
+        self.assertTrue(any("2 dogmaIM.AddTarget InventedKeyA" in l for l in lines))
+
     def test_p95_nearest_rank(self):
         self.assertEqual(ss.p95([]), 0.0)
         self.assertEqual(ss.p95(list(range(1, 101))), 95)
