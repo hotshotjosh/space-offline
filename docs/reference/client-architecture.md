@@ -1,19 +1,16 @@
 # The real EVE client, mapped from the server's side
 
-**Build: V24.01, `region = ccp`, installed at `/client` (read-only).** Every
-claim in this file is about *that* install. A fact from another build is worth
-recording and is marked so; it is never allowed to stand in for this one.
+**Build: the pinned build (the `pinned` row of `tools/builds.tsv`; its line is `REFERENCE_LINE` in `server/crates/eve-marshal/src/build.rs`), `region = ccp`, installed at `/client` (read-only).** Every
+claim in this file is about *that* install unless it names another build. A fact
+from another build is worth recording and is marked so; it is never allowed to
+stand in for the pinned one.
 
-> **Re-pinned 2026-10-31 (issue #19): the reference build is now 3662168.**
-> The `[V build 3619879]` marks below were measured on the former reference.
-> The 2026-10-30 delta (`findings/build-delta-3619879-3662168.tsv`, read in
-> The unpublished port tracker for this re-pin) found `blue.dll`, `_destiny.dll`,
-> `python27.dll` and `exefile.exe` signature-only and the line unchanged
-> (V24.01), so the native and wire claims hold for 3662168 too. In Python, 68
-> modules changed and 7 were removed (camera hardening, bug reports, one QA-only
-> call); where a changed module is cited, the line numbers were re-read from
-> `co_firstlineno`. A mark that still says 3619879 is history until someone
-> re-reads it. The real 2026-11-09 build will repeat this re-pin.
+> **Build numbers below are history.** The `[V build 3619879]` marks were
+> measured on a former reference, and the re-pin deltas
+> (`findings/build-delta-*.tsv`) found the native and wire claims unchanged
+> across the V24.01 builds. A mark that still names an old build is history
+> until someone re-reads it against the pinned one. Each new launcher build
+> repeats the re-pin; this header does not carry its number.
 
 > ### Provenance, and a build number that moved under us
 >
@@ -678,7 +675,7 @@ sequenceDiagram
   participant S as eve-server (ours)
   Note over C: gameui.Startup reads /ssoToken=&lt;jwt&gt;
   C->>S: TCP connect :26000
-  S->>C: H1 (170472, 496, users, 24.01, 3619879, 'V24.01@ccp', updateInfo)
+  S->>C: H1 (170472, 496, users, 24.01, 3619879, 'V24.01@ccp', updateInfo)  (as read on 3619879)
   Note over C: GPS.Authenticate checks, in THIS order:<br/>region, codename, boot.version (float!), machoVersion, build
   C->>S: H2 same 6-tuple back
   C->>S: H3 (None, 'VK', CryptoHash(CaseFold(user_name)))
@@ -722,7 +719,7 @@ duplicated. The three things to carry out of it:
    | `[0]` | — | **never read** | — |
    | `[1]` | `macho_version` | `macho.version` = 496 | 4th |
    | `[2]` | `cluster_usercount` | not checked | — |
-   | `[3]` | `boot_version` | `boot.version` = 24.01 | 3rd |
+   | `[3]` | `boot_version` | `boot.version` = 24.01 (as read on 3619879) | 3rd |
    | `[4]` | `boot_build` | `boot.build < [4]` | 5th |
    | `[5]` | split on `'@'` → `boot_codename`, `boot_region` | `str(boot.codename)`, `str(boot.region)` | 2nd, 1st |
    | `[6]` | `update_info` | stored, never acted on | — |
@@ -1055,7 +1052,7 @@ its own, which should be asked against a world where the change has happened
 | answered a call but never sent the session change it promised | drawn, frozen, or the wrong view | the caller resumed with the **old** session; nothing detects it `[V]` |
 | a `CallRsp` whose `destination.callID` we got wrong | **hang**, and the response is dropped | three distinct lines, none of them an exception and none a dialog `[V]`: `Call Response received, but the call wasn't being waited upon in self.calls, so the response will disappear... ` (`LogWarn`, callID known but nobody blocked); `An error response was received for a notification from us.  Notifcations don't have responses, so this message will disappear... ` (`LogWarn`, CCP's typo preserved); `Call Response received on <mode>, but the call wasn't in self.calls, so the response will disappear... ` (`LogError`). **A dropped `CallRsp` is the quietest way to break this client** |
 | any of the five H1 version fields wrong | dialog **"Connection Failed"** | the dialog body is only `Incompatible (Region/Release/Version/Protocol/Build)` — **the client log's `Handshake Failed - Insecure <field> Mismatch (common.ini:<key>) - Server: %s - Client: %s` line is the thing that names the field** `[V]` |
-| the server dropped the socket without a reply | dialog **"Connection Failed"** whose body is only `The connection to the server was closed`, with no `Incompatible ...` text | most handshake refusals are silent: `HandshakeError` (`handshake.rs`) reaches `conn.rs` as `ConnEnd::Dispatch`, and the socket closes with nothing sent. The reason is only in the server log: `[conn N] <peer> ended: dispatch refused a payload: handshake: ...`. Common causes: a client build the server does not accept (`HandshakeError::WrongBuild`, strict accounts mode); a client whose crypto pack is not Placebo (`BadCryptoPack`, or a `marshal:` error from `DispatchError::Marshal` while the server reads the `AwaitAuthRequest` payload). Read from the code `[V]`; the dialog text is the client's generic closed-socket message `[I]` |
+| the server dropped the socket without a reply | dialog **"Connection Failed"** whose body is only `The connection to the server was closed`, with no `Incompatible ...` text | every handshake refusal is silent (only the QC status probe gets an answer): `HandshakeError` (`handshake.rs`) reaches `conn.rs` as `ConnEnd::Dispatch`, and the socket closes with nothing sent. The reason is only in the server log: `[conn N] <peer> ended: dispatch refused a payload: handshake: ...` or `... marshal: ...`. Common causes: a client build the server does not accept (`HandshakeError::WrongBuild`, strict accounts mode); a client whose crypto pack is not Placebo. A CryptoAPI client still sends `'placebo'` in H4, so it passes that check and its symptom is the `marshal:` error (`DispatchError::Marshal`) on the encrypted H6; `BadCryptoPack` is for any other element 0. Read from the code `[V]`; the dialog text is the client's generic closed-socket message `[I]` |
 | H1 never sent at all | dialog after 120 s | `Connection Timeout - The server did not initiate the compatibility-handshake within a reasonable amount of time` `[V]` |
 | wrong crypto hash at H9 | dialog | `Server response signature incorrect, the server's crypto hash wasn't correct` `[V]` |
 | no H10 ack | dialog | `Server didn't Acknowledge our Challenge-Response` `[V]` |

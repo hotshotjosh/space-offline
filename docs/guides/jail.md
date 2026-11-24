@@ -221,8 +221,8 @@ verifies it. **Why it matters more than it looks:** every `[V]` mark in this
 repository is measured against the pinned build — the `pinned` row of `tools/builds.tsv`
 (each re-pin moves it; older installs stay on disk under their own `tq-<build>` names). Every constant read from the client, every wire layout,
 every formula is anchored to it. Steam moved its own copy once already (to
-3628513), and until 2026-10-24 nothing noticed that the two had diverged. The
-real build of 2026-11-09 will repeat the re-pin.
+3628513), and until 2026-10-24 nothing noticed that the two had diverged. Each
+new launcher build repeats the re-pin.
 
 ```sh
 tools/pin-client.sh            # verify (232 files, ~1.2 s)
