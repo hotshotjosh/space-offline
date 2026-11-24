@@ -2589,7 +2589,11 @@ fn structure_module_call(
     req: &Request<'_>,
 ) -> Option<Result<PyValue, ServiceError>> {
     let actor = req.actor?;
-    let sid = container_of(req.bind_params)?;
+    let sid = crate::structure_dock::control::resolve_container(
+        reg,
+        actor,
+        container_of(req.bind_params)?,
+    );
     if crate::structure_dock::control::controlling(reg, actor) != Some(sid) {
         return None;
     }
@@ -2616,6 +2620,7 @@ fn structure_module_call(
     }
     let mut first_refusal = None;
     let mut done = 0usize;
+    let first_id = ids.first().copied().unwrap_or_default();
     for id in ids {
         let r = if fits(reg, id) {
             crate::structure_services::fit(reg, actor, sid, id, flag).map(|_| ())
@@ -2629,8 +2634,11 @@ fn structure_module_call(
             }
         }
     }
+    // A fit that was refused is the pilot's only news (the reply is discarded
+    // and the extra modules of a multi-drag into one slot would otherwise
+    // vanish silently): raised after the ones that fit were fitted.
     Some(match first_refusal {
-        Some(e) if done == 0 => Err(e),
+        Some(e) if done == 0 || fits(reg, first_id) => Err(e),
         _ => Ok(PyValue::None),
     })
 }

@@ -82,6 +82,18 @@ pub fn controlling(reg: &Registry, actor: i64) -> Option<i64> {
     (docked_in(reg, actor) == Some(id)).then_some(id)
 }
 
+/// The structure an inventory bound on `container` is, for `actor`: the client
+/// caches one inventory for `(structureid, None)` and binds it on
+/// `containerStructure` (10014) too (`invCache.py:489-492`, `:543-550`)
+/// **[V]**, which is the structure he is docked in.
+pub fn resolve_container(reg: &Registry, actor: i64, container: i64) -> i64 {
+    if container == CONTAINER_STRUCTURE {
+        docked_in(reg, actor).unwrap_or(container)
+    } else {
+        container
+    }
+}
+
 /// The pilot at `structure`'s controls: a connected one, still docked there.
 pub fn pilot_of(reg: &Registry, structure: i64) -> Option<i64> {
     let pilot = *reg.ext::<Docked>().controls.get(&structure)?;
@@ -192,7 +204,8 @@ pub fn bay_rows(
     container: Option<i64>,
     flag: Option<i64>,
 ) -> Option<Vec<PyValue>> {
-    let (actor, id, flag) = (actor?, container?, flag?);
+    let (actor, flag) = (actor?, flag?);
+    let id = resolve_container(reg, actor, container?);
     if !is_bay_flag(flag) || controlling(reg, actor) != Some(id) {
         return None;
     }

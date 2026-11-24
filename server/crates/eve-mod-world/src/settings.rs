@@ -277,6 +277,12 @@ pub fn slash(
         return reply(&format!("{}: {e}", s.name));
     }
     reg.deltas_mut().put(KIND, key(s.name), vec![v.to_string()]);
+    // #41: the services of every structure just changed for its guests.
+    if matches!(s.name, "freeclone" | "freeupkeep") {
+        for st in eve_server::structure::all(reg.deltas()) {
+            eve_server::structure_services::on_services_changed(reg, st.id);
+        }
+    }
     println!("[world] {} set to {v}", s.name);
     reply(&format!("{note}\n{}", listing(reg)))
 }

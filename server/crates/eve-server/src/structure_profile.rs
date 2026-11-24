@@ -21,7 +21,7 @@
 //! ```
 //!
 //! **The access rule** ([`has_access`]): the owner corporation always has
-//! every setting (#41, A10); everyone else needs a group of the
+//! docking and structure control; everyone else needs a group of the
 //! setting in the structure's profile. A structure whose profile is gone
 //! falls back to its owner's default profile; a corporation without one has
 //! only itself.
@@ -598,15 +598,22 @@ fn profile_for(d: &Deltas, s: &Structure) -> Option<i64> {
         .map(|p| p.id)
 }
 
-/// Whether `ch` has `setting` on `s`: the owner corporation passes **every**
-/// setting (#41; it was docking and structure control only); anyone else
-/// needs a group of the setting in the structure's profile, through
-/// [`og::effective`] **[A]** (the owner rule is the spec's; real EVE has no
-/// owner bypass. Falsified by the first owner round wanting the corp locked
-/// out of its own hull or taxed by its own profile, A10).
+/// Whether `ch` has `setting` on `s`: the owner corporation always has
+/// docking and structure control; anyone else needs a group of the setting in
+/// the structure's profile, through [`og::effective`] **[A]** (the owner rule
+/// is the spec's; real EVE has no owner bypass. Falsified by the first owner
+/// round wanting the corp locked out of its own hull). Every other setting,
+/// the jump bridge's activation row and the tax and rent answers included, is
+/// the profile's alone; the owner's use of its own services is
+/// [`services_for`]'s.
 pub fn has_access(reg: &Registry, s: &Structure, ch: i64, setting: i64) -> bool {
     let mine = reg.character(ch).map(|c| c.corporation_id);
-    if mine == Some(s.owner_corp) {
+    if mine == Some(s.owner_corp)
+        && matches!(
+            setting,
+            SETTING_HOUSING_CAN_DOCK | SETTING_DEFENSE_CAN_CONTROL_STRUCTURE
+        )
+    {
         return true;
     }
     let Some(pid) = profile_for(reg.deltas(), s) else {
@@ -653,7 +660,13 @@ pub fn services_for(reg: &Registry, s: &Structure, ch: i64) -> BTreeMap<i64, i64
     services_of(reg, s)
         .into_iter()
         .filter(|(_, st)| *st == SERVICE_STATE_ONLINE)
-        .filter(|(svc, _)| pilot_gate(*svc).is_none_or(|set| has_access(reg, s, ch, set)))
+        .filter(|(svc, _)| {
+            // The owner corporation uses its own services **[A]** (A10;
+            // falsifier: the owner wants his corp taxed by its own profile).
+            // Only here: the settings themselves stay the profile's.
+            let owner = reg.character(ch).map(|c| c.corporation_id) == Some(s.owner_corp);
+            owner || pilot_gate(*svc).is_none_or(|set| has_access(reg, s, ch, set))
+        })
         .collect()
 }
 

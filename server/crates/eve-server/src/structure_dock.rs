@@ -846,6 +846,8 @@ pub(crate) fn nearest_station(reg: &Registry, system: i64) -> Option<crate::clon
 /// stored there. Call it **before** the row goes (the ejection needs its
 /// place).
 pub fn evacuate(reg: &mut Registry, s: &Structure) {
+    // #41: a fitted service module leaves by the hangar flag like the rest.
+    crate::structure_services::release_all(reg, s);
     for c in reg
         .characters_at_station(s.id)
         .iter()

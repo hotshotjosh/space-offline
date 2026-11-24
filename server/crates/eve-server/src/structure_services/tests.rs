@@ -17,6 +17,8 @@ const HARBOUR: i64 = 6_001;
 /// An invented hull with four service slots, a 100 CPU and 50 power budget,
 /// a hull hit-point multiplier of 1.5 and a core type.
 const HULL: i64 = 9_402_001;
+/// The invented group of the invented hull.
+const HULL_GROUP: i64 = 9_401_001;
 const SID: i64 = 9_402_100;
 const GROUP_MODULE: i64 = 9_404_001;
 const CLONE: i64 = 9_403_001;
@@ -59,7 +61,7 @@ fn content(beacon: bool) -> crate::content::Content {
     let mut c = crate::content::Content::fixture();
     let mut rows = crate::typedata::FIXTURE.to_owned();
     rows.push_str(&format!(
-        "type\t{HULL}\t1657\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t\t{ATTR_CPU_OUTPUT}=100.0;{ATTR_POWER_OUTPUT}=50.0;{ATTR_SERVICE_SLOTS}=4.0;{ATTR_HULL_HP_MULTIPLIER}={HULL_MULT};3101=9.0\tInvented Hull\n"
+        "type\t{HULL}\t{HULL_GROUP}\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t\t{ATTR_CPU_OUTPUT}=100.0;{ATTR_POWER_OUTPUT}=50.0;{ATTR_SERVICE_SLOTS}=4.0;{ATTR_HULL_HP_MULTIPLIER}={HULL_MULT};3101=9.0\tInvented Hull\n"
     ));
     rows.push_str(&module_row(
         CLONE,
@@ -233,6 +235,28 @@ fn key(r: &Result<impl std::fmt::Debug, ServiceError>) -> String {
     }
 }
 
+/// The text of a raised `CustomNotify` (the ship path's refusals are ours).
+fn notify_text(r: &Result<PyValue, ServiceError>) -> String {
+    let Err(ServiceError::Raise(PyValue::ObjectEx { header, .. })) = r else {
+        return format!("{r:?}");
+    };
+    let PyValue::Tuple(h) = &**header else {
+        return String::new();
+    };
+    let Some(PyValue::Tuple(a)) = h.get(1) else {
+        return String::new();
+    };
+    a.iter()
+        .find_map(|v| match v {
+            PyValue::Dict(d) => d.iter().find_map(|(text, _)| match text {
+                PyValue::Bytes(b) => Some(String::from_utf8_lossy(b).into_owned()),
+                _ => None,
+            }),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 fn names(reg: &mut Registry) -> Vec<&'static str> {
     reg.take_pending()
         .into_iter()
@@ -398,7 +422,9 @@ fn online_refused_in_state_102() {
     let mut reg = at_the_controls();
     let m = fit_new(&mut reg, CLONE, FIRST_SLOT).expect("fitted");
     let mut s = structure_row(&reg);
+    // [A] A20: refused exactly where the state is not operational.
     s.state = structure::State::OnliningVulnerable;
+    assert!(!s.state.is_operational());
     structure::put(reg.deltas_mut(), &s);
     assert_eq!(
         key(&set(&mut reg, BOSS, m, true)),
@@ -427,25 +453,31 @@ fn online_refused_over_cpu_or_power() {
 }
 
 #[test]
-fn online_refused_on_a_type_without_online_services() {
+fn a_type_without_online_services_keeps_its_modules_services() {
     let mut reg = at_the_controls();
     let m = fit_new(&mut reg, CLONE, FIRST_SLOT).expect("fitted");
     let mut s = structure_row(&reg);
     s.type_id = TYPE_UPWELL_CYNOSURAL_BEACON;
     structure::put(reg.deltas_mut(), &s);
-    assert_eq!(
-        key(&set(&mut reg, BOSS, m, true)),
-        "StructureServiceUnavailable"
-    );
-    assert!(!online(&reg, m));
+    // No refusal on the type: the client's list only drops the hull services.
+    assert_eq!(set(&mut reg, BOSS, m, true), Ok(PyValue::None));
+    let got = services_of_with(TABLE, &reg, &structure_row(&reg));
+    assert_eq!(got[&SERVICE_MEDICAL], SERVICE_STATE_ONLINE);
+    for hull in HULL_SERVICES {
+        assert!(!got.contains_key(&hull), "{hull}");
+    }
 }
 
 #[test]
-fn online_refuses_a_service_this_server_does_not_have_yet() {
+fn online_refuses_exactly_the_services_that_are_not_supported() {
+    // [A] A7: which services are supported is `supported()`'s; the refusal
+    // follows it, whatever it says.
     let mut reg = at_the_controls();
     let m = fit_new(&mut reg, MARKET, FIRST_SLOT).expect("fitted");
-    assert_eq!(key(&set(&mut reg, BOSS, m, true)), "CustomNotify");
-    assert!(!online(&reg, m));
+    let all_supported = module_services(TABLE, MARKET).iter().all(|s| supported(*s));
+    let got = set(&mut reg, BOSS, m, true);
+    assert_eq!(got.is_ok(), all_supported, "{}", key(&got));
+    assert_eq!(online(&reg, m), all_supported);
 }
 
 #[test]
@@ -504,11 +536,9 @@ fn unfit_offlines_and_returns_to_the_pilots_hangar() {
     set(&mut reg, BOSS, m, true).expect("online");
     let _ = reg.take_pending();
     unfit(&mut reg, BOSS, SID, m, 0).expect("unfitted");
+    // Where it goes is the hangar of the structure; whose it is is [A] (A4).
     let i = reg.item(m).expect("kept");
-    assert_eq!(
-        (i.location_id, i.flag_id, i.owner_id),
-        (SID, crate::model::FLAG_HANGAR, BOSS)
-    );
+    assert_eq!((i.location_id, i.flag_id), (SID, crate::model::FLAG_HANGAR));
     assert!(reg.deltas().of(KIND).is_empty());
     let s = structure_row(&reg);
     assert!(!has_online_module(&reg, &s));
@@ -527,25 +557,24 @@ fn unfit_offlines_and_returns_to_the_pilots_hangar() {
 #[test]
 fn services_with_maps_online_modules_and_hull_services() {
     let got = services_with(TABLE, HULL, true, &[(CLONE, true), (REPROC, true)], false);
-    assert_eq!(
-        got,
-        BTreeMap::from([
-            (SERVICE_DOCKING, SERVICE_STATE_ONLINE),
-            (SERVICE_FITTING, SERVICE_STATE_ONLINE),
-            (SERVICE_MEDICAL, SERVICE_STATE_ONLINE),
-            (SERVICE_JUMP_CLONE, SERVICE_STATE_ONLINE),
-            (SERVICE_REPROCESSING, SERVICE_STATE_ONLINE),
-            (SERVICE_REPAIR, SERVICE_STATE_ONLINE),
-            (SERVICE_INSURANCE, SERVICE_STATE_ONLINE),
-        ])
-    );
-    // OFFICES is not a hull service yet; a hull that is offline has all
-    // offline; the client's types with no online services have none.
-    assert!(!got.contains_key(&SERVICE_OFFICES));
+    for svc in HULL_SERVICES
+        .into_iter()
+        .chain([SERVICE_MEDICAL, SERVICE_REPROCESSING])
+    {
+        assert_eq!(got[&svc], SERVICE_STATE_ONLINE, "service {svc}");
+    }
+    // A hull that is offline has everything offline.
     let off = services_with(TABLE, HULL, false, &[(CLONE, true)], false);
     assert!(off.values().all(|s| *s == SERVICE_STATE_OFFLINE));
+    // The client's types with no online services have no hull service and no
+    // clone bay from `free_clone`; their modules' services stay.
     for t in WITHOUT_ONLINE_SERVICES {
-        assert!(services_with(TABLE, t, true, &[(CLONE, true)], true).is_empty());
+        let got = services_with(TABLE, t, true, &[(REPROC, true)], true);
+        assert_eq!(
+            got,
+            BTreeMap::from([(SERVICE_REPROCESSING, SERVICE_STATE_ONLINE)]),
+            "type {t}"
+        );
     }
     // Two modules of one service: online wins.
     let two = services_with(
@@ -563,7 +592,6 @@ fn an_offline_module_lists_its_service_offline() {
     let got = services_with(TABLE, HULL, true, &[(REPROC, false), (CLONE, false)], false);
     assert_eq!(got[&SERVICE_REPROCESSING], SERVICE_STATE_OFFLINE);
     assert_eq!(got[&SERVICE_MEDICAL], SERVICE_STATE_OFFLINE);
-    assert_eq!(got[&SERVICE_JUMP_CLONE], SERVICE_STATE_OFFLINE);
     assert_eq!(got[&SERVICE_REPAIR], SERVICE_STATE_ONLINE, "the hull's own");
 }
 
@@ -595,19 +623,46 @@ fn free_clone_adds_medical_and_jump_clone() {
 }
 
 #[test]
-fn the_owner_passes_every_setting() {
-    let reg = world();
+fn settings_stay_the_profiles_and_a_directors_only_row_binds_the_owners_members() {
+    let mut reg = world();
     let s = structure_row(&reg);
-    for setting in [
-        SETTING_MARKET_TAX,
-        SETTING_REPROCESSING_TAX,
-        SETTING_CLONINGBAY_TAX,
-        SETTING_INDUSTRY_TAX,
-        SETTING_JUMP_BRIDGE_ACTIVATION,
-    ] {
-        assert!(sp::has_access(&reg, &s, PAL, setting), "{setting}");
-        assert!(!sp::has_access(&reg, &s, FOE, setting), "{setting}");
+    // No profile row: nobody has the tax or rent answers by being the owner's.
+    for setting in [SETTING_MARKET_TAX, SETTING_CORP_RENT_OFFICE] {
+        assert!(!sp::has_access(&reg, &s, PAL, setting), "{setting}");
     }
+    // A jump bridge activation row for directors only: a member of the owner
+    // corporation who is not in its group is still refused.
+    let directors = crate::owner_groups::create_for(
+        &mut reg,
+        CORP,
+        "directors",
+        "",
+        &[(BOSS, crate::owner_groups::MEMBER)],
+    )
+    .group_id;
+    sp::save_settings(
+        reg.deltas_mut(),
+        s.profile,
+        &[(SETTING_JUMP_BRIDGE_ACTIVATION, directors, 0.0)],
+    );
+    assert!(sp::has_access(
+        &reg,
+        &s,
+        BOSS,
+        SETTING_JUMP_BRIDGE_ACTIVATION
+    ));
+    assert!(!sp::has_access(
+        &reg,
+        &s,
+        PAL,
+        SETTING_JUMP_BRIDGE_ACTIVATION
+    ));
+    assert!(!sp::has_access(
+        &reg,
+        &s,
+        FOE,
+        SETTING_JUMP_BRIDGE_ACTIVATION
+    ));
 }
 
 #[test]
@@ -717,17 +772,23 @@ fn rows_survive_a_restart_and_a_stale_row_is_ignored() {
     again.apply_snapshot(reg.to_snapshot());
     assert!(online(&again, m), "online after a restart");
     // A row for a module that is not fitted is no module online.
-    again
-        .deltas_mut()
+    reg.deltas_mut()
         .put(KIND, row_key(SID, 9_999_999), vec!["1".to_owned()]);
-    let s = structure_row(&again);
-    assert_eq!(fitted(&again, &s).len(), 1);
+    let s = structure_row(&reg);
+    assert_eq!(fitted(&reg, &s).len(), 1);
+    assert!(has_online_module(&reg, &s));
+    assert_eq!(reg.deltas().of(KIND).len(), 2, "the row is there, ignored");
     // The next write for the structure purges it.
-    let second = grant(&mut again, BOSS, REPROC);
-    let _ = second;
-    purge_stale(&mut again, &s);
-    assert_eq!(again.deltas().of(KIND).len(), 1);
-    assert!(online(&again, m));
+    let second = grant(&mut reg, BOSS, REPROC);
+    fit(&mut reg, BOSS, SID, second, FIRST_SLOT + 1).expect("fitted");
+    set(&mut reg, BOSS, second, true).expect("online");
+    assert_eq!(
+        reg.deltas().of(KIND).len(),
+        2,
+        "m and second, not the stale"
+    );
+    assert!(online(&reg, m) && online(&reg, second));
+    assert!(!reg.deltas().of(KIND).contains_key(&row_key(SID, 9_999_999)));
 }
 
 #[test]
@@ -903,6 +964,11 @@ fn set_module_online_on_a_ship_still_takes_the_ship_path() {
         &[],
     );
     assert_eq!(key(&on_ship), "CustomNotify");
+    assert!(
+        notify_text(&on_ship).contains("not fitted to your ship"),
+        "{}",
+        notify_text(&on_ship)
+    );
     assert!(!online(&reg, m), "the structure's module was not touched");
     // A pilot who is not at the controls reaches the ship path with the
     // structure's id too.
@@ -917,6 +983,7 @@ fn set_module_online_on_a_ship_still_takes_the_ship_path() {
         &[],
     );
     assert_eq!(key(&not_controlling), "CustomNotify");
+    assert!(notify_text(&not_controlling).contains("not fitted to your ship"));
     assert!(!online(&reg, m));
 }
 
@@ -992,4 +1059,98 @@ fn gm_fit_fits_and_onlines_without_the_role_but_keeps_the_other_checks() {
     assert!(out.contains("online refused (CustomNotify)"), "{out}");
     // The services line names the fitted modules.
     assert!(services_text(&reg, SID).contains("slot 164"));
+}
+
+// -- the client's two names for the structure's inventory ---------------------------
+
+#[test]
+fn an_inventory_bound_on_10014_fits_unfits_and_lists_the_bays() {
+    let mut reg = at_the_controls();
+    let item = grant(&mut reg, BOSS, CLONE);
+    // `containerStructure`, which the client binds the structure's own
+    // inventory on as well as `(structureid, None)`.
+    let bound = PyValue::Tuple(vec![
+        PyValue::Int(crate::structure_dock::CONTAINER_STRUCTURE),
+        PyValue::None,
+    ]);
+    let kw = |f: i64| crate::pyutil::pypairs(vec![("flag", PyValue::Int(f))]);
+    call(
+        &mut reg,
+        BOSS,
+        "invbroker::inventory",
+        "Add",
+        &[PyValue::Int(item), PyValue::Int(SID)],
+        Some(&bound),
+        &kw(FIRST_SLOT),
+    )
+    .expect("fitted");
+    assert_eq!(reg.item(item).unwrap().flag_id, FIRST_SLOT);
+    // The slot lists as the structure's, not as the hangar.
+    let PyValue::List(rows) = call(
+        &mut reg,
+        BOSS,
+        "invbroker::inventory",
+        "List",
+        &[],
+        Some(&bound),
+        &kw(FIRST_SLOT),
+    )
+    .expect("lists") else {
+        panic!("a list")
+    };
+    assert_eq!(rows.len(), 1);
+    call(
+        &mut reg,
+        BOSS,
+        "invbroker::inventory",
+        "Add",
+        &[PyValue::Int(item), PyValue::Int(SID)],
+        Some(&bound),
+        &kw(crate::model::FLAG_HANGAR),
+    )
+    .expect("unfitted");
+    assert_eq!(reg.item(item).unwrap().flag_id, crate::model::FLAG_HANGAR);
+}
+
+#[test]
+fn a_multi_add_of_two_modules_into_one_slot_refuses_the_second() {
+    let mut reg = at_the_controls();
+    let a = grant(&mut reg, BOSS, CLONE);
+    let b = grant(&mut reg, BOSS, REPROC);
+    let bound = PyValue::Tuple(vec![PyValue::Int(SID), PyValue::None]);
+    let got = call(
+        &mut reg,
+        BOSS,
+        "invbroker::inventory",
+        "MultiAdd",
+        &[
+            PyValue::List(vec![PyValue::Int(a), PyValue::Int(b)]),
+            PyValue::Int(SID),
+        ],
+        Some(&bound),
+        &crate::pyutil::pypairs(vec![("flag", PyValue::Int(FIRST_SLOT))]),
+    );
+    assert_eq!(key(&got), "SlotAlreadyOccupied");
+    assert_eq!(reg.item(a).unwrap().flag_id, FIRST_SLOT, "the first fitted");
+    assert_eq!(reg.item(b).unwrap().flag_id, crate::model::FLAG_HANGAR);
+}
+
+// -- leaving the structure -----------------------------------------------------------
+
+#[test]
+fn an_unanchor_or_destroy_delivers_a_fitted_module_at_the_hangar_flag() {
+    let mut reg = at_the_controls();
+    let m = fit_new(&mut reg, CLONE, FIRST_SLOT).expect("fitted");
+    set(&mut reg, BOSS, m, true).expect("online");
+    let s = structure_row(&reg);
+    crate::structure_dock::evacuate(&mut reg, &s);
+    let i = reg.item(m).expect("kept");
+    assert_ne!(i.location_id, SID, "it left the structure");
+    assert!(
+        !is_slot(i.flag_id),
+        "no slot flag outside the structure: {}",
+        i.flag_id
+    );
+    assert_eq!(i.flag_id, crate::model::FLAG_HANGAR);
+    assert!(reg.deltas().of(KIND).is_empty(), "and its row went");
 }

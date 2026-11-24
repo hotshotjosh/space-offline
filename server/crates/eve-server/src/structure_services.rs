@@ -309,6 +309,11 @@ pub fn fitted(reg: &Registry, s: &Structure) -> Vec<Fitted> {
 /// Whether any module of `s` is online: the client's
 /// `HasOnlineServiceModule` (F12), which drives the upkeep.
 pub fn has_online_module(reg: &Registry, s: &Structure) -> bool {
+    // No online row for this structure: nothing to scan its hangar for.
+    let id = s.id.to_string();
+    if !reg.deltas().of(KIND).keys().any(|k| k.first() == Some(&id)) {
+        return false;
+    }
     fitted(reg, s).iter().any(|f| f.online)
 }
 
@@ -328,6 +333,29 @@ pub fn forget(reg: &mut Registry, structure: i64) {
         reg.deltas_mut().del(KIND, &k);
     }
     reg.mark_dirty();
+}
+
+/// A structure is going away (unanchored or destroyed): every module in its
+/// service slots goes to the hangar flag, offline, keeping its owner, so
+/// the evacuation that follows (asset safety, the harbour move) delivers it
+/// at a flag every address has; the slot flags mean nothing outside the
+/// structure.
+pub fn release_all(reg: &mut Registry, s: &Structure) {
+    let moves: Vec<Edit> = reg
+        .store()
+        .contents_of(s.id)
+        .filter(|i| is_slot(i.flag_id))
+        .map(|i| Edit::Move {
+            item_id: i.item_id,
+            to: Slot::new(i.owner_id, s.id, crate::model::FLAG_HANGAR),
+        })
+        .collect();
+    if !moves.is_empty()
+        && let Err(e) = reg.apply_items(&moves)
+    {
+        crate::errln!("[strsvc] releasing the modules of {}: {e:?}", s.id);
+    }
+    forget(reg, s.id);
 }
 
 /// Drop the rows of `s` whose module is no longer fitted there, before a
@@ -356,7 +384,8 @@ fn purge_stale(reg: &mut Registry, s: &Structure) {
 /// and which has `fitted` modules (`(type, online)`), under `table`:
 ///
 /// - the hull services at the hull's state, unless the type is one of the
-///   client's [`WITHOUT_ONLINE_SERVICES`] (then none, and no clone bay);
+///   client's [`WITHOUT_ONLINE_SERVICES`] (then no hull service and no clone
+///   bay; its modules' services stay);
 /// - each module's services `ONLINE` when it and the hull are online, else
 ///   `OFFLINE`; `ONLINE` wins when two modules give one service;
 /// - `JUMP_CLONE` follows `MEDICAL`'s state **[A]** (A8);
@@ -369,9 +398,7 @@ pub fn services_with(
     free_clone: bool,
 ) -> BTreeMap<i64, i64> {
     let mut out = BTreeMap::new();
-    if WITHOUT_ONLINE_SERVICES.contains(&type_id) {
-        return out;
-    }
+    let hull_gives = !WITHOUT_ONLINE_SERVICES.contains(&type_id);
     let hull = if hull_online {
         SERVICE_STATE_ONLINE
     } else {
@@ -386,8 +413,10 @@ pub fn services_with(
             })
             .or_insert(state);
     };
-    for svc in HULL_SERVICES {
-        give(svc, hull);
+    if hull_gives {
+        for svc in HULL_SERVICES {
+            give(svc, hull);
+        }
     }
     for (module, online) in fitted {
         let state = if *online && hull_online {
@@ -402,7 +431,7 @@ pub fn services_with(
             }
         }
     }
-    if free_clone {
+    if free_clone && hull_gives {
         give(SERVICE_MEDICAL, hull);
         give(SERVICE_JUMP_CLONE, hull);
     }
@@ -445,7 +474,13 @@ pub fn hp_multiplier(reg: &Registry, s: &Structure) -> f64 {
     if !crate::structure_combat::full_power(s) {
         return hull;
     }
-    let best = fitted(reg, s)
+    // Nothing online anywhere: no scan of the structure's hangar.
+    let online = if reg.deltas().of(KIND).is_empty() {
+        Vec::new()
+    } else {
+        fitted(reg, s)
+    };
+    let best = online
         .iter()
         .filter(|f| f.online)
         .filter_map(|f| {
@@ -496,9 +531,11 @@ pub fn error_key(e: &ServiceError) -> String {
 
 /// The structure `sid` and `actor`'s right to fit and online at it: at its
 /// controls ([`crate::structure_dock::control::controlling`]), in its owner
-/// corporation, with the station manager or director role (`may_launch`)
-/// **[V]** (F8 `CheckCanDisableServiceModule`; the fit and online calls the
-/// same **[A]** A1).
+/// corporation, with the station manager role (`may_launch`, which is the
+/// client's `session.IsStationManager`, the director and the CEO included, as
+/// everywhere else a structure is managed) **[V]** (F8
+/// `CheckCanDisableServiceModule`: that role and `session.corpid ==
+/// module.ownerID`; the fit and online calls the same **[A]** A1).
 fn authorise(reg: &Registry, actor: i64, sid: i64) -> Result<Structure, ServiceError> {
     let Some(s) = structure::get(reg.deltas(), sid) else {
         return Err(notify("That structure does not exist."));
@@ -679,9 +716,6 @@ fn may_online(
     if !s.state.is_operational() {
         return Err(raise("StructureCannotActivateModuleNotFullyOnline", vec![]));
     }
-    if WITHOUT_ONLINE_SERVICES.contains(&s.type_id) {
-        return Err(raise("StructureServiceUnavailable", vec![]));
-    }
     let services = module_services(table, module.type_id);
     if services.is_empty() || !services.iter().all(|svc| supported(*svc)) {
         return Err(notify("This service is not available on this server yet."));
@@ -851,10 +885,12 @@ pub fn unfit(
     Ok(())
 }
 
-/// A service of the structure changed (a module fitted, onlined, offlined or
-/// unfitted): `OnStructureServiceChanged(structureID)` to the pilots docked
-/// in it **[V]** (`structureServices.pyc:43`, one positional), and the corp
-/// tab of the owner's managers reloads.
+/// A service of the structure changed (a module fitted, onlined, offlined,
+/// unfitted, or a `/world` switch flipped): `OnStructureServiceChanged(structureID)`
+/// to the pilots docked in it **[V]** (`structureServices.pyc:43`, one
+/// positional), and the corporation tab of every online member of the owner
+/// corporation reloads (`OnCorporationStructuresUpdated`; the corp's own
+/// audience, not only its managers).
 pub fn on_services_changed(reg: &mut Registry, sid: i64) {
     let to: Vec<i64> = reg
         .characters_at_station(sid)
