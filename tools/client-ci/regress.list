@@ -399,6 +399,8 @@ fci_pochven_filament
 fci_pochven_sites
 # moon-beacon (#52): warp to a moon's mining point; a refinery anchors by its beacon, not 300 km from it
 fci_moon_beacon
+# moon-schedule (#53): by a moon's beacon a GM-spawned Athanor with a GM-fitted drill: the HUD buttons, the moon's resources, the scheduler window, a too-short start refused, a valid start (update, event, 202), a cancel (203), /extraction advance ready (204, READY) and the crater on the moon's slim; one client; written, not yet run on a client
+fci_moon_schedule
 # abyss-loot (#5): a cache per room, shot, its wreck looted; the gate never waits for it
 fci_abyss_loot
 # abyss-weather (#6): the key's weather on the ship, no timer, the beacon in the room, gone at home
