@@ -42,11 +42,10 @@
 //!
 //! # What is not here
 //!
-//! The fuel and the quantum core are #42's: [`pay_online`] is a stub that
-//! never refuses, and a structure a player anchors stays in state 102, which
-//! this refuses to online a module in (A20); so onlining is reachable through
-//! `/upwell spawn` (a structure already operational) and `/upwell fit` only
-//! until #42 lands.
+//! The quantum core is #42 part a's ([`crate::structure_bays`]). The fuel is
+//! part b's ([`crate::structure_fuel`]): [`pay_online`] charges the online
+//! cost there with `/world fuelburn` on and is free with it off, and the
+//! hourly burn takes a module offline through [`force_offline`].
 //!
 //! # [A]s (falsifier in each)
 //!
@@ -697,11 +696,32 @@ fn fitted_one(reg: &Registry, s: &Structure, module_id: i64) -> Result<Fitted, S
 
 // -- online and offline ---------------------------------------------------------
 
-/// Not a refusal of ours: the server has no fuel for a service module until
-/// #42, so onlining costs nothing. **[A]** (falsifier: #42 lands; then the
-/// fuel bay is asked here and `ServiceRequiresFuel` is its refusal).
-fn pay_online(_reg: &mut Registry, _s: &Structure, _module: &Fitted) -> Result<(), ServiceError> {
-    Ok(())
+/// What onlining costs: #42 part b's [`crate::structure_fuel::pay_online`],
+/// the module's dogma-modified 2110 from the fuel bay with `/world fuelburn`
+/// on (free with it off, today's behaviour), refused with
+/// `ServiceRequiresFuel` when the bay is short.
+fn pay_online(
+    reg: &mut Registry,
+    s: &Structure,
+    module: &Fitted,
+    now: i64,
+) -> Result<(), ServiceError> {
+    crate::structure_fuel::pay_online(reg, s, module, now)
+}
+
+/// The server takes `module_id` offline itself (#42 part b: the fuel ran
+/// out): no controls and no role are asked, [`change_online`] does the rest,
+/// the services push included.
+pub fn force_offline(
+    reg: &mut Registry,
+    sid: i64,
+    module_id: i64,
+    now: i64,
+) -> Result<PyValue, ServiceError> {
+    let Some(s) = structure::get(reg.deltas(), sid) else {
+        return Err(notify("That structure does not exist."));
+    };
+    change_online(MODULE_SERVICES, reg, &s, module_id, false, now)
 }
 
 /// The online checks that follow the control and the module (A20, A6, A7):
@@ -828,7 +848,7 @@ fn change_online(
     }
     if on {
         may_online(table, reg, s, &module)?;
-        pay_online(reg, s, &module)?;
+        pay_online(reg, s, &module, now)?;
     }
     purge_stale(reg, s);
     if on {
@@ -906,8 +926,10 @@ pub fn on_services_changed(reg: &mut Registry, sid: i64) {
             reg.push(crate::service::structures::CorpStructuresUpdated { to: corp });
         }
     }
-    // One line each, where #42b (fuel burn), #53 (moon drills) and #57
-    // (industry jobs) learn that a module changed.
+    // One line each, where #53 (moon drills) and #57 (industry jobs) learn
+    // that a module changed. #42 part b's fuel burn needs no hook: it reads
+    // the online rows on its own clock and starts a module's burn at the next
+    // hour (`structure_fuel::pay_online`).
 }
 
 /// `OnStructureServiceChanged(structureID)`: the client refetches the

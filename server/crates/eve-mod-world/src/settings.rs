@@ -126,6 +126,20 @@ pub const SETTINGS: &[Setting] = &[
         },
     },
     Setting {
+        name: "fuelburn",
+        usage: "1 when the service modules of an Upwell structure burn fuel from its fuel bay every hour and cost fuel to online, 0 when they are free (owner decision D2; default 0); a module that runs dry goes offline",
+        kind: Kind::Live,
+        get: |r| f64::from(u8::from(r.structure_fuel_burn)),
+        set: |r, v| {
+            r.structure_fuel_burn = match whole(v)? {
+                0 => false,
+                1 => true,
+                _ => return Err(format!("{v} is not 0 or 1")),
+            };
+            Ok(())
+        },
+    },
+    Setting {
         name: "deletetime",
         usage: "seconds a character waits between asking to be deleted and the delete (whole number, 0 to 2592000); applies from the next ask",
         kind: Kind::Live,

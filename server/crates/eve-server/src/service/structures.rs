@@ -40,8 +40,9 @@
 //! - `services` lists docking and fitting only, online with the hull;
 //!   module services are U6. Falsified by the browser hiding a structure
 //!   that has none.
-//! - `wars` is `[]` and `upkeepState` is Full when unset; `fuelExpires` is
-//!   `None` and `liquidOzoneQty` 0 until fuel exists (U6).
+//! - `wars` is `[]` and `upkeepState` is Full when unset; `fuelExpires` and
+//!   `liquidOzoneQty` are [`crate::structure_fuel`]'s (#42 part b): `None` and
+//!   0 for a structure that burns nothing and holds no ozone.
 //! - A pilot sees, in the map data and the "all structures" list, the
 //!   structures they may dock at; the browser's corp tab shows every
 //!   structure of the pilot's own corporation. Falsified by a player not
@@ -270,6 +271,8 @@ fn info_value(reg: &Registry, s: &Structure) -> PyValue {
         ("upkeepState", PyValue::Int(upkeep_code(s))),
         ("services", services_value(&sp::services_of(reg, s))),
         ("state", PyValue::Int(s.state.code())),
+        // #42 part b: `structureInfo.fuelExpires`, as in the directory rows.
+        ("fuelExpires", crate::structure_fuel::expires(reg, s)),
         ("x", PyValue::Real(s.pos[0])),
         ("y", PyValue::Real(s.pos[1])),
         ("z", PyValue::Real(s.pos[2])),
@@ -292,9 +295,14 @@ fn entry_value(reg: &Registry, s: &Structure) -> PyValue {
         ("upkeepState", PyValue::Int(upkeep_code(s))),
         ("wars", PyValue::List(vec![])),
         ("timerEnd", opt_int(s.timer.end)),
-        ("fuelExpires", PyValue::None),
+        // #42 part b: the client's own expiry arithmetic (`None` when nothing
+        // burns), sent with the burn off too.
+        ("fuelExpires", crate::structure_fuel::expires(reg, s)),
         ("unanchoring", opt_int(s.unanchoring)),
-        ("liquidOzoneQty", PyValue::Int(0)),
+        (
+            "liquidOzoneQty",
+            PyValue::Int(crate::structure_fuel::ozone_units(reg, s)),
+        ),
         ("reinforce_weekday", opt_int(r.weekday)),
         ("reinforce_hour", opt_int(r.hour)),
         ("next_reinforce_weekday", opt_int(r.next_weekday)),

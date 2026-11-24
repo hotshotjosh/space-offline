@@ -433,6 +433,31 @@ fn the_core_rule_is_live_and_a_switch() {
 }
 
 #[test]
+fn the_fuel_burn_is_live_a_switch_and_off_by_default() {
+    let mut reg = world();
+    settings::startup(&mut reg).expect("starts");
+    // Owner decision D2 [A]: the world keeps its free behaviour until the
+    // owner flips it; the default is the rules' own, not restated here.
+    assert_eq!(
+        reg.config().rules.structure_fuel_burn,
+        eve_server::rules::Rules::default().structure_fuel_burn
+    );
+    info(slash(&mut reg, GM, "/world fuelburn 1"));
+    assert!(reg.config().rules.structure_fuel_burn);
+    assert_eq!(stored(&reg, "fuelburn").as_deref(), Some("1"));
+    for line in [
+        "/world fuelburn 2",
+        "/world fuelburn 0.5",
+        "/world fuelburn -1",
+    ] {
+        info(slash(&mut reg, GM, line));
+        assert!(reg.config().rules.structure_fuel_burn, "{line}");
+    }
+    info(slash(&mut reg, GM, "/world fuelburn 0"));
+    assert!(!reg.config().rules.structure_fuel_burn);
+}
+
+#[test]
 fn the_delete_wait_is_live_and_bounded() {
     let mut reg = world();
     settings::startup(&mut reg).expect("starts");

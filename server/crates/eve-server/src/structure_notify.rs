@@ -20,7 +20,7 @@
 
 use crate::notifications::{self as notif, Data, Value, data};
 use crate::service::Registry;
-use crate::structure::{Event, SECOND, State, Structure};
+use crate::structure::{Event, SECOND, State, Structure, Upkeep};
 
 pub const STRUCTURE_ANCHORING: i64 = 182;
 pub const STRUCTURE_UNANCHORING: i64 = 183;
@@ -31,6 +31,13 @@ pub const STRUCTURE_LOST_ARMOR: i64 = 187;
 pub const STRUCTURE_DESTROYED: i64 = 188;
 pub const STRUCTURE_ITEMS_TO_ASSET_SAFETY: i64 = 190;
 pub const STRUCTURES_REINFORCEMENT_CHANGED: i64 = 209;
+/// #42 part b **[V]** (`notificationconst.py:171,184,193-194,226`): the fuel,
+/// services-offline, low-power, high-power and abandonment notices.
+pub const STRUCTURE_FUEL_ALERT: i64 = 181;
+pub const STRUCTURE_SERVICES_OFFLINE: i64 = 198;
+pub const STRUCTURE_WENT_LOW_POWER: i64 = 207;
+pub const STRUCTURE_WENT_HIGH_POWER: i64 = 208;
+pub const STRUCTURE_IMPENDING_ABANDONMENT: i64 = 249;
 
 /// `const.typeCorporation` **[V]** (`inventorycommon/const.py`).
 pub const TYPE_CORPORATION: i64 = 2;
@@ -325,6 +332,19 @@ pub fn on_events(reg: &mut Registry, s: &Structure, events: &[Event], now: i64) 
                 }
             }
         }
+        // #42 part b: the upkeep notices follow the upkeep state machine, with
+        // `freeupkeep` or the fuel burn behind it, so they are sent either way.
+        match ev {
+            Event::UpkeepChanged {
+                to: Upkeep::Low, ..
+            } => went_low_power(reg, s),
+            Event::UpkeepChanged {
+                from: Some(Upkeep::Low | Upkeep::Abandoned),
+                to: Upkeep::Full,
+            } => went_high_power(reg, s),
+            Event::ImpendingAbandon => impending_abandonment(reg, s, now),
+            _ => {}
+        }
         if let Event::StateChanged { from, to } = ev {
             match to {
                 State::ArmorReinforce | State::HullReinforce => lost_layer(reg, s, *to, now),
@@ -333,6 +353,62 @@ pub fn on_events(reg: &mut Registry, s: &Structure, events: &[Event], now: i64) 
             }
         }
     }
+}
+
+/// 181 `StructureFuelAlert.MakeData` **[V]**: the base keys and
+/// `listOfTypesAndQty`, `(quantity, typeID)` per stack type left in the fuel
+/// bay.
+pub fn fuel_alert(reg: &mut Registry, s: &Structure, left: &[(i64, i64)]) {
+    let list = left
+        .iter()
+        .map(|(qty, type_id)| Value::Tuple(vec![Value::Int(*qty), Value::Int(*type_id)]))
+        .collect();
+    let mut d = base_data(s);
+    d.extend(data([("listOfTypesAndQty", Value::List(list))]));
+    tell(reg, s, STRUCTURE_FUEL_ALERT, d);
+}
+
+/// 198 `StructureServicesOffline.MakeData` **[V]**: the base keys and
+/// `listOfServiceModuleIDs`, which are module **type** ids (the client's
+/// sample is `[35892]`).
+pub fn services_offline(reg: &mut Registry, s: &Structure, module_types: &[i64]) {
+    let list = module_types.iter().map(|t| Value::Int(*t)).collect();
+    let mut d = base_data(s);
+    d.extend(data([("listOfServiceModuleIDs", Value::List(list))]));
+    tell(reg, s, STRUCTURE_SERVICES_OFFLINE, d);
+}
+
+/// 207 `StructureWentLowPower`: the base keys only **[V]**.
+pub fn went_low_power(reg: &mut Registry, s: &Structure) {
+    tell(reg, s, STRUCTURE_WENT_LOW_POWER, base_data(s));
+}
+
+/// 208 `StructureWentHighPower`: the base keys only **[V]**.
+pub fn went_high_power(reg: &mut Registry, s: &Structure) {
+    tell(reg, s, STRUCTURE_WENT_HIGH_POWER, base_data(s));
+}
+
+/// 249 `StructureImpendingAbandonmentAssetsAtRisk.MakeData` **[V]**: the
+/// base keys, `isCorpOwned` (an Upwell structure here is always a
+/// corporation's) and `daysUntilAbandon`, the whole days (rounded down **[A]**,
+/// falsifier: a TQ mail showing one more day) left on the abandon clock, and
+/// `structureLink` as 190 builds it (`MakeData` calls
+/// `_GetSolarsystemAndStructureLinks`).
+pub fn impending_abandonment(reg: &mut Registry, s: &Structure, now: i64) {
+    let days = left(s.abandon_at, now) / (86_400 * SECOND);
+    let mut d = base_data(s);
+    d.extend(data([
+        ("isCorpOwned", Value::Bool(true)),
+        ("daysUntilAbandon", Value::Int(days)),
+        (
+            "structureLink",
+            Value::Text(format!(
+                "<a href=\"showinfo:{}//{}\">{}</a>",
+                s.type_id, s.id, s.name
+            )),
+        ),
+    ]));
+    tell(reg, s, STRUCTURE_IMPENDING_ABANDONMENT, d);
 }
 
 /// 209 `StructuresReinforcementChanged.MakeData` **[V]**: no base data. `info`
@@ -439,6 +515,95 @@ mod tests {
     }
 
     #[test]
+    fn the_fuel_notices_carry_the_formatters_keys() {
+        let mut reg = world();
+        let s = structure_at(State::ShieldVulnerable);
+        // 181: `(quantity, typeID)` pairs.
+        fuel_alert(&mut reg, &s, &[(500, 9_001), (7, 9_002)]);
+        // 198: module type ids.
+        services_offline(&mut reg, &s, &[9_011, 9_012]);
+        // 207 and 208: the base keys only.
+        went_low_power(&mut reg, &s);
+        went_high_power(&mut reg, &s);
+        let n = |reg: &Registry, t: i64| {
+            let all: Vec<_> = got(reg, DIRECTOR)
+                .into_iter()
+                .filter(|n| n.type_id == t)
+                .collect();
+            assert_eq!(all.len(), 1, "type {t}");
+            all.into_iter().next().unwrap()
+        };
+        let a = n(&reg, STRUCTURE_FUEL_ALERT);
+        assert_eq!(
+            val(&a.data, "listOfTypesAndQty"),
+            &Value::List(vec![
+                Value::Tuple(vec![Value::Int(500), Value::Int(9_001)]),
+                Value::Tuple(vec![Value::Int(7), Value::Int(9_002)]),
+            ])
+        );
+        let o = n(&reg, STRUCTURE_SERVICES_OFFLINE);
+        assert_eq!(
+            val(&o.data, "listOfServiceModuleIDs"),
+            &Value::List(vec![Value::Int(9_011), Value::Int(9_012)])
+        );
+        let base: Vec<String> = base_data(&s).into_iter().map(|(k, _)| k).collect();
+        for t in [STRUCTURE_WENT_LOW_POWER, STRUCTURE_WENT_HIGH_POWER] {
+            let keys: Vec<String> = n(&reg, t).data.into_iter().map(|(k, _)| k).collect();
+            assert_eq!(keys, base);
+        }
+        // 249: whole days, rounded down, and the link.
+        let mut s = s;
+        s.abandon_at = Some(T0 + (3 * 86_400 - 1) * SECOND);
+        impending_abandonment(&mut reg, &s, T0);
+        let w = n(&reg, STRUCTURE_IMPENDING_ABANDONMENT);
+        assert_eq!(val(&w.data, "daysUntilAbandon"), &Value::Int(2));
+        assert_eq!(val(&w.data, "isCorpOwned"), &Value::Bool(true));
+        assert!(matches!(val(&w.data, "structureLink"), Value::Text(t) if t.contains("showinfo:")));
+    }
+
+    #[test]
+    fn the_upkeep_events_send_207_and_208_and_the_first_state_sends_nothing() {
+        let mut reg = world();
+        let s = structure_at(State::ShieldVulnerable);
+        let up = |from, to| Event::UpkeepChanged { from, to };
+        on_events(&mut reg, &s, &[up(None, Upkeep::Full)], T0);
+        assert!(
+            got(&reg, DIRECTOR).is_empty(),
+            "the first state is no change"
+        );
+        on_events(&mut reg, &s, &[up(Some(Upkeep::Full), Upkeep::Low)], T0);
+        on_events(&mut reg, &s, &[up(Some(Upkeep::Low), Upkeep::Full)], T0);
+        on_events(
+            &mut reg,
+            &s,
+            &[up(Some(Upkeep::Abandoned), Upkeep::Full)],
+            T0,
+        );
+        let kinds: Vec<i64> = got(&reg, DIRECTOR).iter().map(|n| n.type_id).collect();
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|t| **t == STRUCTURE_WENT_LOW_POWER)
+                .count(),
+            1
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|t| **t == STRUCTURE_WENT_HIGH_POWER)
+                .count(),
+            2
+        );
+        on_events(
+            &mut reg,
+            &s,
+            &[up(Some(Upkeep::Low), Upkeep::Abandoned)],
+            T0,
+        );
+        assert_eq!(got(&reg, DIRECTOR).len(), 3, "going abandoned is not 207");
+    }
+
+    #[test]
     fn the_base_data_has_the_formatters_keys_and_a_showinfo_tuple() {
         let s = structure_at(State::ShieldVulnerable);
         let d = base_data(&s);
@@ -497,7 +662,13 @@ mod tests {
         let events = s.take_events();
         structure::put(reg.deltas_mut(), &s);
         crate::structure_space::react_at(&mut reg, s.id, &events, T0);
-        assert!(got(&reg, DIRECTOR).is_empty(), "no pilot, no 184");
+        let attacks = |reg: &Registry| -> Vec<notif::Notification> {
+            got(reg, DIRECTOR)
+                .into_iter()
+                .filter(|n| n.type_id == STRUCTURE_UNDER_ATTACK)
+                .collect()
+        };
+        assert!(attacks(&reg).is_empty(), "no pilot, no 184");
         // The pilot's volley, same window.
         reg.ext_mut::<crate::structure_combat::Fire>()
             .note_shooter(s.id, OTHER);
@@ -510,7 +681,7 @@ mod tests {
         let events = s.take_events();
         structure::put(reg.deltas_mut(), &s);
         crate::structure_space::react_at(&mut reg, s.id, &events, T0);
-        let n = got(&reg, DIRECTOR);
+        let n = attacks(&reg);
         assert_eq!(n.len(), 1, "exactly one 184");
         assert_eq!(val(&n[0].data, "charID"), &Value::Int(OTHER));
     }

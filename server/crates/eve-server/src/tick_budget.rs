@@ -324,6 +324,11 @@ pub const RULES: &[StageRule] = &[
         "only the fleets with a gone member, read from their stored deadlines",
     ),
     r(
+        "structure_fuel",
+        Rule::OwnClock,
+        "no online module row and no fuel row, no work; else a structure burns only once its stored last-burn hour is behind the UTC hour, for every missed hour at once",
+    ),
+    r(
         "structure_space",
         Rule::Every,
         "structures with a stored timer or decommissioning time due, read from their rows; no row, no work",
@@ -369,6 +374,7 @@ pub const RULES: &[StageRule] = &[
 pub const CADENCE_OK: &[(&str, u8)] = &[
     ("war", 4),
     ("structure_space", 4),
+    ("structure_fuel", 20),
     ("sov_capital", 4),
     ("sov_jammer", 4),
     ("sov_hub_fuel", 20),

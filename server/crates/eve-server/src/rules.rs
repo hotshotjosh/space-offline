@@ -70,6 +70,13 @@ pub struct Rules {
     /// decides D4 otherwise. Off, a structure waiting in state 102 finishes
     /// onlining on the next tick.
     pub structure_core_required: bool,
+    /// Whether the service modules of an Upwell structure burn fuel from its
+    /// fuel bay every hour and cost fuel to online (`structure_fuel`;
+    /// `/world fuelburn`, #42 part b). **[A]** off (owner decision D2 of
+    /// `structures-spec.md`): today's free behaviour; falsifier: the owner
+    /// decides D2 otherwise. Off, nothing burns, onlining costs nothing, and
+    /// the browser's fuel expiry is still computed.
+    pub structure_fuel_burn: bool,
 }
 
 /// The defaults of the asset safety timers and fee. **[A]**, falsifier: the
@@ -115,6 +122,7 @@ impl Default for Rules {
             safety_auto_secs: DEFAULT_SAFETY_AUTO_SECS,
             safety_fee_pct: DEFAULT_SAFETY_FEE_PCT,
             structure_core_required: true,
+            structure_fuel_burn: false,
         }
     }
 }
@@ -259,6 +267,8 @@ mod tests {
         assert_eq!(r.upwell_anchor_secs, 3_600);
         // New in #41: both on, which is the behaviour before service modules.
         assert!(r.upwell_free_clone && r.upwell_free_upkeep);
+        // STR-FUEL, [A] owner decision D2: today's free behaviour, no burn.
+        assert!(!r.structure_fuel_burn);
         for bad in [0, 59, 604_801, -5] {
             let r = Rules {
                 upwell_anchor_secs: bad,

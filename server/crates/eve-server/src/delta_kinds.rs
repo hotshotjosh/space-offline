@@ -348,6 +348,10 @@ pub const KINDS: &[(&str, &str)] = &[
     // held online. A row whose module is no longer fitted there is ignored and
     // purged on the next write.
     ("strsvc", "structure_services"),
+    // STR-FUEL (#42 part b): `structure_id -> last_burn_hour low_fuel_warned`,
+    // the UTC hour (FILETIME) a structure's modules last paid their fuel for,
+    // and whether the low-fuel mail went out for this crossing.
+    ("strfuel", "structure_fuel"),
     // ASSET-SAFETY-1 (#49): `wrap_item_id -> owner system origin created
     // name`, an asset safety wrap of a structure that left space.
     ("safetywrap", "asset_safety"),

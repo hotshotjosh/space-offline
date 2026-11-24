@@ -335,6 +335,8 @@ pub mod structure;
 pub mod structure_bays;
 pub mod structure_combat;
 pub mod structure_dock;
+// #42 part b (STR-FUEL): the hourly fuel burn, the online cost, the fuel expiry.
+pub mod structure_fuel;
 pub mod structure_notify;
 pub mod structure_profile;
 // #41 UPWELL-FIT: service modules at a structure's controls.

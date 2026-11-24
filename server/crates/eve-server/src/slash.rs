@@ -307,6 +307,12 @@ pub const COMMANDS: &[Command] = &[
         usage: "/upwell spawn <astrahus|raitaru|athanor|typeID> <name> | /upwell give <type> | /upwell list | /upwell damage <id> <shield> <armor> <hull> | /upwell state <id> <code|name> | /upwell timer <id> <secs>",
         run: crate::service::structures::slash,
     },
+    // STR-FUEL (#42 part b): the GM's seam for the hourly fuel burn.
+    Command {
+        name: "strfuel",
+        usage: "/strfuel <structureID> hours <n>",
+        run: crate::structure_fuel::slash,
+    },
     // ANSI-1 (#85): aim an Ansiblex by hand.
     Command {
         name: "jbridge",

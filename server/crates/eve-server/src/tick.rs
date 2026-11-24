@@ -433,6 +433,16 @@ pub const STAGES: &[Stage] = &[
         phase: 3,
         run: crate::structure_space::tick,
     },
+    // STR-FUEL (#42 part b): every structure with an online fuel-using module
+    // pays the hours it has missed from its fuel bay; the work is on the UTC
+    // hour, so a coarse cadence is enough. Reads only the `strsvc` and
+    // `strfuel` rows, and does nothing with `/world fuelburn` off.
+    Stage {
+        name: "structure_fuel",
+        every: 20,
+        phase: 9,
+        run: crate::structure_fuel::tick,
+    },
     // ASSET-SAFETY-1 (#49): a wrap whose long wait has run out moves itself to
     // the nearest NPC station. Reads only the `safetywrap` rows.
     Stage {
