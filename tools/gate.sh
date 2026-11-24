@@ -342,7 +342,8 @@ if ((!dirty)) && base=$(default_base); then
         # A test the (public) tree does not hold is skipped here; a private doc is absent there.
         docs_tests=()
         for t in tools/test_docs.py tools/test_status_page.py tools/test_plan_owners.py \
-            tools/test_client_kit.py tools/test_fci_scenarios.py tools/test_public_export.py; do
+            tools/test_client_kit.py tools/test_fci_scenarios.py tools/test_public_export.py \
+            tools/test_export_refs.py; do
             [[ -e $t ]] && docs_tests+=("$t")
         done
         run_python_tests "${docs_tests[@]}"

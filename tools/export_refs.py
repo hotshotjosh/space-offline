@@ -5,7 +5,7 @@ fails on a contributor's ("No such file"). No test executes every such line, so 
 check reads them. Standard library only.
 
     python3 -I tools/export_refs.py --check
-    python3 -I tools/export_refs.py --write-baseline   # regenerate tools/lanes-cite-baseline.tsv
+    python3 -I tools/export_refs.py --write-baseline [--allow-rise]   # regenerate tools/lanes-cite-baseline.tsv; a rise needs the flag
 
 Scope (exported files only): `.py` (comments and docstrings are ignored; other string
 tokens are live), `.sh`, `tools/hooks/*`, `containers/*`, `*.yml` (comment lines ignored).
@@ -17,9 +17,9 @@ file and path (not line). A row that matches nothing is a failure (`stale allow 
 
 Second check (#244), the citation baseline: exported `.rs`, `.py` and `.sh` files cite
 withheld `docs/` paths in comments and docstrings (the public reader cannot open them).
-Rewriting the old ones is a separate job; `tools/lanes-cite-baseline.tsv` (`path<TAB>count`)
-freezes them. `--check` fails when a file's count rises above its baseline or a file not in
-the baseline gains a citation; a falling count passes with a note to lower the baseline.
+Rewriting the old ones is a separate job; `tools/lanes-cite-baseline.tsv` (`file<TAB>path<TAB>count`)
+freezes them. `--check` fails when a (file, cited path) count rises above its baseline or a pair not in
+the baseline appears (a swapped citation fails); a falling count passes with a note to lower the baseline.
 The file holds paths and counts only.
 """
 
@@ -263,7 +263,28 @@ def _comment_text(rel: str, text: str) -> list[tuple[int, str]]:
         marker = "#"
     else:
         marker = "//" if rel.endswith(".rs") else "#"
+    in_block = False
     for n, line in enumerate(text.split("\n"), 1):
+        if rel.endswith(".rs"):
+            pos, parts = 0, []
+            while pos <= len(line):
+                if in_block:
+                    k = line.find("*/", pos)
+                    parts.append(line[pos:] if k < 0 else line[pos:k])
+                    if k < 0:
+                        break
+                    in_block, pos = False, k + 2
+                    continue
+                a, b = line.find("//", pos), line.find("/*", pos)
+                if a >= 0 and (b < 0 or a < b):
+                    parts.append(line[a:])
+                    break
+                if b < 0:
+                    break
+                in_block, pos = True, b + 2
+            if parts:
+                out.append((n, " ".join(parts)))
+            continue
         k = line.find(marker)
         if k >= 0:
             out.append((n, line[k:]))
@@ -274,8 +295,8 @@ def withheld_docs(names: set[str]) -> set[str]:
     return {n for n in names if n.startswith("docs/")}
 
 
-def cite_counts(root: str, pe=None) -> dict[str, int]:
-    """exported file -> number of comment/docstring citations of a withheld docs/ path."""
+def cite_counts(root: str, pe=None) -> dict[tuple[str, str], int]:
+    """(exported file, cited path) -> number of comment/docstring citations of a withheld docs/ path."""
     pe = pe or _pe()
     names = withheld_docs(private_names(root, pe))
     counts = {}
@@ -285,7 +306,7 @@ def cite_counts(root: str, pe=None) -> dict[str, int]:
         p = os.path.join(root, rel)
         if not os.path.isfile(p):
             continue
-        n = 0
+        n = {}
         for lineno, chunk in _comment_text(rel, read(p)):
             for part in chunk.split("\n"):
                 for m in TOKEN.finditer(part):
@@ -294,29 +315,40 @@ def cite_counts(root: str, pe=None) -> dict[str, int]:
                         continue
                     segs = tok.split("/")
                     if any("/".join(segs[:i]) in names for i in range(2, len(segs) + 1)):
-                        n += 1
-        if n:
-            counts[rel] = n
+                        n[tok] = n.get(tok, 0) + 1
+        for tok, c in n.items():
+            counts[(rel, tok)] = c
     return counts
 
 
-def load_baseline(path: str = BASELINE) -> dict[str, int]:
+def load_baseline(path: str = BASELINE) -> dict[tuple[str, str], int]:
     base = {}
     if os.path.exists(path):
         for line in read(path).split("\n"):
             if line.strip() and not line.startswith("#"):
                 f = line.split("\t")
-                base[f[0]] = int(f[1])
+                base[(f[0], f[1])] = int(f[2])
     return base
 
 
-def write_baseline(root: str, path: str = BASELINE) -> int:
-    counts = cite_counts(root)
-    with open(path, "w") as f:
-        f.write("# path<TAB>count: comment citations of withheld docs paths, frozen (tools/export_refs.py)\n")
-        for rel in sorted(counts):
-            f.write(f"{rel}\t{counts[rel]}\n")
-    return len(counts)
+def write_baseline(root: str, path: str = BASELINE, allow_rise: bool = False, out=None, counts=None) -> int:
+    """Regenerate the baseline. It may always lower; a higher count or a new (file, path)
+    pair needs `allow_rise`. Returns 0, or 1 when it refused (nothing written)."""
+    out = out or sys.stdout
+    counts = cite_counts(root) if counts is None else counts
+    if not allow_rise:
+        base = load_baseline(path)
+        rises = [k for k in sorted(counts) if counts[k] > base.get(k, 0)]
+        if rises:
+            for f, tok in rises:
+                print(f"refused: {f} cites {tok} {counts[(f, tok)]} time(s), baseline {base.get((f, tok), 0)}; "
+                      "pass --allow-rise after review", file=out)
+            return 1
+    with open(path, "w") as fh:
+        fh.write("# file<TAB>cited path<TAB>count: frozen comment citations of withheld docs paths (tools/export_refs.py)\n")
+        for k in sorted(counts):
+            fh.write(f"{k[0]}\t{k[1]}\t{counts[k]}\n")
+    return 0
 
 
 def check_baseline(root: str, path: str = BASELINE, out=None, counts=None) -> int:
@@ -324,20 +356,23 @@ def check_baseline(root: str, path: str = BASELINE, out=None, counts=None) -> in
     counts = cite_counts(root) if counts is None else counts
     base = load_baseline(path)
     bad = 0
-    for rel in sorted(counts):
-        if counts[rel] > base.get(rel, 0):
-            was = f"baseline {base[rel]}" if rel in base else "not in the baseline"
-            print(f"{rel}: {counts[rel]} citations of withheld docs paths, {was}", file=out)
+    for k in sorted(counts):
+        if counts[k] > base.get(k, 0):
+            was = f"baseline {base[k]}" if k in base else "not in the baseline"
+            print(f"{k[0]}: cites withheld {k[1]} {counts[k]} time(s), {was}", file=out)
             bad += 1
-    lower = [r for r in sorted(base) if counts.get(r, 0) < base[r]]
-    for rel in lower:
-        print(f"note: {rel} fell to {counts.get(rel, 0)} (baseline {base[rel]}); run --write-baseline to lower it", file=out)
-    print(f"export-refs baseline: {sum(counts.values())} citations in {len(counts)} files, {bad} over", file=out)
+    for k in sorted(base):
+        if counts.get(k, 0) < base[k]:
+            print(f"note: {k[0]} {k[1]} fell to {counts.get(k, 0)} (baseline {base[k]}); run --write-baseline to lower it", file=out)
+    if bad:
+        print("a new citation of a withheld doc, or a doc was newly withheld: run export_refs.py "
+              "--write-baseline --allow-rise after review", file=out)
+    print(f"export-refs baseline: {sum(counts.values())} citations in {len({k[0] for k in counts})} files, {bad} over", file=out)
     return 1 if bad else 0
 
 
 def main(argv: list[str]) -> int:
-    if argv[1:] not in (["--check"], ["--write-baseline"]):
+    if argv[1:] not in (["--check"], ["--write-baseline"], ["--write-baseline", "--allow-rise"]):
         print(__doc__, file=sys.stderr)
         return 2
     root = os.path.dirname(HERE)
@@ -345,8 +380,10 @@ def main(argv: list[str]) -> int:
         print("export-refs: this tree is the export; nothing is excluded here")
         return 0
     if argv[1] == "--write-baseline":
-        print(f"export-refs: baseline written, {write_baseline(root)} files")
-        return 0
+        rc = write_baseline(root, allow_rise="--allow-rise" in argv)
+        if rc == 0:
+            print("export-refs: baseline written")
+        return rc
     rc = check(root)
     return max(rc, check_baseline(root))
 

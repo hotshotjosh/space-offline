@@ -255,6 +255,7 @@ because they are central, risky, or being rewritten. Paths are under
 | `AGENTS.md`, `CLAUDE.md`, `tools/land.sh`, `tools/gate.sh`, `tools/public-export.py`, `.github/` | the procedure and the gate; a maintainer changes them |
 | `docs/guides/contributing.md`, `docs/guides/getting-started.md`, `docs/guides/issue-tracking.md`, `docs/guides/working-together.md`, `SECURITY.md` | the procedure docs: every contributor's agent follows them, so a PR may propose a change and a maintainer makes it |
 | `LICENSE.md`, `LICENSE-additions.md`, `CONTRIBUTING-terms.md`, `NOTICE` | the licence, its additional terms, the contributor terms and the third-party notices; only the owner changes them |
+| `tools/lanes-cite-baseline.tsv` | the frozen count of comment citations of withheld docs paths; a rise, or a new file or path, gets a closer review (`tools/export_refs.py`) |
 | `tools/flaky.tsv`, `tools/gate_reds.py`, `tools/test-parallel.sh` | the gate's flaky-rerun list and the code that reads it and runs the rerun; a row on the list is a reviewed maintainer commit, and the gate reads the list from the base, never from the change under test |
 
 ## 11. Flags and variables

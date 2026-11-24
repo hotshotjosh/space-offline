@@ -186,42 +186,69 @@ class Baseline(Fixture):
         self.put("c.sh", "# docs/secret/a.txt\necho docs/secret/a.txt\n")
         self.put("d.rs", "// docs/README.md\n")
         c = self.counts()
-        self.assertEqual((c["a.rs"], c["b.py"], c["c.sh"], "d.rs" in c), (2, 2, 1, False))
+        self.assertEqual(c[("a.rs", "docs/secret/a.txt")], 1)
+        self.assertEqual(c[("a.rs", "docs/secret/b")], 1)
+        self.assertEqual(sum(v for (f, _), v in c.items() if f == "b.py"), 2)
+        self.assertEqual(c[("c.sh", "docs/secret/a.txt")], 1)
+        self.assertFalse(any(f == "d.rs" for f, _ in c))
+
+    def test_rust_block_comments_count(self):
+        self.put("a.rs", "/* docs/secret/a.txt\n   docs/secret/b */ let x = 1; // docs/secret/a.txt\nlet y = 2;\n")
+        c = self.counts()
+        self.assertEqual(c[("a.rs", "docs/secret/a.txt")], 2)
+        self.assertEqual(c[("a.rs", "docs/secret/b")], 1)
 
     def test_a_rising_count_fails(self):
         self.put("a.rs", "// docs/secret/a.txt\n// docs/secret/a.txt\n")
-        rc, out = self.run_base("a.rs\t1\n")
+        rc, out = self.run_base("a.rs\tdocs/secret/a.txt\t1\n")
         self.assertEqual(rc, 1)
-        self.assertIn("a.rs: 2 citations", out)
+        self.assertIn("a.rs: cites withheld docs/secret/a.txt 2 time(s), baseline 1", out)
+        self.assertIn("--write-baseline --allow-rise", out)
 
     def test_an_equal_count_passes(self):
         self.put("a.rs", "// docs/secret/a.txt\n")
-        self.assertEqual(self.run_base("a.rs\t1\n")[0], 0)
+        self.assertEqual(self.run_base("a.rs\tdocs/secret/a.txt\t1\n")[0], 0)
 
     def test_a_falling_count_passes_with_a_note(self):
         self.put("a.rs", "// docs/secret/a.txt\n")
-        rc, out = self.run_base("a.rs\t3\n")
+        rc, out = self.run_base("a.rs\tdocs/secret/a.txt\t3\n")
         self.assertEqual(rc, 0)
-        self.assertIn("note: a.rs fell to 1", out)
+        self.assertIn("note: a.rs docs/secret/a.txt fell to 1", out)
 
     def test_a_new_file_with_citations_fails(self):
         self.put("a.rs", "// docs/secret/a.txt\n")
         self.put("n.py", "# docs/secret/a.txt\n")
-        rc, out = self.run_base("a.rs\t1\n")
+        rc, out = self.run_base("a.rs\tdocs/secret/a.txt\t1\n")
         self.assertEqual(rc, 1)
-        self.assertIn("n.py: 1 citations of withheld docs paths, not in the baseline", out)
+        self.assertIn("n.py: cites withheld docs/secret/a.txt 1 time(s), not in the baseline", out)
 
-    def test_write_baseline_round_trips(self):
-        self.put("a.rs", "// docs/secret/a.txt\n")
+    def test_swapping_one_citation_for_another_fails(self):
+        self.put("a.rs", "// docs/secret/b\n")
+        rc, out = self.run_base("a.rs\tdocs/secret/a.txt\t1\n")
+        self.assertEqual(rc, 1)
+        self.assertIn("a.rs: cites withheld docs/secret/b", out)
+
+    def test_write_baseline_refuses_a_rise_without_the_flag_and_may_lower(self):
+        self.put("a.rs", "// docs/secret/a.txt\n// docs/secret/a.txt\n")
         c = self.counts()
         path = os.path.join(self.root, "w.tsv")
-        old = er.cite_counts
-        er.cite_counts = lambda root, pe=None: c
-        try:
-            er.write_baseline(self.root, path)
-        finally:
-            er.cite_counts = old
-        self.assertEqual(er.load_baseline(path), {"a.rs": 1})
+        with open(path, "w") as f:
+            f.write("a.rs\tdocs/secret/a.txt\t1\n")
+        buf = io.StringIO()
+        self.assertEqual(er.write_baseline(self.root, path, out=buf, counts=c), 1)
+        self.assertIn("refused", buf.getvalue())
+        self.assertEqual(er.load_baseline(path), {("a.rs", "docs/secret/a.txt"): 1})
+        self.assertEqual(er.write_baseline(self.root, path, allow_rise=True, counts=c), 0)
+        self.assertEqual(er.load_baseline(path), {("a.rs", "docs/secret/a.txt"): 2})
+        self.assertEqual(er.write_baseline(self.root, path, counts={("a.rs", "docs/secret/a.txt"): 1}), 0)
+        self.assertEqual(er.load_baseline(path), {("a.rs", "docs/secret/a.txt"): 1})
+
+    def test_write_baseline_refuses_a_new_pair_without_the_flag(self):
+        path = os.path.join(self.root, "w.tsv")
+        with open(path, "w") as f:
+            f.write("a.rs\tdocs/secret/a.txt\t1\n")
+        rc = er.write_baseline(self.root, path, out=io.StringIO(), counts={("a.rs", "docs/secret/b"): 1})
+        self.assertEqual(rc, 1)
 
 
 class Live(unittest.TestCase):

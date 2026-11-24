@@ -1,676 +1,1479 @@
-# path<TAB>count: comment citations of withheld docs paths, frozen (tools/export_refs.py)
-server/crates/eve-bot/src/bin/eve-bot.rs	2
-server/crates/eve-bot/src/bin/eve-bots.rs	2
-server/crates/eve-bot/src/brain.rs	5
-server/crates/eve-bot/src/bubble.rs	1
-server/crates/eve-bot/src/builder.rs	6
-server/crates/eve-bot/src/burst.rs	1
-server/crates/eve-bot/src/capital.rs	1
-server/crates/eve-bot/src/career.rs	2
-server/crates/eve-bot/src/cofound.rs	1
-server/crates/eve-bot/src/contracts.rs	1
-server/crates/eve-bot/src/corp_ops.rs	1
-server/crates/eve-bot/src/corpmind.rs	5
-server/crates/eve-bot/src/doctrine_assign.rs	1
-server/crates/eve-bot/src/doctrine_exchange.rs	1
-server/crates/eve-bot/src/doctrine_stock.rs	1
-server/crates/eve-bot/src/driver.rs	2
-server/crates/eve-bot/src/escort.rs	3
-server/crates/eve-bot/src/escort_board.rs	1
-server/crates/eve-bot/src/explore_roam.rs	1
-server/crates/eve-bot/src/fleet.rs	2
-server/crates/eve-bot/src/foreman.rs	2
-server/crates/eve-bot/src/gas_price.rs	1
-server/crates/eve-bot/src/gm.rs	1
-server/crates/eve-bot/src/hacker.rs	3
-server/crates/eve-bot/src/hauler.rs	1
-server/crates/eve-bot/src/hub_supply.rs	1
-server/crates/eve-bot/src/hulls.rs	3
-server/crates/eve-bot/src/hunt.rs	1
-server/crates/eve-bot/src/insure.rs	1
-server/crates/eve-bot/src/lib.rs	10
-server/crates/eve-bot/src/logi.rs	1
-server/crates/eve-bot/src/mine_ladder.rs	2
-server/crates/eve-bot/src/overload.rs	1
-server/crates/eve-bot/src/park.rs	2
-server/crates/eve-bot/src/pi.rs	2
-server/crates/eve-bot/src/pi_p3.rs	1
-server/crates/eve-bot/src/probe.rs	3
-server/crates/eve-bot/src/reactor.rs	1
-server/crates/eve-bot/src/rig.rs	1
-server/crates/eve-bot/src/roles.rs	1
-server/crates/eve-bot/src/salvage.rs	1
-server/crates/eve-bot/src/society.rs	2
-server/crates/eve-bot/src/sov_bot.rs	1
-server/crates/eve-bot/src/supply_run.rs	1
-server/crates/eve-bot/src/t3.rs	2
-server/crates/eve-bot/src/tag_repair.rs	1
-server/crates/eve-bot/src/trader.rs	1
-server/crates/eve-bot/src/verbs.rs	14
-server/crates/eve-bot/src/war_bot.rs	1
-server/crates/eve-bot/src/wh_raid.rs	2
-server/crates/eve-bot/src/wing.rs	1
-server/crates/eve-bot/src/wing_fight.rs	1
-server/crates/eve-bot/tests/bots/alliance.rs	1
-server/crates/eve-bot/tests/bots/bot_corp.rs	1
-server/crates/eve-bot/tests/bots/corp_buy.rs	1
-server/crates/eve-bot/tests/bots/corp_ceo.rs	1
-server/crates/eve-bot/tests/bots/corp_office.rs	1
-server/crates/eve-bot/tests/bots/corp_wallet.rs	1
-server/crates/eve-bot/tests/bots/drift.rs	1
-server/crates/eve-bot/tests/bots/handshake.rs	6
-server/crates/eve-bot/tests/bots/jump.rs	1
-server/crates/eve-bot/tests/bots/mail.rs	1
-server/crates/eve-bot/tests/bots/main.rs	1
-server/crates/eve-bot/tests/bots/mining.rs	4
-server/crates/eve-bot/tests/bots/missions.rs	1
-server/crates/eve-bot/tests/bots/npc.rs	1
-server/crates/eve-bot/tests/bots/verbs.rs	3
-server/crates/eve-bot/tests/bots/war.rs	1
-server/crates/eve-inflate/src/lib.rs	1
-server/crates/eve-marshal/src/build.rs	1
-server/crates/eve-marshal/src/constants.rs	2
-server/crates/eve-marshal/src/tag.rs	3
-server/crates/eve-marshal/src/value.rs	11
-server/crates/eve-mod-econ/src/lib.rs	1
-server/crates/eve-mod-world/src/lib.rs	1
-server/crates/eve-offline-server/src/main.rs	1
-server/crates/eve-probe/src/crypto.rs	3
-server/crates/eve-probe/src/lib.rs	1
-server/crates/eve-probe/src/session.rs	3
-server/crates/eve-proto/src/call.rs	1
-server/crates/eve-proto/src/lib.rs	2
-server/crates/eve-rowset/src/cfg.rs	2
-server/crates/eve-rowset/src/row.rs	1
-server/crates/eve-server/src/account_book.rs	3
-server/crates/eve-server/src/accounts.rs	2
-server/crates/eve-server/src/alliance.rs	1
-server/crates/eve-server/src/ancient_rate.rs	1
-server/crates/eve-server/src/asteroid.rs	3
-server/crates/eve-server/src/authored.rs	1
-server/crates/eve-server/src/belts.rs	3
-server/crates/eve-server/src/bin/evecap.rs	1
-server/crates/eve-server/src/bot_control.rs	1
-server/crates/eve-server/src/bulletins.rs	1
-server/crates/eve-server/src/capture.rs	1
-server/crates/eve-server/src/celestial.rs	4
-server/crates/eve-server/src/char_settings.rs	1
-server/crates/eve-server/src/chat.rs	2
-server/crates/eve-server/src/cli.rs	1
-server/crates/eve-server/src/clock.rs	1
-server/crates/eve-server/src/clock_probe.rs	1
-server/crates/eve-server/src/clones.rs	4
-server/crates/eve-server/src/combat.rs	8
-server/crates/eve-server/src/combat_site.rs	2
-server/crates/eve-server/src/command_nodes.rs	1
-server/crates/eve-server/src/compression.rs	1
-server/crates/eve-server/src/concord.rs	1
-server/crates/eve-server/src/conn.rs	3
-server/crates/eve-server/src/contact_labels.rs	1
-server/crates/eve-server/src/contacts.rs	1
-server/crates/eve-server/src/content.rs	2
-server/crates/eve-server/src/content_tables.rs	1
-server/crates/eve-server/src/contracts.rs	1
-server/crates/eve-server/src/corp_office.rs	2
-server/crates/eve-server/src/corp_roles.rs	1
-server/crates/eve-server/src/corp_standings.rs	1
-server/crates/eve-server/src/corp_titles.rs	1
-server/crates/eve-server/src/corp_wallet.rs	1
-server/crates/eve-server/src/crimewatch.rs	2
-server/crates/eve-server/src/crimewatch/cw1_tests.rs	1
-server/crates/eve-server/src/crimewatch/killright.rs	1
-server/crates/eve-server/src/cyno.rs	1
-server/crates/eve-server/src/damage.rs	3
-server/crates/eve-server/src/dbuff.rs	2
-server/crates/eve-server/src/dbuff_data.rs	1
-server/crates/eve-server/src/delta.rs	2
-server/crates/eve-server/src/delta_kinds.rs	2
-server/crates/eve-server/src/destiny.rs	25
-server/crates/eve-server/src/destiny/encode.rs	7
-server/crates/eve-server/src/destiny/hull.rs	1
-server/crates/eve-server/src/destiny/push.rs	4
-server/crates/eve-server/src/destiny/warp.rs	3
-server/crates/eve-server/src/dispatch.rs	9
-server/crates/eve-server/src/docking.rs	3
-server/crates/eve-server/src/dogma.rs	2
-server/crates/eve-server/src/drones.rs	2
-server/crates/eve-server/src/dungeon.rs	2
-server/crates/eve-server/src/dungeon_data.rs	2
-server/crates/eve-server/src/dungeon_tracking.rs	3
-server/crates/eve-server/src/econ_agents.rs	1
-server/crates/eve-server/src/econ_dbs.rs	2
-server/crates/eve-server/src/econ_exchange.rs	5
-server/crates/eve-server/src/econ_ledger.rs	2
-server/crates/eve-server/src/econ_prices.rs	1
-server/crates/eve-server/src/entosis.rs	1
-server/crates/eve-server/src/epic_arc.rs	1
-server/crates/eve-server/src/escalation.rs	1
-server/crates/eve-server/src/ewar.rs	4
-server/crates/eve-server/src/facwar.rs	3
-server/crates/eve-server/src/fighters.rs	1
-server/crates/eve-server/src/fighters/abandon.rs	1
-server/crates/eve-server/src/fighters/ability.rs	1
-server/crates/eve-server/src/fighters/effects.rs	1
-server/crates/eve-server/src/fighters/fixture.rs	1
-server/crates/eve-server/src/fighters/skills.rs	1
-server/crates/eve-server/src/fighters/strike.rs	1
-server/crates/eve-server/src/fighters_data.rs	1
-server/crates/eve-server/src/fitting.rs	5
-server/crates/eve-server/src/fitting_store.rs	1
-server/crates/eve-server/src/fleet_broadcast.rs	2
-server/crates/eve-server/src/fleet_finder.rs	1
-server/crates/eve-server/src/fleet_warp.rs	1
-server/crates/eve-server/src/fw_lp.rs	1
-server/crates/eve-server/src/game_clock.rs	1
-server/crates/eve-server/src/gateway.rs	1
-server/crates/eve-server/src/gateway_auth.rs	1
-server/crates/eve-server/src/gateway_ext.rs	1
-server/crates/eve-server/src/gateway_out.rs	1
-server/crates/eve-server/src/global_config.rs	1
-server/crates/eve-server/src/grid.rs	3
-server/crates/eve-server/src/grid/tests.rs	5
-server/crates/eve-server/src/group_contacts.rs	1
-server/crates/eve-server/src/hacking.rs	3
-server/crates/eve-server/src/hacking_loot.rs	1
-server/crates/eve-server/src/handshake.rs	2
-server/crates/eve-server/src/industry.rs	16
-server/crates/eve-server/src/industry/relic.rs	1
-server/crates/eve-server/src/item.rs	6
-server/crates/eve-server/src/item_names.rs	1
-server/crates/eve-server/src/jettison.rs	1
-server/crates/eve-server/src/jump.rs	6
-server/crates/eve-server/src/jump_drive.rs	2
-server/crates/eve-server/src/jump_fatigue.rs	1
-server/crates/eve-server/src/jump_portal.rs	1
-server/crates/eve-server/src/kill_hooks.rs	2
-server/crates/eve-server/src/killmail.rs	2
-server/crates/eve-server/src/ledger.rs	1
-server/crates/eve-server/src/lib.rs	1
-server/crates/eve-server/src/live_status.rs	2
-server/crates/eve-server/src/liveness.rs	1
-server/crates/eve-server/src/location_lint.rs	1
-server/crates/eve-server/src/loyalty.rs	1
-server/crates/eve-server/src/lp_transfer.rs	1
-server/crates/eve-server/src/mail.rs	1
-server/crates/eve-server/src/mining.rs	6
-server/crates/eve-server/src/mining_hold.rs	1
-server/crates/eve-server/src/missile_skills.rs	1
-server/crates/eve-server/src/mission.rs	3
-server/crates/eve-server/src/mission_hooks.rs	1
-server/crates/eve-server/src/mission_pool.rs	1
-server/crates/eve-server/src/mission_rewards.rs	1
-server/crates/eve-server/src/mjd.rs	1
-server/crates/eve-server/src/model.rs	5
-server/crates/eve-server/src/module.rs	1
-server/crates/eve-server/src/modules.rs	10
-server/crates/eve-server/src/moon.rs	2
-server/crates/eve-server/src/moon_belt.rs	1
-server/crates/eve-server/src/movement_guard.rs	3
-server/crates/eve-server/src/notes.rs	1
-server/crates/eve-server/src/notifications.rs	1
-server/crates/eve-server/src/notify.rs	7
-server/crates/eve-server/src/npc.rs	7
-server/crates/eve-server/src/npc/bounty.rs	1
-server/crates/eve-server/src/npc/brain.rs	2
-server/crates/eve-server/src/npc/loot.rs	1
-server/crates/eve-server/src/npc_data.rs	1
-server/crates/eve-server/src/npc_ewar.rs	2
-server/crates/eve-server/src/npc_gen.rs	2
-server/crates/eve-server/src/orbit.rs	1
-server/crates/eve-server/src/overheat.rs	2
-server/crates/eve-server/src/planet.rs	9
-server/crates/eve-server/src/population.rs	2
-server/crates/eve-server/src/push.rs	8
-server/crates/eve-server/src/pycode.rs	8
-server/crates/eve-server/src/pyutil.rs	4
-server/crates/eve-server/src/reaction_market.rs	1
-server/crates/eve-server/src/remote_rep.rs	2
-server/crates/eve-server/src/reprocess.rs	10
-server/crates/eve-server/src/rigs.rs	2
-server/crates/eve-server/src/roles.rs	2
-server/crates/eve-server/src/rollover.rs	4
-server/crates/eve-server/src/rollover_steps.rs	1
-server/crates/eve-server/src/rules.rs	1
-server/crates/eve-server/src/salvage.rs	1
-server/crates/eve-server/src/scan.rs	4
-server/crates/eve-server/src/scan_sources.rs	1
-server/crates/eve-server/src/sec_status.rs	4
-server/crates/eve-server/src/security_office.rs	1
-server/crates/eve-server/src/seed.rs	2
-server/crates/eve-server/src/self_destruct.rs	1
-server/crates/eve-server/src/sentry.rs	1
-server/crates/eve-server/src/server.rs	10
-server/crates/eve-server/src/service.rs	25
-server/crates/eve-server/src/service/agents.rs	3
-server/crates/eve-server/src/service/alliance.rs	1
-server/crates/eve-server/src/service/base.rs	4
-server/crates/eve-server/src/service/bounty.rs	1
-server/crates/eve-server/src/service/character.rs	1
-server/crates/eve-server/src/service/corp.rs	5
-server/crates/eve-server/src/service/corp_office.rs	1
-server/crates/eve-server/src/service/corp_wallet.rs	1
-server/crates/eve-server/src/service/cosmetics.rs	1
-server/crates/eve-server/src/service/facwar.rs	3
-server/crates/eve-server/src/service/facwar_mgr.rs	2
-server/crates/eve-server/src/service/fleet/tests.rs	1
-server/crates/eve-server/src/service/gaps2.rs	1
-server/crates/eve-server/src/service/gm.rs	2
-server/crates/eve-server/src/service/gm_econ.rs	1
-server/crates/eve-server/src/service/gm_live.rs	1
-server/crates/eve-server/src/service/industry.rs	9
-server/crates/eve-server/src/service/insurance.rs	2
-server/crates/eve-server/src/service/inventory.rs	23
-server/crates/eve-server/src/service/keeper.rs	1
-server/crates/eve-server/src/service/live_misc.rs	2
-server/crates/eve-server/src/service/mail.rs	1
-server/crates/eve-server/src/service/market.rs	9
-server/crates/eve-server/src/service/market/corp.rs	1
-server/crates/eve-server/src/service/planet.rs	5
-server/crates/eve-server/src/service/reprocess.rs	9
-server/crates/eve-server/src/service/sites.rs	2
-server/crates/eve-server/src/service/social.rs	3
-server/crates/eve-server/src/service/sov.rs	1
-server/crates/eve-server/src/service/sov_hub.rs	1
-server/crates/eve-server/src/service/space.rs	6
-server/crates/eve-server/src/service/tales.rs	2
-server/crates/eve-server/src/service/tests.rs	7
-server/crates/eve-server/src/service/wallet.rs	1
-server/crates/eve-server/src/service/war.rs	2
-server/crates/eve-server/src/service/world.rs	7
-server/crates/eve-server/src/session.rs	2
-server/crates/eve-server/src/session_hooks.rs	2
-server/crates/eve-server/src/share_links.rs	1
-server/crates/eve-server/src/ship_clone.rs	1
-server/crates/eve-server/src/ship_config.rs	1
-server/crates/eve-server/src/ship_scan.rs	1
-server/crates/eve-server/src/signal_tracker.rs	1
-server/crates/eve-server/src/site.rs	4
-server/crates/eve-server/src/site_spawn.rs	3
-server/crates/eve-server/src/skill.rs	2
-server/crates/eve-server/src/skill_queue.rs	1
-server/crates/eve-server/src/slash.rs	3
-server/crates/eve-server/src/slim_extra.rs	1
-server/crates/eve-server/src/sov.rs	1
-server/crates/eve-server/src/sov_campaign.rs	1
-server/crates/eve-server/src/sov_hub.rs	1
-server/crates/eve-server/src/sov_index.rs	1
-server/crates/eve-server/src/space_state.rs	16
-server/crates/eve-server/src/stance.rs	1
-server/crates/eve-server/src/standings.rs	1
-server/crates/eve-server/src/store.rs	5
-server/crates/eve-server/src/storyline.rs	1
-server/crates/eve-server/src/tackle.rs	2
-server/crates/eve-server/src/tales.rs	2
-server/crates/eve-server/src/targeting.rs	4
-server/crates/eve-server/src/test_clock.rs	1
-server/crates/eve-server/src/tick.rs	2
-server/crates/eve-server/src/tick_budget.rs	1
-server/crates/eve-server/src/typedata.rs	1
-server/crates/eve-server/src/war.rs	1
-server/crates/eve-server/src/war_deal.rs	1
-server/crates/eve-server/src/war_notice.rs	1
-server/crates/eve-server/src/war_stats.rs	1
-server/crates/eve-server/src/warp_subject.rs	1
-server/crates/eve-server/src/weapon_bank.rs	2
-server/crates/eve-server/src/wire.rs	5
-server/crates/eve-server/src/world_ext.rs	1
-server/crates/eve-server/src/wormhole.rs	3
-server/crates/eve-server/src/wormhole_jump.rs	3
-server/crates/eve-server/src/wormhole_sites.rs	2
-server/crates/eve-server/tests/arm_fuzz.rs	1
-server/crates/eve-server/tests/corp_standings_socket.rs	1
-server/crates/eve-server/tests/cyno_socket.rs	1
-server/crates/eve-server/tests/econ_report_socket.rs	2
-server/crates/eve-server/tests/fighter_socket.rs	1
-server/crates/eve-server/tests/gaps2_socket.rs	1
-server/crates/eve-server/tests/jump_drive_socket.rs	1
-server/crates/eve-server/tests/jump_portal_socket.rs	1
-server/crates/eve-server/tests/loopback.rs	7
-server/crates/eve-server/tests/replay.rs	1
-server/crates/eve-server/tests/rig_socket.rs	1
-server/crates/eve-server/tests/split_socket.rs	1
-server/crates/eve-server/tests/turret_application_socket.rs	1
-server/crates/eve-server/tests/wire_calls.rs	1
-server/crates/eve-server/tests/wire_hostile.rs	3
-server/crates/eve-xmpp/src/client.rs	1
-server/crates/eve-xmpp/src/lib.rs	1
-server/crates/eve-xmpp/src/sasl.rs	1
-server/crates/eve-xmpp/src/xml.rs	3
-tools/asteroids.py	2
-tools/bot-accounts.sh	1
-tools/bots.sh	2
-tools/call_lines.py	1
-tools/celestials.py	2
-tools/census-calls.sh	1
-tools/census_proxy.py	1
-tools/client-ci.sh	7
-tools/client-ci/scenarios/_prelude.py	3
-tools/client-ci/scenarios/ballpark_smoke.py	4
-tools/client-ci/scenarios/capacitor.py	4
-tools/client-ci/scenarios/census_canary.py	4
-tools/client-ci/scenarios/census_cc.py	4
-tools/client-ci/scenarios/census_cdn.py	4
-tools/client-ci/scenarios/census_crash.py	4
-tools/client-ci/scenarios/census_hang.py	4
-tools/client-ci/scenarios/census_idle.py	5
-tools/client-ci/scenarios/census_links.py	5
-tools/client-ci/scenarios/census_report_bug.py	4
-tools/client-ci/scenarios/census_urls.py	4
-tools/client-ci/scenarios/fci_abandon_kill.py	2
-tools/client-ci/scenarios/fci_abyss_clouds.py	2
-tools/client-ci/scenarios/fci_abyss_collapse.py	2
-tools/client-ci/scenarios/fci_abyss_enter.py	3
-tools/client-ci/scenarios/fci_abyss_loot.py	2
-tools/client-ci/scenarios/fci_abyss_pair.py	2
-tools/client-ci/scenarios/fci_abyss_run.py	3
-tools/client-ci/scenarios/fci_abyss_suspect.py	2
-tools/client-ci/scenarios/fci_abyss_waves.py	2
-tools/client-ci/scenarios/fci_abyss_weather.py	2
-tools/client-ci/scenarios/fci_advanced_ammo.py	3
-tools/client-ci/scenarios/fci_ammo_count.py	3
-tools/client-ci/scenarios/fci_anchor_small.py	3
-tools/client-ci/scenarios/fci_ansiblex.py	3
-tools/client-ci/scenarios/fci_api_probe.py	3
-tools/client-ci/scenarios/fci_autopilot.py	3
-tools/client-ci/scenarios/fci_battle.py	2
-tools/client-ci/scenarios/fci_belt_combat.py	4
-tools/client-ci/scenarios/fci_belt_rocks.py	3
-tools/client-ci/scenarios/fci_board_eject.py	3
-tools/client-ci/scenarios/fci_boosters.py	2
-tools/client-ci/scenarios/fci_bot_bubble.py	2
-tools/client-ci/scenarios/fci_bot_camp.py	2
-tools/client-ci/scenarios/fci_bot_dictor_camp.py	2
-tools/client-ci/scenarios/fci_bot_ess.py	2
-tools/client-ci/scenarios/fci_bot_ewar_aim.py	2
-tools/client-ci/scenarios/fci_bot_hic_camp.py	2
-tools/client-ci/scenarios/fci_bot_mjd.py	2
-tools/client-ci/scenarios/fci_bot_smartbomb.py	2
-tools/client-ci/scenarios/fci_bot_str_siege.py	2
-tools/client-ci/scenarios/fci_bounty.py	2
-tools/client-ci/scenarios/fci_bubble.py	3
-tools/client-ci/scenarios/fci_bump_pair.py	2
-tools/client-ci/scenarios/fci_bursts.py	4
-tools/client-ci/scenarios/fci_c6b.py	4
-tools/client-ci/scenarios/fci_calendar.py	2
-tools/client-ci/scenarios/fci_char_certs.py	2
-tools/client-ci/scenarios/fci_char_delete.py	3
-tools/client-ci/scenarios/fci_chat_channels.py	2
-tools/client-ci/scenarios/fci_chat_moderation.py	2
-tools/client-ci/scenarios/fci_chat_two.py	4
-tools/client-ci/scenarios/fci_cloak.py	3
-tools/client-ci/scenarios/fci_combat_site.py	4
-tools/client-ci/scenarios/fci_concord.py	4
-tools/client-ci/scenarios/fci_containers.py	4
-tools/client-ci/scenarios/fci_contracts.py	5
-tools/client-ci/scenarios/fci_corp_ads.py	2
-tools/client-ci/scenarios/fci_corp_alliance.py	5
-tools/client-ci/scenarios/fci_corp_assets.py	3
-tools/client-ci/scenarios/fci_corp_buy.py	4
-tools/client-ci/scenarios/fci_corp_transactions.py	3
-tools/client-ci/scenarios/fci_corp_votes.py	2
-tools/client-ci/scenarios/fci_cyno_inhibit.py	3
-tools/client-ci/scenarios/fci_cyno_jam.py	2
-tools/client-ci/scenarios/fci_cyno_jammer.py	3
-tools/client-ci/scenarios/fci_daily_goals.py	3
-tools/client-ci/scenarios/fci_dev_mode.py	3
-tools/client-ci/scenarios/fci_dividend.py	2
-tools/client-ci/scenarios/fci_doc_0.py	3
-tools/client-ci/scenarios/fci_doc_3.py	3
-tools/client-ci/scenarios/fci_doc_6.py	4
-tools/client-ci/scenarios/fci_dock_range.py	3
-tools/client-ci/scenarios/fci_doomsday.py	3
-tools/client-ci/scenarios/fci_doomsday_2.py	3
-tools/client-ci/scenarios/fci_drone_bay_damage.py	3
-tools/client-ci/scenarios/fci_drone_mining.py	4
-tools/client-ci/scenarios/fci_dynamic_info.py	2
-tools/client-ci/scenarios/fci_ecm_burst.py	2
-tools/client-ci/scenarios/fci_em_heraldry.py	2
-tools/client-ci/scenarios/fci_emblem.py	5
-tools/client-ci/scenarios/fci_engine_fix.py	3
-tools/client-ci/scenarios/fci_epic_arc.py	2
-tools/client-ci/scenarios/fci_ess_link.py	3
-tools/client-ci/scenarios/fci_ess_panel.py	3
-tools/client-ci/scenarios/fci_ewar.py	2
-tools/client-ci/scenarios/fci_ewar_2.py	4
-tools/client-ci/scenarios/fci_faction_police.py	2
-tools/client-ci/scenarios/fci_fighters.py	4
-tools/client-ci/scenarios/fci_fit_drag.py	2
-tools/client-ci/scenarios/fci_fit_refuse.py	3
-tools/client-ci/scenarios/fci_fitfix.py	3
-tools/client-ci/scenarios/fci_fleet_comp.py	4
-tools/client-ci/scenarios/fci_fleet_hangar.py	3
-tools/client-ci/scenarios/fci_fleet_lazy.py	2
-tools/client-ci/scenarios/fci_fleet_mission.py	4
-tools/client-ci/scenarios/fci_fleet_reconnect.py	2
-tools/client-ci/scenarios/fci_free_sp.py	3
-tools/client-ci/scenarios/fci_fw_capture.py	2
-tools/client-ci/scenarios/fci_fw_enlist.py	4
-tools/client-ci/scenarios/fci_fw_kill_lp.py	2
-tools/client-ci/scenarios/fci_fw_refuse.py	2
-tools/client-ci/scenarios/fci_gang_summon.py	3
-tools/client-ci/scenarios/fci_gaps2.py	4
-tools/client-ci/scenarios/fci_gas_cloud.py	3
-tools/client-ci/scenarios/fci_gate_cloak.py	3
-tools/client-ci/scenarios/fci_gate_jump.py	3
-tools/client-ci/scenarios/fci_geode_open.py	3
-tools/client-ci/scenarios/fci_gm_cwatch.py	4
-tools/client-ci/scenarios/fci_gm_missioncomplete.py	2
-tools/client-ci/scenarios/fci_gm_npcclear.py	2
-tools/client-ci/scenarios/fci_gm_pilot.py	2
-tools/client-ci/scenarios/fci_gun_cycle.py	3
-tools/client-ci/scenarios/fci_gw_notice_echo.py	4
-tools/client-ci/scenarios/fci_hacking_board.py	5
-tools/client-ci/scenarios/fci_hacking_can.py	4
-tools/client-ci/scenarios/fci_hic_script.py	3
-tools/client-ci/scenarios/fci_hud_new.py	2
-tools/client-ci/scenarios/fci_hunter_bot.py	2
-tools/client-ci/scenarios/fci_hypernet.py	3
-tools/client-ci/scenarios/fci_implants.py	4
-tools/client-ci/scenarios/fci_industry_job.py	3
-tools/client-ci/scenarios/fci_inject.py	3
-tools/client-ci/scenarios/fci_invention.py	2
-tools/client-ci/scenarios/fci_item_trader.py	2
-tools/client-ci/scenarios/fci_jump_drive.py	3
-tools/client-ci/scenarios/fci_jump_portal.py	2
-tools/client-ci/scenarios/fci_k_overheat.py	3
-tools/client-ci/scenarios/fci_landing_orbit.py	3
-tools/client-ci/scenarios/fci_logoff_space.py	4
-tools/client-ci/scenarios/fci_lpstore.py	4
-tools/client-ci/scenarios/fci_mail.py	2
-tools/client-ci/scenarios/fci_market_trade.py	2
-tools/client-ci/scenarios/fci_medals.py	2
-tools/client-ci/scenarios/fci_merc_den.py	3
-tools/client-ci/scenarios/fci_mine_crit.py	4
-tools/client-ci/scenarios/fci_mining_hold.py	4
-tools/client-ci/scenarios/fci_mission_dungeon.py	2
-tools/client-ci/scenarios/fci_mjd.py	3
-tools/client-ci/scenarios/fci_mn_d.py	4
-tools/client-ci/scenarios/fci_mobile_bubble.py	2
-tools/client-ci/scenarios/fci_moon_beacon.py	3
-tools/client-ci/scenarios/fci_motherlode.py	2
-tools/client-ci/scenarios/fci_mtu.py	3
-tools/client-ci/scenarios/fci_mutaplasmid.py	3
-tools/client-ci/scenarios/fci_mutaplasmid_fit.py	3
-tools/client-ci/scenarios/fci_mutated_drone.py	2
-tools/client-ci/scenarios/fci_needlejack.py	3
-tools/client-ci/scenarios/fci_needlejack_fleet.py	2
-tools/client-ci/scenarios/fci_nes_buy.py	5
-tools/client-ci/scenarios/fci_neut.py	2
-tools/client-ci/scenarios/fci_new_items.py	4
-tools/client-ci/scenarios/fci_notifications.py	4
-tools/client-ci/scenarios/fci_npc_rr_fx.py	3
-tools/client-ci/scenarios/fci_npc_siege.py	3
-tools/client-ci/scenarios/fci_npc_warpin.py	3
-tools/client-ci/scenarios/fci_pa10_coalesce.py	4
-tools/client-ci/scenarios/fci_pi_colony.py	4
-tools/client-ci/scenarios/fci_plex_vault.py	4
-tools/client-ci/scenarios/fci_pochven_filament.py	2
-tools/client-ci/scenarios/fci_pochven_gate.py	2
-tools/client-ci/scenarios/fci_pochven_loot.py	3
-tools/client-ci/scenarios/fci_pochven_rules.py	2
-tools/client-ci/scenarios/fci_pochven_sites.py	2
-tools/client-ci/scenarios/fci_pos_answers.py	2
-tools/client-ci/scenarios/fci_probe_site.py	6
-tools/client-ci/scenarios/fci_prog_mine.py	3
-tools/client-ci/scenarios/fci_prog_null.py	3
-tools/client-ci/scenarios/fci_prog_pve.py	3
-tools/client-ci/scenarios/fci_prog_pve2.py	3
-tools/client-ci/scenarios/fci_proving_queue.py	3
-tools/client-ci/scenarios/fci_pvp_concord.py	3
-tools/client-ci/scenarios/fci_pvp_kill.py	4
-tools/client-ci/scenarios/fci_r_rel_3.py	4
-tools/client-ci/scenarios/fci_r_rel_4.py	4
-tools/client-ci/scenarios/fci_r_rel_5.py	4
-tools/client-ci/scenarios/fci_rat_point.py	3
-tools/client-ci/scenarios/fci_reactions.py	2
-tools/client-ci/scenarios/fci_reads.py	4
-tools/client-ci/scenarios/fci_rel_fix.py	4
-tools/client-ci/scenarios/fci_reprocess.py	4
-tools/client-ci/scenarios/fci_review_fix.py	4
-tools/client-ci/scenarios/fci_rig_set.py	2
-tools/client-ci/scenarios/fci_school_books.py	4
-tools/client-ci/scenarios/fci_script_empty.py	2
-tools/client-ci/scenarios/fci_secstatus.py	5
-tools/client-ci/scenarios/fci_sentry.py	2
-tools/client-ci/scenarios/fci_settings_bulletins.py	4
-tools/client-ci/scenarios/fci_share_links.py	2
-tools/client-ci/scenarios/fci_ship_sheet.py	4
-tools/client-ci/scenarios/fci_ship_tree.py	3
-tools/client-ci/scenarios/fci_siege.py	3
-tools/client-ci/scenarios/fci_skill_queue.py	3
-tools/client-ci/scenarios/fci_skillgate.py	2
-tools/client-ci/scenarios/fci_skin_apply.py	5
-tools/client-ci/scenarios/fci_skin_viewer.py	5
-tools/client-ci/scenarios/fci_skyhook.py	3
-tools/client-ci/scenarios/fci_skyhook_raid.py	2
-tools/client-ci/scenarios/fci_smartbomb.py	2
-tools/client-ci/scenarios/fci_social_answers.py	2
-tools/client-ci/scenarios/fci_sov.py	4
-tools/client-ci/scenarios/fci_sov_campaign.py	3
-tools/client-ci/scenarios/fci_sov_fuel.py	2
-tools/client-ci/scenarios/fci_sov_panel.py	5
-tools/client-ci/scenarios/fci_sov_resources.py	2
-tools/client-ci/scenarios/fci_sov_stubs.py	2
-tools/client-ci/scenarios/fci_sov_upgrade.py	2
-tools/client-ci/scenarios/fci_sov_workforce.py	2
-tools/client-ci/scenarios/fci_stolen_hull.py	2
-tools/client-ci/scenarios/fci_summon_cloaked.py	3
-tools/client-ci/scenarios/fci_sun.py	3
-tools/client-ci/scenarios/fci_sys4.py	4
-tools/client-ci/scenarios/fci_t3_d.py	3
-tools/client-ci/scenarios/fci_t3_e.py	3
-tools/client-ci/scenarios/fci_t3_salvage.py	5
-tools/client-ci/scenarios/fci_tackle.py	2
-tools/client-ci/scenarios/fci_tow_conquest_dormant.py	2
-tools/client-ci/scenarios/fci_trig_player.py	3
-tools/client-ci/scenarios/fci_trig_spool.py	3
-tools/client-ci/scenarios/fci_upwell_anchor.py	3
-tools/client-ci/scenarios/fci_upwell_clone.py	3
-tools/client-ci/scenarios/fci_upwell_control.py	3
-tools/client-ci/scenarios/fci_upwell_dock.py	3
-tools/client-ci/scenarios/fci_upwell_insure.py	3
-tools/client-ci/scenarios/fci_upwell_kill.py	3
-tools/client-ci/scenarios/fci_upwell_profiles.py	3
-tools/client-ci/scenarios/fci_upwell_relog.py	3
-tools/client-ci/scenarios/fci_upwell_repair.py	3
-tools/client-ci/scenarios/fci_upwell_revive.py	3
-tools/client-ci/scenarios/fci_upwell_safety.py	3
-tools/client-ci/scenarios/fci_upwell_shoot.py	3
-tools/client-ci/scenarios/fci_upwell_timers.py	3
-tools/client-ci/scenarios/fci_upwell_view.py	3
-tools/client-ci/scenarios/fci_war.py	2
-tools/client-ci/scenarios/fci_wh_effects.py	3
-tools/client-ci/scenarios/fci_wh_mass.py	3
-tools/client-ci/scenarios/fci_wh_range.py	3
-tools/client-ci/scenarios/fci_wing_follow.py	4
-tools/client-ci/scenarios/fci_wing_offgrid.py	3
-tools/client-ci/scenarios/fci_wing_tags.py	4
-tools/client-ci/scenarios/fci_wing_words.py	4
-tools/client-ci/scenarios/fci_wire_calls.py	2
-tools/client-ci/scenarios/fci_world_training.py	3
-tools/client-ci/scenarios/fci_x_econreport.py	3
-tools/client-ci/scenarios/fci_x_econtape.py	3
-tools/client-ci/scenarios/fci_x_ice.py	3
-tools/client-ci/scenarios/fci_x_rig.py	3
-tools/client-ci/scenarios/fci_y_escal.py	4
-tools/client-ci/scenarios/fci_y_wh.py	3
-tools/client-ci/scenarios/hud_health.py	4
-tools/client-ci/scenarios/lobby_guests.py	11
-tools/client-ci/scenarios/park_census.py	14
-tools/client-ci/scenarios/throttle_and_warp.py	9
-tools/client-ci/scenarios/undock_distance.py	5
-tools/client-ci/scenarios/warp_blob.py	3
-tools/client-ci/sync-prelude.py	1
-tools/client-headless.sh	4
-tools/client-overrides/destiny_dump.py	2
-tools/client-patch-manifest.py	1
-tools/client-prepare.py	2
-tools/client2-setup.sh	2
-tools/content.py	1
-tools/content_agents.py	1
-tools/content_dbuffs.py	1
-tools/content_econ.py	2
-tools/content_explore.py	1
-tools/content_fighters.py	1
-tools/content_lp.py	1
-tools/content_npc.py	1
-tools/content_salvage.py	1
-tools/content_store.py	1
-tools/content_types.py	1
-tools/dev-world.sh	3
-tools/dis.py	1
-tools/doc_lane_index.py	3
-tools/dogma.py	3
-tools/eve_patch.py	1
-tools/evejs-up.sh	2
-tools/extract_code.py	1
-tools/extract_string_table.py	1
-tools/find_iat_xrefs.py	1
-tools/find_str_xref.py	1
-tools/fsd.py	7
-tools/fsd_dump.py	2
-tools/gate.sh	3
-tools/jail-client.sh	1
-tools/jail-forward.py	2
-tools/jail-rootless.sh	2
-tools/jail-setup.sh	1
-tools/land.sh	2
-tools/loctable.py	1
-tools/login-lib.sh	1
-tools/nightly.sh	1
-tools/pe_functions.py	1
-tools/re/warp_curve.py	1
-tools/resolve_vas.py	1
-tools/run-client.sh	2
-tools/scan_bound.py	1
-tools/scan_calls.py	1
-tools/scan_calls_emit.py	1
-tools/scan_calls_served.py	1
-tools/serve.sh	1
-tools/soak.sh	2
-tools/society-report.py	2
-tools/strings_of.py	1
-tools/test_account_tools.py	1
-tools/test_celestials.py	1
-tools/test_census_scenarios.py	1
-tools/test_content.py	1
-tools/test_content_agents.py	1
-tools/test_content_dbuffs.py	1
-tools/test_content_dungeons.py	1
-tools/test_content_econ.py	1
-tools/test_content_explore.py	1
-tools/test_content_fighters.py	1
-tools/test_content_lp.py	1
-tools/test_content_npc.py	1
-tools/test_content_npc_regions.py	1
-tools/test_content_salvage.py	1
-tools/test_content_store.py	1
-tools/test_content_types.py	1
-tools/test_docs.py	14
-tools/test_fci_scenarios.py	2
-tools/test_fsd_generic.py	1
-tools/test_gate.py	1
-tools/test_typedata.py	1
-tools/tunnel.sh	1
-tools/typedata.py	1
-tools/up.sh	6
+# file<TAB>cited path<TAB>count: frozen comment citations of withheld docs paths (tools/export_refs.py)
+server/crates/eve-bot/src/bin/eve-bot.rs	docs/archive/plan-bots.md	1
+server/crates/eve-bot/src/bin/eve-bot.rs	docs/lanes/bots.md	1
+server/crates/eve-bot/src/bin/eve-bots.rs	docs/lanes/bots.md	2
+server/crates/eve-bot/src/brain.rs	docs/lanes/bots.md	5
+server/crates/eve-bot/src/bubble.rs	docs/lanes/bubble.md	1
+server/crates/eve-bot/src/builder.rs	docs/content/C5-economy.md	1
+server/crates/eve-bot/src/builder.rs	docs/lanes/cp47.md	1
+server/crates/eve-bot/src/builder.rs	docs/lanes/e10.md	1
+server/crates/eve-bot/src/builder.rs	docs/lanes/e9.md	1
+server/crates/eve-bot/src/builder.rs	docs/lanes/prog-null.md	1
+server/crates/eve-bot/src/builder.rs	docs/lanes/soc-b7.md	1
+server/crates/eve-bot/src/burst.rs	docs/lanes/k-boost.md	1
+server/crates/eve-bot/src/capital.rs	docs/lanes/cap-l.md	1
+server/crates/eve-bot/src/career.rs	docs/lanes/gb-fix.md	1
+server/crates/eve-bot/src/career.rs	docs/lanes/soc-b6.md	1
+server/crates/eve-bot/src/cofound.rs	docs/lanes/bot-tune.md	1
+server/crates/eve-bot/src/contracts.rs	docs/lanes/x-contract.md	1
+server/crates/eve-bot/src/corp_ops.rs	docs/lanes/bot-corp.md	1
+server/crates/eve-bot/src/corpmind.rs	docs/lanes/corp.md	4
+server/crates/eve-bot/src/corpmind.rs	docs/lanes/soc-c1.md	1
+server/crates/eve-bot/src/doctrine_assign.rs	docs/lanes/bp-camp.md	1
+server/crates/eve-bot/src/doctrine_exchange.rs	docs/lanes/engine-fix.md	1
+server/crates/eve-bot/src/doctrine_stock.rs	docs/lanes/doc-6.md	1
+server/crates/eve-bot/src/driver.rs	docs/lanes/bots.md	1
+server/crates/eve-bot/src/driver.rs	docs/lanes/damage-death.md	1
+server/crates/eve-bot/src/escort.rs	docs/lanes/bots.md	1
+server/crates/eve-bot/src/escort.rs	docs/lanes/cp46.md	1
+server/crates/eve-bot/src/escort.rs	docs/lanes/modules.md	1
+server/crates/eve-bot/src/escort_board.rs	docs/lanes/l7b.md	1
+server/crates/eve-bot/src/explore_roam.rs	docs/lanes/y-roam.md	1
+server/crates/eve-bot/src/fleet.rs	docs/lanes/fleet.md	1
+server/crates/eve-bot/src/fleet.rs	docs/lanes/soc-c7.md	1
+server/crates/eve-bot/src/foreman.rs	docs/lanes/prog-mine.md	2
+server/crates/eve-bot/src/gas_price.rs	docs/lanes/t3-supply.md	1
+server/crates/eve-bot/src/gm.rs	docs/lanes/bots.md	1
+server/crates/eve-bot/src/hacker.rs	docs/lanes	1
+server/crates/eve-bot/src/hacker.rs	docs/lanes/soc-b7.md	1
+server/crates/eve-bot/src/hacker.rs	docs/lanes/t3-salvage.md	1
+server/crates/eve-bot/src/hauler.rs	docs/lanes/cap-l.md	1
+server/crates/eve-bot/src/hub_supply.rs	docs/lanes/d-hub.md	1
+server/crates/eve-bot/src/hulls.rs	docs/lanes/cp58b.md	1
+server/crates/eve-bot/src/hulls.rs	docs/lanes/ice-hull.md	1
+server/crates/eve-bot/src/hulls.rs	docs/lanes/prog-mine.md	1
+server/crates/eve-bot/src/hunt.rs	docs/content/R-TACKLE.md	1
+server/crates/eve-bot/src/insure.rs	docs/lanes/x-insure.md	1
+server/crates/eve-bot/src/lib.rs	docs/archive/plan-bots.md	1
+server/crates/eve-bot/src/lib.rs	docs/lanes/bots.md	7
+server/crates/eve-bot/src/lib.rs	docs/lanes/round2-spec.md	1
+server/crates/eve-bot/src/lib.rs	docs/port-tracker.md	1
+server/crates/eve-bot/src/logi.rs	docs/lanes/k-logi.md	1
+server/crates/eve-bot/src/mine_ladder.rs	docs/lanes	1
+server/crates/eve-bot/src/mine_ladder.rs	docs/lanes/prog-mine.md	1
+server/crates/eve-bot/src/overload.rs	docs/lanes/k-overheat.md	1
+server/crates/eve-bot/src/park.rs	docs/lanes/bots.md	2
+server/crates/eve-bot/src/pi.rs	docs/lanes/planet.md	2
+server/crates/eve-bot/src/pi_p3.rs	docs/lanes/x-pi3.md	1
+server/crates/eve-bot/src/probe.rs	docs/lanes/scan.md	3
+server/crates/eve-bot/src/reactor.rs	docs/lanes/mn-fg.md	1
+server/crates/eve-bot/src/rig.rs	docs/lanes/x-rig.md	1
+server/crates/eve-bot/src/roles.rs	docs/content/plan.md	1
+server/crates/eve-bot/src/salvage.rs	docs/lanes/x-salv.md	1
+server/crates/eve-bot/src/society.rs	docs/lanes/corp.md	1
+server/crates/eve-bot/src/society.rs	docs/lanes/soc-c1.md	1
+server/crates/eve-bot/src/sov_bot.rs	docs/lanes/sov-d5.md	1
+server/crates/eve-bot/src/supply_run.rs	docs/lanes/prog-null.md	1
+server/crates/eve-bot/src/t3.rs	docs/lanes/t3-e.md	1
+server/crates/eve-bot/src/t3.rs	docs/lanes/t3-h.md	1
+server/crates/eve-bot/src/tag_repair.rs	docs/lanes/sec-1b.md	1
+server/crates/eve-bot/src/trader.rs	docs/lanes/x-trade.md	1
+server/crates/eve-bot/src/verbs.rs	docs/lanes/bookmarks.md	2
+server/crates/eve-bot/src/verbs.rs	docs/lanes/bots.md	2
+server/crates/eve-bot/src/verbs.rs	docs/lanes/damage-death.md	1
+server/crates/eve-bot/src/verbs.rs	docs/lanes/inventory.md	3
+server/crates/eve-bot/src/verbs.rs	docs/lanes/market.md	2
+server/crates/eve-bot/src/verbs.rs	docs/lanes/modules.md	1
+server/crates/eve-bot/src/verbs.rs	docs/lanes/scan.md	3
+server/crates/eve-bot/src/war_bot.rs	docs/lanes/c8-a.md	1
+server/crates/eve-bot/src/wh_raid.rs	docs/lanes/t3-salvage.md	2
+server/crates/eve-bot/src/wing.rs	docs/lanes/fc-1.md	1
+server/crates/eve-bot/src/wing_fight.rs	docs/lanes/fc-2.md	1
+server/crates/eve-bot/tests/bots/alliance.rs	docs/lanes/soc-c1.md	1
+server/crates/eve-bot/tests/bots/bot_corp.rs	docs/lanes/bot-corp.md	1
+server/crates/eve-bot/tests/bots/corp_buy.rs	docs/lanes/corp-buy.md	1
+server/crates/eve-bot/tests/bots/corp_ceo.rs	docs/lanes/soc-c3.md	1
+server/crates/eve-bot/tests/bots/corp_office.rs	docs/lanes/corp-o.md	1
+server/crates/eve-bot/tests/bots/corp_wallet.rs	docs/lanes/corp-w.md	1
+server/crates/eve-bot/tests/bots/drift.rs	docs/lanes/fx6.md	1
+server/crates/eve-bot/tests/bots/handshake.rs	docs/archive/plan-bots.md	1
+server/crates/eve-bot/tests/bots/handshake.rs	docs/port-tracker.md	5
+server/crates/eve-bot/tests/bots/jump.rs	docs/lanes/stargates.md	1
+server/crates/eve-bot/tests/bots/mail.rs	docs/lanes/mail-1.md	1
+server/crates/eve-bot/tests/bots/main.rs	docs/review/V4-testing.md	1
+server/crates/eve-bot/tests/bots/mining.rs	docs/lanes/bots.md	4
+server/crates/eve-bot/tests/bots/missions.rs	docs/lanes/cp34.md	1
+server/crates/eve-bot/tests/bots/npc.rs	docs/lanes/npc.md	1
+server/crates/eve-bot/tests/bots/verbs.rs	docs/lanes/bots.md	2
+server/crates/eve-bot/tests/bots/verbs.rs	docs/lanes/inventory.md	1
+server/crates/eve-bot/tests/bots/war.rs	docs/lanes/c8-a.md	1
+server/crates/eve-inflate/src/lib.rs	docs/review/V2-wire.md	1
+server/crates/eve-marshal/src/build.rs	docs/reference/login-path.md	1
+server/crates/eve-marshal/src/constants.rs	docs/archive/wire-format.md	1
+server/crates/eve-marshal/src/constants.rs	docs/reference/login-path.md	1
+server/crates/eve-marshal/src/tag.rs	docs/archive/marshal-tags.md	2
+server/crates/eve-marshal/src/tag.rs	docs/archive/wire-format.md	1
+server/crates/eve-marshal/src/value.rs	docs/archive/marshal-tags.md	3
+server/crates/eve-marshal/src/value.rs	docs/archive/wire-format.md	2
+server/crates/eve-marshal/src/value.rs	docs/lanes/ip12.md	3
+server/crates/eve-marshal/src/value.rs	docs/review/V2-wire.md	2
+server/crates/eve-marshal/src/value.rs	docs/review/plan-review.md	1
+server/crates/eve-mod-econ/src/lib.rs	docs/lanes/pr-seam-1.md	1
+server/crates/eve-mod-world/src/lib.rs	docs/lanes/pr-seam-1.md	1
+server/crates/eve-offline-server/src/main.rs	docs/lanes/pr-seam-1.md	1
+server/crates/eve-probe/src/crypto.rs	docs/reference/login-path.md	3
+server/crates/eve-probe/src/lib.rs	docs/archive/plan-client-ci.md	1
+server/crates/eve-probe/src/session.rs	docs/reference/login-path.md	3
+server/crates/eve-proto/src/call.rs	docs/review/V2-wire.md	1
+server/crates/eve-proto/src/lib.rs	docs/archive/wire-format.md	2
+server/crates/eve-rowset/src/cfg.rs	docs/reference/login-path.md	2
+server/crates/eve-rowset/src/row.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/account_book.rs	docs/content/plan.md	1
+server/crates/eve-server/src/account_book.rs	docs/lanes/acc2.md	1
+server/crates/eve-server/src/account_book.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/accounts.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/accounts.rs	docs/review/rulings.md	1
+server/crates/eve-server/src/alliance.rs	docs/lanes/soc-c1.md	1
+server/crates/eve-server/src/ancient_rate.rs	docs/lanes/t3-supply.md	1
+server/crates/eve-server/src/asteroid.rs	docs/lanes/asteroids.md	2
+server/crates/eve-server/src/asteroid.rs	docs/review/V3-runtime.md	1
+server/crates/eve-server/src/authored.rs	docs/content/plan.md	1
+server/crates/eve-server/src/belts.rs	docs/content/plan.md	2
+server/crates/eve-server/src/belts.rs	docs/lanes/cp30.md	1
+server/crates/eve-server/src/bin/evecap.rs	docs/archive/roadmap.md	1
+server/crates/eve-server/src/bot_control.rs	docs/lanes/bot-ctl.md	1
+server/crates/eve-server/src/bulletins.rs	docs/lanes/small-social.md	1
+server/crates/eve-server/src/capture.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/celestial.rs	docs/content/plan.md	1
+server/crates/eve-server/src/celestial.rs	docs/lanes/stargates.md	2
+server/crates/eve-server/src/celestial.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/char_settings.rs	docs/lanes/small-social.md	1
+server/crates/eve-server/src/chat.rs	docs/lanes/chat.md	2
+server/crates/eve-server/src/cli.rs	docs/lanes/chat.md	1
+server/crates/eve-server/src/cli.rs	docs/lanes/clock.md	1
+server/crates/eve-server/src/cli.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/clock.rs	docs/lanes/clock.md	1
+server/crates/eve-server/src/clock_probe.rs	docs/lanes/fight-stall.md	1
+server/crates/eve-server/src/clones.rs	docs/lanes/clones.md	2
+server/crates/eve-server/src/clones.rs	docs/lanes/docked.md	2
+server/crates/eve-server/src/combat.rs	docs/lanes/addballs.md	1
+server/crates/eve-server/src/combat.rs	docs/lanes/clones.md	1
+server/crates/eve-server/src/combat.rs	docs/lanes/damage-death.md	2
+server/crates/eve-server/src/combat.rs	docs/lanes/fitting.md	2
+server/crates/eve-server/src/combat.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/combat.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/combat_site.rs	docs/archive/plan-deep-queue.md	1
+server/crates/eve-server/src/combat_site.rs	docs/lanes/y-combat.md	1
+server/crates/eve-server/src/command_nodes.rs	docs/lanes/sov-d3b.md	1
+server/crates/eve-server/src/compression.rs	docs/lanes/prog-mine.md	1
+server/crates/eve-server/src/concord.rs	docs/lanes/concord-1a.md	1
+server/crates/eve-server/src/conn.rs	docs/archive/destiny-and-the-ballpark.md	1
+server/crates/eve-server/src/conn.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/conn.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/contact_labels.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/contacts.rs	docs/lanes/contacts.md	1
+server/crates/eve-server/src/content.rs	docs/content/plan.md	2
+server/crates/eve-server/src/content_tables.rs	docs/content/plan.md	1
+server/crates/eve-server/src/contracts.rs	docs/lanes/contracts.md	1
+server/crates/eve-server/src/corp_office.rs	docs/evejs/review/static-data.md	1
+server/crates/eve-server/src/corp_office.rs	docs/lanes/corp-o.md	1
+server/crates/eve-server/src/corp_roles.rs	docs/lanes/soc-c3.md	1
+server/crates/eve-server/src/corp_standings.rs	docs/lanes/corp-o.md	1
+server/crates/eve-server/src/corp_titles.rs	docs/lanes/corp-t.md	1
+server/crates/eve-server/src/corp_wallet.rs	docs/lanes/corp-w.md	1
+server/crates/eve-server/src/crimewatch.rs	docs/lanes/crimewatch.md	1
+server/crates/eve-server/src/crimewatch.rs	docs/lanes/cw-1.md	1
+server/crates/eve-server/src/crimewatch/cw1_tests.rs	docs/lanes/sec-1.md	1
+server/crates/eve-server/src/crimewatch/killright.rs	docs/lanes/cw-1.md	1
+server/crates/eve-server/src/cyno.rs	docs/lanes/cap-d.md	1
+server/crates/eve-server/src/damage.rs	docs/lanes/damage-death.md	2
+server/crates/eve-server/src/damage.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/dbuff.rs	docs/content/README.md	1
+server/crates/eve-server/src/dbuff.rs	docs/lanes/k-boost.md	1
+server/crates/eve-server/src/dbuff_data.rs	docs/lanes/k-boost.md	1
+server/crates/eve-server/src/delta.rs	docs/content/C7-liveness.md	1
+server/crates/eve-server/src/delta.rs	docs/content/plan.md	1
+server/crates/eve-server/src/delta_kinds.rs	docs/content/plan.md	1
+server/crates/eve-server/src/delta_kinds.rs	docs/review/V1-architecture.md	1
+server/crates/eve-server/src/destiny.rs	docs/evejs/inventory/space-destiny.md	1
+server/crates/eve-server/src/destiny.rs	docs/lanes/asteroids.md	1
+server/crates/eve-server/src/destiny.rs	docs/lanes/damage-death.md	1
+server/crates/eve-server/src/destiny.rs	docs/lanes/grid-research.md	2
+server/crates/eve-server/src/destiny.rs	docs/lanes/hull-numbers.md	2
+server/crates/eve-server/src/destiny.rs	docs/lanes/movement.md	4
+server/crates/eve-server/src/destiny.rs	docs/lanes/npc.md	2
+server/crates/eve-server/src/destiny.rs	docs/lanes/planet.md	2
+server/crates/eve-server/src/destiny.rs	docs/lanes/round2-spec.md	3
+server/crates/eve-server/src/destiny.rs	docs/lanes/stargates.md	3
+server/crates/eve-server/src/destiny.rs	docs/lanes/undock-points.md	1
+server/crates/eve-server/src/destiny.rs	docs/port-tracker.md	3
+server/crates/eve-server/src/destiny/encode.rs	docs/archive/destiny-and-the-ballpark.md	1
+server/crates/eve-server/src/destiny/encode.rs	docs/lanes	1
+server/crates/eve-server/src/destiny/encode.rs	docs/lanes/capture-undock.md	1
+server/crates/eve-server/src/destiny/encode.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/destiny/encode.rs	docs/lanes/round2-spec.md	1
+server/crates/eve-server/src/destiny/encode.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/destiny/hull.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/destiny/push.rs	docs/lanes/fleet.md	1
+server/crates/eve-server/src/destiny/push.rs	docs/lanes/grid-research.md	2
+server/crates/eve-server/src/destiny/push.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/destiny/warp.rs	docs/lanes/movement.md	3
+server/crates/eve-server/src/dispatch.rs	docs/lanes/README.md	1
+server/crates/eve-server/src/dispatch.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/dispatch.rs	docs/lanes/bots.md	1
+server/crates/eve-server/src/dispatch.rs	docs/lanes/notify-spec.md	1
+server/crates/eve-server/src/dispatch.rs	docs/port-tracker.md	4
+server/crates/eve-server/src/dispatch.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/docking.rs	docs/content/plan.md	1
+server/crates/eve-server/src/docking.rs	docs/lanes/undock-points.md	2
+server/crates/eve-server/src/dogma.rs	docs/lanes/dogma-engine.md	2
+server/crates/eve-server/src/drones.rs	docs/lanes/drones.md	2
+server/crates/eve-server/src/dungeon.rs	docs/content/plan.md	1
+server/crates/eve-server/src/dungeon.rs	docs/lanes/agents-missions.md	1
+server/crates/eve-server/src/dungeon_data.rs	docs/content/plan.md	2
+server/crates/eve-server/src/dungeon_tracking.rs	docs/content/C2-live-surface.md	1
+server/crates/eve-server/src/dungeon_tracking.rs	docs/content/plan.md	1
+server/crates/eve-server/src/dungeon_tracking.rs	docs/lanes/cp36.md	1
+server/crates/eve-server/src/econ_agents.rs	docs/lanes/e1-settle.md	1
+server/crates/eve-server/src/econ_dbs.rs	docs/content/C5-economy.md	1
+server/crates/eve-server/src/econ_dbs.rs	docs/lanes/cp38.md	1
+server/crates/eve-server/src/econ_exchange.rs	docs/content/plan.md	1
+server/crates/eve-server/src/econ_exchange.rs	docs/lanes/cp35.md	1
+server/crates/eve-server/src/econ_exchange.rs	docs/lanes/e5.md	1
+server/crates/eve-server/src/econ_exchange.rs	docs/lanes/e5b.md	1
+server/crates/eve-server/src/econ_exchange.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/econ_ledger.rs	docs/content/C5-economy.md	1
+server/crates/eve-server/src/econ_ledger.rs	docs/lanes/cp43.md	1
+server/crates/eve-server/src/econ_prices.rs	docs/content/plan.md	1
+server/crates/eve-server/src/entosis.rs	docs/lanes/sov-d3a.md	1
+server/crates/eve-server/src/epic_arc.rs	docs/content/plan.md	1
+server/crates/eve-server/src/escalation.rs	docs/lanes/y-escal.md	1
+server/crates/eve-server/src/ewar.rs	docs/content/README.md	1
+server/crates/eve-server/src/ewar.rs	docs/lanes/ewar-2bc.md	1
+server/crates/eve-server/src/ewar.rs	docs/lanes/ewar-2e.md	1
+server/crates/eve-server/src/ewar.rs	docs/lanes/k-ewar.md	1
+server/crates/eve-server/src/facwar.rs	docs/content/R-FW.md	1
+server/crates/eve-server/src/facwar.rs	docs/content/plan.md	1
+server/crates/eve-server/src/facwar.rs	docs/lanes/cp53b.md	1
+server/crates/eve-server/src/fighters.rs	docs/lanes/ft-b.md	1
+server/crates/eve-server/src/fighters/abandon.rs	docs/lanes/ft-gh.md	1
+server/crates/eve-server/src/fighters/ability.rs	docs/lanes/ft-e.md	1
+server/crates/eve-server/src/fighters/effects.rs	docs/lanes/ft-e.md	1
+server/crates/eve-server/src/fighters/fixture.rs	docs/lanes/ft-gh.md	1
+server/crates/eve-server/src/fighters/skills.rs	docs/lanes/ft-gh.md	1
+server/crates/eve-server/src/fighters/strike.rs	docs/lanes/ft-gh.md	1
+server/crates/eve-server/src/fighters_data.rs	docs/lanes/ft-a.md	1
+server/crates/eve-server/src/fitting.rs	docs/lanes/docked.md	2
+server/crates/eve-server/src/fitting.rs	docs/lanes/fitting.md	2
+server/crates/eve-server/src/fitting.rs	docs/lanes/inventory.md	1
+server/crates/eve-server/src/fitting_store.rs	docs/lanes/fitting-market.md	1
+server/crates/eve-server/src/fleet_broadcast.rs	docs/lanes/fleet.md	1
+server/crates/eve-server/src/fleet_broadcast.rs	docs/lanes/soc-c7.md	1
+server/crates/eve-server/src/fleet_finder.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/fleet_warp.rs	docs/lanes/soc-c7.md	1
+server/crates/eve-server/src/fw_lp.rs	docs/lanes/fu-fwlp.md	1
+server/crates/eve-server/src/game_clock.rs	docs/lanes/clock.md	1
+server/crates/eve-server/src/gateway.rs	docs/lanes/ui-lag.md	1
+server/crates/eve-server/src/gateway_auth.rs	docs/guides/remote-clients.md	1
+server/crates/eve-server/src/gateway_ext.rs	docs/lanes/gw-out.md	1
+server/crates/eve-server/src/gateway_out.rs	docs/lanes/gw-out.md	1
+server/crates/eve-server/src/global_config.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/grid.rs	docs/lanes/addballs.md	1
+server/crates/eve-server/src/grid.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/grid.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/grid/tests.rs	docs/lanes/addballs.md	1
+server/crates/eve-server/src/grid/tests.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/grid/tests.rs	docs/port-tracker.md	3
+server/crates/eve-server/src/group_contacts.rs	docs/lanes/soc-c2.md	1
+server/crates/eve-server/src/hacking.rs	docs/lanes/hk1.md	3
+server/crates/eve-server/src/hacking_loot.rs	docs/lanes/cap-loot.md	1
+server/crates/eve-server/src/handshake.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/handshake.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/industry.rs	docs/content/plan.md	1
+server/crates/eve-server/src/industry.rs	docs/evejs/evejs-surprises.md	1
+server/crates/eve-server/src/industry.rs	docs/lanes/industry.md	7
+server/crates/eve-server/src/industry.rs	docs/port-tracker.md	7
+server/crates/eve-server/src/industry/relic.rs	docs/guides/human-checks.md	1
+server/crates/eve-server/src/item.rs	docs/archive/roadmap.md	1
+server/crates/eve-server/src/item.rs	docs/lanes/fitting.md	5
+server/crates/eve-server/src/item_names.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/jettison.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/jump.rs	docs/lanes/docked.md	1
+server/crates/eve-server/src/jump.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/jump.rs	docs/lanes/stargates.md	4
+server/crates/eve-server/src/jump_drive.rs	docs/lanes/cap-e.md	2
+server/crates/eve-server/src/jump_fatigue.rs	docs/lanes/cap-f.md	1
+server/crates/eve-server/src/jump_portal.rs	docs/lanes/cap-g.md	1
+server/crates/eve-server/src/kill_hooks.rs	docs/review/V1-architecture.md	1
+server/crates/eve-server/src/kill_hooks.rs	docs/review/plan.md	1
+server/crates/eve-server/src/killmail.rs	docs/lanes	1
+server/crates/eve-server/src/killmail.rs	docs/lanes/soc-c6.md	1
+server/crates/eve-server/src/ledger.rs	docs/archive/architecture-sweep.md	1
+server/crates/eve-server/src/lib.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/live_status.rs	docs/content/plan.md	1
+server/crates/eve-server/src/live_status.rs	docs/lanes/ip7.md	1
+server/crates/eve-server/src/liveness.rs	docs/content/plan.md	1
+server/crates/eve-server/src/location_lint.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/loyalty.rs	docs/content/plan.md	1
+server/crates/eve-server/src/lp_transfer.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/mail.rs	docs/lanes/mail-1.md	1
+server/crates/eve-server/src/mining.rs	docs/lanes/mining-crits.md	3
+server/crates/eve-server/src/mining.rs	docs/lanes/mining.md	2
+server/crates/eve-server/src/mining.rs	docs/lanes/movement.md	1
+server/crates/eve-server/src/mining_hold.rs	docs/lanes/gaps-b.md	1
+server/crates/eve-server/src/missile_skills.rs	docs/lanes/k-mskill.md	1
+server/crates/eve-server/src/mission.rs	docs/content/plan.md	1
+server/crates/eve-server/src/mission.rs	docs/lanes/fleet-mission.md	1
+server/crates/eve-server/src/mission.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/mission_hooks.rs	docs/content/plan.md	1
+server/crates/eve-server/src/mission_pool.rs	docs/content/plan.md	1
+server/crates/eve-server/src/mission_rewards.rs	docs/content/plan.md	1
+server/crates/eve-server/src/mjd.rs	docs/lanes/mjd-mass.md	1
+server/crates/eve-server/src/model.rs	docs/archive/entering-the-game.md	1
+server/crates/eve-server/src/model.rs	docs/archive/plan-subsystems.md	1
+server/crates/eve-server/src/model.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/model.rs	docs/lanes/ci-trigger.md	1
+server/crates/eve-server/src/model.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/module.rs	docs/lanes/pr-seam-1.md	1
+server/crates/eve-server/src/modules.rs	docs/archive/plan-subsystems.md	1
+server/crates/eve-server/src/modules.rs	docs/lanes/docked.md	2
+server/crates/eve-server/src/modules.rs	docs/lanes/fitting.md	4
+server/crates/eve-server/src/modules.rs	docs/lanes/mining.md	1
+server/crates/eve-server/src/modules.rs	docs/lanes/modules.md	2
+server/crates/eve-server/src/moon.rs	docs/content/README.md	1
+server/crates/eve-server/src/moon.rs	docs/lanes/mn-b.md	1
+server/crates/eve-server/src/moon_belt.rs	docs/lanes/mn-b.md	1
+server/crates/eve-server/src/movement_guard.rs	docs/content/R-TACKLE.md	2
+server/crates/eve-server/src/movement_guard.rs	docs/content/plan.md	1
+server/crates/eve-server/src/notes.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/notifications.rs	docs/lanes/notif-1.md	1
+server/crates/eve-server/src/notify.rs	docs/archive/roadmap.md	1
+server/crates/eve-server/src/notify.rs	docs/lanes/README.md	1
+server/crates/eve-server/src/notify.rs	docs/lanes/fitting.md	1
+server/crates/eve-server/src/notify.rs	docs/lanes/fleet.md	1
+server/crates/eve-server/src/notify.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/notify.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/npc.rs	docs/content/plan.md	2
+server/crates/eve-server/src/npc.rs	docs/lanes/npc.md	5
+server/crates/eve-server/src/npc/bounty.rs	docs/content/plan.md	1
+server/crates/eve-server/src/npc/brain.rs	docs/content/plan.md	1
+server/crates/eve-server/src/npc/brain.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/npc/loot.rs	docs/content/plan.md	1
+server/crates/eve-server/src/npc_data.rs	docs/content/plan.md	1
+server/crates/eve-server/src/npc_ewar.rs	docs/content/R-TACKLE.md	1
+server/crates/eve-server/src/npc_ewar.rs	docs/content/README.md	1
+server/crates/eve-server/src/npc_gen.rs	docs/content/plan.md	1
+server/crates/eve-server/src/npc_gen.rs	docs/lanes/cp22.md	1
+server/crates/eve-server/src/orbit.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/overheat.rs	docs/content/README.md	1
+server/crates/eve-server/src/overheat.rs	docs/lanes/k-overheat.md	1
+server/crates/eve-server/src/planet.rs	docs/content/plan.md	1
+server/crates/eve-server/src/planet.rs	docs/evejs/inventory/industry-mining.md	1
+server/crates/eve-server/src/planet.rs	docs/lanes/planet.md	5
+server/crates/eve-server/src/planet.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/population.rs	docs/content/C3-population.md	1
+server/crates/eve-server/src/population.rs	docs/content/plan.md	1
+server/crates/eve-server/src/push.rs	docs/archive/destiny-and-the-ballpark.md	2
+server/crates/eve-server/src/push.rs	docs/archive/roadmap.md	1
+server/crates/eve-server/src/push.rs	docs/lanes/fleet.md	1
+server/crates/eve-server/src/push.rs	docs/port-tracker.md	4
+server/crates/eve-server/src/pycode.rs	docs/archive/plan-client-ci.md	4
+server/crates/eve-server/src/pycode.rs	docs/lanes/ci-trigger.md	2
+server/crates/eve-server/src/pycode.rs	docs/reference/login-path.md	2
+server/crates/eve-server/src/pyutil.rs	docs/archive/marshal-tags.md	1
+server/crates/eve-server/src/pyutil.rs	docs/content/C2-live-surface.md	1
+server/crates/eve-server/src/pyutil.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/reaction_market.rs	docs/lanes/mn-fg.md	1
+server/crates/eve-server/src/remote_rep.rs	docs/content/README.md	1
+server/crates/eve-server/src/remote_rep.rs	docs/lanes/k-logi.md	1
+server/crates/eve-server/src/reprocess.rs	docs/content/plan.md	2
+server/crates/eve-server/src/reprocess.rs	docs/lanes/cp12.md	1
+server/crates/eve-server/src/reprocess.rs	docs/lanes/reprocess.md	3
+server/crates/eve-server/src/reprocess.rs	docs/port-tracker.md	4
+server/crates/eve-server/src/rigs.rs	docs/lanes/fitting.md	1
+server/crates/eve-server/src/rigs.rs	docs/lanes/x-rig.md	1
+server/crates/eve-server/src/roles.rs	docs/archive/session-flow.md	1
+server/crates/eve-server/src/roles.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/rollover.rs	docs/content/C7-liveness.md	1
+server/crates/eve-server/src/rollover.rs	docs/content/plan.md	1
+server/crates/eve-server/src/rollover.rs	docs/lanes/cp25.md	2
+server/crates/eve-server/src/rollover_steps.rs	docs/content/plan.md	1
+server/crates/eve-server/src/rules.rs	docs/lanes/pr-seam-1.md	1
+server/crates/eve-server/src/salvage.rs	docs/lanes/x-salv.md	1
+server/crates/eve-server/src/scan.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/scan.rs	docs/lanes/scan.md	3
+server/crates/eve-server/src/scan_sources.rs	docs/content/plan.md	1
+server/crates/eve-server/src/sec_status.rs	docs/lanes/sec-1.md	4
+server/crates/eve-server/src/security_office.rs	docs/lanes/sec-1.md	1
+server/crates/eve-server/src/seed.rs	docs/content/C7-liveness.md	1
+server/crates/eve-server/src/seed.rs	docs/content/plan.md	1
+server/crates/eve-server/src/self_destruct.rs	docs/archive/plan-living-world.md	1
+server/crates/eve-server/src/sentry.rs	docs/lanes/nw-8.md	1
+server/crates/eve-server/src/server.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/server.rs	docs/lanes/ip12.md	1
+server/crates/eve-server/src/server.rs	docs/port-tracker.md	3
+server/crates/eve-server/src/server.rs	docs/review/V2-wire.md	2
+server/crates/eve-server/src/server.rs	docs/review/V6-security-ops.md	1
+server/crates/eve-server/src/server.rs	docs/review/plan-review.md	2
+server/crates/eve-server/src/service.rs	docs/archive/entering-the-game.md	2
+server/crates/eve-server/src/service.rs	docs/archive/plan-docked-subsystems.md	1
+server/crates/eve-server/src/service.rs	docs/content/plan.md	2
+server/crates/eve-server/src/service.rs	docs/lanes	1
+server/crates/eve-server/src/service.rs	docs/lanes/account-spec.md	2
+server/crates/eve-server/src/service.rs	docs/lanes/bots.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/clones.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/docked.md	2
+server/crates/eve-server/src/service.rs	docs/lanes/drones.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/fitting.md	2
+server/crates/eve-server/src/service.rs	docs/lanes/movement.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/planet.md	1
+server/crates/eve-server/src/service.rs	docs/lanes/stargates.md	1
+server/crates/eve-server/src/service.rs	docs/port-tracker.md	4
+server/crates/eve-server/src/service.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/service/agents.rs	docs/content/plan.md	2
+server/crates/eve-server/src/service/agents.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service/alliance.rs	docs/lanes/soc-c1.md	1
+server/crates/eve-server/src/service/base.rs	docs/archive/marshal-tags.md	1
+server/crates/eve-server/src/service/base.rs	docs/lanes/chat.md	2
+server/crates/eve-server/src/service/base.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/service/bounty.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/character.rs	docs/archive/plan-docked-subsystems.md	1
+server/crates/eve-server/src/service/corp.rs	docs/archive/entering-the-game.md	1
+server/crates/eve-server/src/service/corp.rs	docs/lanes/corp.md	1
+server/crates/eve-server/src/service/corp.rs	docs/lanes/session-and-binding.md	1
+server/crates/eve-server/src/service/corp.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/corp.rs	docs/lanes/world-corp.md	1
+server/crates/eve-server/src/service/corp_office.rs	docs/lanes/corp-o.md	1
+server/crates/eve-server/src/service/corp_wallet.rs	docs/lanes/corp-w.md	1
+server/crates/eve-server/src/service/cosmetics.rs	docs/archive/plan-docked-subsystems.md	1
+server/crates/eve-server/src/service/facwar.rs	docs/content/R-FW.md	1
+server/crates/eve-server/src/service/facwar.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/facwar.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service/facwar_mgr.rs	docs/content/R-FW.md	1
+server/crates/eve-server/src/service/facwar_mgr.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/fleet/tests.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/gaps2.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/service/gm.rs	docs/lanes/ip21.md	1
+server/crates/eve-server/src/service/gm.rs	docs/review/plan.md	1
+server/crates/eve-server/src/service/gm_econ.rs	docs/content/C5-economy.md	1
+server/crates/eve-server/src/service/gm_live.rs	docs/content/C7-liveness.md	1
+server/crates/eve-server/src/service/industry.rs	docs/archive/plan-docked-subsystems.md	1
+server/crates/eve-server/src/service/industry.rs	docs/lanes/docked.md	1
+server/crates/eve-server/src/service/industry.rs	docs/lanes/industry.md	5
+server/crates/eve-server/src/service/industry.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/service/insurance.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/insurance.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/inventory.rs	docs/archive/plan-docked-subsystems.md	2
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/corp-o.md	1
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/docked.md	6
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/drones.md	3
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/fitting.md	8
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/inventory.md	1
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/planet.md	1
+server/crates/eve-server/src/service/inventory.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/keeper.rs	docs/lanes/y-combat.md	1
+server/crates/eve-server/src/service/live_misc.rs	docs/content/C2-live-surface.md	1
+server/crates/eve-server/src/service/live_misc.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service/mail.rs	docs/lanes/mail-1.md	1
+server/crates/eve-server/src/service/market.rs	docs/archive/plan-docked-subsystems.md	1
+server/crates/eve-server/src/service/market.rs	docs/lanes/docked.md	2
+server/crates/eve-server/src/service/market.rs	docs/lanes/inventory.md	1
+server/crates/eve-server/src/service/market.rs	docs/lanes/market.md	2
+server/crates/eve-server/src/service/market.rs	docs/lanes/stale-system.md	2
+server/crates/eve-server/src/service/market.rs	docs/lanes/x-trade.md	1
+server/crates/eve-server/src/service/market/corp.rs	docs/lanes/corp-buy.md	1
+server/crates/eve-server/src/service/planet.rs	docs/lanes/planet.md	3
+server/crates/eve-server/src/service/planet.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/service/reprocess.rs	docs/lanes/docked.md	3
+server/crates/eve-server/src/service/reprocess.rs	docs/lanes/reprocess.md	3
+server/crates/eve-server/src/service/reprocess.rs	docs/lanes/scrap.md	1
+server/crates/eve-server/src/service/reprocess.rs	docs/lanes/standings.md	1
+server/crates/eve-server/src/service/reprocess.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/service/sites.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/sites.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service/social.rs	docs/lanes/chat-petitions.md	1
+server/crates/eve-server/src/service/social.rs	docs/lanes/lookup.md	2
+server/crates/eve-server/src/service/sov.rs	docs/lanes/sov-d1.md	1
+server/crates/eve-server/src/service/sov_hub.rs	docs/lanes/sov-d2.md	1
+server/crates/eve-server/src/service/space.rs	docs/content/R-TACKLE.md	1
+server/crates/eve-server/src/service/space.rs	docs/lanes/fx1.md	1
+server/crates/eve-server/src/service/space.rs	docs/lanes/movement.md	1
+server/crates/eve-server/src/service/space.rs	docs/lanes/scan.md	1
+server/crates/eve-server/src/service/space.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/service/tales.rs	docs/content/plan.md	1
+server/crates/eve-server/src/service/tales.rs	docs/lanes/breaker-sweep.md	1
+server/crates/eve-server/src/service/tests.rs	docs/archive/plan-subsystems.md	1
+server/crates/eve-server/src/service/tests.rs	docs/lanes/docked.md	1
+server/crates/eve-server/src/service/tests.rs	docs/lanes/session-and-binding.md	2
+server/crates/eve-server/src/service/tests.rs	docs/lanes/two-in-space.md	1
+server/crates/eve-server/src/service/tests.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/service/wallet.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/war.rs	docs/lanes/c8-a.md	1
+server/crates/eve-server/src/service/war.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/world.rs	docs/lanes/bookmarks.md	3
+server/crates/eve-server/src/service/world.rs	docs/lanes/docked.md	1
+server/crates/eve-server/src/service/world.rs	docs/lanes/lookup.md	1
+server/crates/eve-server/src/service/world.rs	docs/lanes/stale-system.md	1
+server/crates/eve-server/src/service/world.rs	docs/lanes/stargates.md	1
+server/crates/eve-server/src/session.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/session.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/session_hooks.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/session_hooks.rs	docs/review/plan.md	1
+server/crates/eve-server/src/share_links.rs	docs/lanes	1
+server/crates/eve-server/src/ship_clone.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/src/ship_config.rs	docs/lanes/cap-h.md	1
+server/crates/eve-server/src/ship_scan.rs	docs/lanes/ewar-2d.md	1
+server/crates/eve-server/src/signal_tracker.rs	docs/content/plan.md	1
+server/crates/eve-server/src/site.rs	docs/content/C3-population.md	1
+server/crates/eve-server/src/site.rs	docs/content/plan.md	1
+server/crates/eve-server/src/site.rs	docs/content/rulings.md	1
+server/crates/eve-server/src/site.rs	docs/lanes/cp28a.md	1
+server/crates/eve-server/src/site_spawn.rs	docs/content/C3-population.md	1
+server/crates/eve-server/src/site_spawn.rs	docs/content/plan.md	1
+server/crates/eve-server/src/site_spawn.rs	docs/lanes/cp28b.md	1
+server/crates/eve-server/src/skill.rs	docs/lanes/industry.md	1
+server/crates/eve-server/src/skill.rs	docs/lanes/skill-training.md	1
+server/crates/eve-server/src/skill_queue.rs	docs/lanes/skill-training.md	1
+server/crates/eve-server/src/slash.rs	docs/content/plan.md	1
+server/crates/eve-server/src/slash.rs	docs/lanes/grid-research.md	1
+server/crates/eve-server/src/slash.rs	docs/lanes/movement.md	1
+server/crates/eve-server/src/slim_extra.rs	docs/content/plan.md	1
+server/crates/eve-server/src/sov.rs	docs/lanes/sov-d1.md	1
+server/crates/eve-server/src/sov_campaign.rs	docs/lanes/sov-d3a.md	1
+server/crates/eve-server/src/sov_hub.rs	docs/lanes/sov-d2.md	1
+server/crates/eve-server/src/sov_index.rs	docs/lanes/sov-d4.md	1
+server/crates/eve-server/src/space_state.rs	docs/lanes/fx6.md	1
+server/crates/eve-server/src/space_state.rs	docs/lanes/fx9.md	2
+server/crates/eve-server/src/space_state.rs	docs/lanes/movement.md	5
+server/crates/eve-server/src/space_state.rs	docs/port-tracker.md	8
+server/crates/eve-server/src/stance.rs	docs/lanes/t3-e.md	1
+server/crates/eve-server/src/standings.rs	docs/lanes/standings.md	1
+server/crates/eve-server/src/store.rs	docs/content/plan.md	1
+server/crates/eve-server/src/store.rs	docs/lanes/account-spec.md	1
+server/crates/eve-server/src/store.rs	docs/lanes/perf-save.md	1
+server/crates/eve-server/src/store.rs	docs/port-tracker.md	2
+server/crates/eve-server/src/storyline.rs	docs/content/plan.md	1
+server/crates/eve-server/src/tackle.rs	docs/content/R-TACKLE.md	1
+server/crates/eve-server/src/tackle.rs	docs/content/README.md	1
+server/crates/eve-server/src/tales.rs	docs/content/C2-live-surface.md	1
+server/crates/eve-server/src/tales.rs	docs/content/plan.md	1
+server/crates/eve-server/src/targeting.rs	docs/lanes/asteroids.md	2
+server/crates/eve-server/src/targeting.rs	docs/lanes/bots.md	1
+server/crates/eve-server/src/targeting.rs	docs/port-tracker.md	1
+server/crates/eve-server/src/test_clock.rs	docs/plans	1
+server/crates/eve-server/src/tick.rs	docs/content/plan.md	1
+server/crates/eve-server/src/tick.rs	docs/lanes/npc.md	1
+server/crates/eve-server/src/tick_budget.rs	docs/lanes/tick-1.md	1
+server/crates/eve-server/src/typedata.rs	docs/lanes/typedata.md	1
+server/crates/eve-server/src/war.rs	docs/lanes/c8-a.md	1
+server/crates/eve-server/src/war_deal.rs	docs/lanes/c8-a.md	1
+server/crates/eve-server/src/war_notice.rs	docs/lanes/c8-a.md	1
+server/crates/eve-server/src/war_stats.rs	docs/lanes/c8-a.md	1
+server/crates/eve-server/src/warp_subject.rs	docs/content/plan.md	1
+server/crates/eve-server/src/weapon_bank.rs	docs/content/README.md	1
+server/crates/eve-server/src/weapon_bank.rs	docs/lanes/k-overheat.md	1
+server/crates/eve-server/src/wire.rs	docs/archive/marshal-tags.md	1
+server/crates/eve-server/src/wire.rs	docs/reference/login-path.md	1
+server/crates/eve-server/src/wire.rs	docs/review/V2-wire.md	3
+server/crates/eve-server/src/world_ext.rs	docs/content/plan.md	1
+server/crates/eve-server/src/wormhole.rs	docs/content/R-WH.md	1
+server/crates/eve-server/src/wormhole.rs	docs/content/plan.md	1
+server/crates/eve-server/src/wormhole.rs	docs/lanes/cp54a.md	1
+server/crates/eve-server/src/wormhole_jump.rs	docs/content/R-WH.md	1
+server/crates/eve-server/src/wormhole_jump.rs	docs/content/plan.md	1
+server/crates/eve-server/src/wormhole_jump.rs	docs/lanes/cp54b.md	1
+server/crates/eve-server/src/wormhole_sites.rs	docs/lanes/t3-supply.md	1
+server/crates/eve-server/src/wormhole_sites.rs	docs/lanes/y-wh.md	1
+server/crates/eve-server/tests/arm_fuzz.rs	docs/review/V2-wire.md	1
+server/crates/eve-server/tests/corp_standings_socket.rs	docs/lanes/corp-s.md	1
+server/crates/eve-server/tests/cyno_socket.rs	docs/lanes/cap-d.md	1
+server/crates/eve-server/tests/econ_report_socket.rs	docs/lanes/fe-measure.md	1
+server/crates/eve-server/tests/econ_report_socket.rs	docs/lanes/x-econreport.md	1
+server/crates/eve-server/tests/fighter_socket.rs	docs/lanes/ft-e.md	1
+server/crates/eve-server/tests/gaps2_socket.rs	docs/lanes/gaps-2.md	1
+server/crates/eve-server/tests/jump_drive_socket.rs	docs/lanes/cap-e.md	1
+server/crates/eve-server/tests/jump_portal_socket.rs	docs/lanes/cap-g.md	1
+server/crates/eve-server/tests/loopback.rs	docs/lanes/fleet.md	1
+server/crates/eve-server/tests/loopback.rs	docs/lanes/round2-spec.md	1
+server/crates/eve-server/tests/loopback.rs	docs/port-tracker.md	3
+server/crates/eve-server/tests/loopback.rs	docs/reference/login-path.md	2
+server/crates/eve-server/tests/replay.rs	docs/archive/architecture-sweep.md	1
+server/crates/eve-server/tests/rig_socket.rs	docs/lanes/x-rig.md	1
+server/crates/eve-server/tests/split_socket.rs	docs/lanes/srv-gaps.md	1
+server/crates/eve-server/tests/turret_application_socket.rs	docs/lanes/doc-0.md	1
+server/crates/eve-server/tests/wire_calls.rs	docs/review/V2-wire.md	1
+server/crates/eve-server/tests/wire_hostile.rs	docs/review/V2-wire.md	1
+server/crates/eve-server/tests/wire_hostile.rs	docs/review/V6-security-ops.md	1
+server/crates/eve-server/tests/wire_hostile.rs	docs/review/plan-review.md	1
+server/crates/eve-xmpp/src/client.rs	docs/lanes/chat.md	1
+server/crates/eve-xmpp/src/lib.rs	docs/lanes/chat.md	1
+server/crates/eve-xmpp/src/sasl.rs	docs/lanes/chat.md	1
+server/crates/eve-xmpp/src/xml.rs	docs/lanes/chat.md	3
+tools/asteroids.py	docs/lanes/asteroids.md	1
+tools/asteroids.py	docs/port-tracker.md	1
+tools/bot-accounts.sh	docs/lanes/acc2.md	1
+tools/bots.sh	docs/lanes/bots.md	2
+tools/call_lines.py	docs/port-tracker.md	1
+tools/celestials.py	docs/lanes/stargates.md	1
+tools/celestials.py	docs/port-tracker.md	1
+tools/census-calls.sh	docs/lanes/census-blindspots.md	1
+tools/census_proxy.py	docs/lanes/cen1.md	1
+tools/client-ci.sh	docs/archive/plan-client-ci.md	2
+tools/client-ci.sh	docs/lanes/acc2tools.md	1
+tools/client-ci.sh	docs/lanes/ci-display.md	1
+tools/client-ci.sh	docs/lanes/ci-harness.md	1
+tools/client-ci.sh	docs/lanes/ci-scenarios.md	1
+tools/client-ci.sh	docs/review/V4-testing.md	1
+tools/client-ci/scenarios/_prelude.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/_prelude.py	docs/lanes/ci-scenarios.md	2
+tools/client-ci/scenarios/ballpark_smoke.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/ballpark_smoke.py	docs/lanes/ci-scenarios.md	3
+tools/client-ci/scenarios/capacitor.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/capacitor.py	docs/lanes/ci-scenarios.md	3
+tools/client-ci/scenarios/census_canary.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_canary.py	docs/lanes/cen4.md	2
+tools/client-ci/scenarios/census_canary.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_cc.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_cc.py	docs/lanes/cen4.md	2
+tools/client-ci/scenarios/census_cc.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_cdn.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_cdn.py	docs/lanes/cen4.md	1
+tools/client-ci/scenarios/census_cdn.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_cdn.py	docs/lanes/phone-home.md	1
+tools/client-ci/scenarios/census_crash.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_crash.py	docs/lanes/cen4.md	2
+tools/client-ci/scenarios/census_crash.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_hang.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_hang.py	docs/lanes/cen4.md	2
+tools/client-ci/scenarios/census_hang.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_idle.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_idle.py	docs/lanes/cen4.md	2
+tools/client-ci/scenarios/census_idle.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_idle.py	docs/lanes/ci-trigger.md	1
+tools/client-ci/scenarios/census_links.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_links.py	docs/lanes/cen4.md	3
+tools/client-ci/scenarios/census_links.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_report_bug.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_report_bug.py	docs/lanes/cen4.md	1
+tools/client-ci/scenarios/census_report_bug.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_report_bug.py	docs/lanes/phone-home.md	1
+tools/client-ci/scenarios/census_urls.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/census_urls.py	docs/lanes/cen4.md	1
+tools/client-ci/scenarios/census_urls.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/census_urls.py	docs/lanes/phone-home.md	1
+tools/client-ci/scenarios/fci_abandon_kill.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abandon_kill.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_clouds.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_clouds.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_collapse.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_collapse.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_enter.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_enter.py	docs/lanes/abyss-0.md	1
+tools/client-ci/scenarios/fci_abyss_enter.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_loot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_loot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_pair.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_pair.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_run.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_run.py	docs/lanes/abyss-1.md	1
+tools/client-ci/scenarios/fci_abyss_run.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_suspect.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_suspect.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_waves.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_waves.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_abyss_weather.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_abyss_weather.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_advanced_ammo.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_advanced_ammo.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_advanced_ammo.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_ammo_count.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ammo_count.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ammo_count.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_anchor_small.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_anchor_small.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_anchor_small.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ansiblex.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ansiblex.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ansiblex.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_api_probe.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_api_probe.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_api_probe.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_autopilot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_autopilot.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_autopilot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_battle.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_battle.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_belt_combat.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_belt_combat.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_belt_combat.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_belt_combat.py	docs/lanes/x-salv.md	1
+tools/client-ci/scenarios/fci_belt_rocks.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_belt_rocks.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_belt_rocks.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_board_eject.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_board_eject.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_board_eject.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_boosters.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_boosters.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_bubble.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_bubble.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_camp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_camp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_dictor_camp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_dictor_camp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_ess.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_ess.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_ewar_aim.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_ewar_aim.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_hic_camp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_hic_camp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_mjd.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_mjd.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_smartbomb.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_smartbomb.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bot_str_siege.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bot_str_siege.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bounty.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bounty.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bubble.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bubble.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_bubble.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bump_pair.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bump_pair.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bursts.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_bursts.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_bursts.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_bursts.py	docs/lanes/k-boost.md	1
+tools/client-ci/scenarios/fci_c6b.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_c6b.py	docs/lanes/c6b.md	1
+tools/client-ci/scenarios/fci_c6b.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_c6b.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_calendar.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_calendar.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_char_certs.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_char_certs.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_char_delete.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_char_delete.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_char_delete.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_chat_channels.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_chat_channels.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_chat_moderation.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_chat_moderation.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_chat_two.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_chat_two.py	docs/lanes/chat.md	1
+tools/client-ci/scenarios/fci_chat_two.py	docs/lanes/ci-gaps-b.md	1
+tools/client-ci/scenarios/fci_chat_two.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_cloak.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_cloak.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_cloak.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_combat_site.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_combat_site.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_combat_site.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_combat_site.py	docs/lanes/y-combat.md	1
+tools/client-ci/scenarios/fci_concord.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_concord.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_concord.py	docs/lanes/concord-1a.md	1
+tools/client-ci/scenarios/fci_concord.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_containers.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_containers.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_containers.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_containers.py	docs/lanes/containers-mtu.md	1
+tools/client-ci/scenarios/fci_contracts.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_contracts.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_contracts.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_contracts.py	docs/lanes/srv-gaps.md	1
+tools/client-ci/scenarios/fci_contracts.py	docs/lanes/x-contract.md	1
+tools/client-ci/scenarios/fci_corp_ads.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_ads.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_corp_alliance.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_alliance.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_corp_alliance.py	docs/lanes/corp-w.md	1
+tools/client-ci/scenarios/fci_corp_alliance.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_corp_alliance.py	docs/lanes/soc-c1.md	1
+tools/client-ci/scenarios/fci_corp_assets.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_assets.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_corp_assets.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_corp_buy.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_buy.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_corp_buy.py	docs/lanes/corp-buy.md	1
+tools/client-ci/scenarios/fci_corp_buy.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_corp_transactions.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_transactions.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_corp_transactions.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_corp_votes.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_corp_votes.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_cyno_inhibit.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_cyno_inhibit.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_cyno_inhibit.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_cyno_jam.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_cyno_jam.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_cyno_jammer.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_cyno_jammer.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_cyno_jammer.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_daily_goals.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_daily_goals.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_daily_goals.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_dev_mode.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_dev_mode.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_dev_mode.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_dividend.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_dividend.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_doc_0.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_doc_0.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_doc_0.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_doc_3.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_doc_3.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_doc_3.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_doc_6.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_doc_6.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_doc_6.py	docs/lanes/doc-6.md	1
+tools/client-ci/scenarios/fci_doc_6.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_dock_range.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_dock_range.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_dock_range.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_doomsday.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_doomsday.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_doomsday.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_doomsday_2.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_doomsday_2.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_doomsday_2.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_drone_bay_damage.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_drone_bay_damage.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_drone_bay_damage.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_drone_mining.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_drone_mining.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_drone_mining.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_drone_mining.py	docs/lanes/soc-b10.md	1
+tools/client-ci/scenarios/fci_dynamic_info.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_dynamic_info.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ecm_burst.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ecm_burst.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_em_heraldry.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_em_heraldry.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_emblem.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_emblem.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_emblem.py	docs/lanes	1
+tools/client-ci/scenarios/fci_emblem.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_emblem.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_engine_fix.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_engine_fix.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_engine_fix.py	docs/lanes/engine-fix.md	1
+tools/client-ci/scenarios/fci_epic_arc.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_epic_arc.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ess_link.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ess_link.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_ess_link.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ess_panel.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ess_panel.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_ess_panel.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ewar.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ewar.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ewar_2.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ewar_2.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_ewar_2.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ewar_2.py	docs/lanes/ewar-2bc.md	1
+tools/client-ci/scenarios/fci_faction_police.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_faction_police.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fighters.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fighters.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fighters.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_fighters.py	docs/lanes/ft-b.md	1
+tools/client-ci/scenarios/fci_fit_drag.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fit_drag.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fit_refuse.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fit_refuse.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_fit_refuse.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fitfix.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fitfix.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_fitfix.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fleet_comp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fleet_comp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fleet_comp.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_fleet_comp.py	docs/lanes/fc-0.md	1
+tools/client-ci/scenarios/fci_fleet_hangar.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fleet_hangar.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fleet_hangar.py	docs/lanes/prog-mine.md	1
+tools/client-ci/scenarios/fci_fleet_lazy.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fleet_lazy.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fleet_mission.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fleet_mission.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fleet_mission.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_fleet_mission.py	docs/lanes/fleet-mission.md	1
+tools/client-ci/scenarios/fci_fleet_reconnect.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fleet_reconnect.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_free_sp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_free_sp.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_free_sp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fw_capture.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fw_capture.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fw_enlist.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fw_enlist.py	docs/lanes/ci-gaps-b.md	1
+tools/client-ci/scenarios/fci_fw_enlist.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fw_enlist.py	docs/lanes/cp53a.md	1
+tools/client-ci/scenarios/fci_fw_kill_lp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fw_kill_lp.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_fw_refuse.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_fw_refuse.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gang_summon.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gang_summon.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gang_summon.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_gaps2.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gaps2.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gaps2.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_gaps2.py	docs/lanes/gaps-2.md	1
+tools/client-ci/scenarios/fci_gas_cloud.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gas_cloud.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gas_cloud.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_gate_cloak.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gate_cloak.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_gate_cloak.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gate_jump.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gate_jump.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_gate_jump.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_geode_open.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_geode_open.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_geode_open.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gm_cwatch.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gm_cwatch.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gm_cwatch.py	docs/lanes/pvp-ci.md	2
+tools/client-ci/scenarios/fci_gm_missioncomplete.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gm_missioncomplete.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gm_npcclear.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gm_npcclear.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gm_pilot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gm_pilot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gun_cycle.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gun_cycle.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gun_cycle.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_gw_notice_echo.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_gw_notice_echo.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_gw_notice_echo.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_gw_notice_echo.py	docs/lanes/gw-out.md	1
+tools/client-ci/scenarios/fci_hacking_board.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hacking_board.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_hacking_board.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_hacking_board.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_hacking_board.py	docs/lanes/hk2.md	1
+tools/client-ci/scenarios/fci_hacking_can.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hacking_can.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_hacking_can.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_hacking_can.py	docs/lanes/hk2.md	1
+tools/client-ci/scenarios/fci_hic_script.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hic_script.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_hic_script.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_hud_new.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hud_new.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_hunter_bot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hunter_bot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_hypernet.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_hypernet.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_hypernet.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_implants.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_implants.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_implants.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_implants.py	docs/lanes/implants.md	1
+tools/client-ci/scenarios/fci_industry_job.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_industry_job.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_industry_job.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_inject.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_inject.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_inject.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_invention.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_invention.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_item_trader.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_item_trader.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_jump_drive.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_jump_drive.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_jump_drive.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_jump_portal.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_jump_portal.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_k_overheat.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_k_overheat.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_k_overheat.py	docs/lanes/k-overheat.md	1
+tools/client-ci/scenarios/fci_landing_orbit.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_landing_orbit.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_landing_orbit.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_logoff_space.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_logoff_space.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_logoff_space.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_logoff_space.py	docs/lanes/login-space.md	1
+tools/client-ci/scenarios/fci_lpstore.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_lpstore.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_lpstore.py	docs/lanes/fci-catchup.md	1
+tools/client-ci/scenarios/fci_lpstore.py	docs/lanes/x-lpstore.md	1
+tools/client-ci/scenarios/fci_mail.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mail.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_market_trade.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_market_trade.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_medals.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_medals.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_merc_den.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_merc_den.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_merc_den.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mine_crit.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mine_crit.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mine_crit.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_mine_crit.py	docs/lanes/mining-crits.md	1
+tools/client-ci/scenarios/fci_mining_hold.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mining_hold.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mining_hold.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_mining_hold.py	docs/lanes/gaps-b.md	1
+tools/client-ci/scenarios/fci_mission_dungeon.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mission_dungeon.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mjd.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mjd.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_mjd.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mn_d.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mn_d.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mn_d.py	docs/lanes/mn-d.md	2
+tools/client-ci/scenarios/fci_mobile_bubble.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mobile_bubble.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_moon_beacon.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_moon_beacon.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_moon_beacon.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_motherlode.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_motherlode.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mtu.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mtu.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_mtu.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mutaplasmid.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mutaplasmid.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mutaplasmid.py	docs/lanes/fitting.md	1
+tools/client-ci/scenarios/fci_mutaplasmid_fit.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mutaplasmid_fit.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_mutaplasmid_fit.py	docs/lanes/fitting.md	1
+tools/client-ci/scenarios/fci_mutated_drone.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_mutated_drone.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_needlejack.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_needlejack.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_needlejack.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_needlejack_fleet.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_needlejack_fleet.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_nes_buy.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_nes_buy.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_nes_buy.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_nes_buy.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_nes_buy.py	docs/lanes/l1-nes-backend.md	1
+tools/client-ci/scenarios/fci_neut.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_neut.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_new_items.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_new_items.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_new_items.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_new_items.py	docs/lanes/new-items.md	1
+tools/client-ci/scenarios/fci_notifications.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_notifications.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_notifications.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_notifications.py	docs/lanes/notif-1.md	1
+tools/client-ci/scenarios/fci_npc_rr_fx.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_npc_rr_fx.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_npc_rr_fx.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_npc_siege.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_npc_siege.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_npc_siege.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_npc_warpin.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_npc_warpin.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_npc_warpin.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_pa10_coalesce.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pa10_coalesce.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_pa10_coalesce.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pa10_coalesce.py	docs/lanes/pa10-research	1
+tools/client-ci/scenarios/fci_pi_colony.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pi_colony.py	docs/lanes/ci-gaps-b.md	1
+tools/client-ci/scenarios/fci_pi_colony.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pi_colony.py	docs/lanes/planet.md	1
+tools/client-ci/scenarios/fci_plex_vault.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_plex_vault.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_plex_vault.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_plex_vault.py	docs/lanes/l1-nes-backend.md	1
+tools/client-ci/scenarios/fci_pochven_filament.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pochven_filament.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pochven_gate.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pochven_gate.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pochven_loot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pochven_loot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pochven_loot.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_pochven_rules.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pochven_rules.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pochven_sites.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pochven_sites.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pos_answers.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pos_answers.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/lanes	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/lanes/ci-gaps-b.md	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_probe_site.py	docs/lanes/scan.md	1
+tools/client-ci/scenarios/fci_prog_mine.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_prog_mine.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_prog_mine.py	docs/lanes/prog-mine.md	1
+tools/client-ci/scenarios/fci_prog_null.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_prog_null.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_prog_null.py	docs/lanes/prog-null.md	1
+tools/client-ci/scenarios/fci_prog_pve.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_prog_pve.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_prog_pve.py	docs/lanes/prog-pve.md	1
+tools/client-ci/scenarios/fci_prog_pve2.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_prog_pve2.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_prog_pve2.py	docs/lanes/prog-pve2.md	1
+tools/client-ci/scenarios/fci_proving_queue.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_proving_queue.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_proving_queue.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pvp_concord.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pvp_concord.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pvp_concord.py	docs/lanes/pvp-ci.md	1
+tools/client-ci/scenarios/fci_pvp_kill.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_pvp_kill.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_pvp_kill.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_pvp_kill.py	docs/lanes/pvp-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_3.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_3.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_r_rel_3.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_3.py	docs/lanes/r-rel-3.md	1
+tools/client-ci/scenarios/fci_r_rel_4.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_4.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_r_rel_4.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_4.py	docs/lanes/r-rel-4.md	1
+tools/client-ci/scenarios/fci_r_rel_5.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_5.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_r_rel_5.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_r_rel_5.py	docs/lanes/r-rel-5.md	1
+tools/client-ci/scenarios/fci_rat_point.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_rat_point.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_rat_point.py	docs/lanes/td-ecm.md	1
+tools/client-ci/scenarios/fci_reactions.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_reactions.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_reads.py	docs/archive/marshal-tags.md	1
+tools/client-ci/scenarios/fci_reads.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_reads.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_reads.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_rel_fix.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_rel_fix.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_rel_fix.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_rel_fix.py	docs/lanes/rel-fix.md	1
+tools/client-ci/scenarios/fci_reprocess.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_reprocess.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_reprocess.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_reprocess.py	docs/lanes/reprocess.md	1
+tools/client-ci/scenarios/fci_review_fix.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_review_fix.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_review_fix.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_review_fix.py	docs/lanes/review-fix.md	1
+tools/client-ci/scenarios/fci_rig_set.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_rig_set.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_school_books.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_school_books.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_school_books.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_school_books.py	docs/lanes/gaps-b.md	1
+tools/client-ci/scenarios/fci_script_empty.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_script_empty.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_secstatus.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_secstatus.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_secstatus.py	docs/lanes/cw-1.md	1
+tools/client-ci/scenarios/fci_secstatus.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_secstatus.py	docs/lanes/sec-1.md	1
+tools/client-ci/scenarios/fci_sentry.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sentry.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_settings_bulletins.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_settings_bulletins.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_settings_bulletins.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_settings_bulletins.py	docs/lanes/small-social.md	1
+tools/client-ci/scenarios/fci_share_links.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_share_links.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ship_sheet.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ship_sheet.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ship_sheet.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_ship_sheet.py	docs/lanes/fc-0.md	1
+tools/client-ci/scenarios/fci_ship_tree.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_ship_tree.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_ship_tree.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_siege.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_siege.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_siege.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skill_queue.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skill_queue.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_skill_queue.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skillgate.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skillgate.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skin_apply.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skin_apply.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_skin_apply.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skin_apply.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_skin_apply.py	docs/lanes/l2-skins.md	1
+tools/client-ci/scenarios/fci_skin_viewer.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skin_viewer.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_skin_viewer.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skin_viewer.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_skin_viewer.py	docs/lanes/l2-skins.md	1
+tools/client-ci/scenarios/fci_skyhook.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skyhook.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_skyhook.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_skyhook_raid.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_skyhook_raid.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_smartbomb.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_smartbomb.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_social_answers.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_social_answers.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_sov.py	docs/lanes/sov-d1.md	1
+tools/client-ci/scenarios/fci_sov_campaign.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_campaign.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_sov_campaign.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_fuel.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_fuel.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_panel.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_panel.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_sov_panel.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_panel.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_sov_panel.py	docs/lanes/stale-sys-sov.md	1
+tools/client-ci/scenarios/fci_sov_resources.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_resources.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_stubs.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_stubs.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_upgrade.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_upgrade.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sov_workforce.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sov_workforce.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_stolen_hull.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_stolen_hull.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_summon_cloaked.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_summon_cloaked.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_summon_cloaked.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_sun.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sun.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sun.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_sys4.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_sys4.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_sys4.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_sys4.py	docs/lanes/sys-4.md	1
+tools/client-ci/scenarios/fci_t3_d.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_t3_d.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_t3_d.py	docs/lanes/t3-d.md	1
+tools/client-ci/scenarios/fci_t3_e.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_t3_e.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_t3_e.py	docs/lanes/t3-e.md	1
+tools/client-ci/scenarios/fci_t3_salvage.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_t3_salvage.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_t3_salvage.py	docs/lanes/t3-salvage.md	2
+tools/client-ci/scenarios/fci_t3_salvage.py	docs/lanes/t3-supply.md	1
+tools/client-ci/scenarios/fci_tackle.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_tackle.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_tow_conquest_dormant.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_tow_conquest_dormant.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_trig_player.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_trig_player.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_trig_player.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_trig_spool.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_trig_spool.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_trig_spool.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_anchor.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_anchor.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_anchor.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_clone.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_clone.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_clone.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_control.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_control.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_control.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_dock.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_dock.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_dock.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_insure.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_insure.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_insure.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_kill.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_kill.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_kill.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_profiles.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_profiles.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_profiles.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_relog.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_relog.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_relog.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_repair.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_repair.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_repair.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_revive.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_revive.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_revive.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_safety.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_safety.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_safety.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_shoot.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_shoot.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_shoot.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_timers.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_timers.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_timers.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_view.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_view.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_view.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_war.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_war.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wh_effects.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wh_effects.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wh_effects.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wh_mass.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wh_mass.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wh_mass.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wh_range.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wh_range.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wh_range.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wing_follow.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wing_follow.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wing_follow.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wing_follow.py	docs/lanes/fc-1.md	1
+tools/client-ci/scenarios/fci_wing_offgrid.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wing_offgrid.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wing_offgrid.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wing_tags.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wing_tags.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wing_tags.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wing_tags.py	docs/lanes/fc-2.md	1
+tools/client-ci/scenarios/fci_wing_words.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wing_words.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_wing_words.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_wing_words.py	docs/lanes/fc-3.md	1
+tools/client-ci/scenarios/fci_wire_calls.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_wire_calls.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_world_training.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_world_training.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_world_training.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_x_econreport.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_x_econreport.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_x_econreport.py	docs/lanes/x-econreport.md	1
+tools/client-ci/scenarios/fci_x_econtape.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_x_econtape.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_x_econtape.py	docs/lanes/fe-measure.md	1
+tools/client-ci/scenarios/fci_x_ice.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_x_ice.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_x_ice.py	docs/lanes/x-ice.md	1
+tools/client-ci/scenarios/fci_x_rig.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_x_rig.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_x_rig.py	docs/lanes/x-rig.md	1
+tools/client-ci/scenarios/fci_y_escal.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_y_escal.py	docs/guides/human-checks.md	1
+tools/client-ci/scenarios/fci_y_escal.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_y_escal.py	docs/lanes/y-escal.md	1
+tools/client-ci/scenarios/fci_y_wh.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_y_wh.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_y_wh.py	docs/lanes/y-wh.md	1
+tools/client-ci/scenarios/hud_health.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/hud_health.py	docs/lanes/ci-scenarios.md	3
+tools/client-ci/scenarios/lobby_guests.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/lobby_guests.py	docs/lanes/ci-harness.md	4
+tools/client-ci/scenarios/lobby_guests.py	docs/lanes/ci-scenarios.md	3
+tools/client-ci/scenarios/lobby_guests.py	docs/lanes/ci-trigger.md	2
+tools/client-ci/scenarios/lobby_guests.py	docs/lanes/roster.md	1
+tools/client-ci/scenarios/park_census.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/park_census.py	docs/archive/roadmap.md	2
+tools/client-ci/scenarios/park_census.py	docs/lanes/ci-harness.md	4
+tools/client-ci/scenarios/park_census.py	docs/lanes/ci-scenarios.md	6
+tools/client-ci/scenarios/park_census.py	docs/lanes/two-in-space.md	1
+tools/client-ci/scenarios/throttle_and_warp.py	docs/archive/destiny-and-the-ballpark.md	1
+tools/client-ci/scenarios/throttle_and_warp.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/throttle_and_warp.py	docs/lanes/ci-scenarios.md	2
+tools/client-ci/scenarios/throttle_and_warp.py	docs/lanes/movement.md	1
+tools/client-ci/scenarios/throttle_and_warp.py	docs/port-tracker.md	4
+tools/client-ci/scenarios/undock_distance.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/undock_distance.py	docs/lanes/ci-scenarios.md	2
+tools/client-ci/scenarios/undock_distance.py	docs/port-tracker.md	2
+tools/client-ci/scenarios/warp_blob.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/warp_blob.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/warp_blob.py	docs/lanes/round2-spec.md	1
+tools/client-ci/sync-prelude.py	docs/lanes/ci-scenarios.md	1
+tools/client-headless.sh	docs/archive/plan-client-ci.md	1
+tools/client-headless.sh	docs/lanes/ci-display.md	3
+tools/client-overrides/destiny_dump.py	docs/archive/destiny-and-the-ballpark.md	2
+tools/client-patch-manifest.py	docs/reference/login-path.md	1
+tools/client-prepare.py	docs/port-tracker.md	1
+tools/client-prepare.py	docs/reference/login-path.md	1
+tools/client2-setup.sh	docs/guides/human-checks.md	1
+tools/client2-setup.sh	docs/port-tracker.md	1
+tools/content.py	docs/content/plan.md	1
+tools/content_agents.py	docs/content/plan.md	1
+tools/content_dbuffs.py	docs/lanes/k-boost.md	1
+tools/content_econ.py	docs/content/plan.md	1
+tools/content_econ.py	docs/lanes/industry.md	1
+tools/content_explore.py	docs/lanes/cap-loot.md	1
+tools/content_fighters.py	docs/lanes/ft-a.md	1
+tools/content_lp.py	docs/content/plan.md	1
+tools/content_npc.py	docs/content/plan.md	1
+tools/content_salvage.py	docs/lanes/x-salv.md	1
+tools/content_store.py	docs/lanes/l1-nes-backend.md	1
+tools/content_types.py	docs/content/plan.md	1
+tools/dev-world.sh	docs/lanes/bubble.md	1
+tools/dev-world.sh	docs/lanes/fight-stall.md	1
+tools/dev-world.sh	docs/lanes/ui-lag.md	1
+tools/dis.py	docs/port-tracker.md	1
+tools/doc_lane_index.py	docs/lanes	1
+tools/doc_lane_index.py	docs/lanes/INDEX.md	2
+tools/dogma.py	docs/archive/plan-subsystems.md	1
+tools/dogma.py	docs/lanes/fsd-generic.md	1
+tools/dogma.py	docs/port-tracker.md	1
+tools/eve_patch.py	docs/port-tracker.md	1
+tools/evejs-up.sh	docs/evejs/evejs-run-safely.md	2
+tools/extract_code.py	docs/port-tracker.md	1
+tools/extract_string_table.py	docs/port-tracker.md	1
+tools/find_iat_xrefs.py	docs/port-tracker.md	1
+tools/find_str_xref.py	docs/port-tracker.md	1
+tools/fsd.py	docs/content/C1-corpus-map.md	2
+tools/fsd.py	docs/lanes/fsd-generic.md	4
+tools/fsd.py	docs/port-tracker.md	1
+tools/fsd_dump.py	docs/port-tracker.md	2
+tools/gate.sh	docs/lanes/README.md	1
+tools/gate.sh	docs/port-tracker.md	2
+tools/jail-client.sh	docs/lanes/cen4.md	1
+tools/jail-forward.py	docs/archive/destiny-and-the-ballpark.md	1
+tools/jail-forward.py	docs/port-tracker.md	1
+tools/jail-rootless.sh	docs/lanes/ip29.md	1
+tools/jail-rootless.sh	docs/lanes/remote-clients.md	1
+tools/jail-setup.sh	docs/lanes/chat.md	1
+tools/land.sh	docs/lanes/README.md	1
+tools/land.sh	docs/port-tracker.md	1
+tools/loctable.py	docs/port-tracker.md	1
+tools/login-lib.sh	docs/lanes/acc2.md	1
+tools/nightly.sh	docs/lanes/ip29.md	1
+tools/pe_functions.py	docs/port-tracker.md	1
+tools/re/warp_curve.py	docs/port-tracker.md	1
+tools/resolve_vas.py	docs/port-tracker.md	1
+tools/run-client.sh	docs/lanes/chat.md	1
+tools/run-client.sh	docs/lanes/ci-display.md	1
+tools/scan_bound.py	docs/port-tracker.md	1
+tools/scan_calls.py	docs/port-tracker.md	1
+tools/scan_calls_emit.py	docs/port-tracker.md	1
+tools/scan_calls_served.py	docs/port-tracker.md	1
+tools/serve.sh	docs/lanes/remote-gateway.md	1
+tools/soak.sh	docs/lanes/botmark.md	1
+tools/soak.sh	docs/lanes/clock.md	1
+tools/society-report.py	docs/archive/plan-deep-queue.md	2
+tools/strings_of.py	docs/port-tracker.md	1
+tools/test_account_tools.py	docs/lanes/acc2tools.md	1
+tools/test_celestials.py	docs/lanes/cp2.md	1
+tools/test_census_scenarios.py	docs/lanes/cen4.md	1
+tools/test_content.py	docs/lanes/cp1.md	1
+tools/test_content_agents.py	docs/lanes/cp13.md	1
+tools/test_content_dbuffs.py	docs/lanes/k-boost.md	1
+tools/test_content_dungeons.py	docs/lanes/cp10.md	1
+tools/test_content_econ.py	docs/lanes/cp24.md	1
+tools/test_content_explore.py	docs/lanes/hk3.md	1
+tools/test_content_fighters.py	docs/lanes/ft-a.md	1
+tools/test_content_lp.py	docs/lanes/cp37a.md	1
+tools/test_content_npc.py	docs/lanes/cp11a.md	1
+tools/test_content_npc_regions.py	docs/lanes/cp11b.md	1
+tools/test_content_salvage.py	docs/lanes/x-salv.md	1
+tools/test_content_store.py	docs/lanes/l1-nes-backend.md	1
+tools/test_content_types.py	docs/lanes/cp12.md	1
+tools/test_docs.py	docs/content/plan.md	1
+tools/test_docs.py	docs/lanes	7
+tools/test_docs.py	docs/lanes/INDEX.md	2
+tools/test_docs.py	docs/lanes/X.md	1
+tools/test_docs.py	docs/packets.tsv	1
+tools/test_docs.py	docs/review	1
+tools/test_docs.py	docs/review/V	1
+tools/test_fci_scenarios.py	docs/guides/human-checks.md	1
+tools/test_fci_scenarios.py	docs/lanes/f-ci.md	1
+tools/test_fsd_generic.py	docs/lanes/fsd-generic.md	1
+tools/test_gate.py	docs/port-tracker.md	1
+tools/test_typedata.py	docs/lanes/fx7.md	1
+tools/tunnel.sh	docs/guides/remote-clients.md	1
+tools/typedata.py	docs/port-tracker.md	1
+tools/up.sh	docs/content/plan.md	2
+tools/up.sh	docs/lanes/acc2tools.md	1
+tools/up.sh	docs/lanes/chat.md	1
+tools/up.sh	docs/reference/login-path.md	1
+tools/up.sh	docs/review/rulings.md	1
