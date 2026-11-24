@@ -151,37 +151,75 @@ class Gates(unittest.TestCase):
         self.assertEqual(dr.gate_g10(slow)[0], dr.FAIL)
         self.assertEqual(dr.gate_g10(dr.Log())[0], dr.NA)
 
+    # The real line shapes: a `[turns]` line, then the window's worst
+    # `[turn-slow]` line, then every kept slow turn (the worst again, when it
+    # is 20 ms or more).
+    @staticmethod
+    def window(hold, label="a.B", cpu=0.2, runq=0.1, ro=0.0, extra=()):
+        blocked = max(hold - cpu - runq, 0.0)
+        lines = [
+            f"[turns] secs=10.0 turns=50 turns_per_s=5.0 hold_mean=0.3ms hold_max={hold:.1f}ms wait_mean=0.0ms "
+            f"wait_max=0.1ms saves=0 saves_per_s=0.0 save_max=0.0ms slowest={label} slowest_ms={hold:.1f}ms "
+            f"labels=- ro_turns=3 ro_hold_mean=0.10ms ro_max={ro:.1f}ms ro_fallbacks=0",
+            "[turn-tail] secs=10.0 turns_left=0",
+            f"[turn-slow] worst label={label} hold={hold:.1f}ms wait=0.1ms cpu={cpu:.1f}ms runq={runq:.1f}ms blocked={blocked:.1f}ms",
+        ]
+        if hold >= 20.0:
+            lines.append(f"[turn-slow] label={label} hold={hold:.1f}ms wait=0.1ms cpu={cpu:.1f}ms runq={runq:.1f}ms blocked={blocked:.1f}ms")
+        for h in extra:
+            lines.append(f"[turn-slow] label=x.Y hold={h:.1f}ms wait=0.1ms cpu=0.1ms runq=0.1ms blocked={h - 0.2:.1f}ms")
+        return lines
+
+    def windows(self, n, hold=1.0, **kw):
+        out = []
+        for _ in range(n):
+            out += self.window(hold, **kw)
+        return out
+
     def test_g10_one_outlier_in_a_thousand_passes(self):
-        lines = ["[turns] secs=10.0 hold_max=1.0ms"] * 999 + ["[turns] secs=10.0 hold_max=34.0ms"]
-        self.assertEqual(dr.gate_g10(log_of(lines))[0], dr.PASS)
-        # Two among a thousand is one too many; a short run allows none.
-        two = ["[turns] hold_max=1.0ms"] * 998 + ["[turns] hold_max=34.0ms"] * 2
-        self.assertEqual(dr.gate_g10(log_of(two))[0], dr.FAIL)
-        short = ["[turns] hold_max=1.0ms"] * 99 + ["[turns] hold_max=34.0ms"]
-        self.assertEqual(dr.gate_g10(log_of(short))[0], dr.FAIL)
+        # A: 1000 windows, one real 30 ms cpu turn.
+        lines = self.windows(999) + self.window(30.0, cpu=29.0, runq=0.5)
+        s, d = dr.gate_g10(log_of(lines))
+        self.assertEqual(s, dr.PASS, d)
+        # Two among 1000 are one too many; a short run allows none.
+        self.assertEqual(dr.gate_g10(log_of(self.windows(998) + self.window(34.0) + self.window(34.0, label="c.D")))[0], dr.FAIL)
+        self.assertEqual(dr.gate_g10(log_of(self.windows(99) + self.window(34.0)))[0], dr.FAIL)
 
     def test_g10_twenty_slow_windows_fail(self):
-        lines = ["[turns] hold_max=1.0ms"] * 980 + ["[turns] hold_max=30.0ms"] * 20
+        self.assertEqual(dr.gate_g10(log_of(self.windows(980) + self.windows(20, hold=30.0)))[0], dr.FAIL)
+
+    def test_g10_blocked_time_is_not_an_excuse(self):
+        # B: 500 windows of eight blocked 21 ms turns, plus one 29 ms.
+        lines = self.windows(500, hold=21.0, extra=[21.0] * 8) + self.window(29.0)
         self.assertEqual(dr.gate_g10(log_of(lines))[0], dr.FAIL)
-
-    def test_g10_turn_sched_judges_cpu_and_runq(self):
-        def slow(hold, cpu, runq, blocked):
-            return f"[turn-slow] worst label=a.B hold={hold}ms wait=0.1ms cpu={cpu}ms runq={runq}ms blocked={blocked}ms"
-
-        base = ["[turns] hold_max=1.0ms"] * 99
-        # A 40 ms hold that was all blocked: passes, and says so.
-        blocked = log_of(base + ["[turns] hold_max=40.0ms", slow(40.0, 0.5, 0.5, 39.0)])
-        s, d = dr.gate_g10(blocked)
+        # D: 100 windows of 60 ms, all blocked.
+        s, d = dr.gate_g10(log_of(self.windows(100, hold=60.0)))
+        self.assertEqual(s, dr.FAIL, d)
+        self.assertIn("blocked-dominated", d)
+        # One blocked 29 ms window in 1000 is within the allowance.
+        s, d = dr.gate_g10(log_of(self.windows(999) + self.window(29.0)))
         self.assertEqual(s, dr.PASS, d)
-        self.assertIn("blocked", d)
-        self.assertIn("1 over", d)
-        # A 40 ms hold of cpu: fails.
-        busy = log_of(base + ["[turns] hold_max=40.0ms", slow(40.0, 38.0, 1.0, 1.0)])
-        self.assertEqual(dr.gate_g10(busy)[0], dr.FAIL)
-        # Without sched fields (`-`) the hold rule applies.
-        plain = log_of(base + ["[turns] hold_max=40.0ms",
-                               "[turn-slow] worst label=a.B hold=40.0ms cpu=- runq=- blocked=-"])
-        self.assertEqual(dr.gate_g10(plain)[0], dr.FAIL)
+        self.assertIn("a.B 29.0 ms (cpu+runq 0.3, blocked 28.7)", d)
+
+    def test_g10_an_outlier_over_the_cap_fails(self):
+        # C: one 900 ms hold in 1000 windows.
+        s, d = dr.gate_g10(log_of(self.windows(999) + self.window(900.0)))
+        self.assertEqual(s, dr.FAIL, d)
+        self.assertIn("cap", d)
+
+    def test_g10_repeated_labels_fail(self):
+        base = self.windows(1998)
+        same = base + self.window(30.0, label="a.Slow") + self.window(31.0, label="a.Slow")
+        s, d = dr.gate_g10(log_of(same))
+        self.assertEqual(s, dr.FAIL, d)
+        self.assertIn("a.Slow", d)
+        other = base + self.window(30.0, label="a.Slow") + self.window(31.0, label="b.Other")
+        self.assertEqual(dr.gate_g10(log_of(other))[0], dr.PASS)
+
+    def test_g10_a_slow_read_turn_counts(self):
+        s, d = dr.gate_g10(log_of(self.windows(99) + self.window(1.0, ro=40.0)))
+        self.assertEqual(s, dr.FAIL, d)
+        self.assertIn("read turn", d)
 
     def test_the_report_lists_all_ten_and_exits_by_fail(self):
         res = dr.judge(log_of(roll([(1, K1), (2, K1), (3, K1)])), dr.Log(), {})

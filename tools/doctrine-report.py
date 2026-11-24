@@ -21,7 +21,7 @@ Lines read (last `roll` block wins; every earlier line still counts):
   [doc] theatre group=G system=S from -> to conf=C foes=N actions=N
   [doc] battle ... est_theirs=N true_theirs=N          (G7; the soak's census)
   [turns] ... hold_max=Ms                              (G10; the server log)
-  [turn-slow] ... cpu=Ms runq=Ms blocked=Ms            (G10 with --turn-sched)
+  [turn-slow] ... cpu=Ms runq=Ms blocked=Ms            (G10 information with --turn-sched)
   [arena] pair ... isk_ratio_median=R ... / summary    (G8; tools/arena.sh)
   [soc] bots N online N mix .. switches_per_bot_day X flap_max Y
 
@@ -109,7 +109,10 @@ class Log:
         self.theatres = []
         self.battles = []
         self.holds = []
-        self.slow = []  # (hold, cpu, runq, blocked) of `[turn-slow]` lines with --turn-sched
+        # One per `[turns]` window: its hold_max, slowest label, ro_max, and the
+        # (hold, cpu, runq, blocked) of the `[turn-slow]` lines that follow it
+        # (the server prints them right after their window's `[turns]` line).
+        self.windows = []
         self.soc = []
         self.arena_pairs = []
         self.arena_skirmishes = []
@@ -153,14 +156,21 @@ class Log:
             elif line.startswith("[doc] battle"):
                 self.battles.append(kv(line))
             elif line.startswith("[turns]"):
-                h = num(kv(line).get("hold_max", "").rstrip("ms"))
+                d = kv(line)
+                h = num(d.get("hold_max", "").rstrip("ms"))
                 if h is not None:
                     self.holds.append(h)
+                    self.windows.append({
+                        "hold": h,
+                        "label": d.get("slowest", "-"),
+                        "ro": num(d.get("ro_max", "").rstrip("ms")),
+                        "slow": [],
+                    })
             elif line.startswith("[turn-slow]"):
                 d = kv(line)
                 vals = [num(str(d.get(k, "-")).rstrip("ms")) for k in ("hold", "cpu", "runq", "blocked")]
-                if None not in vals:
-                    self.slow.append(tuple(vals))
+                if None not in vals and self.windows:
+                    self.windows[-1]["slow"].append(tuple(vals))
             elif line.startswith("[soc]"):
                 self.soc.append(kv(line))
             elif line.startswith("[arena] skirmish"):
@@ -348,41 +358,71 @@ def gate_g9(runs):
     return (FAIL if bad else PASS), detail
 
 
-def over_rule(values, windows):
-    """G10's rule: the p99.9 of the window maxima is at most HOLD_MS. With
-    `windows` reports that allows floor(windows / 1000) windows over the
-    limit: none under 1000 windows, one among 1000. Returns (verdict, worst
-    judged value, windows over, windows allowed over).
-    [A] one stall in a thousand windows is the box (memory-cgroup reclaim, IO
-    pressure, CPU preemption), not the server's hold. Falsifier: a soak whose
-    over-limit windows repeat on the same label, or whose turn-sched cpu+runq
-    is over the limit (then the hold is the server's own)."""
-    allowed = windows // 1000
-    over = sum(1 for v in values if v > HOLD_MS)
-    return over <= allowed, (max(values) if values else 0.0), over, allowed
+HOLD_CAP_MS = 4 * HOLD_MS
 
 
 def gate_g10(log):
-    if not log.holds:
+    """G10, judged per `[turns]` window on the window's worst of `hold_max`
+    (write turns, which hold the lock) and `ro_max` (read turns, which do not
+    but still delay the clock and writers). A window is over when that is
+    above HOLD_MS. The gate fails when
+      - more than floor(windows / 1000) windows are over (none under 1,000
+        windows; one in 1,000 is allowed), or
+      - any window is over HOLD_CAP_MS (4x), or
+      - two over-limit windows name the same `slowest=` label.
+    With --turn-sched the `[turn-slow]` lines add information, never an
+    excuse: cpu+runq (the thread's own CPU time and its run-queue wait, which
+    includes CFS throttling and neighbour preemption) against blocked (sleeps
+    under the lock: fsync, blocking sends, its own major faults, and the box's
+    IO and reclaim) for each over-limit window.
+    [A] one over-limit window in 1,000 is the box (memory-cgroup reclaim, IO
+    pressure, CPU preemption or throttling), not the server. Falsifier: over
+    windows that repeat on one label (the gate fails on that itself), or a
+    soak whose `env.tsv` shows no throttling, pressure or major faults in them."""
+    wins = log.windows
+    if not wins:
         return NA, "no `[turns] ... hold_max=` lines (pass the server log)"
     tail = "; the hall's daily scoring time: no instrument"
-    n = len(log.holds)
-    if log.slow:
-        # --turn-sched: cpu + runq is the server's own time; blocked is the
-        # box (IO, reclaim, preemption) and is reported, not judged.
-        # Windows with no [turn-slow] line held under SLOW_TURN (20 ms).
-        vals = [c + r for _, c, r, _ in log.slow]
-        ok, worst, over, allowed = over_rule(vals, max(n, len(vals)))
-        blk = [b for *_, b in log.slow]
-        bover = sum(1 for b in blk if b > HOLD_MS)
-        return (PASS if ok else FAIL), (
-            f"cpu+runq max {worst:.1f} ms, {over} of {n} windows over {HOLD_MS:.0f} ms (allowed {allowed}); "
-            f"blocked stalls reported, not judged: max {max(blk):.1f} ms, {bover} over {HOLD_MS:.0f} ms; "
-            f"hold_max {max(log.holds):.1f} ms" + tail)
-    ok, worst, over, allowed = over_rule(log.holds, n)
-    return (PASS if ok else FAIL), (
-        f"max world hold {worst:.1f} ms over {n} reports, {over} windows over {HOLD_MS:.0f} ms "
-        f"(allowed {allowed}: p99.9 of window maxima; run with --turn-sched to judge cpu+runq)" + tail)
+    n = len(wins)
+    allowed = n // 1000
+    over = []
+    for w in wins:
+        v = max(w["hold"], w["ro"] or 0.0)
+        if v > HOLD_MS:
+            label = w["label"] if w["hold"] >= (w["ro"] or 0.0) else "read turn"
+            sched = [(c + r, b) for _, c, r, b in w["slow"]]
+            cr = max((x for x, _ in sched), default=None)
+            bl = max((x for _, x in sched), default=None)
+            over.append((v, label, cr, bl))
+    worst = max((w["hold"] for w in wins), default=0.0)
+    problems = []
+    if len(over) > allowed:
+        problems.append(f"{len(over)} windows over {HOLD_MS:.0f} ms, {allowed} allowed")
+    big = [o for o in over if o[0] > HOLD_CAP_MS]
+    if big:
+        problems.append(f"{len(big)} window(s) over the {HOLD_CAP_MS:.0f} ms cap (worst {max(o[0] for o in big):.1f} ms)")
+    seen = {}
+    for _, label, _, _ in over:
+        seen[label] = seen.get(label, 0) + 1
+    rep = sorted(k for k, c in seen.items() if c > 1)
+    if rep:
+        problems.append("over-limit windows repeat " + ", ".join(rep))
+    sched_n = sum(1 for o in over if o[2] is not None)
+    info = ""
+    if over:
+        parts = []
+        for v, label, cr, bl in over[:5]:
+            sp = "" if cr is None else f" (cpu+runq {cr:.1f}, blocked {bl:.1f})"
+            parts.append(f"{label} {v:.1f} ms{sp}")
+        info = "; over: " + ", ".join(parts)
+        if sched_n:
+            cpu_n = sum(1 for o in over if o[2] is not None and o[2] > HOLD_MS)
+            info += f"; turn-sched: {cpu_n} of {sched_n} cpu+runq over, {sched_n - cpu_n} blocked-dominated (information, not an excuse)"
+    status = FAIL if problems else PASS
+    head = "; ".join(problems) if problems else "within the allowance"
+    return status, (
+        f"{head}: {len(over)} of {n} windows over {HOLD_MS:.0f} ms (allowed {allowed}), "
+        f"max hold_max {worst:.1f} ms" + info + tail)
 
 
 GATES = [

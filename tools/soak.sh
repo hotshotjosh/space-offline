@@ -154,9 +154,10 @@
 #   - peak VmRSS over --rss-budget;
 #   - VmRSS growth over --rss-growth after the last bot login (the sample
 #     where every bot's character has entered the game);
-#   - a `[turns]` line whose hold_max is over --hold-ms (tools/doctrine-report.py G10
-#     is the p99.9 rule; the server runs with --turn-sched, and env.tsv holds the
-#     cgroup throttle / memory pressure / majflt samples, #248);
+#   - more than floor(windows / 1000) `[turns]` windows with hold_max over --hold-ms
+#     (none in a short run), or any window over 4x it: the same allowance as
+#     tools/doctrine-report.py G10; the server runs with --turn-sched, and env.tsv
+#     holds the cgroup throttle / memory pressure / majflt samples (#248);
 #   - a deny-list hit or a pilot still online after the bots stopped (S10).
 # The `[turns]` contract (CP15/CA13): one line per window starting `[turns]`
 # with a `hold_max=<ms>` field, e.g. `[turns] ... hold_max=12.5ms ...`.
@@ -562,14 +563,25 @@ fi
 # The world-turn hold, once the server prints `[turns]`.
 turns=$(grep -c '^\[turns\]' "$out/server.log" 2>/dev/null || true)
 if ((turns > 0)); then
-    hold=$(grep '^\[turns\]' "$out/server.log" \
-        | sed -n 's/.*hold_max=\([0-9.]*\).*/\1/p' | sort -g | tail -1)
-    if [[ -z $hold ]]; then
+    # #248: the same per-window allowance as tools/doctrine-report.py G10: at
+    # most floor(windows / 1000) windows over the limit (none in a short run),
+    # none over 4x the limit. Label repeats are G10's; the box evidence is the
+    # `soak: box:` line below.
+    holds=$(grep '^\[turns\]' "$out/server.log" \
+        | sed -n 's/.*hold_max=\([0-9.]*\).*/\1/p')
+    if [[ -z $holds ]]; then
         fail "turns: $turns [turns] lines but no hold_max=<ms> field"
     else
-        echo "soak: [turns] $turns lines, hold max ${hold} ms (limit $HOLD_LIMIT ms, $PROFILE)"
-        awk -v h="$hold" -v l="$HOLD_LIMIT" 'BEGIN { exit !(h > l) }' \
-            && fail "turns: hold max $hold ms over --hold-ms $HOLD_LIMIT"
+        verdict=$(awk -v l="$HOLD_LIMIT" '
+            { n++; if ($1 > m) m = $1; if ($1 > l) o++; if ($1 > 4 * l) c++ }
+            END { a = int(n / 1000)
+                  printf "%s %d %d %d %d\n", m + 0, n, o + 0, a, c + 0 }' <<<"$holds")
+        read -r hold nwin over allowed capped <<<"$verdict"
+        echo "soak: [turns] $turns lines, hold max ${hold} ms, $over of $nwin windows over $HOLD_LIMIT ms (allowed $allowed; limit $HOLD_LIMIT ms, $PROFILE)"
+        ((over <= allowed)) \
+            || fail "turns: $over windows over --hold-ms $HOLD_LIMIT, $allowed allowed (hold max $hold ms)"
+        ((capped == 0)) \
+            || fail "turns: $capped windows over 4x --hold-ms $HOLD_LIMIT (hold max $hold ms)"
     fi
 elif ((TURNS_REQUIRED)); then
     fail "turns: no [turns] line in server.log"
@@ -585,12 +597,12 @@ if [[ $(wc -l <"$out/env.tsv" 2>/dev/null || echo 0) -gt 1 ]]; then
         NR == 1 { next }
         { n++; if ($2 != "-") { if (f2 == "") f2 = $2; l2 = $2 }
           if ($3 != "-") { if (f3 == "") f3 = $3; l3 = $3 }
-          if ($4 != "-" && $4 + 0 > ps) ps = $4 + 0
-          if ($5 != "-" && $5 + 0 > pf) pf = $5 + 0
+          if ($4 != "-") { ps_seen = 1; if ($4 + 0 > ps) ps = $4 + 0 }
+          if ($5 != "-") { pf_seen = 1; if ($5 + 0 > pf) pf = $5 + 0 }
           if ($6 != "-") { if (f6 == "") f6 = $6; l6 = $6 } }
         END {
             printf "soak: box: %d samples; cpu throttled %s periods / %s ms; memory pressure avg10 max some %s full %s; server majflt +%s\n", n,
-                f2 == "" ? "?" : l2 - f2, f3 == "" ? "?" : (l3 - f3) / 1000, ps + 0, pf + 0, f6 == "" ? "?" : l6 - f6
+                f2 == "" ? "?" : l2 - f2, f3 == "" ? "?" : (l3 - f3) / 1000, ps_seen ? ps + 0 : "?", pf_seen ? pf + 0 : "?", f6 == "" ? "?" : l6 - f6
         }' "$out/env.tsv"
 fi
 
