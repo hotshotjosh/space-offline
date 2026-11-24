@@ -3,7 +3,6 @@
 # matches nothing is a failure. Rows marked M4 wait for the owner's ruling on the client path.
 tools/bot-accounts.sh	docs/lanes/acc2.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/bots.sh	docs/lanes/asteroids.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
-tools/build-triage.py	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
 tools/census-calls.sh	findings/client-calls.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
 tools/client-ci/scenarios/fci_gw_notice_echo.py	docs/lanes/gw-out.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/client-ci/scenarios/lobby_guests.py	docs/lanes/ci-harness.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
@@ -15,7 +14,6 @@ tools/client-ci/scenarios/throttle_and_warp.py	docs/port-tracker.md	text in a me
 tools/client-ci/scenarios/undock_distance.py	docs/port-tracker.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/client-overrides/destiny_dump.py	docs/archive/destiny-and-the-ballpark.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/client-setup.sh	docs/guides/remote-clients.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
-tools/content-lib.sh	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
 tools/dev-world.sh	docs/lanes/bubble.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/doc_lane_index.py	docs/archive/plan-living-world.md	maintainer-side lane index tool; names docs it indexes, absent on the export
 tools/doc_lane_index.py	docs/content/plan.md	maintainer-side lane index tool; names docs it indexes, absent on the export
@@ -33,7 +31,6 @@ tools/gate.sh	tools/test_client_kit.py	guarded by [[ -e ]]: the test list skips 
 tools/gate.sh	tools/test_plan_owners.py	guarded by [[ -e ]]: the test list skips files the export lacks
 tools/land.sh	private/post-land.sh	[[ -x ]]-guarded maintainer post-land hook
 tools/new-build.sh	findings/client-calls.tsv	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
-tools/new-build.sh	tools/build-delta.py	M4: owner ruling pending (build-delta tooling is withheld)
 tools/pin-client.sh	docs/archive/plan-subsystems.md	text in a message, comment-like string or help line: a dead pointer, never opened or run
 tools/port-recheck.py	findings/client-calls.tsv	default input of a maintainer-side RE tool (findings/ is private); M4: owner ruling pending
 tools/port-surface.sh	findings/bound-objects.json	default input/output of a maintainer-side RE scanner (findings/ is private); M4: owner ruling pending
