@@ -148,6 +148,7 @@ pub mod gateway_ext;
 pub mod gateway_out;
 pub mod gateway_plans;
 pub mod gm_tools;
+pub mod images;
 pub mod mtu;
 pub mod paperdoll;
 pub mod smartbomb;
