@@ -141,6 +141,31 @@ fn a_dead_hull_removes_the_row_the_item_and_the_fire_record() {
     assert_eq!(reg.ext_mut::<Fire>().take_last_shooter(id), None);
 }
 
+/// The bundle path (#50): a category-65 `types/market.tsv` row parsed by
+/// `Wrecks::parse` names the hull's wreck, and a kill then spawns the ball.
+#[test]
+fn a_structure_row_parsed_from_the_bundle_leaves_a_wreck_ball_on_a_kill() {
+    let (mut reg, id) = world();
+    let row = format!(
+        "{ASTRAHUS}\t99001\t65\t\t1.0\t\t\t1\t\t\t1\t{}\t1\t1",
+        wreck_type()
+    );
+    let mut content = content_with(&format!(
+        "{ATTR_SHIELD_CAPACITY}={SHIELD};{ATTR_ARMOR_HP}={ARMOR};{ATTR_HULL_HP}={HULL}"
+    ));
+    content.insert(
+        "wrecks",
+        crate::combat::Wrecks::parse(&[row]).expect("parses"),
+    );
+    assert_eq!(
+        crate::combat::wreck_type_in(&content, ASTRAHUS),
+        Some(wreck_type())
+    );
+    reg = reg.with_content(std::sync::Arc::new(content));
+    kill(&mut reg, id);
+    assert_eq!(reg.combat().wrecks().count(), 1);
+}
+
 #[test]
 fn a_dead_hull_leaves_the_hulls_wreck_owned_by_the_corporation() {
     let (mut reg, id) = world();

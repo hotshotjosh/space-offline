@@ -355,7 +355,8 @@ impl Wrecks {
         }
     }
 
-    /// `types/market.tsv` data lines: every ship row (category 6) with a
+    /// `types/market.tsv` data lines: every ship (category 6) and structure
+    /// (category 65) row with a
     /// `wreck_type_id`. A malformed line is an error naming the file and
     /// the line, for `crate::typedata`'s reason: a hull whose wreck went
     /// missing dies without one, silently.
@@ -377,7 +378,13 @@ impl Wrecks {
             let (Some(type_id), Some(category)) = (int(0)?, int(2)?) else {
                 return Err(format!("{file}: data line {}: no type or category", n + 1));
             };
-            if category != crate::typedata::CATEGORY_SHIP {
+            // Ships and Upwell structures (category 65) both carry a wreck
+            // type. [I] The client's `types` rows give a structure hull its
+            // `wreckTypeID` like a ship's; falsifier: a bundle whose
+            // category-65 rows have none (the kill then leaves no wreck).
+            if category != crate::typedata::CATEGORY_SHIP
+                && category != crate::typedata::CATEGORY_STRUCTURE
+            {
                 continue;
             }
             if let Some(wreck) = int(11)? {
@@ -4136,8 +4143,8 @@ pub(crate) mod tests {
         }
     }
 
-    /// `types/market.tsv` gives every **ship** its `wreck_type_id` (W18
-    /// CP58d): another category's column is not read, a ship with none has
+    /// `types/market.tsv` gives every **ship** and **structure** its
+    /// `wreck_type_id` (W18 CP58d, #50): another category's column is not read, a ship with none has
     /// none, a malformed number is an error naming the file, and no file is
     /// no wrecks. Invented rows.
     #[test]
@@ -4149,13 +4156,16 @@ pub(crate) mod tests {
             row(990_000_001, 6, "990000901"),
             row(990_000_002, 6, ""),
             row(990_000_003, 7, "990000902"),
+            row(990_000_004, 65, "990000903"),
+            row(990_000_005, 65, ""),
         ])
         .expect("parses");
         assert_eq!(
             w.iter().collect::<Vec<_>>(),
-            vec![(990_000_001, 990_000_901)]
+            vec![(990_000_001, 990_000_901), (990_000_004, 990_000_903)]
         );
-        assert_eq!(w.of(990_000_003), None, "not a ship");
+        assert_eq!(w.of(990_000_003), None, "not a ship or structure");
+        assert_eq!(w.of(990_000_005), None, "a structure with none has none");
         let bad = Wrecks::parse(&[row(990_000_001, 6, "x")]).unwrap_err();
         assert!(bad.contains("types/market.tsv"), "{bad}");
         assert!(Wrecks::parse(&[]).expect("empty").iter().next().is_none());
