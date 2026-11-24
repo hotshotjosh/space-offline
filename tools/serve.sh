@@ -342,6 +342,9 @@ trap stop INT TERM
 trap on_exit EXIT
 touch "$VAR/serve.lock"   # this run's start; report_world compares against it
 
+if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/26000" 2>/dev/null; then
+    die "port 26000 is already in use (another eve-server?)"
+fi
 crashes=()   # epoch seconds of each crash inside the window
 first=1
 while :; do
@@ -352,20 +355,34 @@ while :; do
     started=$(date +%s)
     "$SERVER" "${ARGS[@]}" >"$LOG" 2>&1 9>&- &
     PID=$!
-    if (( first )); then
-        wait_host=127.0.0.1; (( CLIENT )) && wait_host=$HOST_IP
-        listening=0
-        for _ in $(seq 120); do
-            timeout 1 bash -c "exec 3<>/dev/tcp/$wait_host/26000" 2>/dev/null && { listening=1; break; }
-            kill -0 "$PID" 2>/dev/null || break; sleep 1
-        done
-        if (( ! listening )) && kill -0 "$PID" 2>/dev/null; then
-            echo "serve.sh: eve-server is running but not listening on $wait_host:26000 after 120s; last lines:" >&2
-            tail -n 5 "$LOG" | sed 's/^/   /' >&2
-            die "eve-server never listened"
+    wait_host=127.0.0.1; (( CLIENT )) && wait_host=$HOST_IP
+    # Ready is OUR server's own bind line in its log, not "something accepts on
+    # the port" (another server there would pass that and ours would fail to bind).
+    # [A] 120 s is enough for a healthy boot; falsified by a healthy boot that
+    # takes longer (raise EVE_LISTEN_TIMEOUT).
+    listen_timeout=${EVE_LISTEN_TIMEOUT:-120}
+    listening=0
+    t0=$(date +%s)
+    while :; do
+        grep -qF "eve-server listening on $wait_host:26000" "$LOG" 2>/dev/null && { listening=1; break; }
+        kill -0 "$PID" 2>/dev/null || break
+        (( $(date +%s) - t0 >= listen_timeout )) && break
+        sleep 1
+    done
+    if (( ! listening )) && kill -0 "$PID" 2>/dev/null; then
+        echo "serve.sh: eve-server is running but did not log listening on $wait_host:26000 after ${listen_timeout}s; last lines:" >&2
+        tail -n 5 "$LOG" | sed 's/^/   /' >&2
+        die "eve-server never listened"
+    fi
+    if (( first && CLIENT && listening )); then
+        "$REPO/tools/run-client.sh" & CLIENT_PID=$!
+    fi
+    if (( listening )); then
+        if (( first )); then
+            echo "== ready: eve-server listening on $wait_host:26000; serving, Ctrl-C to stop"
+        else
+            echo "== restarted: eve-server listening on $wait_host:26000 again"
         fi
-        (( CLIENT )) && { "$REPO/tools/run-client.sh" & CLIENT_PID=$!; }
-        (( listening )) && echo "== ready: eve-server listening on $wait_host:26000; serving, Ctrl-C to stop"
     fi
     # `wait` returns early when a trapped signal arrives; wait again for the exit.
     status=0; wait "$PID" || status=$?

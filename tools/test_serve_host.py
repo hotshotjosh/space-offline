@@ -90,7 +90,7 @@ class ServeTree(unittest.TestCase):
         )
         self.out = os.path.join(self.dir, "stub.out")
 
-    def serve(self, *args, manifest=True):
+    def serve(self, *args, manifest=True, extra_env=None):
         if manifest:
             write(
                 os.path.join(self.dir, "out/content/MANIFEST.tsv"),
@@ -98,8 +98,29 @@ class ServeTree(unittest.TestCase):
             )
         return run(
             ["bash", os.path.join(self.dir, "tools/serve.sh"), "--no-build", *args],
-            env={"STUB_OUT": self.out, "EVE_WEBHOOK_FILE": "/nonexistent"},
+            env={"STUB_OUT": self.out, "EVE_WEBHOOK_FILE": "/nonexistent", **(extra_env or {})},
         )
+
+    def stub(self, body):
+        write(
+            os.path.join(self.dir, "server/target/release/eve-offline-server"),
+            "#!/usr/bin/env bash\nif [[ ${1:-} == --help ]]; then echo '--world-accounts'; exit 0; fi\n" + body,
+            0o755,
+        )
+
+    def test_ready_is_printed_when_the_server_logs_its_bind(self) -> None:
+        self.stub("echo 'eve-server listening on 127.0.0.1:26000 in Sandbox mode'; sleep 1; exit 0\n")
+        r = self.serve("--bundle-frozen")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("== ready: eve-server listening on 127.0.0.1:26000", r.stdout)
+
+    def test_a_server_that_never_logs_listening_dies_after_the_timeout(self) -> None:
+        self.stub("echo booting; exec sleep 30\n")
+        r = self.serve("--bundle-frozen", extra_env={"EVE_LISTEN_TIMEOUT": "2", "EVE_STOP_TIMEOUT": "1"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("never listened", r.stderr)
+        self.assertIn("booting", r.stderr)
+        self.assertNotIn("== ready", r.stdout)
 
     def binds(self):
         with open(self.out) as f:
