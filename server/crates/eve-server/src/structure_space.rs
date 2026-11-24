@@ -552,16 +552,17 @@ pub fn tick(reg: &mut Registry, _: std::time::Instant, ft: crate::damage::BlueTi
         return;
     }
     let now = ft;
-    // A structure waiting in 102 for a core it does not need (STR-CORE).
-    crate::structure_bays::waive_cores(reg, now);
+    // A structure waiting in 102 with `corerule` off gets its deed (STR-CORE);
+    // its events are reacted to below, on the clock, with the tick's own.
+    let mut ran = crate::structure_bays::waive_cores(reg, now);
     let fallback = env(reg, now);
     let envs: BTreeMap<i64, structure::Env> = structure::all(reg.deltas())
         .iter()
         .map(|s| (s.id, env_for(reg, s, now)))
         .collect();
-    let ran = structure::tick(reg.deltas_mut(), |s| {
+    ran.extend(structure::tick(reg.deltas_mut(), |s| {
         envs.get(&s.id).copied().unwrap_or(fallback)
-    });
+    }));
     if ran.is_empty() {
         return;
     }

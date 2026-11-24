@@ -71,7 +71,7 @@ in the `COMMANDS` table but in each module's `commands` list.
 
 | command | usage | what it does |
 |---|---|---|
-| `/world` | `/world [training\|startisk\|startsp\|anchortime\|freeclone\|freeupkeep\|deletetime <value>]` | no argument lists the world settings. `training` (a multiplier, 1 to 10000), `anchortime` (seconds, 60 to 604800), `freeclone` and `freeupkeep` (0 or 1, default 1; #41) and `deletetime` (seconds, 0 to 2592000) change at once and are kept in the world file. `startisk` and `startsp` are fixed when the world is made (`--world-start-isk`, `--world-start-sp`), and `/world` refuses to change them. A value out of range changes nothing |
+| `/world` | `/world [training\|startisk\|startsp\|anchortime\|freeclone\|freeupkeep\|corerule\|deletetime <value>]` | no argument lists the world settings. `training` (a multiplier, 1 to 10000), `anchortime` (seconds, 60 to 604800), `freeclone` and `freeupkeep` (0 or 1, default 1; #41), `corerule` (0 or 1, default 1; #42: 1 keeps an anchored structure in state 102 until its quantum core is in the deed bay, 0 lets it finish onlining without one) and `deletetime` (seconds, 0 to 2592000) change at once and are kept in the world file. `startisk` and `startsp` are fixed when the world is made (`--world-start-isk`, `--world-start-sp`), and `/world` refuses to change them. A value out of range changes nothing |
 | `/geode` | `/geode give [tier]` | puts a geode of that tier (default 1) in your cargo hold, if the world has geode crate types (none until `content/econ/geode-picks.tsv` or `out/geode-picks.local.tsv` has picks) |
 | `/motherlode` | `/motherlode [begin\|end\|status]` | opens or closes a motherlode event on the belt last mined in your system, else its first belt; `status` lists the running ones |
 

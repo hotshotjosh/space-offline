@@ -30,16 +30,20 @@
 //!
 //! Whether a core is *required* is owner decision D4. The setting is
 //! [`crate::rules::Rules::structure_core_required`] (`/world corerule`),
-//! default on. With it off, [`waive_cores`] finishes onlining a structure
-//! that waits in state 102 without a core. A hull that names no core type
-//! needs none either way.
+//! default on **[A]**. With it off, [`waive_cores`] finishes onlining a
+//! structure that waits in state 102 without a core, from the world clock.
+//! With it on, every structure waits for its core, a hull that names no core
+//! type included (it then waits for ever, as it did before this module).
+//! There is no NPC core seller: where cores come from is the open owner
+//! question D4.
 //!
 //! # [A]s (falsifier in each)
 //!
 //! - **D4: cores are required, and `corerule` is the switch.** Falsifier: the
 //!   owner decides D4 differently.
-//! - Bay contents are owned by the structure's corporation; falsifier: a TQ
-//!   fuel stack showing the pilot as owner.
+//! - **[V]** Bay contents are owned by the structure's corporation: the
+//!   client's `invControllers` `StructureBay.IsItemHere` / `GetOwnerID` compare
+//!   the item's owner with the structure's corporation.
 //! - The role gate (director, CEO or station manager of the owning corp) is
 //!   ours; the client checks the role only for modules. Falsifier: a TQ pilot
 //!   with control rights but no role filling the bay.
@@ -53,6 +57,12 @@
 //!   on unanchoring, or the wreck to hold them.
 //! - The fuel bay has no volume limit yet. Falsifier: a TQ refusal for
 //!   overfilling it.
+//! - A second core into a full deed bay is refused with
+//!   `CannotPutNonDeedInDeedSlot`. Falsifier: another key in a TQ capture.
+//! - Only the pilot's own items may be put in a bay. Falsifier: a TQ pilot
+//!   filling it from a corporation hangar.
+//! - The fuel bay also takes Liquid Ozone (lava for the Metenox) **[I]**: the
+//!   client's bay accepts `groupFuelBlock` only. Falsifier: TQ refusing ozone.
 //! - The refusal reason of `CrpAccessDenied` is a plain sentence, not a
 //!   client label. Falsifier: the dialog reads wrong.
 //!
@@ -71,9 +81,12 @@ mod tests;
 
 /// `groupFuelBlock` **[V]** (`inventorycommon/const`).
 pub const GROUP_FUEL_BLOCK: i64 = 1_136;
-/// `typeLiquidOzone` **[V]**: also taken by the fuel bay of a non-Metenox.
+/// `groupQuantumCore` **[V-data]** (`typedata.tsv`, types 56201-56208).
+pub const GROUP_QUANTUM_CORE: i64 = 4_086;
+/// `typeLiquidOzone` **[V]** as a type; that the bay of a non-Metenox takes it
+/// is **[I]**: the client's bay accepts `groupFuelBlock` only.
 pub const TYPE_LIQUID_OZONE: i64 = 16_273;
-/// `typeColonyReagentLava` **[V]**: the Metenox's fuel-bay content.
+/// `typeColonyReagentLava` **[V]** as a type; as the Metenox's fuel **[I]**.
 pub const TYPE_COLONY_REAGENT_LAVA: i64 = 81_143;
 /// `attributeStructureRequiresDeedType` **[V]** (`dogma/const`): the core
 /// type the hull needs in its deed bay.
@@ -83,7 +96,7 @@ pub const ATTR_REQUIRES_DEED_TYPE: i64 = 3_101;
 const CONTAINER_HANGAR: i64 = 10_004;
 
 /// `flagRigSlot0..2` **[V]**.
-const RIG_SLOTS: std::ops::RangeInclusive<i64> = 92..=94;
+pub const RIG_SLOTS: std::ops::RangeInclusive<i64> = 92..=94;
 
 fn raise(key: &str, args: Vec<(&str, PyValue)>) -> ServiceError {
     ServiceError::Raise(eve_proto::user_error(key, crate::pyutil::pypairs(args)))
@@ -139,6 +152,9 @@ pub fn may_hold(
         FLAG_DEED => {
             if core_type(content, structure_type) == Some(item_type) {
                 Ok(())
+            } else if item_group == GROUP_QUANTUM_CORE {
+                // A core, but another hull's (`WrongDeedTypeForStructure`).
+                Err(raise("WrongDeedTypeForStructure", vec![]))
             } else {
                 Err(raise("CannotPutNonDeedInDeedSlot", vec![]))
             }
@@ -202,22 +218,28 @@ pub fn destroy_rigs(reg: &mut Registry, structure_id: i64) {
     }
 }
 
-/// Whether `s` waits in state 102 for a core it does not need: the world's
-/// rule says cores are not required, or its hull names none.
-fn core_waived(reg: &Registry, s: &Structure) -> bool {
-    !reg.config().rules.structure_core_required || core_type(reg.content(), s.type_id).is_none()
+/// Whether a structure waiting in state 102 gets its deed without a core:
+/// only when the world's rule says cores are not required **[A]**. A hull
+/// that names no core is not waived by that alone, so today's behaviour holds
+/// under the default.
+fn core_waived(reg: &Registry) -> bool {
+    !reg.config().rules.structure_core_required
 }
 
-/// The tick's pre-pass: a structure in state 102 with no core in its bay that
-/// needs none gets its deed, so the state machine finishes onlining it. A
-/// no-op when nothing waits.
-pub fn waive_cores(reg: &mut Registry, now: i64) {
+/// The clock's pre-pass: with `corerule` off, a structure in state 102 with no
+/// core in its bay gets its deed, so the state machine finishes onlining it.
+/// Returns the events of each, for the tick to react to on the clock (the
+/// pushes are scheduled, not left in `pending`). Empty when nothing waits.
+pub fn waive_cores(reg: &mut Registry, now: i64) -> Vec<(i64, Vec<structure::Event>)> {
+    if !core_waived(reg) {
+        return Vec::new();
+    }
     let waiting: Vec<i64> = structure::all(reg.deltas())
         .iter()
         .filter(|s| s.state == structure::State::OnliningVulnerable && !s.deed_present)
-        .filter(|s| core_waived(reg, s))
         .map(|s| s.id)
         .collect();
+    let mut out = Vec::new();
     for id in waiting {
         let Some(mut s) = structure::get(reg.deltas(), id) else {
             continue;
@@ -227,8 +249,9 @@ pub fn waive_cores(reg: &mut Registry, now: i64) {
         let events = s.take_events();
         structure::put(reg.deltas_mut(), &s);
         reg.mark_dirty();
-        crate::structure_space::react_at(reg, id, &events, now);
+        out.push((id, events));
     }
+    out
 }
 
 /// `actor` may fill and empty the bays of `s`: a director, the CEO or a
@@ -334,6 +357,9 @@ fn put_all(
 
 /// The units of `item` that `actor` may put into a bay of `s`: his own, in
 /// his hangar here or in his active ship docked here.
+///
+/// Own items only **[A]**; falsifier: a TQ pilot filling a bay from a
+/// corporation hangar.
 fn source_ok(reg: &Registry, actor: i64, sid: i64, item: &crate::item::Item) -> bool {
     if item.owner_id != actor {
         return false;
@@ -430,6 +456,13 @@ fn take_all(
     qty: Option<i64>,
 ) -> Result<PyValue, ServiceError> {
     may_use(reg, actor, s)?;
+    // The core stays: refuse before anything moves.
+    if ids
+        .iter()
+        .any(|&id| reg.item(id).is_some_and(|i| i.flag_id == FLAG_DEED))
+    {
+        return Err(raise("CannotRemoveDeedOnceFitted", vec![]));
+    }
     for &id in ids {
         take(reg, actor, s, id, qty)?;
     }

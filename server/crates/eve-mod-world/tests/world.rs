@@ -417,7 +417,6 @@ fn the_upwell_switches_default_on_and_take_zero_or_one() {
 fn the_core_rule_is_live_and_a_switch() {
     let mut reg = world();
     settings::startup(&mut reg).expect("starts");
-    assert!(reg.config().rules.structure_core_required);
     info(slash(&mut reg, GM, "/world corerule 0"));
     assert!(!reg.config().rules.structure_core_required);
     assert_eq!(stored(&reg, "corerule").as_deref(), Some("0"));

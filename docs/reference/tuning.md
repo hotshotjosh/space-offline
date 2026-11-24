@@ -75,10 +75,11 @@ count every time. A value outside its range stops the start (`srv/rules.rs`
 | Seconds an Upwell structure takes to anchor | `--world-anchor-time` | `/world anchortime <s>` | 3600 | whole number 60..=604800 | live; structures anchored from then on | `world/settings.rs:72-81`, `srv/rules.rs:77-81` |
 | Whether every online Upwell structure offers a clone bay with no Cloning Center online | none | `/world freeclone <0\|1>` | 1 | 0 or 1 | live; read at every services answer | `world/settings.rs`, `srv/rules.rs` `upwell_free_clone` (#41) |
 | Whether an Upwell structure keeps full power with no service module online | none | `/world freeupkeep <0\|1>` | 1 | 0 or 1 | live; read on each structure tick | `world/settings.rs`, `srv/rules.rs` `upwell_free_upkeep` (#41) |
+| Whether an Upwell structure needs its quantum core in the deed bay to finish onlining | none | `/world corerule <0\|1>` | 1 | 0 or 1 | live; read on each structure tick, a structure already waiting in state 102 finishes on the next one when set to 0 | `world/settings.rs`, `srv/rules.rs` `structure_core_required`, `structure_bays.rs` (#42) |
 | Seconds between asking to delete a character and the delete | `--world-delete-time` | `/world deletetime <s>` | 3600 | whole number 0..=2592000 | live; from the next request | `world/settings.rs:82-91`, `srv/rules.rs:71-74` |
 
 - `/world` alone lists every setting. `/world startisk` and `/world startsp`
-  are refused with a message; `training`, `anchortime`, `freeclone`, `freeupkeep` and `deletetime` apply
+  are refused with a message; `training`, `anchortime`, `freeclone`, `freeupkeep`, `corerule` and `deletetime` apply
   and are stored.
 - The start ISK of 1,000,000 is the owner's choice for now
   (`srv/start.rs:63`). The one-hour delete wait is an **[A]** (`srv/rules.rs:69-71`);

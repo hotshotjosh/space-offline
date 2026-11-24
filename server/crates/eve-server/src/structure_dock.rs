@@ -865,7 +865,12 @@ pub fn evacuate(reg: &mut Registry, s: &Structure) {
     // owner, except in wormhole space, which has none and keeps the older
     // move to the harbour.
     // Rigs do not leave with their hull (STR-CORE); bay and slot items are
-    // wrapped as hangar stock.
+    // wrapped as hangar stock. [A] In the loop below (no asset safety: the
+    // wormhole move), a corporation's core, fuel or module lands at flag 4 of
+    // the harbour station owned by the corporation, as asset safety's own
+    // delivery puts a corporation's stock (`asset_safety::deliver`), not in the
+    // corporation deliveries flag; the same for #41's modules. Falsifier: a
+    // TQ corporation finding it only in its deliveries hangar.
     crate::structure_bays::destroy_rigs(reg, s.id);
     let now = crate::pyutil::filetime_now();
     let ships: BTreeSet<i64> = reg.config().characters.iter().map(|c| c.ship_id).collect();

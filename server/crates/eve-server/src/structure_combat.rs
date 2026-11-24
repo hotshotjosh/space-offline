@@ -578,12 +578,11 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
         crate::war::file_report(w, &report);
     }
     // The structure's own bays (fuel, deed, ammo, fighters, moon material,
-    // service slots) go down with it; evacuation wraps the hangars only [I].
-    // The set is the bay flags only: fitting (U6) must extend it (fitted
-    // slots, rigs, the quantum core) per O-14 [A]. [A] Until then a fitted
-    // item located here would be rolled into a J-space wreck by `drop_plan`,
-    // where TQ always destroys rigs; U6 must extend `is_bay_flag` or filter
-    // the plan by flag. Falsifier: a TQ J-space wreck that holds rigs.
+    // service slots), its rigs and its quantum core go down with it
+    // (`structure_bays::dies_with_hull`); evacuation wraps the hangars only
+    // [I]. [A] Owner decision D7: nothing a structure holds in a bay or slot
+    // drops into the wreck. Falsifier: the owner wants them in the wreck, or a
+    // TQ J-space wreck that holds rigs or modules.
     let bays: Vec<Edit> = w
         .store()
         .contents_of(s.id)

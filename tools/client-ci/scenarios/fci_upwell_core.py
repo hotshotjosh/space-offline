@@ -1504,14 +1504,36 @@ def eoci_main(EOCI_NAME):
         ok, rows = safe(lambda: inv.GetInventoryFromId(item_id).List(flag=flag))
         return list(rows) if ok and rows is not None else None
 
-    def eoci_body():
-        mark = log_mark()
+    # The world settings this scenario changes, read before and put back in
+    # `eoci_steps`' `finally`: `/world` answers a line per setting,
+    # `/world anchortime = 3600  (...)`.
+    prior = {'anchortime': None, 'corerule': None}
+
+    def read_world_setting(name):
+        ok, reply = gm('/world')
+        key = '/world %s = ' % name
+        at = reply.find(key) if ok else -1
+        if at < 0:
+            return None
+        digits = ''
+        for ch in reply[at + len(key):]:
+            if ch not in '0123456789.':
+                break
+            digits += ch
+        return digits or None
+
+    def eoci_steps():
         sess = builtin('session')
         corp, alliance, why = ensure_alliance()
         precondition('a player corporation to own the structure', corp is not None, why)
         if corp is None:
             return
         try:
+            prior['anchortime'] = read_world_setting('anchortime')
+            prior['corerule'] = read_world_setting('corerule')
+            say('world settings before: %s' % text(prior))
+            # The scenario is about the rule being on, whatever the world had.
+            gm_check('/world corerule 1', '/world corerule 1', expect=['1'])
             gm_check('/world anchortime 60', '/world anchortime 60', expect=['60'])
             ok, v = undock()
             precondition('in space', ok, text(v)[:200])
@@ -1627,9 +1649,22 @@ def eoci_main(EOCI_NAME):
             check('the core cannot be taken out again',
                   (not ok) and 'CannotRemoveDeedOnceFitted' in text(v), text(v)[:300])
         finally:
-            gm('/world anchortime 3600')
+            # Put back what was there; an unread value is said, not guessed.
+            for name in ('anchortime', 'corerule'):
+                if prior[name] is None:
+                    say('could not read /world %s before; not restored' % name)
+                else:
+                    gm('/world %s %s' % (name, prior[name]))
             sleep_ms(1000)
-        no_new_tracebacks('core', mark)
+
+    def eoci_body():
+        # Every path through the steps, early returns included, ends in the
+        # traceback check.
+        mark = log_mark()
+        try:
+            eoci_steps()
+        finally:
+            no_new_tracebacks('core', mark)
 
 
     # -- end of the scenario body ------------------------------------------

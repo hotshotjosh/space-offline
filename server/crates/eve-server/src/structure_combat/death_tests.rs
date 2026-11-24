@@ -477,26 +477,43 @@ fn a_structure_dead_in_wormhole_space_drops_its_hangar_in_the_wreck() {
 #[test]
 fn destruction_destroys_bay_and_slot_items_before_asset_safety() {
     let (mut reg, id) = world();
-    let held: Vec<i64> = [172, 180, 164, 171, 92, 94]
-        .into_iter()
-        .map(|flag| {
-            reg.apply_items(&[crate::item::Edit::Create {
-                type_id: crate::service::TYPE_CAPSULE,
-                quantity: 1,
-                to: crate::item::Slot::new(CORP, id, flag),
-            }])
-            .expect("created");
-            reg.store()
-                .contents_of(id)
-                .find(|i| i.flag_id == flag)
-                .expect("held")
-                .item_id
-        })
-        .collect();
+    use crate::structure_dock::control::{FLAG_DEED, FLAG_FUEL};
+    use crate::structure_services::{FIRST_SLOT, LAST_SLOT};
+    let rigs = crate::structure_bays::RIG_SLOTS;
+    let held: Vec<(i64, i64)> = [
+        FLAG_FUEL,
+        FLAG_DEED,
+        FIRST_SLOT,
+        LAST_SLOT,
+        *rigs.start(),
+        *rigs.end(),
+    ]
+    .into_iter()
+    .map(|flag| {
+        reg.apply_items(&[crate::item::Edit::Create {
+            type_id: crate::service::TYPE_CAPSULE,
+            quantity: 1,
+            to: crate::item::Slot::new(CORP, id, flag),
+        }])
+        .expect("created");
+        let item = reg
+            .store()
+            .contents_of(id)
+            .find(|i| i.flag_id == flag)
+            .expect("held")
+            .item_id;
+        (item, flag)
+    })
+    .collect();
     let spare = hangar_item(&mut reg, BOSS, id);
     kill(&mut reg, id);
-    for item in held {
-        assert!(reg.store().get(item).is_none(), "{item} died with the hull");
+    // That they die is [A] (owner decision D7): the test follows the predicate.
+    for (item, flag) in held {
+        assert_eq!(
+            reg.store().get(item).is_none(),
+            crate::structure_bays::dies_with_hull(flag),
+            "{item} at {flag}"
+        );
     }
     let wraps = crate::asset_safety::of_owner(reg.deltas(), BOSS);
     assert_eq!(wraps.len(), 1, "the hangar stock is wrapped");

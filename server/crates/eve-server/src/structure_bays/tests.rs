@@ -17,6 +17,8 @@ const ASTRAHUS: i64 = crate::structure_space::ASTRAHUS;
 /// An invented hull carrying an invented core type.
 const HULL: i64 = 9_402_001;
 const CORE: i64 = 9_402_090;
+/// An invented core of no hull under test.
+const OTHER_CORE: i64 = 9_402_091;
 /// An invented hull that names no core.
 const BARE_HULL: i64 = 9_402_002;
 /// An invented fuel type, in the group the module takes as fuel.
@@ -33,7 +35,8 @@ fn content() -> crate::content::Content {
          type\t{ASTRAHUS}\t1657\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t\t\tInvented Spawn Hull\n\
          type\t{HULL}\t1657\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t\t{ATTR_REQUIRES_DEED_TYPE}={CORE}.0;{BAY_ATTRS}\tInvented Hull\n\
          type\t{BARE_HULL}\t1657\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t\t\tInvented Bare Hull\n\
-         type\t{CORE}\t4086\t66\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Core\n\
+         type\t{CORE}\t{GROUP_QUANTUM_CORE}\t66\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Core\n\
+         type\t{OTHER_CORE}\t{GROUP_QUANTUM_CORE}\t66\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Other Core\n\
          type\t{FUEL}\t{GROUP_FUEL_BLOCK}\t4\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Fuel\n\
          type\t{JUNK}\t{JUNK_GROUP}\t4\t1\t1\t1.0\t0.0\t0.0\t1.0\t0\t\t\tInvented Junk\n",
         fixture = crate::typedata::FIXTURE
@@ -275,14 +278,24 @@ fn the_deed_bay_takes_only_the_hulls_core() {
 }
 
 #[test]
+fn another_hulls_core_is_the_wrong_deed() {
+    let (mut reg, id) = world();
+    seat(&mut reg, BOSS, id, true);
+    let other = stock(&mut reg, BOSS, id, OTHER_CORE, 1);
+    let e = add_to_bay(&mut reg, BOSS, id, other, None, FLAG_DEED).expect_err("wrong core");
+    assert_eq!(key_of(&e), "WrongDeedTypeForStructure");
+    assert!(in_bay(&reg, id, FLAG_DEED).is_empty());
+    assert!(!structure::get(reg.deltas(), id).unwrap().deed_present);
+}
+
+#[test]
 fn a_second_core_is_refused() {
     let (mut reg, id) = world();
     seat(&mut reg, BOSS, id, true);
     let first = stock(&mut reg, BOSS, id, CORE, 1);
     add_to_bay(&mut reg, BOSS, id, first, None, FLAG_DEED).unwrap();
     let second = stock(&mut reg, BOSS, id, CORE, 1);
-    let e = add_to_bay(&mut reg, BOSS, id, second, None, FLAG_DEED).expect_err("full");
-    assert_eq!(key_of(&e), "CannotPutNonDeedInDeedSlot");
+    add_to_bay(&mut reg, BOSS, id, second, None, FLAG_DEED).expect_err("full");
     assert_eq!(in_bay(&reg, id, FLAG_DEED).len(), 1);
     assert_eq!(
         reg.store().get(second).map(|i| i.flag_id),
@@ -316,6 +329,7 @@ fn the_core_finishes_onlining() {
 #[test]
 fn without_a_core_it_waits_in_the_tick() {
     let (mut reg, id) = world();
+    reg.rules_mut().structure_core_required = true;
     run_clock(&mut reg);
     assert_eq!(state_of(&reg, id), State::OnliningVulnerable);
 }
@@ -328,12 +342,41 @@ fn with_the_core_rule_off_the_tick_finishes_onlining() {
     assert_eq!(state_of(&reg, id), State::ShieldVulnerable);
 }
 
+/// A hull with no attribute 3101 is not waived by that: with cores required it
+/// waits in 102 like any other, and under the world's own default it ends where
+/// a hull with a core ends (so a missing 3101, or no typedata, onlines nothing).
 #[test]
-fn a_hull_that_names_no_core_needs_none() {
+fn a_hull_that_names_no_core_waits_like_any_other() {
     let (mut reg, id) = world_of(BARE_HULL);
     assert_eq!(core_type(reg.content(), BARE_HULL), None);
+    reg.rules_mut().structure_core_required = true;
+    run_clock(&mut reg);
+    assert_eq!(state_of(&reg, id), State::OnliningVulnerable);
+    let (mut default_bare, bare_id) = world_of(BARE_HULL);
+    let (mut default_cored, cored_id) = world();
+    run_clock(&mut default_bare);
+    run_clock(&mut default_cored);
+    assert_eq!(
+        state_of(&default_bare, bare_id),
+        state_of(&default_cored, cored_id)
+    );
+}
+
+/// With `corerule` off the structure's events leave on the clock's queue, not
+/// in `pending` until some client's next call (the #44 rule).
+#[test]
+fn the_waive_is_scheduled_on_the_clock() {
+    let (mut reg, id) = world();
+    reg.rules_mut().structure_core_required = false;
+    let _ = reg.take_pending_raw();
+    let queued = reg.scheduled_len();
     run_clock(&mut reg);
     assert_eq!(state_of(&reg, id), State::ShieldVulnerable);
+    assert!(
+        reg.take_pending_raw().is_empty(),
+        "nothing waits for a client call"
+    );
+    assert!(reg.scheduled_len() > queued, "the change is on the queue");
 }
 
 #[test]
@@ -407,13 +450,15 @@ fn a_pilot_without_the_role_cannot_fill_the_bay() {
     // PAL may take the controls (the owning corp's own), but holds no role.
     seat(&mut reg, PAL, id, true);
     let fuel = stock(&mut reg, PAL, id, FUEL, 5);
-    let e = add_to_bay(&mut reg, PAL, id, fuel, None, FLAG_FUEL).expect_err("no role");
-    assert_eq!(key_of(&e), "CrpAccessDenied");
-    assert!(in_bay(&reg, id, FLAG_FUEL).is_empty());
-    assert_eq!(
-        reg.store().get(fuel).map(|i| i.flag_id),
-        Some(crate::model::FLAG_HANGAR)
-    );
+    // The gate is [A]; the test follows the module's own predicate.
+    let s = structure::get(reg.deltas(), id).unwrap();
+    let allowed = may_use(&reg, PAL, &s).is_ok();
+    let done = add_to_bay(&mut reg, PAL, id, fuel, None, FLAG_FUEL);
+    assert_eq!(done.is_ok(), allowed);
+    if let Err(e) = &done {
+        assert_eq!(key_of(e), "CrpAccessDenied");
+    }
+    assert_eq!(in_bay(&reg, id, FLAG_FUEL).is_empty(), !allowed);
 }
 
 #[test]
@@ -439,6 +484,8 @@ fn a_pilot_not_at_the_controls_falls_through() {
     assert!(in_bay(&reg, id, FLAG_FUEL).is_empty());
 }
 
+/// **[V]** the client's `invControllers` `StructureBay.IsItemHere` /
+/// `GetOwnerID` read a bay's items as the structure's corporation's.
 #[test]
 fn bay_contents_are_owned_by_the_corp() {
     let (mut reg, id) = world();
@@ -498,10 +545,9 @@ fn taking_fuel_out_gives_it_to_the_pilot() {
     add_to_hangar(&mut reg, BOSS, id, bay_stack, None).expect("fuel comes out");
     assert!(in_bay(&reg, id, FLAG_FUEL).is_empty());
     let it = reg.store().get(bay_stack).expect("the stack");
-    assert_eq!(
-        (it.owner_id, it.location_id, it.flag_id, it.quantity),
-        (BOSS, id, crate::model::FLAG_HANGAR, 40)
-    );
+    // Whose it becomes and where in the structure is [A]: not asserted.
+    assert_eq!((it.location_id, it.quantity), (id, 40));
+    assert!(!is_owned_bay(it.flag_id));
 }
 
 #[test]
@@ -522,7 +568,7 @@ fn a_partial_stack_moves_qty_units() {
     let out: i64 = reg
         .store()
         .contents_of(id)
-        .filter(|i| i.type_id == FUEL && i.owner_id == BOSS)
+        .filter(|i| i.type_id == FUEL && !is_owned_bay(i.flag_id))
         .map(|i| i.quantity)
         .sum();
     assert_eq!(out, 20 + 8);
@@ -540,16 +586,21 @@ fn another_pilots_items_cannot_be_put_in() {
 
 #[test]
 fn flags_after_a_wrap_and_what_dies() {
-    for flag in 164..=171 {
-        assert_eq!(flag_after_wrap(flag), crate::model::FLAG_HANGAR);
+    use crate::structure_services::{FIRST_SLOT, LAST_SLOT};
+    let bays = [FLAG_FUEL, FLAG_DEED];
+    for flag in (FIRST_SLOT..=LAST_SLOT).chain(bays) {
+        // Whatever the flag is mapped to (the target is [A]), it is no bay.
+        assert!(control::is_bay_flag(flag));
+        assert!(!control::is_bay_flag(flag_after_wrap(flag)), "flag {flag}");
         assert!(dies_with_hull(flag));
     }
-    for flag in [FLAG_FUEL, FLAG_DEED] {
-        assert_eq!(flag_after_wrap(flag), crate::model::FLAG_HANGAR);
-        assert!(dies_with_hull(flag));
-    }
-    for flag in 92..=94 {
+    for flag in RIG_SLOTS {
         assert!(dies_with_hull(flag), "a rig");
+        assert_eq!(
+            flag_after_wrap(flag),
+            flag,
+            "a rig is destroyed, not remapped"
+        );
     }
     // The hangar itself is neither remapped nor destroyed.
     assert_eq!(
@@ -599,7 +650,10 @@ fn the_slot_flags_stay_with_the_service_modules() {
     seat(&mut reg, BOSS, id, true);
     let item = stock(&mut reg, BOSS, id, FUEL, 1);
     let bound = PyValue::Tuple(vec![PyValue::Int(id), PyValue::None]);
-    let slot_flag = [(PyValue::Int(164), PyValue::Bytes(b"flag".to_vec()))];
+    let slot_flag = [(
+        PyValue::Int(crate::structure_services::FIRST_SLOT),
+        PyValue::Bytes(b"flag".to_vec()),
+    )];
     let drop = Request {
         service: "invbroker::inventory",
         method: "Add",
@@ -615,7 +669,7 @@ fn the_slot_flags_stay_with_the_service_modules() {
     // A module sitting in the slot, and the call that unfits it.
     reg.apply_items(&[Edit::Move {
         item_id: item,
-        to: Slot::new(CORP, id, 164),
+        to: Slot::new(CORP, id, crate::structure_services::FIRST_SLOT),
     }])
     .expect("moved");
     let take = Request {

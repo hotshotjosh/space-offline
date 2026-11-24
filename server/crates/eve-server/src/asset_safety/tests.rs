@@ -319,31 +319,41 @@ fn store_at_flag(reg: &mut Registry, owner: i64, at: i64, flag: i64) -> i64 {
 #[test]
 fn unanchor_wraps_bay_items_into_the_hangar_flag() {
     let (mut reg, id, corp) = world();
-    let kept: Vec<i64> = [172, 180, 164, 171]
+    use crate::structure_bays::flag_after_wrap;
+    use crate::structure_dock::control::{FLAG_DEED, FLAG_FUEL};
+    use crate::structure_services::{FIRST_SLOT, LAST_SLOT};
+    let kept: Vec<(i64, i64)> = [FLAG_FUEL, FLAG_DEED, FIRST_SLOT, LAST_SLOT]
         .into_iter()
-        .map(|flag| store_at_flag(&mut reg, corp, id, flag))
+        .map(|flag| (store_at_flag(&mut reg, corp, id, flag), flag))
         .collect();
     let s = crate::structure::get(reg.deltas(), id).expect("the structure");
     crate::structure_dock::evacuate(&mut reg, &s);
     let w = wrap_of(&reg, corp);
-    for item in kept {
+    for (item, was) in kept {
         let i = reg.store().get(item).expect("kept");
+        // The target flag is [A] (`flag_after_wrap`); no bay flag survives it.
         assert_eq!(
             (i.location_id, i.flag_id),
-            (w.id, crate::model::FLAG_HANGAR),
+            (w.id, flag_after_wrap(was)),
             "{item}"
         );
+        assert!(!crate::structure_dock::control::is_bay_flag(i.flag_id));
     }
 }
 
 #[test]
 fn unanchor_destroys_rigs() {
     let (mut reg, id, corp) = world();
-    let rig = store_at_flag(&mut reg, corp, id, 92);
+    let rig_flag = *crate::structure_bays::RIG_SLOTS.start();
+    let rig = store_at_flag(&mut reg, corp, id, rig_flag);
     let stock = store_at_flag(&mut reg, corp, id, crate::model::FLAG_HANGAR);
     let s = crate::structure::get(reg.deltas(), id).expect("the structure");
     crate::structure_dock::evacuate(&mut reg, &s);
-    assert!(reg.store().get(rig).is_none(), "the rig is gone");
+    // That a rig dies on unanchor is [A]: the test follows the predicate.
+    assert_eq!(
+        reg.store().get(rig).is_none(),
+        crate::structure_bays::dies_with_hull(rig_flag)
+    );
     assert_eq!(
         reg.store().get(stock).map(|i| i.location_id),
         Some(wrap_of(&reg, corp).id)

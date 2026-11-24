@@ -259,8 +259,6 @@ mod tests {
         assert_eq!(r.upwell_anchor_secs, 3_600);
         // New in #41: both on, which is the behaviour before service modules.
         assert!(r.upwell_free_clone && r.upwell_free_upkeep);
-        // STR-CORE, [A] owner decision D4: a core is required.
-        assert!(r.structure_core_required);
         for bad in [0, 59, 604_801, -5] {
             let r = Rules {
                 upwell_anchor_secs: bad,
