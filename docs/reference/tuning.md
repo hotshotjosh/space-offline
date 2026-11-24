@@ -73,6 +73,8 @@ count every time. A value outside its range stops the start (`srv/rules.rs`
 | ISK a new character starts with | `--world-start-isk` | `/world startisk` is read-only | 1,000,000 | 0 or more | new worlds only | `world/settings.rs:52-61`, `srv/start.rs:63` |
 | Unallocated SP a new character starts with | `--world-start-sp` | `/world startsp` is read-only | 0 | whole number 0..=1,000,000,000 | new worlds only | `world/settings.rs:62-71`, `srv/rules.rs:85` |
 | Seconds an Upwell structure takes to anchor | `--world-anchor-time` | `/world anchortime <s>` | 3600 | whole number 60..=604800 | live; structures anchored from then on | `world/settings.rs:72-81`, `srv/rules.rs:77-81` |
+| Whether every online Upwell structure offers a clone bay with no Cloning Center online | `--world-*` has no flag | `/world freeclone <0\|1>` | 1 | 0 or 1 | live | `world/settings.rs`, `srv/rules.rs` `upwell_free_clone` (#41) |
+| Whether an Upwell structure keeps full power with no service module online | no flag | `/world freeupkeep <0\|1>` | 1 | 0 or 1 | live; read on each structure tick | `world/settings.rs`, `srv/rules.rs` `upwell_free_upkeep` (#41) |
 | Seconds between asking to delete a character and the delete | `--world-delete-time` | `/world deletetime <s>` | 3600 | whole number 0..=2592000 | live; from the next request | `world/settings.rs:82-91`, `srv/rules.rs:71-74` |
 
 - `/world` alone lists every setting. `/world startisk` and `/world startsp`

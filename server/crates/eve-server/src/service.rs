@@ -4291,7 +4291,10 @@ impl Registry {
             Some(_) if controlled.is_some() => controlled
                 .and_then(|id| self.structure_dogma_row(id).map(|row| (row, id)))
                 .map_or(PyValue::None, |(row, id)| {
-                    PyValue::Dict(vec![(row, PyValue::Int(id))])
+                    // #41: the structure's fitted service modules are its items.
+                    let mut entries = vec![(row, PyValue::Int(id))];
+                    entries.extend(crate::structure_services::info_entries(self, id));
+                    PyValue::Dict(entries)
                 }),
             // `{itemKey: row}`. `PrimeLocation` takes `.keys()`, reorders the
             // key list, and subscripts back -- so a dict, with one entry for
@@ -4665,7 +4668,15 @@ impl Registry {
         Some(keyval(vec![
             ("itemID", PyValue::Int(id)),
             ("invItem", PyValue::DbRow(Box::new(self.item_row(&item)))),
-            ("attributes", ship_attributes(self.content(), s.type_id)),
+            (
+                "attributes",
+                // #41: plus the hull's CPU, powergrid, service slots and core type.
+                crate::structure_services::hull_attributes(
+                    self.content(),
+                    s.type_id,
+                    ship_attributes(self.content(), s.type_id),
+                ),
+            ),
             ("activeEffects", PyValue::Dict(vec![])),
             ("time", PyValue::None),
             ("wallclockTime", PyValue::None),

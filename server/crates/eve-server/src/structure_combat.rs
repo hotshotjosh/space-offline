@@ -94,14 +94,20 @@ pub struct Layers {
 /// [A]); else the hull's own 2743 (default 1.0) **[I]**. The caller passes
 /// [`full_power`]`(s)`.
 pub fn layers(content: &crate::content::Content, type_id: i64, full_power: bool) -> Layers {
-    use crate::damage::attr;
-    use crate::typedata::{attribute_in, own_attribute_in};
-    let get = |a: i64| attribute_in(content, type_id, a).unwrap_or(0.0);
     let m = if full_power {
         FULL_POWER_HP_MULTIPLIER
     } else {
-        own_attribute_in(content, type_id, ATTR_HULL_HP_MULTIPLIER).unwrap_or(1.0)
+        crate::typedata::own_attribute_in(content, type_id, ATTR_HULL_HP_MULTIPLIER).unwrap_or(1.0)
     };
+    layers_at(content, type_id, m)
+}
+
+/// [`layers`] with the shield and armour multiplier in hand: #41's
+/// [`crate::structure_services::hp_multiplier`] (the online module's own 2744).
+pub fn layers_at(content: &crate::content::Content, type_id: i64, m: f64) -> Layers {
+    use crate::damage::attr;
+    use crate::typedata::{attribute_in, own_attribute_in};
+    let get = |a: i64| attribute_in(content, type_id, a).unwrap_or(0.0);
     let res = |ids: [i64; 4]| ids.map(|a| attribute_in(content, type_id, a).unwrap_or(1.0));
     let cap = |a: i64| own_attribute_in(content, type_id, a).unwrap_or(f64::INFINITY);
     Layers {
@@ -127,7 +133,7 @@ pub fn layers(content: &crate::content::Content, type_id: i64, full_power: bool)
 /// Whether the structure is in its full-power state: Low and Abandoned are
 /// not; an unset upkeep counts as Full **[I]**: the client switches an
 /// unrecognised upkeep to Full on its next update (`C:structures/structure.py:609-610`).
-fn full_power(s: &Structure) -> bool {
+pub(crate) fn full_power(s: &Structure) -> bool {
     !matches!(
         s.upkeep,
         Some(structure::Upkeep::Low | structure::Upkeep::Abandoned)
@@ -477,7 +483,12 @@ pub fn hit(w: &mut Registry, v: Volley, now: BlueTime) {
     let mut dealt = [0.0; 3];
     let mut dead = false;
     if landing {
-        let l = layers(w.content(), s.type_id, full_power(&s));
+        // #41: the online module's own multiplier (4.0 with none and `freeupkeep` on).
+        let l = layers_at(
+            w.content(),
+            s.type_id,
+            crate::structure_services::hp_multiplier(w, &s),
+        );
         let taken = w.ext::<Fire>().taken_this_second(s.id, v.at);
         let a = apply(&l, &s, v.damage, taken);
         dealt = a.dealt;
@@ -700,6 +711,7 @@ pub fn destroy(w: &mut Registry, s: &Structure, killer: Option<i64>, now: BlueTi
     // Locks and guns aimed at it, as `anchor::release_target` does for a unit.
     crate::anchor::release_target(w, s.id, now);
     structure::remove(w.deltas_mut(), s.id);
+    crate::structure_services::forget(w, s.id);
     w.ext_mut::<Fire>().forget(s.id);
     w.mark_dirty();
     w.schedule(

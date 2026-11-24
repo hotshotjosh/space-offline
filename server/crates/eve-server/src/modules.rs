@@ -1899,7 +1899,14 @@ fn observers(w: &Registry, character_id: i64) -> Vec<i64> {
 
 /// `OnGodmaShipEffect` for the `online` effect: no duration, no repeat --
 /// `-1` and `-1`, as the client's own offline event sends (`godma:3072`).
-fn online_push(character_id: i64, ship_id: i64, module_id: i64, on: bool, t: i64) -> ModulePush {
+// `pub(crate)` for #41: a structure's service module is onlined with the same effect push.
+pub(crate) fn online_push(
+    character_id: i64,
+    ship_id: i64,
+    module_id: i64,
+    on: bool,
+    t: i64,
+) -> ModulePush {
     ModulePush::Effect(ShipEffect {
         to: vec![character_id],
         module_id,

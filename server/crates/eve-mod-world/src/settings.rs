@@ -37,6 +37,17 @@ fn whole(v: f64) -> Result<i64, String> {
     }
 }
 
+/// A 0/1 switch (#41): only the two numbers, so a typo is not a setting.
+fn switch(v: f64) -> Result<bool, String> {
+    if v == 0.0 {
+        Ok(false)
+    } else if v == 1.0 {
+        Ok(true)
+    } else {
+        Err(format!("{v} is not 0 or 1"))
+    }
+}
+
 /// Every setting, in the order `/world` lists them.
 pub const SETTINGS: &[Setting] = &[
     Setting {
@@ -76,6 +87,27 @@ pub const SETTINGS: &[Setting] = &[
         get: |r| r.upwell_anchor_secs as f64,
         set: |r, v| {
             r.upwell_anchor_secs = whole(v)?;
+            Ok(())
+        },
+    },
+    // #41: both default ON, which is the behaviour before service modules.
+    Setting {
+        name: "freeclone",
+        usage: "1 or 0: whether every online Upwell structure offers a clone bay with no Standup Cloning Center online (default 1)",
+        kind: Kind::Live,
+        get: |r| f64::from(u8::from(r.upwell_free_clone)),
+        set: |r, v| {
+            r.upwell_free_clone = switch(v)?;
+            Ok(())
+        },
+    },
+    Setting {
+        name: "freeupkeep",
+        usage: "1 or 0: whether an Upwell structure keeps full power with no service module online (default 1); 0 sends a home with none to low power and abandonment",
+        kind: Kind::Live,
+        get: |r| f64::from(u8::from(r.upwell_free_upkeep)),
+        set: |r, v| {
+            r.upwell_free_upkeep = switch(v)?;
             Ok(())
         },
     },
@@ -146,11 +178,13 @@ pub fn startup(reg: &mut Registry) -> Result<(), String> {
     }
     rules::set_boot(reg, now)?;
     println!(
-        "[world] training {} startisk {} startsp {} anchortime {} deletetime {}",
+        "[world] training {} startisk {} startsp {} anchortime {} freeclone {} freeupkeep {} deletetime {}",
         now.training_mult,
         now.start_isk,
         now.start_sp,
         now.upwell_anchor_secs,
+        u8::from(now.upwell_free_clone),
+        u8::from(now.upwell_free_upkeep),
         now.char_delete_secs
     );
     Ok(())
@@ -228,6 +262,14 @@ pub fn slash(
     let note = match s.name {
         "training" => format!("Skill training speed is now {v}x the base pace."),
         "anchortime" => format!("Upwell structures now take {v} seconds to anchor."),
+        "freeclone" => format!(
+            "Upwell clone bays are now {} without a Cloning Center.",
+            if v == 1.0 { "offered" } else { "closed" }
+        ),
+        "freeupkeep" => format!(
+            "Upwell structures now {} full power with no service module online.",
+            if v == 1.0 { "keep" } else { "lose" }
+        ),
         "deletetime" => format!("A character now waits {v} seconds before it can be deleted."),
         other => format!("{other} is now {v}."),
     };

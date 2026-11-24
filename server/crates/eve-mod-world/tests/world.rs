@@ -388,6 +388,31 @@ fn the_anchor_time_is_live_and_bounded() {
     }
 }
 
+/// #41: the two Upwell switches start ON (today's behaviour), turn off and on,
+/// and take only 0 or 1.
+#[test]
+fn the_upwell_switches_default_on_and_take_zero_or_one() {
+    let mut reg = world();
+    settings::startup(&mut reg).expect("starts");
+    assert!(reg.config().rules.upwell_free_clone && reg.config().rules.upwell_free_upkeep);
+    assert_eq!(stored(&reg, "freeclone").as_deref(), Some("1"));
+    info(slash(&mut reg, GM, "/world freeclone 0"));
+    info(slash(&mut reg, GM, "/world freeupkeep 0"));
+    assert!(!reg.config().rules.upwell_free_clone && !reg.config().rules.upwell_free_upkeep);
+    assert_eq!(stored(&reg, "freeupkeep").as_deref(), Some("0"));
+    for line in [
+        "/world freeclone 2",
+        "/world freeupkeep 0.5",
+        "/world freeclone -1",
+    ] {
+        info(slash(&mut reg, GM, line));
+        assert!(!reg.config().rules.upwell_free_clone, "{line}");
+        assert!(!reg.config().rules.upwell_free_upkeep, "{line}");
+    }
+    info(slash(&mut reg, GM, "/world freeclone 1"));
+    assert!(reg.config().rules.upwell_free_clone);
+}
+
 #[test]
 fn the_delete_wait_is_live_and_bounded() {
     let mut reg = world();

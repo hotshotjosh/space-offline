@@ -37,9 +37,10 @@
 //!
 //! **Anchoring time** is a world setting (`Rules::upwell_anchor_secs`, `/world
 //! anchortime`, default an hour) read when a structure is anchored and on
-//! every tick. The **upkeep** is always "full": [`env`] passes
-//! `has_service_module = true`, as the directory lane did, until the upkeep
-//! lane (U6) fits real modules.
+//! every tick. The **upkeep** is "full" while `/world freeupkeep` is on (the
+//! default): [`env`] passes `has_service_module = true`, as the directory lane
+//! did, and [`env_for`] makes it real when the switch is off (#41): a structure
+//! has full power while a service module of it is online.
 //!
 //! **[A] assumptions** (falsifier in each):
 //! - A structure's `y` is the ship's `y` (spec A3). Falsifier: the structure
@@ -112,6 +113,10 @@ pub fn env_for(reg: &Registry, s: &Structure, now: i64) -> structure::Env {
         under_fire: crate::structure_combat::under_fire(reg, s, now),
         auto_repair: flag(crate::structure_combat::ATTR_CAN_AUTO_REPAIR),
         armor_phases: flag(crate::structure_combat::ATTR_CAN_ARMOR_PHASES),
+        // #41: `HasOnlineServiceModule`. `freeupkeep` (default on) is today's
+        // free full power; off, an online module is what keeps it.
+        has_service_module: reg.config().rules.upwell_free_upkeep
+            || crate::structure_services::has_online_module(reg, s),
         ..env(reg, now)
     }
 }
@@ -965,6 +970,7 @@ fn finish_unanchor(reg: &mut Registry, s: &Structure, clock: bool) {
     crate::structure_dock::evacuate(reg, s);
     let audience = interested(reg, s.owner_corp, s.system);
     structure::remove(reg.deltas_mut(), s.id);
+    crate::structure_services::forget(reg, s.id);
     reg.mark_dirty();
     announce_removed(reg, s.system, s.id);
     emit(

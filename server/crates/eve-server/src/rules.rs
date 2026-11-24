@@ -35,6 +35,17 @@ pub struct Rules {
     /// anchored from then on. The owner's default is an hour (U3, #63); the
     /// client's own is a day.
     pub upwell_anchor_secs: i64,
+    /// Whether every online Upwell structure offers a clone bay (medical and
+    /// jump clones) with no Standup Cloning Center fitted (#41, `/world
+    /// freeclone`). On is today's behaviour; off for a closed world where
+    /// the center is the one source of clones. Read by
+    /// `structure_services::services_of`.
+    pub upwell_free_clone: bool,
+    /// Whether an Upwell structure keeps full power with no service module
+    /// online (#41, `/world freeupkeep`). On is today's behaviour; off for a
+    /// closed world where a home with no online module goes to low power and
+    /// is abandoned. Read by `structure_space::env_for`.
+    pub upwell_free_upkeep: bool,
     /// How long a character waits between "prepare for deletion" and the
     /// delete, in seconds (`start::prepare_delete`). A live setting (`/world
     /// deletetime`): a character already waiting keeps the time it was given.
@@ -91,6 +102,8 @@ impl Default for Rules {
             start_isk: crate::start::STARTING_BALANCE,
             start_sp: 0,
             upwell_anchor_secs: DEFAULT_UPWELL_ANCHOR_SECS,
+            upwell_free_clone: true,
+            upwell_free_upkeep: true,
             char_delete_secs: DEFAULT_CHAR_DELETE_SECS,
             safety_manual_secs: DEFAULT_SAFETY_MANUAL_SECS,
             safety_auto_secs: DEFAULT_SAFETY_AUTO_SECS,
@@ -237,6 +250,8 @@ mod tests {
         assert_eq!(r.start_sp, 0);
         // New in U3: the owner's choice, an hour, not a retail constant.
         assert_eq!(r.upwell_anchor_secs, 3_600);
+        // New in #41: both on, which is the behaviour before service modules.
+        assert!(r.upwell_free_clone && r.upwell_free_upkeep);
         for bad in [0, 59, 604_801, -5] {
             let r = Rules {
                 upwell_anchor_secs: bad,

@@ -21,7 +21,7 @@
 //! ```
 //!
 //! **The access rule** ([`has_access`]): the owner corporation always has
-//! docking and structure control; everyone else needs a group of the
+//! every setting (#41, A10); everyone else needs a group of the
 //! setting in the structure's profile. A structure whose profile is gone
 //! falls back to its owner's default profile; a corporation without one has
 //! only itself.
@@ -48,24 +48,61 @@ pub const KIND_PROFILE: &str = "strprofile";
 /// The delta kind of settings.
 pub const KIND_SETTING: &str = "strsetting";
 
-/// `structures.SETTING_*` **[V]**.
+/// `structures.SETTING_*` **[V]** (`structures/settings.py:14-32`); #41 names
+/// the rest of the client's table for [`setting_of_service`].
+pub const SETTING_NONE: i64 = 0;
 pub const SETTING_REPROCESSING_TAX: i64 = 3;
 pub const SETTING_MARKET_TAX: i64 = 4;
 pub const SETTING_DEFENSE_CAN_CONTROL_STRUCTURE: i64 = 17;
 pub const SETTING_HOUSING_CAN_DOCK: i64 = 19;
 pub const SETTING_CORP_RENT_OFFICE: i64 = 20;
 pub const SETTING_CLONINGBAY_TAX: i64 = 23;
+pub const SETTING_INDUSTRY_TAX: i64 = 24;
+pub const SETTING_REACTION_BIOCHEMICAL_TAX: i64 = 26;
+pub const SETTING_REACTION_HYBRID_TAX: i64 = 27;
+pub const SETTING_REACTION_COMPOSITE_TAX: i64 = 28;
+pub const SETTING_MANUFACTURING_TAX: i64 = 29;
+pub const SETTING_MANUFACTURING_CAPITAL_TAX: i64 = 30;
+pub const SETTING_MANUFACTURING_SUPERCAPITAL_TAX: i64 = 31;
+pub const SETTING_RESEARCH_TAX: i64 = 32;
+pub const SETTING_INVENTION_TAX: i64 = 33;
+pub const SETTING_JUMP_BRIDGE_ACTIVATION: i64 = 34;
+pub const SETTING_CYNO_BEACON: i64 = 35;
+pub const SETTING_AUTOMOONMINING: i64 = 36;
 
-/// `structures.SERVICE_*` **[V]**.
+/// `structures.SERVICE_*` **[V]** (`structures/services.py:7-40`).
 pub const SERVICE_DOCKING: i64 = 1;
 pub const SERVICE_FITTING: i64 = 2;
 pub const SERVICE_OFFICES: i64 = 3;
 pub const SERVICE_REPROCESSING: i64 = 4;
 pub const SERVICE_MARKET: i64 = 5;
 pub const SERVICE_MEDICAL: i64 = 6;
+pub const SERVICE_MISSION: i64 = 7;
 pub const SERVICE_REPAIR: i64 = 8;
 pub const SERVICE_INSURANCE: i64 = 9;
 pub const SERVICE_JUMP_CLONE: i64 = 10;
+pub const SERVICE_LOYALTY_STORE: i64 = 11;
+pub const SERVICE_FACTION_WARFARE: i64 = 12;
+pub const SERVICE_SECURITY_OFFICE: i64 = 13;
+pub const SERVICE_MOONMINING: i64 = 14;
+pub const SERVICE_JUMP_BRIDGE: i64 = 15;
+pub const SERVICE_CYNO_BEACON: i64 = 16;
+pub const SERVICE_CYNO_JAMMER: i64 = 17;
+pub const SERVICE_AUTOMOONMINING: i64 = 18;
+pub const SERVICE_INDUSTRY: i64 = 20;
+pub const SERVICE_MANUFACTURING: i64 = 21;
+pub const SERVICE_MANUFACTURING_BASIC: i64 = 22;
+pub const SERVICE_MANUFACTURING_CAPITAL: i64 = 23;
+pub const SERVICE_MANUFACTURING_SUPERCAPITAL: i64 = 24;
+pub const SERVICE_LABORATORY: i64 = 30;
+pub const SERVICE_LABORATORY_RESEARCH_TIME: i64 = 31;
+pub const SERVICE_LABORATORY_RESEARCH_MATERIAL: i64 = 32;
+pub const SERVICE_LABORATORY_COPYING: i64 = 33;
+pub const SERVICE_LABORATORY_INVENTION: i64 = 34;
+pub const SERVICE_REACTIONS: i64 = 40;
+pub const SERVICE_REACTIONS_COMPOSITE: i64 = 41;
+pub const SERVICE_REACTIONS_BIOCHEMICAL: i64 = 42;
+pub const SERVICE_REACTIONS_HYBRID: i64 = 43;
 
 /// `structures.SERVICE_STATE_*` **[V]**.
 pub const SERVICE_STATE_ONLINE: i64 = 1;
@@ -152,17 +189,41 @@ pub fn access_error(setting: i64) -> &'static str {
     setting_spec(setting).map_or("StructureGenericSettingDenied", |s| s.denied)
 }
 
-/// The setting that gates a service for a pilot (`SERVICES_ACCESS_SETTINGS`),
-/// `None` for the ones every pilot may use once they are inside.
+/// The setting that gates a service for a pilot: the client's own
+/// `SERVICES_ACCESS_SETTINGS` **[V]** (`structures/services.py:180-206`), a
+/// row for every service it has one for; `SETTING_NONE` (the industry meta
+/// services) and the services it lists no row for (`JUMP_CLONE`, `CYNO_JAMMER`,
+/// the agent and militia services) are `None`.
 pub fn setting_of_service(service: i64) -> Option<i64> {
-    match service {
-        SERVICE_DOCKING => Some(SETTING_HOUSING_CAN_DOCK),
-        SERVICE_OFFICES => Some(SETTING_CORP_RENT_OFFICE),
-        SERVICE_REPROCESSING => Some(SETTING_REPROCESSING_TAX),
-        SERVICE_MARKET => Some(SETTING_MARKET_TAX),
-        SERVICE_MEDICAL | SERVICE_JUMP_CLONE => Some(SETTING_CLONINGBAY_TAX),
-        _ => None,
-    }
+    let setting = match service {
+        SERVICE_FITTING
+        | SERVICE_DOCKING
+        | SERVICE_INSURANCE
+        | SERVICE_REPAIR
+        | SERVICE_LOYALTY_STORE => SETTING_HOUSING_CAN_DOCK,
+        SERVICE_OFFICES => SETTING_CORP_RENT_OFFICE,
+        SERVICE_REPROCESSING => SETTING_REPROCESSING_TAX,
+        SERVICE_MARKET => SETTING_MARKET_TAX,
+        SERVICE_MEDICAL => SETTING_CLONINGBAY_TAX,
+        SERVICE_MOONMINING => SETTING_DEFENSE_CAN_CONTROL_STRUCTURE,
+        SERVICE_JUMP_BRIDGE => SETTING_JUMP_BRIDGE_ACTIVATION,
+        SERVICE_CYNO_BEACON => SETTING_CYNO_BEACON,
+        SERVICE_MANUFACTURING_BASIC => SETTING_MANUFACTURING_TAX,
+        SERVICE_MANUFACTURING_CAPITAL => SETTING_MANUFACTURING_CAPITAL_TAX,
+        SERVICE_MANUFACTURING_SUPERCAPITAL => SETTING_MANUFACTURING_SUPERCAPITAL_TAX,
+        SERVICE_LABORATORY_RESEARCH_TIME
+        | SERVICE_LABORATORY_RESEARCH_MATERIAL
+        | SERVICE_LABORATORY_COPYING => SETTING_RESEARCH_TAX,
+        SERVICE_LABORATORY_INVENTION => SETTING_INVENTION_TAX,
+        SERVICE_REACTIONS_COMPOSITE => SETTING_REACTION_COMPOSITE_TAX,
+        SERVICE_REACTIONS_BIOCHEMICAL => SETTING_REACTION_BIOCHEMICAL_TAX,
+        SERVICE_REACTIONS_HYBRID => SETTING_REACTION_HYBRID_TAX,
+        SERVICE_AUTOMOONMINING => SETTING_AUTOMOONMINING,
+        // `SETTING_NONE` rows (industry, manufacturing, laboratory, reactions)
+        // and the services the table has no row for.
+        _ => SETTING_NONE,
+    };
+    (setting != SETTING_NONE).then_some(setting)
 }
 
 /// Why a profile call was refused.
@@ -537,19 +598,15 @@ fn profile_for(d: &Deltas, s: &Structure) -> Option<i64> {
         .map(|p| p.id)
 }
 
-/// Whether `ch` has `setting` on `s`: the owner corporation always has
-/// docking and structure control; anyone else needs a group of the setting in
-/// the structure's profile, through [`og::effective`] **[A]** (the owner rule
-/// is the spec's; real EVE has no owner bypass. Falsified by the first owner
-/// round wanting the corp locked out of its own hull).
+/// Whether `ch` has `setting` on `s`: the owner corporation passes **every**
+/// setting (#41; it was docking and structure control only); anyone else
+/// needs a group of the setting in the structure's profile, through
+/// [`og::effective`] **[A]** (the owner rule is the spec's; real EVE has no
+/// owner bypass. Falsified by the first owner round wanting the corp locked
+/// out of its own hull or taxed by its own profile, A10).
 pub fn has_access(reg: &Registry, s: &Structure, ch: i64, setting: i64) -> bool {
     let mine = reg.character(ch).map(|c| c.corporation_id);
-    if mine == Some(s.owner_corp)
-        && matches!(
-            setting,
-            SETTING_HOUSING_CAN_DOCK | SETTING_DEFENSE_CAN_CONTROL_STRUCTURE
-        )
-    {
+    if mine == Some(s.owner_corp) {
         return true;
     }
     let Some(pid) = profile_for(reg.deltas(), s) else {
@@ -567,50 +624,36 @@ pub fn may_dock(reg: &Registry, s: &Structure, ch: i64) -> bool {
     s.can_dock() && has_access(reg, s, ch, SETTING_HOUSING_CAN_DOCK)
 }
 
-/// The home services (U5): what a pilot lives on in a structure.
-///
-/// **[A]** every online structure offers them until the upkeep lane (U6)
-/// makes them service modules that are fitted and online. U6 replaces this
-/// list with the fitted modules; the callers ask `services_for`, so they
-/// do not change. Falsifier: a structure with no module that still repairs.
-pub const HOME_SERVICES: [i64; 4] = [
-    SERVICE_MEDICAL,
-    SERVICE_REPAIR,
-    SERVICE_INSURANCE,
-    SERVICE_JUMP_CLONE,
-];
+/// The services a structure has, `{service: state}`: the hull's
+/// (docking, fitting, repair, insurance) with the hull, the fitted service
+/// modules' with the module, and the cloning bay behind `/world freeclone`
+/// (#41; [`crate::structure_services::services_of`]).
+pub fn services_of(reg: &Registry, s: &Structure) -> BTreeMap<i64, i64> {
+    crate::structure_services::services_of(reg, s)
+}
 
-/// The services a structure has, `{service: state}`. Docking and fitting are
-/// hull services and are online with the hull; the [`HOME_SERVICES`] are
-/// bundled until the upkeep lane (U6) fits them as modules.
-pub fn services_of(s: &Structure) -> BTreeMap<i64, i64> {
-    let state = if s.is_online() {
-        SERVICE_STATE_ONLINE
-    } else {
-        SERVICE_STATE_OFFLINE
-    };
-    let mut out = BTreeMap::from([(SERVICE_DOCKING, state), (SERVICE_FITTING, state)]);
-    for svc in HOME_SERVICES {
-        out.insert(svc, state);
+/// The setting that gates `svc` for a pilot **using** it, which is the
+/// client's table ([`setting_of_service`]) less what this server has always
+/// offered to any pilot who is inside **[A]**: fitting, repair and insurance
+/// ask no setting (the docking right is checked at the door), and the cloning
+/// bay (medical and jump clones) asks the docking right, not the clone-bay tax
+/// setting, which is an ISK matter we do not charge. Falsifier: a retail
+/// structure whose shops or clone bay a docked guest cannot use.
+fn pilot_gate(svc: i64) -> Option<i64> {
+    match svc {
+        SERVICE_FITTING | SERVICE_REPAIR | SERVICE_INSURANCE => None,
+        SERVICE_MEDICAL | SERVICE_JUMP_CLONE => Some(SETTING_HOUSING_CAN_DOCK),
+        _ => setting_of_service(svc),
     }
-    out
 }
 
 /// The services of `s` that `ch` may use now (`CharacterGetServices`): the
 /// online ones whose setting, if any, the pilot holds.
 pub fn services_for(reg: &Registry, s: &Structure, ch: i64) -> BTreeMap<i64, i64> {
-    services_of(s)
+    services_of(reg, s)
         .into_iter()
         .filter(|(_, st)| *st == SERVICE_STATE_ONLINE)
-        .filter(|(svc, _)| match *svc {
-            // **[A]** the cloning bay is for whoever may dock; its tax
-            // setting is an ISK matter we do not charge. Falsifier: a
-            // retail structure whose bay a docked guest cannot use.
-            SERVICE_MEDICAL | SERVICE_JUMP_CLONE => {
-                has_access(reg, s, ch, SETTING_HOUSING_CAN_DOCK)
-            }
-            _ => setting_of_service(*svc).is_none_or(|set| has_access(reg, s, ch, set)),
-        })
+        .filter(|(svc, _)| pilot_gate(*svc).is_none_or(|set| has_access(reg, s, ch, set)))
         .collect()
 }
 

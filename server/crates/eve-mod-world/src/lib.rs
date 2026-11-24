@@ -46,7 +46,7 @@ pub const MODULE: Module = Module {
     kinds: &[(KIND, "world")],
     commands: &[eve_server::module::Command {
         name: "world",
-        usage: "/world [training|startisk|startsp|anchortime|deletetime <value>]",
+        usage: "/world [training|startisk|startsp|anchortime|freeclone|freeupkeep|deletetime <value>]",
         run: settings::slash,
     }],
     cli: settings::FLAGS,

@@ -344,6 +344,10 @@ pub const KINDS: &[(&str, &str)] = &[
     ("strprofile", "structure_profile"),
     // U2-UPWELL: `profile setting group -> value`, one setting row of a profile.
     ("strsetting", "structure_profile"),
+    // UPWELL-FIT (#41): `structure module_id -> 1`, a structure service module
+    // held online. A row whose module is no longer fitted there is ignored and
+    // purged on the next write.
+    ("strsvc", "structure_services"),
     // ASSET-SAFETY-1 (#49): `wrap_item_id -> owner system origin created
     // name`, an asset safety wrap of a structure that left space.
     ("safetywrap", "asset_safety"),

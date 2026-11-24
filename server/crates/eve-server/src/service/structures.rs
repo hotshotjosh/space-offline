@@ -258,7 +258,7 @@ fn upkeep_code(s: &Structure) -> i64 {
 }
 
 /// `GetStructureInfo`: an attribute object.
-fn info_value(s: &Structure) -> PyValue {
+fn info_value(reg: &Registry, s: &Structure) -> PyValue {
     keyval(vec![
         ("structureID", PyValue::Int(s.id)),
         ("typeID", PyValue::Int(s.type_id)),
@@ -268,7 +268,7 @@ fn info_value(s: &Structure) -> PyValue {
         ("inSpace", PyValue::Bool(true)),
         ("wars", PyValue::List(vec![])),
         ("upkeepState", PyValue::Int(upkeep_code(s))),
-        ("services", services_value(&sp::services_of(s))),
+        ("services", services_value(&sp::services_of(reg, s))),
         ("state", PyValue::Int(s.state.code())),
         ("x", PyValue::Real(s.pos[0])),
         ("y", PyValue::Real(s.pos[1])),
@@ -279,7 +279,7 @@ fn info_value(s: &Structure) -> PyValue {
 /// One entry of `GetMyCharacterStructures` / `GetMyCorporationStructures`:
 /// a dict with string keys. `corp` adds the corp tab's keys; they are
 /// harmless in the other, and the controller reads both with `.get`.
-fn entry_value(s: &Structure) -> PyValue {
+fn entry_value(reg: &Registry, s: &Structure) -> PyValue {
     let r = &s.reinforce;
     pydict(vec![
         ("structureID", PyValue::Int(s.id)),
@@ -288,7 +288,7 @@ fn entry_value(s: &Structure) -> PyValue {
         ("solarSystemID", PyValue::Int(s.system)),
         ("profileID", PyValue::Int(s.profile)),
         ("state", PyValue::Int(s.state.code())),
-        ("services", services_value(&sp::services_of(s))),
+        ("services", services_value(&sp::services_of(reg, s))),
         ("upkeepState", PyValue::Int(upkeep_code(s))),
         ("wars", PyValue::List(vec![])),
         ("timerEnd", opt_int(s.timer.end)),
@@ -303,10 +303,10 @@ fn entry_value(s: &Structure) -> PyValue {
     ])
 }
 
-fn entries(list: Vec<Structure>) -> PyValue {
+fn entries(reg: &Registry, list: Vec<Structure>) -> PyValue {
     dict(
         list.iter()
-            .map(|s| (PyValue::Int(s.id), entry_value(s)))
+            .map(|s| (PyValue::Int(s.id), entry_value(reg, s)))
             .collect(),
     )
 }
@@ -399,7 +399,7 @@ fn directory(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceEr
                 return Ok(PyValue::None);
             };
             if let Some(s) = structure::get(reg.deltas(), id) {
-                return Ok(info_value(&s));
+                return Ok(info_value(reg, &s));
             }
             super::war::structure_directory(reg, req).unwrap_or(Ok(PyValue::None))
         }
@@ -432,13 +432,13 @@ fn directory(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue, ServiceEr
         // `GetMarketDockableLocationsInRegion` [V]: `None` raised
         // AttributeError and the multibuy window never opened.
         "GetMyCharacterStructures" => Ok(match me {
-            Some(me) => entries(visible_to(reg, me)),
+            Some(me) => entries(reg, visible_to(reg, me)),
             None => PyValue::Dict(vec![]),
         }),
         // `structureBrowserController.GetMyStructures` and
         // `openFunctions:223` call `.get` on it [V].
         "GetMyCorporationStructures" => Ok(match my_corp(reg, me) {
-            Some(corp) => entries(structure::of_corp(reg.deltas(), corp)),
+            Some(corp) => entries(reg, structure::of_corp(reg.deltas(), corp)),
             None => PyValue::Dict(vec![]),
         }),
         // The ids from `ids` the pilot may dock at **[V consumers]**.
@@ -809,7 +809,7 @@ pub(crate) fn slash(
     actor: Option<i64>,
     args: &[&str],
 ) -> Result<PyValue, ServiceError> {
-    const USAGE: &str = "/upwell spawn <astrahus|raitaru|athanor|typeID> <name> | /upwell give <type> | /upwell list | /upwell damage <id> <shield> <armor> <hull> | /upwell state <id> <code|name> | /upwell timer <id> <secs>";
+    const USAGE: &str = "/upwell spawn <astrahus|raitaru|athanor|typeID> <name> | /upwell give <type> | /upwell list | /upwell damage <id> <shield> <armor> <hull> | /upwell state <id> <code|name> | /upwell timer <id> <secs> | /upwell fit <id> <typeID> | /upwell services <id>";
     let Some(actor) = actor else {
         return Ok(bstr("no character"));
     };
@@ -834,6 +834,30 @@ pub(crate) fn slash(
             } else {
                 lines.join("\n")
             }))
+        }
+        // #41: a GM fits one service module and onlines it (skipping the
+        // controls and the role), and reads what a structure offers.
+        Some("fit") => {
+            let (Some(id), Some(type_id), 3) = (
+                args.get(1).and_then(|w| w.parse::<i64>().ok()),
+                args.get(2).and_then(|w| w.parse::<i64>().ok()),
+                args.len(),
+            ) else {
+                return Ok(bstr(USAGE));
+            };
+            Ok(bstr(&crate::structure_services::gm_fit(
+                reg,
+                actor,
+                id,
+                type_id,
+                crate::pyutil::filetime_now(),
+            )))
+        }
+        Some("services") => {
+            let Some(id) = args.get(1).and_then(|w| w.parse::<i64>().ok()) else {
+                return Ok(bstr(USAGE));
+            };
+            Ok(bstr(&crate::structure_services::services_text(reg, id)))
         }
         Some("spawn") => {
             let Some(kind) = args.get(1) else {

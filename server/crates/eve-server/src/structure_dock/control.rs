@@ -29,7 +29,8 @@
 //!
 //! # What this lane does not do
 //!
-//! Fuel, fitting a service module, onlining and the fuel burn are #66's. This
+//! Fuel and the fuel burn are #42's, fitting and onlining a service module
+//! #41's (`crate::structure_services`). This
 //! lists the bays ([`bay_rows`]) so the client has something to open.
 //!
 //! # [A]s (falsifier in each)

@@ -1385,8 +1385,9 @@ modifier\t9303\tcharID\tOwnerRequiredSkillModifier\t654\t848\t6\t990471012\t
         assert!(reg.ext::<Flights>().is_empty(), "landed");
         let c = charge(Aoe::default());
         let k = damage_factor(t.signature, 0.0, c.aoe);
+        let s = crate::structure::get(reg.deltas(), id).expect("a structure");
         let hp = crate::structure_combat::tests::SHIELD
-            * crate::structure_combat::FULL_POWER_HP_MULTIPLIER;
+            * crate::structure_services::hp_multiplier(&reg, &s);
         assert_eq!(shield_of(&reg, id), 1.0 - scaled(c.damage, k).total() / hp);
     }
 

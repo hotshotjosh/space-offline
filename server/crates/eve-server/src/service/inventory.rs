@@ -81,6 +81,17 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
     {
         return Ok(PyValue::List(rows));
     }
+    // **Fit and unfit a service module at a structure's controls** (#41,
+    // `crate::structure_services`): `Add(itemID, source, qty, flag=164..171)`
+    // on the structure's inventory fits, and `Add(moduleID, structure,
+    // flag=4)` of a module fitted there unfits. Before the hangar alias below,
+    // which would read both as the hangar.
+    if req.service == "invbroker::inventory"
+        && matches!(req.method, "Add" | "MultiAdd")
+        && let Some(answer) = structure_module_call(reg, req)
+    {
+        return answer;
+    }
     if req.service == "invbroker::inventory"
         && let Some(hangar) =
             crate::structure_dock::hangar_alias(reg, req.actor, container_of(req.bind_params))
@@ -967,6 +978,25 @@ pub(crate) fn dispatch(reg: &mut Registry, req: &Request<'_>) -> Result<PyValue,
             // pair; the HUD's "Put Online" is `Activate(itemID, 'online',
             // ...)` instead, and both routes meet in the same state.
             "SetModuleOnline" | "TakeModuleOffline" => match Args::new(req).int(1) {
+                // #41: `SetModuleOnline(structureID, moduleID)` from the
+                // pilot at a structure's controls is a service module's, not
+                // a ship's (`structure_services::set_online`).
+                Some(module)
+                    if req.actor.is_some_and(|a| {
+                        Args::new(req).int(0).is_some()
+                            && crate::structure_dock::control::controlling(reg, a)
+                                == Args::new(req).int(0)
+                    }) =>
+                {
+                    crate::structure_services::set_online(
+                        reg,
+                        req.actor.unwrap_or_default(),
+                        Args::new(req).int(0).unwrap_or_default(),
+                        module,
+                        req.method == "SetModuleOnline",
+                        crate::pyutil::filetime_now(),
+                    )
+                }
                 Some(module) => crate::modules::set_module_online(
                     reg,
                     req.actor,
@@ -2543,8 +2573,66 @@ fn item_get_info(reg: &Registry, actor: Option<i64>, item_id: i64) -> PyValue {
         {
             crate::modules::module_info(reg, c, i)
         }
-        _ => PyValue::None,
+        // #41: a service module fitted to the structure he has the controls of.
+        _ => crate::structure_services::item_info(reg, c.character_id, item_id)
+            .unwrap_or(PyValue::None),
     }
+}
+
+/// `Add`/`MultiAdd` on the inventory of the structure `req.actor` has the
+/// controls of (#41): a service module into slot 164..=171 (or the autofit,
+/// flag 0, for a service module) is a fit; an item fitted to the structure
+/// added to the hangar (flag 4) is an unfit. `None` for every other call, which
+/// carries on as the hangar's. The client discards the reply.
+fn structure_module_call(
+    reg: &mut Registry,
+    req: &Request<'_>,
+) -> Option<Result<PyValue, ServiceError>> {
+    let actor = req.actor?;
+    let sid = container_of(req.bind_params)?;
+    if crate::structure_dock::control::controlling(reg, actor) != Some(sid) {
+        return None;
+    }
+    let flag = Args::new(req).int_kw("flag")?;
+    let ids = if req.method == "MultiAdd" {
+        Args::new(req).ids(0)?
+    } else {
+        vec![Args::new(req).int(0)?]
+    };
+    let now = crate::pyutil::filetime_now();
+    let fits = |reg: &Registry, id: i64| {
+        crate::structure_services::is_slot(flag)
+            || (flag == crate::fitting::FLAG_AUTOFIT
+                && crate::structure_services::is_service_module(reg, id))
+    };
+    let unfits = |reg: &Registry, id: i64| {
+        flag == crate::model::FLAG_HANGAR
+            && reg.item(id).is_some_and(|i| {
+                i.location_id == sid && crate::structure_services::is_slot(i.flag_id)
+            })
+    };
+    if !ids.iter().all(|id| fits(reg, *id)) && !ids.iter().all(|id| unfits(reg, *id)) {
+        return None;
+    }
+    let mut first_refusal = None;
+    let mut done = 0usize;
+    for id in ids {
+        let r = if fits(reg, id) {
+            crate::structure_services::fit(reg, actor, sid, id, flag).map(|_| ())
+        } else {
+            crate::structure_services::unfit(reg, actor, sid, id, now)
+        };
+        match r {
+            Ok(()) => done += 1,
+            Err(e) => {
+                first_refusal.get_or_insert(e);
+            }
+        }
+    }
+    Some(match first_refusal {
+        Some(e) if done == 0 => Err(e),
+        _ => Ok(PyValue::None),
+    })
 }
 
 mod board_eject;
