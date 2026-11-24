@@ -2439,13 +2439,13 @@ impl Registry {
     pub fn industry_facility(&self, actor: Option<i64>) -> Option<crate::industry::Facility> {
         let c = self.character(actor?)?;
         // A structure id is not an NPC station (#56): `station_id` is the
-        // structure's id when docked in one (`structure_dock.rs`), and a
-        // structure has no industry service module in this world yet, so it
-        // is no facility. "None" is the client's own "no facility" answer:
-        // `GetFacilities` is empty and `GetFacility` raises the UserError its
-        // callers catch.
+        // structure's id when docked in one (`structure_dock.rs`). Its
+        // facility is `structure_industry::facility` (#57): `None` unless an
+        // online industry service module is there for the pilot. "None" is
+        // the client's own "no facility" answer: `GetFacilities` is empty and
+        // `GetFacility` raises the UserError its callers catch.
         if crate::structure_dock::is_structure(self, c.station_id?) {
-            return None;
+            return crate::structure_industry::facility(self, c); // #57
         }
         Some(crate::industry::Facility::npc_station(
             c.station_id?,
@@ -2513,16 +2513,36 @@ impl Registry {
         // that very station, in this turn, by construction.
         let fee = crate::industry::Cost::ref_type(job.activity_id).filter(|_| job.cost > 0);
         if let Some(entry_type) = fee {
-            let station_owner = self
-                .character(job.installer_id)
-                .map_or(0, |c| c.station_owner_id);
+            // #57: in a structure the counterparty is the structure's owner
+            // corporation, and the job's tax (a guest's rate; the owner pays
+            // none) is a transfer into that corporation's Master Wallet,
+            // journalled on both sides. The rest of the fee is the same
+            // sink as at a station.
+            let owner_corp =
+                crate::structure::get(self.deltas(), job.facility_id).map(|s| s.owner_corp);
+            let counterparty = owner_corp.unwrap_or_else(|| {
+                self.character(job.installer_id)
+                    .map_or(0, |c| c.station_owner_id)
+            });
             self.charge(
                 job.installer_id,
                 job.cost as f64,
                 entry_type,
-                station_owner,
+                counterparty,
                 job_id,
             );
+            if let Some(corp) = owner_corp.filter(|_| install.cost.tax > 0) {
+                corp_wallet::transfer(
+                    self,
+                    corp,
+                    crate::corp_wallet::MASTER_KEY,
+                    install.cost.tax as f64,
+                    entry_type,
+                    (job.installer_id, corp),
+                    job_id,
+                    false,
+                );
+            }
         }
         self.push(crate::notify::IndustryJob {
             to: vec![job.owner_id],
@@ -2610,11 +2630,17 @@ impl Registry {
     /// Cancel a job. No items move: the materials are gone, which is what
     /// cancelling an industry job costs in EVE too.
     pub fn cancel_job(&mut self, done: crate::industry::Job) {
+        self.commit_job(done); // #57
+    }
+
+    /// Commit a changed job and tell its owner (`OnIndustryJob`): a
+    /// cancelled one, and (#57) a paused or resumed one.
+    pub fn commit_job(&mut self, job: crate::industry::Job) {
         self.dirty = true;
-        self.jobs.commit(done);
+        self.jobs.commit(job);
         self.push(crate::notify::IndustryJob {
-            to: vec![done.owner_id],
-            job: done,
+            to: vec![job.owner_id],
+            job,
             successful_runs: None,
         });
     }

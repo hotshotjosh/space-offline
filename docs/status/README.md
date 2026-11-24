@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 368) · **95% built** (349 of 368) · 1 parked, not counted.
+**63% proved** (232 of 369) · **95% built** (351 of 369) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -58,9 +58,10 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.4 Upwell
 
 - [ ] Compression in a structure: *built-unproved*, structureCompressionMgr answers its three methods: compress and gas decompression work in a structure that has an online Standup Reprocessing Facility (the structure share is the module's 3262 plus the hull's 3261, the pilot's the skill's 3260), and refuse with the client's own keys without one; compression.rs tests; fci_upwell_compress written, not yet run
+- [ ] Structure hull industry bonuses: *built-unproved*, industry/modifier-sources.tsv and industry/target-filters.tsv are two optional bundle files (content_econ.py; absent from a bundle until the coordinator regenerates it, and the server loads without them): the hull's time, material and cost multipliers are read from the type's attributes and sent as HULL 5-tuples; structure_industry::hull_terms; no rig modifiers yet (#59)
 - [ ] Moon drills: *missing*, no moonExtractions service; moon_extract.rs pure core (timing, yields, KeyVal), uncalled (bc2a9a1e); beacons in the bundle (#52)
 - [ ] Metenox moon mining: *missing*, no autoMoonMining service
-- [ ] Industry in structures: *missing*, research report r-upwell-war; docked in a structure gives no industry facility, not a station's (industry_facility guard, #56); structure service modules still missing
+- [ ] Industry in structures: *built-unproved*, structure_industry.rs, fci_upwell_industry (written, not yet run): a pilot docked in a structure with an online industry service module (Standup Manufacturing Plant, laboratory, reactor) gets a facility row whose typeID is the structure's type, tax None and serviceAccess {service: rate}; only the online services' activities are listed, FACILITY_ACTIVITY (33) and FACILITY_DENIED (41) refuse the rest; the owner corp pays 0 and a guest the lowest profile rate of its groups [A] A11, credited to the owner corp's Master Wallet as a transfer (the rest of the fee is a sink); a finished job is never cancelled by an unfit; a job pauses when its service goes offline and resumes with the lost time added, and is cancelled when its module is unfitted [A] A12 (paused-job notifications 210/211 wait on the structure notification module); a structure with no online industry module has no facility, as before (#56)
 - [ ] State machine, timers, upkeep rules: *built-unproved*, fci_upwell_timers (regress-w27d): the deploy timer, onlining, full-power upkeep and the unanchor timer and its cancel, read by the client; structure.rs unit tests; repair pauses on Env::under_fire (#43); structure_combat sets it from the Fire window; per-structure Env (under_fire, 5770, 5771); reinforce lengths by size, class and Triglavian space (structure_space::reinforce_secs); structureVulnerability incl. the client's weekday 255; notifications 182, 183, 185, 186, 187, 209 (structure_notify.rs); /upwell timer; fci_upwell_timers steps 6-8 (green 110/110 on 11-15, steps 6-8 included; notifications 182, 183, 185 and 187, the repair pause and the Triglavian reinforce lengths are not in the scenario); slim, add and remove pushes from the clock go on the clock's queue, not `pending` (structure_space.rs, #44); a player-anchored structure leaves 102 with its core (structure_bays.rs, #42). has_service_module is real behind /world freeupkeep (default on), #41
 - [ ] Fuel and deed bays: *built-unproved*, structure_bays.rs: at the controls the deed bay takes exactly the hull's own quantum core (dogma 3101, in the structure's dogma row through structure_services::hull_attributes) and the fuel bay takes fuel blocks, Liquid Ozone (lava for the Metenox); the director, CEO or station manager of the owning corp only [A]; contents are the corp's [V invControllers StructureBay], fuel taken out goes to the pilot's hangar; the core finishes onlining (state 102 -> shield vulnerable) and cannot be taken out; Rules::structure_core_required (/world corerule, default on = today's behaviour: no core, no onlining [A] owner decision D4) waives it when off, for every hull alike (a hull with no attribute 3101 waits for ever with it on, as before); a core of another hull is refused with WrongDeedTypeForStructure; the waive is reacted to on the clock; bay, slot and rig items die with a destroyed hull, and an unanchor wraps bay and slot items at the hangar flag and destroys rigs; structure_fuel.rs (#42 part b) behind Rules::structure_fuel_burn (/world fuelburn, default off = today's free behaviour [A] owner decision D2): each UTC hour, once per missed hour, the online fuel-using modules burn the dogma-modified 2109 (the hull's 2339 role bonus comes from the server's dogma engine, which reads a structure hull's structureID domain as the hull; [I] that the real hull rows carry the effect until fci_upwell_fuel compares it with the client's GetFuelUsagePerHour) from the fuel bay, fuel blocks only, oldest stack first [A]; a bay that cannot pay an hour takes nothing, takes every fuel-using module offline and mails 198 with their type ids; onlining pays the modified 2110 and a short bay refuses with ServiceRequiresFuel; fuelExpires and liquidOzoneQty in the directory and info answers (the client's expiry formula with the burn on, blank with it off; the Metenox drill counts in it as in the client's sum); 181 low fuel once per crossing below 24 hours [A]; 207/208/249 follow the upkeep state machine with the burn on or off; /strfuel <id> hours <n> is the GM seam; no NPC core seller (D4); fci_upwell_core and fci_upwell_fuel are written, not yet run
 - [ ] Service modules: *built-unproved*, structure_services.rs: fit, online, offline and unfit at the controls (inventory Add to slots 164-171, dogmaIM SetModuleOnline/TakeModuleOffline on the structure); services from the online modules (client table), hull services with the hull; upkeep from online modules behind /world freeupkeep (default on), clone bay behind /world freeclone (default on); fuel not charged (pay_online is a stub, #42b), and a player-anchored structure leaves state 102 only with its core in the deed bay (structure_bays.rs, #42a) or with /world corerule off; fci_upwell_modules written, not yet run
@@ -196,7 +197,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Modules | 13 | 4 | 0 | 0 | 0 |
 | Market and wallet | 24 | 8 | 0 | 0 | 0 |
 | Bots | 11 | 45 | 2 | 0 | 2 |
-| Industry and mining | 17 | 1 | 0 | 3 | 0 |
+| Industry and mining | 17 | 3 | 0 | 2 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
 | Fleet | 11 | 0 | 0 | 0 | 0 |
 | Sovereignty | 7 | 6 | 1 | 0 | 0 |
@@ -487,7 +488,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Industry and mining</b>: 17 of 21 proved, 4 open</summary>
+<details><summary><b>Industry and mining</b>: 17 of 22 proved, 5 open</summary>
 
 - [x] Mining and the mining hold: *client-proved*, fci_mining_hold W10
 - [x] Ice: *client-proved*, fci_x_ice W10
@@ -503,13 +504,14 @@ Closed by default; each line says how much of the system is proved.
 - [x] Ancient salvage: *client-proved*, fci_t3_salvage W10
 - [x] Motherlode announced to the pilot: *client-proved*, fci_motherlode W10
 - [x] Installing an industry job: *client-proved*, fci_industry_job W10. Red in wave 8
+- [ ] Structure hull industry bonuses: *built-unproved*, industry/modifier-sources.tsv and industry/target-filters.tsv are two optional bundle files (content_econ.py; absent from a bundle until the coordinator regenerates it, and the server loads without them): the hull's time, material and cost multipliers are read from the type's attributes and sent as HULL 5-tuples; structure_industry::hull_terms; no rig modifiers yet (#59)
 - [x] A planetary colony: *client-proved*, fci_pi_colony W10
 - [x] Invention: *client-proved*, fci_invention 2026-11-04 (40 checks, 8 runs at 60x: the job carries the requested runs, T2 copies with the quoted ME, TE and runs, the source copy used up, a second CompleteJob refused); unit tests
 - [x] Reactions: *client-proved*, fci_reactions 11-03
 - [ ] Moon drills: *missing*, no moonExtractions service; moon_extract.rs pure core (timing, yields, KeyVal), uncalled (bc2a9a1e); beacons in the bundle (#52)
 - [x] Moon mining beacons: a refinery anchors by a moon, warp to the mining point: *client-proved*, moon/beacons.tsv (content_moon.py); structure::find_deployment_conflict ports the drill exemption; moon_beacon::warp_target; fci_moon_beacon green on 11-08 (ci-1108b)
 - [ ] Metenox moon mining: *missing*, no autoMoonMining service
-- [ ] Industry in structures: *missing*, research report r-upwell-war; docked in a structure gives no industry facility, not a station's (industry_facility guard, #56); structure service modules still missing
+- [ ] Industry in structures: *built-unproved*, structure_industry.rs, fci_upwell_industry (written, not yet run): a pilot docked in a structure with an online industry service module (Standup Manufacturing Plant, laboratory, reactor) gets a facility row whose typeID is the structure's type, tax None and serviceAccess {service: rate}; only the online services' activities are listed, FACILITY_ACTIVITY (33) and FACILITY_DENIED (41) refuse the rest; the owner corp pays 0 and a guest the lowest profile rate of its groups [A] A11, credited to the owner corp's Master Wallet as a transfer (the rest of the fee is a sink); a finished job is never cancelled by an unfit; a job pauses when its service goes offline and resumes with the lost time added, and is cancelled when its module is unfitted [A] A12 (paused-job notifications 210/211 wait on the structure notification module); a structure with no online industry module has no facility, as before (#56)
 
 </details>
 

@@ -591,7 +591,7 @@ pub fn set_reinforce_default_hour(
 // -- the access rule ---------------------------------------------------------
 
 /// The profile a structure is judged by: its own, else its owner's default.
-fn profile_for(d: &Deltas, s: &Structure) -> Option<i64> {
+pub(crate) fn profile_for(d: &Deltas, s: &Structure) -> Option<i64> {
     profile(d, s.profile)
         .filter(|p| p.corp == s.owner_corp)
         .or_else(|| default_of(d, s.owner_corp))

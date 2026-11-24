@@ -1289,6 +1289,9 @@ tools/client-ci/scenarios/fci_upwell_dock.py	docs/lanes/f-ci.md	1
 tools/client-ci/scenarios/fci_upwell_fuel.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_upwell_fuel.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_upwell_fuel.py	docs/lanes/f-ci.md	1
+tools/client-ci/scenarios/fci_upwell_industry.py	docs/archive/plan-client-ci.md	1
+tools/client-ci/scenarios/fci_upwell_industry.py	docs/lanes/ci-scenarios.md	1
+tools/client-ci/scenarios/fci_upwell_industry.py	docs/lanes/f-ci.md	1
 tools/client-ci/scenarios/fci_upwell_insure.py	docs/archive/plan-client-ci.md	1
 tools/client-ci/scenarios/fci_upwell_insure.py	docs/lanes/ci-scenarios.md	1
 tools/client-ci/scenarios/fci_upwell_insure.py	docs/lanes/f-ci.md	1

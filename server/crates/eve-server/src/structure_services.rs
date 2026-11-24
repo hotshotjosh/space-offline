@@ -901,6 +901,8 @@ pub fn unfit(
         to,
     }])
     .map_err(|e| notify(&format!("The module could not be unfitted ({e:?}).")))?;
+    // #57: a job whose service has no module left is cancelled.
+    crate::structure_industry::on_module_removed(reg, sid, module.type_id, now);
     on_services_changed(reg, sid);
     Ok(())
 }
@@ -926,10 +928,13 @@ pub fn on_services_changed(reg: &mut Registry, sid: i64) {
             reg.push(crate::service::structures::CorpStructuresUpdated { to: corp });
         }
     }
-    // One line each, where #53 (moon drills) and #57 (industry jobs) learn
-    // that a module changed. #42 part b's fuel burn needs no hook: it reads
-    // the online rows on its own clock and starts a module's burn at the next
-    // hour (`structure_fuel::pay_online`).
+    // One line each, where #53 (moon drills) learns that a module changed.
+    // #42 part b's fuel burn needs no hook: it reads the online rows on its
+    // own clock and starts a module's burn at the next hour
+    // (`structure_fuel::pay_online`).
+    // #57: industry jobs pause when their service goes offline and resume
+    // when it is back.
+    crate::structure_industry::on_services_changed(reg, sid, crate::pyutil::filetime_now());
 }
 
 /// `OnStructureServiceChanged(structureID)`: the client refetches the

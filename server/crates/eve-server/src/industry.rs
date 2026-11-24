@@ -358,7 +358,46 @@ pub struct Table {
     /// #157: the authored system cost index (`content/econ/cost-index.tsv`).
     /// Empty (every index 1.0) for the fixture and for a bundle-less server.
     pub cost_index: CostIndex,
+    /// #57: what a structure type or a rig type changes in an industry job,
+    /// by type id (`industry/modifier-sources.tsv`, optional). Empty for the
+    /// fixture and for a bundle without the file: no hull or rig modifiers.
+    pub modifier_sources: BTreeMap<i64, Vec<ModifierSource>>,
+    /// #57: `filter_id -> (category ids, group ids)`
+    /// (`industry/target-filters.tsv`, optional).
+    pub target_filters: BTreeMap<i64, TargetFilter>,
 }
+
+/// #57: a target filter's `(category ids, group ids)`.
+pub type TargetFilter = (Vec<i64>, Vec<i64>);
+
+/// #57: which modifier of a job a type attribute changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModKind {
+    Time,
+    Material,
+    Cost,
+}
+
+/// #57: one row of `industry/modifier-sources.tsv`: the type attribute
+/// `attribute_id` holds the multiplier for `kind` of `activity_id`, narrowed
+/// by `filter_id` (0: none, a hull's own bonus).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModifierSource {
+    pub activity_id: i64,
+    pub kind: ModKind,
+    pub attribute_id: i64,
+    pub filter_id: i64,
+}
+
+/// The two optional #57 bundle files and their header lines (`schema.md`).
+pub const MODIFIER_SOURCES: (&str, &str) = (
+    "industry/modifier-sources.tsv",
+    "#type_id\tactivity_id\tkind\tattribute_id\tfilter_id",
+);
+pub const TARGET_FILTERS: (&str, &str) = (
+    "industry/target-filters.tsv",
+    "#filter_id\tcategory_ids\tgroup_ids",
+);
 
 /// The authored file and its header (`schema.md` §4).
 pub const COST_INDEX_FILE: &str = "econ/cost-index.tsv";
@@ -483,13 +522,76 @@ impl Gathered {
     }
 }
 
+/// #57: the data lines of `industry/modifier-sources.tsv`, by type id. A
+/// malformed line is an error naming its data line.
+pub fn parse_modifier_sources<S: AsRef<str>>(
+    lines: &[S],
+) -> Result<BTreeMap<i64, Vec<ModifierSource>>, String> {
+    let mut out: BTreeMap<i64, Vec<ModifierSource>> = BTreeMap::new();
+    for (i, line) in lines.iter().enumerate() {
+        let line = line.as_ref();
+        let bad = || format!("data line {}: {line:?}", i + 1);
+        let [type_id, activity, kind, attribute, filter] = line.split('\t').collect::<Vec<_>>()[..]
+        else {
+            return Err(bad());
+        };
+        let int = |s: &str| s.parse::<i64>().map_err(|_| bad());
+        let kind = match kind {
+            "time" => ModKind::Time,
+            "material" => ModKind::Material,
+            "cost" => ModKind::Cost,
+            _ => return Err(bad()),
+        };
+        out.entry(int(type_id)?).or_default().push(ModifierSource {
+            activity_id: int(activity)?,
+            kind,
+            attribute_id: int(attribute)?,
+            filter_id: int(filter)?,
+        });
+    }
+    Ok(out)
+}
+
+/// #57: the data lines of `industry/target-filters.tsv`.
+pub fn parse_target_filters<S: AsRef<str>>(
+    lines: &[S],
+) -> Result<BTreeMap<i64, TargetFilter>, String> {
+    let mut out = BTreeMap::new();
+    for (i, line) in lines.iter().enumerate() {
+        let line = line.as_ref();
+        let bad = || format!("data line {}: {line:?}", i + 1);
+        let [filter, categories, groups] = line.split('\t').collect::<Vec<_>>()[..] else {
+            return Err(bad());
+        };
+        let list = |s: &str| -> Result<Vec<i64>, String> {
+            s.split(',')
+                .filter(|p| !p.is_empty())
+                .map(|p| p.parse::<i64>().map_err(|_| bad()))
+                .collect()
+        };
+        let id = filter.parse::<i64>().map_err(|_| bad())?;
+        out.insert(id, (list(categories)?, list(groups)?));
+    }
+    Ok(out)
+}
+
 impl Table {
     /// The bundle's `industry/blueprints.tsv`, priced by its
     /// `econ/prices.tsv` (read by `econ_prices`' own parser).
     pub fn from_bundle(b: &crate::content::Bundle) -> Result<Table, String> {
         let prices = crate::econ_prices::Table::from_bundle(b)?;
         let (rel, header) = BLUEPRINTS;
-        Table::parse(&b.data_lines(rel, header)?, &prices).map_err(|e| format!("{rel}: {e}"))
+        let mut table = Table::parse(&b.data_lines(rel, header)?, &prices)
+            .map_err(|e| format!("{rel}: {e}"))?;
+        // #57: both files are optional; `data_lines` answers no lines for a
+        // bundle without one.
+        let (rel, header) = MODIFIER_SOURCES;
+        table.modifier_sources = parse_modifier_sources(&b.data_lines(rel, header)?)
+            .map_err(|e| format!("{rel}: {e}"))?;
+        let (rel, header) = TARGET_FILTERS;
+        table.target_filters =
+            parse_target_filters(&b.data_lines(rel, header)?).map_err(|e| format!("{rel}: {e}"))?;
+        Ok(table)
     }
 
     /// The data lines of `industry/blueprints.tsv`, and the prices.
@@ -2232,9 +2334,79 @@ pub struct Facility {
     /// the client ships no security level for any system and this cannot be
     /// verified from it at all.
     pub safe_sec: bool,
+    /// #57: what an Upwell structure adds (`structure_industry::facility`);
+    /// `None` for an NPC station, which is every existing constructor.
+    pub structure: Option<StructureTerms>,
+}
+
+/// #57: the terms of an Upwell structure's industry facility for one pilot.
+/// Fixed arrays, so [`Facility`] stays `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StructureTerms {
+    /// `serviceAccess`: up to 16 `(serviceID, rate)` pairs the pilot may use,
+    /// the rate a fraction (setting percent / 100).
+    pub access: [(i64, f64); 16],
+    pub access_len: usize,
+    /// The activities its online services run (`GetActivityID`).
+    pub activities: [i64; 6],
+    pub activities_len: usize,
+    /// The hull's `(time, material, cost)` multipliers per activity, indexed
+    /// like [`ACTIVITIES`]; 1.0 where the hull has none.
+    pub hull: [(f64, f64, f64); 6],
+}
+
+impl StructureTerms {
+    /// No service, no activity, no hull bonus.
+    pub const EMPTY: StructureTerms = StructureTerms {
+        access: [(0, 0.0); 16],
+        access_len: 0,
+        activities: [0; 6],
+        activities_len: 0,
+        hull: [(1.0, 1.0, 1.0); 6],
+    };
+
+    /// The `(serviceID, rate)` pairs in use.
+    pub fn access(&self) -> &[(i64, f64)] {
+        &self.access[..self.access_len]
+    }
+
+    /// The activities in use.
+    pub fn activities(&self) -> &[i64] {
+        &self.activities[..self.activities_len]
+    }
+
+    /// The rate of `service`, if the pilot may use it.
+    pub fn rate_of(&self, service: i64) -> Option<f64> {
+        self.access()
+            .iter()
+            .find(|(s, _)| *s == service)
+            .map(|(_, r)| *r)
+    }
+
+    /// The hull's triple for `activity` (1.0s for an activity not listed).
+    pub fn hull_for(&self, activity: i64) -> (f64, f64, f64) {
+        ACTIVITIES
+            .iter()
+            .position(|a| *a == activity)
+            .map_or((1.0, 1.0, 1.0), |i| self.hull[i])
+    }
 }
 
 impl Facility {
+    /// The `(time, material, cost)` multipliers this facility applies to
+    /// `activity`: its own scalars times the structure hull's triple (#57).
+    /// An NPC station's are all 1.0.
+    pub fn multipliers(&self, activity: i64) -> (f64, f64, f64) {
+        let (t, m, c) = self
+            .structure
+            .map_or((1.0, 1.0, 1.0), |s| s.hull_for(activity));
+        (
+            self.time_multiplier * t,
+            self.material_multiplier * m,
+            self.cost_multiplier * c,
+        )
+    }
+
     /// The station a character is docked in.
     ///
     /// Every multiplier is `1.0` and the tax is [`NPC_STATION_TAX`]; see
@@ -2255,6 +2427,7 @@ impl Facility {
             material_multiplier: 1.0,
             cost_multiplier: 1.0,
             safe_sec: false,
+            structure: None,
         }
     }
 }
@@ -2453,6 +2626,12 @@ pub enum Refusal {
     /// one the activity offers (not in group 1304, or on a job that takes
     /// none).
     MismatchMaterial(i64),
+    /// Code 33 `FACILITY_ACTIVITY` (#57): the structure runs no online service
+    /// for this activity; the payload is the activity id.
+    FacilityActivity(i64),
+    /// Code 41 `FACILITY_DENIED` (#57): the pilot has no `serviceAccess` entry
+    /// for the service this job needs.
+    FacilityDenied,
 }
 
 impl Refusal {
@@ -2481,6 +2660,8 @@ impl Refusal {
             Refusal::InvalidLicensedRuns(_) => 5,
             Refusal::ResearchLimit(..) => 39,
             Refusal::MismatchMaterial(_) => 28,
+            Refusal::FacilityActivity(_) => 33,
+            Refusal::FacilityDenied => 41,
         }
     }
 }
@@ -2771,6 +2952,16 @@ impl Jobs {
         if !facility.online {
             return Err(Refusal::FacilityOffline);
         }
+        // #57: an Upwell structure runs the activities of its online service
+        // modules only (`FACILITY_ACTIVITY`, one argument: the activity).
+        if let Some(t) = &facility.structure
+            && !t.activities().contains(&activity)
+        {
+            return Err(Refusal::FacilityActivity(activity));
+        }
+        // The facility's own scalars times the structure hull's triple (#57);
+        // an NPC station's are 1.0.
+        let (f_time, f_material, f_cost) = facility.multipliers(activity);
         // `if self.distance is None or self.distance > self.max_distance:
         //      FACILITY_DISTANCE`. Level 0 of the activity's distance skill
         // (Supply Chain Management, or Scientific Networking for science) is
@@ -2866,8 +3057,22 @@ impl Jobs {
             _ => bp.blueprint_type_id,
         };
 
+        // #57: the structure service this job needs, and the pilot's rate for
+        // it. `FACILITY_DENIED` when `serviceAccess` has no entry (the
+        // client's `Job._get_errors` for category 65). The job is taxed at
+        // that rate (`facility.tax` is `None` for a structure).
+        let mut priced = *facility;
+        if let Some(t) = &facility.structure {
+            let rate =
+                crate::structure_industry::service_for_product(content, activity, product_type_id)
+                    .and_then(|service| t.rate_of(service))
+                    .ok_or(Refusal::FacilityDenied)?;
+            priced.tax = Some(rate);
+        }
+        let facility = &priced;
+
         let character_time = activity_time_multiplier(content, activity, bp, level, pilot.implants);
-        let time_modifiers = character_time * facility.time_multiplier;
+        let time_modifiers = character_time * f_time;
 
         // `ResearchMaterial.job_validate` / `ResearchTime.job_validate`:
         // `RESEARCH_LIMIT` when the level is below zero or already the last.
@@ -2918,7 +3123,7 @@ impl Jobs {
                 blueprint.runs_remaining,
                 blueprint.time_efficiency,
                 character_time,
-                facility.time_multiplier,
+                f_time,
             ),
             // `Activity.job_max_runs` for an original, and a formula is one.
             REACTION => activity_max_runs(base_time, time_modifiers, MAX_RUNS_HARD_CAP),
@@ -2984,12 +3189,12 @@ impl Jobs {
                 request.runs,
                 blueprint.time_efficiency,
                 character_time,
-                facility.time_multiplier,
+                f_time,
             ),
             // `Job._get_time`: every input `TimeModifier` for this activity,
             // then `long(round(seconds))`. No activity but manufacturing has
             // a blueprint TE term.
-            _ => (raw_time * character_time * facility.time_multiplier).round() as i64,
+            _ => (raw_time * character_time * f_time).round() as i64,
         };
         // `time_previous = time - time / float(runs); if time_previous >
         //      MAX_RUN_LENGTH: RUN_LENGTH`. The client measures all but the
@@ -3005,26 +3210,18 @@ impl Jobs {
         // `MaterialModifier`), and nothing for research or copying, whose
         // activities carry no materials.
         let materials = match (activity, invention) {
-            (MANUFACTURING, _) => job_materials(
-                bp,
-                request.runs,
-                blueprint.material_efficiency,
-                facility.material_multiplier,
-            ),
+            (MANUFACTURING, _) => {
+                job_materials(bp, request.runs, blueprint.material_efficiency, f_material)
+            }
             // A reaction has no ME ([A 3] in `crate::reactions`): the base
             // quantities times the runs, and the facility's term only.
-            (REACTION, _) => job_materials(bp, request.runs, 0, facility.material_multiplier),
+            (REACTION, _) => job_materials(bp, request.runs, 0, f_material),
             (_, Some(inv)) => inv
                 .materials
                 .iter()
                 .map(|&(type_id, base)| Material {
                     type_id,
-                    quantity: material_quantity(
-                        base,
-                        request.runs,
-                        0,
-                        facility.material_multiplier,
-                    ),
+                    quantity: material_quantity(base, request.runs, 0, f_material),
                 })
                 // The decryptor is one more consumed material, quantity 1.
                 .chain(decryptor.map(|d| Material {
@@ -3088,7 +3285,7 @@ impl Jobs {
             raw_cost,
             activity,
             facility,
-            facility.cost_multiplier * table.cost_index.get(facility.solar_system_id, activity),
+            f_cost * table.cost_index.get(facility.solar_system_id, activity),
         );
         // `elif (self.accounts[self.account] or 0) < self.total_cost:
         //      ACCOUNT_FUNDS`
@@ -5112,6 +5309,8 @@ type\t990723\t990701\t16\t1\t1\t0\t0\t0\t0\t0\t\t\tSkill none
             Refusal::UnknownType(0),
             Refusal::InvalidLicensedRuns(0),
             Refusal::ResearchLimit(0, 0),
+            Refusal::FacilityActivity(0),
+            Refusal::FacilityDenied,
         ];
         for r in every {
             assert!(
@@ -5965,5 +6164,180 @@ type\t990723\t990701\t16\t1\t1\t0\t0\t0\t0\t0\t\t\tSkill none
         let mut empty = String::new();
         Blueprints::default().render(&mut empty);
         assert!(empty.is_empty());
+    }
+
+    // -----------------------------------------------------------------
+    // #57: an Upwell structure's facility.
+    // -----------------------------------------------------------------
+
+    /// An invented structure facility at the test station's id: manufacturing
+    /// only, the basic plant at an invented 3 percent, and an invented hull
+    /// triple for manufacturing.
+    fn structure_facility(hull: (f64, f64, f64)) -> Facility {
+        let mut terms = StructureTerms::EMPTY;
+        terms.access[0] = (crate::structure_profile::SERVICE_MANUFACTURING_BASIC, 0.03);
+        terms.access_len = 1;
+        terms.activities[0] = MANUFACTURING;
+        terms.activities_len = 1;
+        terms.hull[0] = hull;
+        Facility {
+            tax: None,
+            structure: Some(terms),
+            ..station()
+        }
+    }
+
+    fn install_at(f: &Facility, activity: i64) -> Result<Install, Refusal> {
+        let bp = rifter();
+        let skills = levels(&[(SKILL_INDUSTRY, 1)]);
+        let pilot = pilot_with(Some(&skills), &[], 1_000_000_000.0);
+        let mut r = request(500, 1);
+        r.activity_id = activity;
+        r.licensed_runs = 1;
+        Jobs::new().plan_install(
+            t(),
+            fx(),
+            0,
+            &pilot,
+            f,
+            &bpo(500, 691),
+            &r,
+            &minerals_for(bp, 1),
+        )
+    }
+
+    #[test]
+    fn hull_bonus_shortens_time_and_cuts_material() {
+        let plain = install_at(&structure_facility((1.0, 1.0, 1.0)), MANUFACTURING)
+            .expect("installs without a bonus");
+        let bonus = install_at(&structure_facility((0.5, 0.9, 0.97)), MANUFACTURING)
+            .expect("installs with the hull's bonus");
+        // The station's own job is the plain structure's: no bonus, no change.
+        let at_station = install_at(&station(), MANUFACTURING).expect("station");
+        assert_eq!(plain.job.time_in_seconds, at_station.job.time_in_seconds);
+        assert_eq!(plain.materials, at_station.materials);
+        // Half the time (invented 0.5), nine tenths of the material (0.9).
+        assert_eq!(bonus.job.time_in_seconds * 2, plain.job.time_in_seconds);
+        let units = |i: &Install, t: i64| {
+            i.materials
+                .iter()
+                .find(|m| m.type_id == t)
+                .map(|m| m.quantity)
+        };
+        assert_eq!(units(&plain, 34), Some(1000));
+        assert_eq!(units(&bonus, 34), Some(900));
+        // The cost multiplier lowers `cost` and never the tax base.
+        assert!(bonus.cost.cost < plain.cost.cost);
+        assert_eq!(bonus.cost.base, plain.cost.base);
+    }
+
+    #[test]
+    fn the_profile_rate_is_the_job_tax() {
+        let got =
+            install_at(&structure_facility((1.0, 1.0, 1.0)), MANUFACTURING).expect("installs");
+        // An invented 3 percent of the Rifter's base cost.
+        assert_eq!(got.cost.tax, (got.cost.base as f64 * 0.03).round() as i64);
+        assert!(got.cost.tax > 0);
+        assert_eq!(got.job.cost, got.cost.total());
+    }
+
+    #[test]
+    fn research_in_a_plant_only_structure_is_facility_activity() {
+        assert_eq!(
+            install_at(&structure_facility((1.0, 1.0, 1.0)), RESEARCH_MATERIAL).map(|_| ()),
+            Err(Refusal::FacilityActivity(RESEARCH_MATERIAL))
+        );
+        assert_eq!(Refusal::FacilityActivity(0).code(), 33);
+        // A station has no such refusal: the same request is not refused for it.
+        assert_ne!(
+            install_at(&station(), RESEARCH_MATERIAL).map(|_| ()),
+            Err(Refusal::FacilityActivity(RESEARCH_MATERIAL))
+        );
+    }
+
+    #[test]
+    fn a_service_the_pilot_has_no_entry_for_is_facility_denied() {
+        // The structure lists copying among its activities, but the pilot's
+        // `serviceAccess` holds the plant only.
+        let mut f = structure_facility((1.0, 1.0, 1.0));
+        if let Some(t) = f.structure.as_mut() {
+            t.activities[1] = COPYING;
+            t.activities_len = 2;
+        }
+        assert_eq!(
+            install_at(&f, COPYING).map(|_| ()),
+            Err(Refusal::FacilityDenied)
+        );
+        assert_eq!(Refusal::FacilityDenied.code(), 41);
+        assert!(install_at(&f, MANUFACTURING).is_ok());
+    }
+
+    #[test]
+    fn a_stations_multipliers_are_all_one() {
+        assert_eq!(station().multipliers(MANUFACTURING), (1.0, 1.0, 1.0));
+        let f = structure_facility((0.5, 0.9, 0.97));
+        assert_eq!(f.multipliers(MANUFACTURING), (0.5, 0.9, 0.97));
+        assert_eq!(f.multipliers(REACTION), (1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn modifier_sources_load_and_an_old_bundle_without_them_loads_empty() {
+        // The parsers, on invented lines.
+        let mods = parse_modifier_sources(&[
+            "990401\t1\ttime\t990601\t0",
+            "990401\t1\tmaterial\t990602\t0",
+            "990402\t3\tcost\t990603\t990501",
+        ])
+        .expect("parses");
+        assert_eq!(mods[&990401].len(), 2);
+        assert_eq!(
+            mods[&990402][0],
+            ModifierSource {
+                activity_id: 3,
+                kind: ModKind::Cost,
+                attribute_id: 990603,
+                filter_id: 990501,
+            }
+        );
+        assert!(parse_modifier_sources(&["990401\t1\tspeed\t1\t0"]).is_err());
+        assert!(parse_modifier_sources(&["990401\t1\ttime"]).is_err());
+        let filters = parse_target_filters(&["990501\t6,7\t", "990502\t\t3"]).expect("parses");
+        assert_eq!(filters[&990501], (vec![6, 7], vec![]));
+        assert_eq!(filters[&990502], (vec![], vec![3]));
+        assert!(parse_target_filters(&["x\t1\t2"]).is_err());
+        // The fixture has none.
+        assert!(t().modifier_sources.is_empty() && t().target_filters.is_empty());
+        // A bundle directory with the blueprints and neither file loads, empty.
+        let dir = std::env::temp_dir().join(format!("eve-57-bundle-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("industry")).expect("dir");
+        std::fs::write(
+            dir.join("industry/blueprints.tsv"),
+            format!("{}\n990100\t1\tactivity\t0\t0\t\t30\t5\n", BLUEPRINTS.1),
+        )
+        .expect("file");
+        let bundle = crate::content::Bundle { dir: dir.clone() };
+        let old = Table::from_bundle(&bundle);
+        // And with both files, it reads them.
+        std::fs::write(
+            dir.join(MODIFIER_SOURCES.0),
+            format!("{}\n990401\t1\ttime\t990601\t0\n", MODIFIER_SOURCES.1),
+        )
+        .expect("file");
+        std::fs::write(
+            dir.join(TARGET_FILTERS.0),
+            format!("{}\n990501\t6\t3\n", TARGET_FILTERS.1),
+        )
+        .expect("file");
+        let new = Table::from_bundle(&bundle);
+        // A wrong header is refused, naming the file.
+        std::fs::write(dir.join(TARGET_FILTERS.0), "#wrong\n").expect("file");
+        let bad = Table::from_bundle(&bundle);
+        let _ = std::fs::remove_dir_all(&dir);
+        let old = old.expect("an old bundle loads");
+        assert!(old.modifier_sources.is_empty() && old.target_filters.is_empty());
+        let new = new.expect("a new bundle loads");
+        assert_eq!(new.modifier_sources[&990401].len(), 1);
+        assert_eq!(new.target_filters[&990501], (vec![6], vec![3]));
+        assert!(bad.expect_err("wrong header").contains("target-filters"));
     }
 }

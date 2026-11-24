@@ -86,6 +86,9 @@ fn int_keyed_dict(pairs: Vec<(i64, PyValue)>) -> PyValue {
     )
 }
 
+/// `industry.Reference.HULL` **[V]** (`C:industry/const.py:122-135`).
+const REFERENCE_HULL: i64 = 12;
+
 /// The authored system cost index (`industry::CostIndex`).
 fn cost_index(reg: &Registry) -> &crate::industry::CostIndex {
     &reg.content().get::<crate::industry::Table>().cost_index
@@ -138,31 +141,67 @@ fn facility_row(f: &crate::industry::Facility, cost_index: &crate::industry::Cos
                 .collect(),
         )
     };
-    let activities = crate::industry::ACTIVITIES
+    // #57: a structure lists only the activities of its online services, each
+    // with the hull's modifiers: one 5-tuple `(amount, None, None, None,
+    // Reference.HULL = 12)` per kind whose amount is not 1.0 [V]
+    // (`industryCommon.py:370-404`, `C:industry/const.py:122-135`).
+    let hull_modifier = |amount: f64| {
+        if amount == 1.0 {
+            vec![]
+        } else {
+            vec![PyValue::Tuple(vec![
+                PyValue::Real(amount),
+                PyValue::None,
+                PyValue::None,
+                PyValue::None,
+                PyValue::Int(REFERENCE_HULL),
+            ])]
+        }
+    };
+    let listed: Vec<i64> = match &f.structure {
+        Some(t) => t.activities().to_vec(),
+        None => crate::industry::ACTIVITIES.to_vec(),
+    };
+    let activities = listed
         .iter()
         .map(|&a| {
+            let (time, material, cost) = f.structure.map_or((1.0, 1.0, 1.0), |t| t.hull_for(a));
             (
                 a,
                 PyValue::Tuple(vec![
-                    PyValue::List(vec![]), // timeModifiers,     5-tuples
-                    PyValue::List(vec![]), // materialModifiers, 5-tuples
-                    PyValue::List(vec![]), // costModifiers,     5-tuples
-                    PyValue::List(vec![]), // categories
-                    PyValue::List(vec![]), // groups
-                    PyValue::List(vec![]), // invTypes
+                    PyValue::List(hull_modifier(time)), // timeModifiers,     5-tuples
+                    PyValue::List(hull_modifier(material)), // materialModifiers, 5-tuples
+                    PyValue::List(hull_modifier(cost)), // costModifiers,     5-tuples
+                    PyValue::List(vec![]),              // categories
+                    PyValue::List(vec![]),              // groups
+                    PyValue::List(vec![]),              // invTypes
                 ]),
             )
         })
         .collect();
+    // #57: a structure's `tax` is `None` (the client then takes the job's tax
+    // from `serviceAccess`) and `serviceAccess` is `{serviceID: rate}`.
+    let (tax, service_access) = match &f.structure {
+        Some(t) => (
+            PyValue::None,
+            int_keyed_dict(
+                t.access()
+                    .iter()
+                    .map(|&(service, rate)| (service, PyValue::Real(rate)))
+                    .collect(),
+            ),
+        ),
+        None => (PyValue::Real(f.tax.unwrap_or(0.0)), PyValue::Dict(vec![])),
+    };
     pydict(vec![
         ("facilityID", PyValue::Int(f.facility_id)),
         ("typeID", PyValue::Int(f.type_id)),
         ("ownerID", PyValue::Int(f.owner_id)),
-        // Trap 1.
-        ("tax", PyValue::Real(f.tax.unwrap_or(0.0))),
+        // Trap 1 (a station); a structure's is `None` (#57).
+        ("tax", tax),
         ("solarSystemID", PyValue::Int(f.solar_system_id)),
         ("online", PyValue::Bool(f.online)),
-        ("serviceAccess", PyValue::Dict(vec![])),
+        ("serviceAccess", service_access),
         ("sccTaxModifier", PyValue::Real(f.scc_tax_modifier)),
         // Trap 3.
         ("rigModifiers", PyValue::List(vec![])),
@@ -445,7 +484,15 @@ fn validation_error(refusals: &[crate::industry::Refusal]) -> ServiceError {
             PyValue::List(
                 refusals
                     .iter()
-                    .map(|r| PyValue::Tuple(vec![industry_error(r.code()), PyValue::Tuple(vec![])]))
+                    .map(|r| {
+                        // `add_error(FACILITY_ACTIVITY, activityID)`: the one
+                        // refusal with an argument (#57).
+                        let args = match r {
+                            crate::industry::Refusal::FacilityActivity(a) => vec![PyValue::Int(*a)],
+                            _ => vec![],
+                        };
+                        PyValue::Tuple(vec![industry_error(r.code()), PyValue::Tuple(args)])
+                    })
                     .collect(),
             ),
         )]),
@@ -3652,5 +3699,57 @@ mod tests {
         )
         .expect("an NPC station is a facility");
         assert_eq!(row_bytes(&got), row_bytes(&expect));
+    }
+
+    /// An invented station's row, pinned as a literal value: every key, the
+    /// numeric tax, the empty `serviceAccess`, six listed activities with
+    /// empty modifier lists, and a float per activity in the system modifiers.
+    #[test]
+    fn a_station_facility_row_is_exactly_this_value() {
+        let f =
+            crate::industry::Facility::npc_station(990_600_077, 990_100_077, 990_502, 990_300_077);
+        let got = facility_row(&f, &crate::industry::CostIndex::default());
+        let empty = || PyValue::List(vec![]);
+        let activity =
+            || PyValue::Tuple(vec![empty(), empty(), empty(), empty(), empty(), empty()]);
+        let want = pydict(vec![
+            ("facilityID", PyValue::Int(990_600_077)),
+            ("typeID", PyValue::Int(990_502)),
+            ("ownerID", PyValue::Int(990_100_077)),
+            ("tax", PyValue::Real(crate::industry::NPC_STATION_TAX)),
+            ("solarSystemID", PyValue::Int(990_300_077)),
+            ("online", PyValue::Bool(true)),
+            ("serviceAccess", PyValue::Dict(vec![])),
+            (
+                "sccTaxModifier",
+                PyValue::Real(crate::industry::DEFAULT_SCC_TAX_MODIFIER),
+            ),
+            ("rigModifiers", empty()),
+            (
+                "globalModifiers",
+                pydict(vec![
+                    ("faction", PyValue::Real(1.0)),
+                    (
+                        "system",
+                        int_keyed_dict(
+                            [1, 4, 3, 5, 8, 9]
+                                .iter()
+                                .map(|&a| (a, PyValue::Real(1.0)))
+                                .collect(),
+                        ),
+                    ),
+                ]),
+            ),
+            (
+                "activities",
+                int_keyed_dict(
+                    [1, 4, 3, 5, 8, 9]
+                        .iter()
+                        .map(|&a| (a, activity()))
+                        .collect(),
+                ),
+            ),
+        ]);
+        assert_eq!(got, want);
     }
 }

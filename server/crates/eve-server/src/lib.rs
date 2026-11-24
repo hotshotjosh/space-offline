@@ -340,6 +340,7 @@ pub mod structure_fuel;
 pub mod structure_notify;
 pub mod structure_profile;
 // #41 UPWELL-FIT: service modules at a structure's controls.
+pub mod structure_industry; // #57
 pub mod structure_services;
 pub mod structure_space;
 // PROG-MINE: in-space compression.
