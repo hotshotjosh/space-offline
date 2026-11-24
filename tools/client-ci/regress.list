@@ -196,6 +196,8 @@ fci_npc_siege -- --dev
 fci_upwell_kill --with-second -- --dev --character Alice --character Bob
 # w27-safety (#49): a structure's hull into asset safety by the Assets route, the Asset Safety row, early delivery refused, the Move Timer step then delivery with the fee, the long wait moved by the tick
 fci_upwell_safety
+# upwell-industry (#57): /upwell spawn a Raitaru, /upwell fit a Standup Manufacturing Plant; the client's own facility row (online, tax None, serviceAccess, manufacturing only, a hull modifier), a manufacturing job installs at the quoted cost and time, the plant offlined at the controls pauses it and onlined again resumes it later by the pause, delivery to the structure hangar, a research job is FACILITY_ACTIVITY; one client; written, not yet run on a client
+fci_upwell_industry --serial -- --time-scale 60
 
 # ws-2-world (#70): the world module, so these need eve-offline-server (WS-0): a live /world training change, the free SP pool applied to a queue
 fci_world_training -- --dev
