@@ -218,9 +218,8 @@ host so their logs and captures land in the repo without a namespace hop.)
 
 `tools/pin-client.sh` records a sha256 of every file in the jailed install and
 verifies it. **Why it matters more than it looks:** every `[V]` mark in this
-repository is measured against the pinned build — **3662168** since the re-pin
-of 2026-10-31 (issue #19; it was 3619879 before, and 3619879 stays on disk as
-`tq-3619879`). Every constant read from the client, every wire layout,
+repository is measured against the pinned build — the `pinned` row of `tools/builds.tsv`
+(each re-pin moves it; older installs stay on disk under their own `tq-<build>` names). Every constant read from the client, every wire layout,
 every formula is anchored to it. Steam moved its own copy once already (to
 3628513), and until 2026-10-24 nothing noticed that the two had diverged. The
 real build of 2026-11-09 will repeat the re-pin.
@@ -237,7 +236,7 @@ online (Steam) prefix. Name another install with `--path DIR`.
 
 Falsified both ways when it was written: pointed at `tq` it reports
 `BUILD MOVED -- manifest pins 3619879, install says 3628513` and exits 1 (the
-numbers are those of the day it was written; the manifest pins 3662168 now);
+numbers are those of the day it was written; the manifest pins the `pinned` build now);
 pointed at the second prefix it passes, because **`tq-offline-2` is
 byte-identical to `tq-offline` across all 232 files**, so one manifest covers
 both clients (after a re-pin, rebuild the second client with `client2-setup.sh`).

@@ -93,7 +93,7 @@ here is a plain file on this machine owned by the launching user:
 | what | where |
 |---|---|
 | our server log | `logs/eve-server.log` (truncated per `up.sh` run) |
-| the client's log | `$STEAM_ROOT/steamapps/compatdata/8500/pfx/drive_c/eve-logs/client-<stamp>-<pid>.log`, a fresh file per client process |
+| the client's log | `~/.local/share/eve-offline/prefix/pfx/drive_c/eve-logs/client-<stamp>-<pid>.log` (the offline prefix; `tools/client-log.sh` tails it), a fresh file per client process |
 | wire captures | `captures/<epoch>-<nnnn>.evecap`, one per connection |
 
 Any agent with shell access can read all of them directly, live, while the

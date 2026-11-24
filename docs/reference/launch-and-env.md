@@ -162,7 +162,7 @@ sudo -v && tools/client-ci.sh run undock_distance
 | Flag | Default | Meaning | Example |
 |---|---|---|---|
 | `--bind LISTENER` | `127.0.0.1:26000` | a machoNet listener, repeatable: `ADDR[,ceiling=gm\|player][,cap=N][,account=UID][,chat=ADDR][,advertise=IP][,signup=on\|off][,capture=on\|off][,botnames=on\|off][,gm-public=on\|off]`; in an accounts mode a listener off loopback with the default `ceiling=gm` is refused unless it says `gm-public=on` (a GM password crosses plaintext) | `--bind 10.137.0.1:26000,ceiling=gm` |
-| `--client-build N[,M]` | every build `tools/builds.tsv` marks pinned or equivalent | the client builds this server answers | `--client-build 3662168` |
+| `--client-build N[,M]` | every build `tools/builds.tsv` marks `pinned`, `equivalent` or `provisional` on the reference line (`eve_marshal::build::accepted`) | the client builds this server answers | `--client-build <build>` |
 | `--accounts FILE` | off | accounts mode from a token file (`sha256(token) user_id role name [start_character]`) | `--accounts $HOME/.config/eve-offline/accounts.tsv` |
 | `--world-accounts` | off | accounts live in the `--world` file; the client logs in with `/ssoToken=USER:PASSWORD` | `--world var/world.dat --world-accounts` |
 | `--signup` | off | `signup=on` for every listener (`--world-accounts` only) | `tools/up.sh --signup` |
