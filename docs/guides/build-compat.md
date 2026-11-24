@@ -1,10 +1,11 @@
 # Build compatibility: adding, checking and retiring a client build
 
-**The reference is build 3670638** (`pinned` in `tools/builds.tsv`,
-`eve_marshal::build::REFERENCE`), since the re-pin of 2026-11-04 (issue #131);
-its delta from 3662168 was data only. 3619879, 3628513 and 3662168 are still
-registered, as `unverified`: seen, kept, refused unless `--client-build` names
-them. A newer launcher build repeats this re-pin: see "Re-pinning" below. The server supports the pinned build and
+**The reference is the `pinned` row of `tools/builds.tsv`** (`eve_marshal::build::REFERENCE`);
+that table names every registered build and its status, so this page does not repeat them.
+Older builds stay registered as `unverified`: seen, kept, refused unless `--client-build`
+names them. Several `provisional` rows can be open at once (a second hotfix before the first
+is measured); each is served on the pinned bundle until it is measured. A newer launcher build
+may need a re-pin: see "Re-pinning" below. The server supports the pinned build and
 any registered build whose status is `pinned`, `equivalent` or `provisional`. The
 standing policy (follow the TQ build, one clean cut-over per move, no dual-line serving) is
 `docs/guides/tracking-tq.md`; this page is the procedure it calls. This is the
@@ -97,7 +98,8 @@ Beside the row: `findings/build-delta-<pinned>-<build>.tsv`.
 `provisional` is for a build of the **served line** (the line of `REFERENCE_LINE`) that has been
 triaged as T0 or T1 with no must on the login path, and not yet measured further. The server
 serves it by default, on the bundle of a `pinned` or `equivalent` build of the same line, and logs
-`serving provisional build B on the bundle of build M` at start. It is a two-hour step that
+`serving provisional build B on the bundle of build M` at start (`builds B1, B2` when more
+than one is served). It is a two-hour step that
 keeps a friend whose launcher took a hotfix from being refused. Rules:
 
 - same line only: the registry test refuses a `provisional` row on another line, and requires
