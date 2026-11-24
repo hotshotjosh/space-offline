@@ -160,12 +160,83 @@ class Cases(Fixture):
         self.assertEqual(self.run_check()[0], 1)
 
 
+class Baseline(Fixture):
+    def counts(self):
+        subprocess.run(["git", "init", "-q", "-b", "work", self.root], check=True, env=GIT_ENV)
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True, env=GIT_ENV)
+        old = os.environ.copy()
+        os.environ.update({k: v for k, v in GIT_ENV.items() if k.startswith("GIT_")})
+        try:
+            return er.cite_counts(self.root)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+    def run_base(self, base_text):
+        counts = self.counts()
+        path = os.path.join(self.root, "base.tsv")
+        with open(path, "w") as f:
+            f.write(base_text)
+        buf = io.StringIO()
+        return er.check_baseline(self.root, path, out=buf, counts=counts), buf.getvalue()
+
+    def test_comments_and_docstrings_count_code_strings_and_kept_paths_do_not(self):
+        self.put("a.rs", "// see docs/secret/a.txt and docs/secret/b\nlet s = \"docs/secret/a.txt\";\n")
+        self.put("b.py", '"""docs/secret/a.txt"""\n# docs/secret/x\nx = "docs/secret/a.txt"\n')
+        self.put("c.sh", "# docs/secret/a.txt\necho docs/secret/a.txt\n")
+        self.put("d.rs", "// docs/README.md\n")
+        c = self.counts()
+        self.assertEqual((c["a.rs"], c["b.py"], c["c.sh"], "d.rs" in c), (2, 2, 1, False))
+
+    def test_a_rising_count_fails(self):
+        self.put("a.rs", "// docs/secret/a.txt\n// docs/secret/a.txt\n")
+        rc, out = self.run_base("a.rs\t1\n")
+        self.assertEqual(rc, 1)
+        self.assertIn("a.rs: 2 citations", out)
+
+    def test_an_equal_count_passes(self):
+        self.put("a.rs", "// docs/secret/a.txt\n")
+        self.assertEqual(self.run_base("a.rs\t1\n")[0], 0)
+
+    def test_a_falling_count_passes_with_a_note(self):
+        self.put("a.rs", "// docs/secret/a.txt\n")
+        rc, out = self.run_base("a.rs\t3\n")
+        self.assertEqual(rc, 0)
+        self.assertIn("note: a.rs fell to 1", out)
+
+    def test_a_new_file_with_citations_fails(self):
+        self.put("a.rs", "// docs/secret/a.txt\n")
+        self.put("n.py", "# docs/secret/a.txt\n")
+        rc, out = self.run_base("a.rs\t1\n")
+        self.assertEqual(rc, 1)
+        self.assertIn("n.py: 1 citations of withheld docs paths, not in the baseline", out)
+
+    def test_write_baseline_round_trips(self):
+        self.put("a.rs", "// docs/secret/a.txt\n")
+        c = self.counts()
+        path = os.path.join(self.root, "w.tsv")
+        old = er.cite_counts
+        er.cite_counts = lambda root, pe=None: c
+        try:
+            er.write_baseline(self.root, path)
+        finally:
+            er.cite_counts = old
+        self.assertEqual(er.load_baseline(path), {"a.rs": 1})
+
+
 class Live(unittest.TestCase):
     def test_the_tree_names_no_excluded_path(self):
         if not os.path.isfile(os.path.join(ROOT, "private", "export-private-paths.txt")):
             self.skipTest("this tree is the export: nothing is excluded here")
         out = io.StringIO()
         rc = er.check(ROOT, out=out)
+        self.assertEqual(rc, 0, "\n".join(l for l in out.getvalue().split("\n") if not l.startswith("note:")))
+
+    def test_the_tree_cites_no_more_withheld_paths_than_the_baseline(self):
+        if not os.path.isfile(os.path.join(ROOT, "private", "export-private-paths.txt")):
+            self.skipTest("this tree is the export: nothing is excluded here")
+        out = io.StringIO()
+        rc = er.check_baseline(ROOT, out=out)
         self.assertEqual(rc, 0, "\n".join(l for l in out.getvalue().split("\n") if not l.startswith("note:")))
 
 

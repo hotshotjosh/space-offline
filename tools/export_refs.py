@@ -5,6 +5,7 @@ fails on a contributor's ("No such file"). No test executes every such line, so 
 check reads them. Standard library only.
 
     python3 -I tools/export_refs.py --check
+    python3 -I tools/export_refs.py --write-baseline   # regenerate tools/lanes-cite-baseline.tsv
 
 Scope (exported files only): `.py` (comments and docstrings are ignored; other string
 tokens are live), `.sh`, `tools/hooks/*`, `containers/*`, `*.yml` (comment lines ignored).
@@ -13,6 +14,13 @@ on a missing include). A path that is not a tracked file is never a hit.
 
 The allowlist `tools/export-refs-allow.tsv` has rows `file<TAB>path<TAB>why`, keyed by
 file and path (not line). A row that matches nothing is a failure (`stale allow row`).
+
+Second check (#244), the citation baseline: exported `.rs`, `.py` and `.sh` files cite
+withheld `docs/` paths in comments and docstrings (the public reader cannot open them).
+Rewriting the old ones is a separate job; `tools/lanes-cite-baseline.tsv` (`path<TAB>count`)
+freezes them. `--check` fails when a file's count rises above its baseline or a file not in
+the baseline gains a citation; a falling count passes with a note to lower the baseline.
+The file holds paths and counts only.
 """
 
 import ast
@@ -25,6 +33,8 @@ import tokenize
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALLOW = os.path.join(HERE, "export-refs-allow.tsv")
+BASELINE = os.path.join(HERE, "lanes-cite-baseline.tsv")
+CITE_KINDS = (".rs", ".py", ".sh")
 
 # The CI directory's name is split: the export's leak scan rejects the plain word.
 _CI_DIR = r"\.forg" + "ejo"
@@ -229,15 +239,116 @@ def check(root: str, allow_path: str = ALLOW, out=None) -> int:
     return 1 if bad else 0
 
 
+def _comment_text(rel: str, text: str) -> list[tuple[int, str]]:
+    """(line, text) of every comment and docstring in an exported code file."""
+    out = []
+    if rel.endswith(".py"):
+        try:
+            toks = list(tokenize.generate_tokens(io.StringIO(text).readline))
+        except (tokenize.TokenError, IndentationError, SyntaxError):
+            toks = None
+        if toks is not None:
+            sig = [t for t in toks if t.type not in (tokenize.NL, tokenize.COMMENT)]
+            for t in toks:
+                if t.type == tokenize.COMMENT:
+                    out.append((t.start[0], t.string))
+            for i, t in enumerate(sig):
+                if t.type != tokenize.STRING:
+                    continue
+                before = sig[i - 1].type if i else tokenize.NEWLINE
+                after = sig[i + 1].type if i + 1 < len(sig) else tokenize.ENDMARKER
+                if before in (tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT) and after in (tokenize.NEWLINE, tokenize.ENDMARKER):
+                    out.append((t.start[0], t.string))
+            return out
+        marker = "#"
+    else:
+        marker = "//" if rel.endswith(".rs") else "#"
+    for n, line in enumerate(text.split("\n"), 1):
+        k = line.find(marker)
+        if k >= 0:
+            out.append((n, line[k:]))
+    return out
+
+
+def withheld_docs(names: set[str]) -> set[str]:
+    return {n for n in names if n.startswith("docs/")}
+
+
+def cite_counts(root: str, pe=None) -> dict[str, int]:
+    """exported file -> number of comment/docstring citations of a withheld docs/ path."""
+    pe = pe or _pe()
+    names = withheld_docs(private_names(root, pe))
+    counts = {}
+    for rel in pe.exported(root):
+        if not rel.endswith(CITE_KINDS) or rel == os.path.relpath(BASELINE, os.path.dirname(HERE)):
+            continue
+        p = os.path.join(root, rel)
+        if not os.path.isfile(p):
+            continue
+        n = 0
+        for lineno, chunk in _comment_text(rel, read(p)):
+            for part in chunk.split("\n"):
+                for m in TOKEN.finditer(part):
+                    tok = m.group(1)
+                    if not tok.startswith("docs/"):
+                        continue
+                    segs = tok.split("/")
+                    if any("/".join(segs[:i]) in names for i in range(2, len(segs) + 1)):
+                        n += 1
+        if n:
+            counts[rel] = n
+    return counts
+
+
+def load_baseline(path: str = BASELINE) -> dict[str, int]:
+    base = {}
+    if os.path.exists(path):
+        for line in read(path).split("\n"):
+            if line.strip() and not line.startswith("#"):
+                f = line.split("\t")
+                base[f[0]] = int(f[1])
+    return base
+
+
+def write_baseline(root: str, path: str = BASELINE) -> int:
+    counts = cite_counts(root)
+    with open(path, "w") as f:
+        f.write("# path<TAB>count: comment citations of withheld docs paths, frozen (tools/export_refs.py)\n")
+        for rel in sorted(counts):
+            f.write(f"{rel}\t{counts[rel]}\n")
+    return len(counts)
+
+
+def check_baseline(root: str, path: str = BASELINE, out=None, counts=None) -> int:
+    out = out or sys.stdout
+    counts = cite_counts(root) if counts is None else counts
+    base = load_baseline(path)
+    bad = 0
+    for rel in sorted(counts):
+        if counts[rel] > base.get(rel, 0):
+            was = f"baseline {base[rel]}" if rel in base else "not in the baseline"
+            print(f"{rel}: {counts[rel]} citations of withheld docs paths, {was}", file=out)
+            bad += 1
+    lower = [r for r in sorted(base) if counts.get(r, 0) < base[r]]
+    for rel in lower:
+        print(f"note: {rel} fell to {counts.get(rel, 0)} (baseline {base[rel]}); run --write-baseline to lower it", file=out)
+    print(f"export-refs baseline: {sum(counts.values())} citations in {len(counts)} files, {bad} over", file=out)
+    return 1 if bad else 0
+
+
 def main(argv: list[str]) -> int:
-    if argv[1:] != ["--check"]:
+    if argv[1:] not in (["--check"], ["--write-baseline"]):
         print(__doc__, file=sys.stderr)
         return 2
     root = os.path.dirname(HERE)
     if not os.path.isfile(os.path.join(root, "private", "export-private-paths.txt")):
         print("export-refs: this tree is the export; nothing is excluded here")
         return 0
-    return check(root)
+    if argv[1] == "--write-baseline":
+        print(f"export-refs: baseline written, {write_baseline(root)} files")
+        return 0
+    rc = check(root)
+    return max(rc, check_baseline(root))
 
 
 if __name__ == "__main__":
