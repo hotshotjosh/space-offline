@@ -1069,6 +1069,15 @@ impl<'t> Eval<'t> {
             // `bdl.StartPassiveEffects:1204`: an otherID effect with no other
             // is not started.
             Domain::Other => self.nodes[i].other?,
+            // #42b: when the evaluated hull is itself a structure (category 65)
+            // its `structureID` domain is the hull, as `shipID` is a ship's
+            // (the Citadel's fuel role bonus, effect 6568, names it so). On any
+            // other hull the domain still reaches nothing, as before.
+            Domain::Structure
+                if self.nodes[SHIP].category == crate::typedata::CATEGORY_STRUCTURE =>
+            {
+                SHIP
+            }
             Domain::Structure | Domain::Target => return None,
         };
         let aim = aim_of(m, domain)?;
@@ -2138,6 +2147,39 @@ modifier\t9202\tshipID\tItemModifier\t4\t796\t2\t\t
 
     fn table() -> Table {
         Table::parse(FIXTURE).expect("fixture parses")
+    }
+
+    /// #42b: a `structureID`-domain modifier reaches the hull only when the
+    /// evaluated hull is a structure (category 65); on a ship it does nothing.
+    #[test]
+    fn the_structure_domain_is_the_hull_of_a_structure_and_nothing_on_a_ship() {
+        const SHIP_HULL: i64 = 980_000_091;
+        const STRUCT_HULL: i64 = 980_000_092;
+        let rows = format!(
+            "{FIXTURE}\
+             type\t{SHIP_HULL}\t25\t6\t1\t1\t1000.0\t100.0\t1000.0\t30.0\t0\t9300\t9=300.0;1159=50.0\tInvented Ship\n\
+             type\t{STRUCT_HULL}\t1657\t65\t1\t1\t1000.0\t100.0\t1000.0\t30.0\t0\t9300\t9=300.0;1159=50.0\tInvented Structure\n\
+             effect\t9300\t0\t0\t0\t0\t0\t0\t0\tinventedStructureBonus\t\n\
+             modifier\t9300\tstructureID\tItemModifier\t9\t1159\t2\t\t\n"
+        );
+        let table = Table::parse(&rows).expect("rows parse");
+        let hp = |hull: i64| {
+            evaluate(
+                &table,
+                &Inputs {
+                    ship_type: hull,
+                    ..Inputs::default()
+                },
+            )
+            .expect("sheet")
+            .ship(9)
+        };
+        assert_eq!(
+            hp(SHIP_HULL),
+            300.0,
+            "a ship's structureID modifier is dropped"
+        );
+        assert_eq!(hp(STRUCT_HULL), 350.0, "a structure's reaches the hull");
     }
 
     fn module(item_id: i64, type_id: i64, state: State) -> ModuleInput {

@@ -20,9 +20,15 @@
 //!   get notice 181, once per crossing.
 //!
 //! With it **off** (the default, today's behaviour) nothing burns and
-//! onlining is free. [`expires`] still answers, so the browser stays honest
-//! **[I]**; notices 207, 208 and 249 follow the upkeep state machine
-//! ([`crate::structure_notify::on_events`]) either way.
+//! onlining is free, and [`expires`] answers `None`, so the browser keeps
+//! today's blank column. Notices 207, 208 and 249 follow the upkeep state
+//! machine ([`crate::structure_notify::on_events`]) either way.
+//!
+//! The first [`step`] after `/world fuelburn 1` on a structure that already
+//! has modules online makes its row at the current hour (nothing is charged
+//! for the time the burn was off), then judges the bay: a bay already under
+//! [`LOW_FUEL_HOURS`] gets 181 at once, and a bay that cannot pay the next
+//! hour gets 198 at that hour.
 //!
 //! # State
 //!
@@ -35,21 +41,22 @@
 //! # What the client reads **[V]**
 //!
 //! - per hour = the sum over fitted, online modules of the **modified**
-//!   `serviceModuleFuelAmount` 2109 (`shipfitting/fittingDogmaLocationUtil.py:467-475`,
+//!   `serviceModuleFuelAmount` 2109 (`shipfitting/fittingDogmaLocationUtil.py:507-514`,
 //!   `GetFuelUsagePerHour`);
 //! - expiry = the top of the current hour plus `min(units / per_hour,
 //!   876600)` whole hours, counting group 1136 in flag 172
-//!   (`moonmining/schedulingSvc.py:93-108`, `GetFuelExpiryTime`).
+//!   (`moonmining/schedulingSvc.py:110-128`, `GetFuelExpiryTime`).
 //!
 //! # The hull's role bonus
 //!
 //! 2339 `structureServiceRoleBonus` (-25 for a Citadel or Engineering hull)
-//! reaches 2109 and 2110 as a hull passive effect with an operation-6
-//! modifier on the module group, the same shape a ship's role bonus has.
-//! [`uses`] runs the server's dogma engine ([`crate::dogma::evaluate`]) with
-//! the structure as the hull, so the bonus is whatever the hull's effect rows
-//! say. `burn_reads_the_dogma_modified_amount` proves the engine applies it on
-//! a category-65 hull.
+//! reaches 2109 and 2110 as a hull passive effect (the Citadel's is 6568) with
+//! an operation-6 `LocationGroupModifier` on the module group in the
+//! **`structureID`** domain. [`uses`] runs the server's dogma engine
+//! ([`crate::dogma::evaluate`]) with the structure as the hull; the engine
+//! reads `structureID` as the hull when the evaluated hull is a category-65
+//! structure (and still drops it on a ship). `burn_reads_the_dogma_modified_amount`
+//! proves it, and fails without that rule.
 //!
 //! # [A]s (falsifier in each)
 //!
@@ -102,7 +109,7 @@ pub const ATTR_ROLE_BONUS: i64 = 2339;
 
 /// One hour, in FILETIME ticks.
 pub const HOUR: i64 = 3_600 * SECOND;
-/// The client's cap on the expiry, in hours **[V]** (`schedulingSvc.py:93-108`).
+/// The client's cap on the expiry, in hours **[V]** (`schedulingSvc.py:110-128`).
 pub const MAX_EXPIRY_HOURS: i64 = 876_600;
 /// The low-fuel mail goes out below this many hours of fuel **[A]**.
 pub const LOW_FUEL_HOURS: i64 = 24;
@@ -138,7 +145,7 @@ fn whole(v: f64) -> u64 {
     }
 }
 
-/// Every fitted module of `s` (the Metenox drill apart) with its modified 2109
+/// Every fitted module of `s` with its modified 2109
 /// and 2110: the server's dogma engine with the structure as the hull, every
 /// fitted module in it (online ones online), so the hull's role bonus is in
 /// the numbers. A hull the type table lacks gives the modules' own values.
@@ -172,7 +179,6 @@ pub fn uses(reg: &Registry, s: &Structure) -> Vec<Use> {
     );
     fitted
         .into_iter()
-        .filter(|f| f.type_id != svc::TYPE_STANDUP_METENOX_MOON_DRILL)
         .map(|f| {
             let read = |attr: i64| match &sheet {
                 Some(sh) => sh.module(f.item_id, attr).unwrap_or(0.0),
@@ -190,9 +196,29 @@ pub fn uses(reg: &Registry, s: &Structure) -> Vec<Use> {
 /// The client's `GetFuelUsagePerHour`: the sum of the online modules' modified
 /// 2109, as the client's `int(...)` takes it (the sum first, then the whole
 /// part).
+///
+/// This is what the server **burns**: the Metenox drill's reagent cycle is
+/// #55's, so it is left out here (the client's own sum, which [`expires_at`]
+/// follows, counts it).
 pub fn burn_per_hour(reg: &Registry, s: &Structure) -> u64 {
+    burn_of(&uses(reg, s))
+}
+
+fn burn_of(users: &[Use]) -> u64 {
     whole(
-        uses(reg, s)
+        users
+            .iter()
+            .filter(|u| u.module.online && u.module.type_id != svc::TYPE_STANDUP_METENOX_MOON_DRILL)
+            .map(|u| u.per_hour)
+            .sum(),
+    )
+}
+
+/// The client's `GetFuelUsagePerHour` as written: every fitted online module,
+/// the Metenox drill included.
+fn client_per_hour(users: &[Use]) -> u64 {
+    whole(
+        users
             .iter()
             .filter(|u| u.module.online)
             .map(|u| u.per_hour)
@@ -391,9 +417,14 @@ pub fn pay_online(
 
 /// The client's `GetFuelExpiryTime` for `s` at `now`: the top of the current
 /// hour plus `min(units / per_hour, 876600)` whole hours (FILETIME), `None`
-/// when nothing burns **[V]**. Computed with the burn off too **[I]**.
+/// when nothing is online that uses fuel **[V]**. The sum is the client's own
+/// (the Metenox drill counts); [`expires`] is the browser's answer, which
+/// follows the burn switch.
 pub fn expires_at(reg: &Registry, s: &Structure, now: BlueTime) -> Option<BlueTime> {
-    let per = i64::try_from(burn_per_hour(reg, s)).unwrap_or(i64::MAX);
+    if !svc::has_online_module(reg, s) {
+        return None;
+    }
+    let per = i64::try_from(client_per_hour(&uses(reg, s))).unwrap_or(i64::MAX);
     if per == 0 {
         return None;
     }
@@ -401,8 +432,12 @@ pub fn expires_at(reg: &Registry, s: &Structure, now: BlueTime) -> Option<BlueTi
     Some(floor_hour(now) + hours * HOUR)
 }
 
-/// [`expires_at`] now, as the browser's `fuelExpires`.
+/// [`expires_at`] now, as the browser's `fuelExpires`: `None` while the burn is
+/// off (the column stays blank, as before), the formula with it on.
 pub fn expires(reg: &Registry, s: &Structure) -> PyValue {
+    if !enabled(reg) {
+        return PyValue::None;
+    }
     expires_at(reg, s, crate::pyutil::filetime_now()).map_or(PyValue::None, PyValue::Int)
 }
 
@@ -457,13 +492,7 @@ pub fn step(reg: &mut Registry, sid: i64, now: BlueTime) -> Option<Report> {
         return None;
     };
     let users = uses(reg, &s);
-    let per = whole(
-        users
-            .iter()
-            .filter(|u| u.module.online)
-            .map(|u| u.per_hour)
-            .sum(),
-    );
+    let per = burn_of(&users);
     if per == 0 {
         drop_row(reg, sid);
         return Some(Report::default());
@@ -474,7 +503,7 @@ pub fn step(reg: &mut Registry, sid: i64, now: BlueTime) -> Option<Report> {
         warned: false,
     });
     let mut report = Report::default();
-    let missed = (hour - row.last).max(0) / HOUR;
+    let missed = hour.saturating_sub(row.last).max(0) / HOUR;
     if missed > 0 {
         let plan = plan(fuel_units(reg, &s), per, missed);
         if let Err(e) = take_units(reg, &s, plan.burned) {
@@ -504,9 +533,17 @@ pub fn step(reg: &mut Registry, sid: i64, now: BlueTime) -> Option<Report> {
 /// **type** ids (what 198 names).
 fn offline_all(reg: &mut Registry, s: &Structure, users: &[Use], now: BlueTime) -> Vec<i64> {
     let mut types = Vec::new();
-    for u in users.iter().filter(|u| u.module.online && u.per_hour > 0.0) {
+    for u in users.iter().filter(|u| {
+        u.module.online
+            && u.per_hour > 0.0
+            && u.module.type_id != svc::TYPE_STANDUP_METENOX_MOON_DRILL
+    }) {
         match svc::force_offline(reg, s.id, u.module.item_id, now) {
-            Ok(_) => types.push(u.module.type_id),
+            Ok(_) => {
+                if !types.contains(&u.module.type_id) {
+                    types.push(u.module.type_id);
+                }
+            }
             Err(e) => crate::errln!(
                 "[strfuel] {}: module {} would not go offline ({})",
                 s.id,

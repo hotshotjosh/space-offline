@@ -295,8 +295,8 @@ fn entry_value(reg: &Registry, s: &Structure) -> PyValue {
         ("upkeepState", PyValue::Int(upkeep_code(s))),
         ("wars", PyValue::List(vec![])),
         ("timerEnd", opt_int(s.timer.end)),
-        // #42 part b: the client's own expiry arithmetic (`None` when nothing
-        // burns), sent with the burn off too.
+        // #42 part b: the client's own expiry arithmetic with the burn on
+        // (`None` when nothing burns), blank with it off.
         ("fuelExpires", crate::structure_fuel::expires(reg, s)),
         ("unanchoring", opt_int(s.unanchoring)),
         (

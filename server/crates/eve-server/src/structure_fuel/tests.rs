@@ -65,12 +65,13 @@ fn content(bonus: bool) -> crate::content::Content {
         "type\t{HULL}\t9420002\t65\t1\t1\t10.0\t0.0\t1000.0\t20000.0\t0\t{effect}\t{ATTR_SERVICE_SLOTS}=3.0;{ATTR_ROLE_BONUS}={BONUS}\tInvented Hull\n"
     ));
     if bonus {
-        // The shape of a ship's role bonus: a passive hull effect, operation 6
-        // on the modules of one group, from the hull's own bonus attribute.
+        // The shape of the Citadel's role bonus: a passive hull effect, operation 6
+        // on the modules of one group in the structureID domain, from the hull's own
+        // bonus attribute.
         rows.push_str(&format!(
             "effect\t{BONUS_EFFECT}\t0\t0\t0\t0\t0\t0\t0\tinventedRoleBonus\t\n\
-             modifier\t{BONUS_EFFECT}\tshipID\tLocationGroupModifier\t{ATTR_FUEL_PER_HOUR}\t{ATTR_ROLE_BONUS}\t6\t\t{GROUP_BONUSED}\n\
-             modifier\t{BONUS_EFFECT}\tshipID\tLocationGroupModifier\t{ATTR_ONLINE_AMOUNT}\t{ATTR_ROLE_BONUS}\t6\t\t{GROUP_BONUSED}\n"
+             modifier\t{BONUS_EFFECT}\tstructureID\tLocationGroupModifier\t{ATTR_FUEL_PER_HOUR}\t{ATTR_ROLE_BONUS}\t6\t\t{GROUP_BONUSED}\n\
+             modifier\t{BONUS_EFFECT}\tstructureID\tLocationGroupModifier\t{ATTR_ONLINE_AMOUNT}\t{ATTR_ROLE_BONUS}\t6\t\t{GROUP_BONUSED}\n"
         ));
     }
     rows.push_str(&module_row(
@@ -270,6 +271,14 @@ fn an_offline_module_a_free_module_and_the_metenox_do_not_burn() {
         vec!["1".to_owned()],
     );
     assert_eq!(burn_per_hour(&reg, &the_structure(&reg)), 0);
+    // The client's own GetFuelUsagePerHour sums every fitted online module, the
+    // Metenox drill too, so the browser's expiry counts it: 990 units, 100 an
+    // hour (its own 2109).
+    assert_eq!(units(&reg), 1_000 - 10);
+    assert_eq!(
+        expires_at(&reg, &the_structure(&reg), T0),
+        Some(T0 + 9 * HOUR)
+    );
 }
 
 #[test]
@@ -294,8 +303,9 @@ fn ozone_never_counts() {
     assert_eq!((fuel_units(&reg, &s), ozone_units(&reg, &s)), (3, 1_000));
 }
 
+/// PINNED [A]: hours missed are paid on the next tick; falsifier: TQ charging nothing for downtime.
 #[test]
-fn missed_hours_are_burned_per_hour_and_never_twice() {
+fn pinned_a_missed_hours_are_burned_per_hour_and_never_twice() {
     let mut reg = world();
     load(&mut reg, FUEL, 1_000);
     fit_online(&mut reg, MOD_A, T0);
@@ -355,8 +365,9 @@ fn plan_pays_whole_hours_and_stops_at_the_first_short_one() {
     );
 }
 
+/// PINNED [A]: oldest stack (lowest item id) first; falsifier: TQ eating the newest.
 #[test]
-fn the_oldest_stack_goes_first() {
+fn pinned_a_the_oldest_stack_goes_first() {
     let mut reg = world();
     let old = load(&mut reg, FUEL, 5);
     let new = load(&mut reg, FUEL_2, 50);
@@ -369,8 +380,9 @@ fn the_oldest_stack_goes_first() {
 
 // -- empty -----------------------------------------------------------------------------------
 
+/// PINNED [A]: a short bay offlines every fuel-using module and takes nothing for the hour; falsifier: a TQ structure with fuel for one module only.
 #[test]
-fn a_short_bay_offlines_every_fuel_module_and_sends_198() {
+fn pinned_a_short_bay_offlines_every_fuel_module_and_sends_198() {
     let mut reg = world();
     load(&mut reg, FUEL, 100);
     fit_online(&mut reg, MOD_A, T0);
@@ -443,8 +455,9 @@ fn onlining_pays_the_modified_cost_and_a_short_bay_refuses() {
     assert!(!online_types(&reg).contains(&MOD_B));
 }
 
+/// PINNED [A]: a just-onlined module's first burn is the next hour; falsifier: TQ charging the started hour.
 #[test]
-fn the_online_cost_starts_the_burn_at_the_next_hour() {
+fn pinned_a_the_online_cost_starts_the_burn_at_the_next_hour() {
     let mut reg = world();
     load(&mut reg, FUEL, 1_000);
     assert_eq!(last_burn_hour(&reg, SID), None);
@@ -473,16 +486,13 @@ fn fuel_expires_is_the_clients_formula() {
     // The cap.
     load(&mut reg, FUEL, 9 * (MAX_EXPIRY_HOURS + 100));
     assert_eq!(expires_at(&reg, &s, T0), Some(T0 + MAX_EXPIRY_HOURS * HOUR));
-    // The browser's answer is the same number, burn on or off.
+    // The browser's answer is the formula with the burn on, and blank with it off.
     let PyValue::Int(v) = expires(&reg, &s) else {
         panic!("an int");
     };
     assert_eq!(v % HOUR, 0);
     reg.rules_mut().structure_fuel_burn = false;
-    assert!(matches!(
-        expires(&reg, &the_structure(&reg)),
-        PyValue::Int(_)
-    ));
+    assert_eq!(expires(&reg, &the_structure(&reg)), PyValue::None);
 }
 
 #[test]
@@ -565,9 +575,9 @@ fn low_fuel_is_mailed_once_per_crossing() {
 // -- the switch ------------------------------------------------------------------------------------------
 
 #[test]
-fn the_switch_is_off_by_default_and_off_changes_nothing() {
+fn with_the_switch_off_nothing_burns_nothing_is_charged_and_the_column_is_blank() {
     let mut reg = world_with(content(true));
-    assert!(!crate::rules::Rules::default().structure_fuel_burn);
+    reg.rules_mut().structure_fuel_burn = false;
     assert!(!enabled(&reg));
     // Free to online with an empty bay.
     let line = fit_online(&mut reg, MOD_A, T0);
@@ -585,7 +595,8 @@ fn the_switch_is_off_by_default_and_off_changes_nothing() {
     // The GM's seam says so.
     assert!(gm_hours(&mut reg, SID, 3, T0).contains("off"));
     assert_eq!(units(&reg), 50);
-    // The expiry is still computed, so the browser stays honest [I]: 50 at 9.
+    // The browser's column stays blank; the formula itself is unchanged: 50 at 9.
+    assert_eq!(expires(&reg, &the_structure(&reg)), PyValue::None);
     assert_eq!(
         expires_at(&reg, &the_structure(&reg), T0),
         Some(T0 + 5 * HOUR)
@@ -662,6 +673,7 @@ fn space_tick(reg: &mut Registry, at: i64) {
 #[test]
 fn notices_207_208_follow_upkeep_with_the_burn_off() {
     let mut reg = world_with(content(true));
+    reg.rules_mut().structure_fuel_burn = false;
     assert!(!enabled(&reg));
     reg.rules_mut().upwell_free_upkeep = false;
     let at = crate::pyutil::filetime_now();
@@ -725,8 +737,8 @@ fn notice_249_follows_the_abandon_clock() {
     let at = crate::pyutil::filetime_now();
     let mut s = the_structure(&reg);
     s.upkeep = Some(Upkeep::Low);
-    // Two and a half days left: inside the warning window.
-    s.abandon_at = Some(at + (2 * 86_400 + 43_200) * structure::SECOND);
+    // Exactly two days left: inside the warning window.
+    s.abandon_at = Some(at + 2 * 86_400 * structure::SECOND);
     s.abandon_warned = false;
     structure::put(reg.deltas_mut(), &s);
     crate::structure_space::tick(&mut reg, Instant::now(), at);

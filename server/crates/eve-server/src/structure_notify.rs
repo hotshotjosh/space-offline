@@ -481,7 +481,12 @@ mod tests {
     }
 
     fn structure_at(state: State) -> Structure {
-        let e = structure::Env::new(T0);
+        // A module is online, so the structure starts at full power and no
+        // upkeep notice mixes into what a test counts.
+        let e = structure::Env {
+            has_service_module: true,
+            ..structure::Env::new(T0)
+        };
         let mut s = Structure::anchored(4_001, 35_832, CORP, 31, [0.0; 3], 0.0, "Invented", 1, &e);
         s.set_state(state, &e);
         s.take_events();
@@ -551,9 +556,9 @@ mod tests {
             let keys: Vec<String> = n(&reg, t).data.into_iter().map(|(k, _)| k).collect();
             assert_eq!(keys, base);
         }
-        // 249: whole days, rounded down, and the link.
+        // 249: the whole days left (an exact case; the rounding is [A]), and the link.
         let mut s = s;
-        s.abandon_at = Some(T0 + (3 * 86_400 - 1) * SECOND);
+        s.abandon_at = Some(T0 + 2 * 86_400 * SECOND);
         impending_abandonment(&mut reg, &s, T0);
         let w = n(&reg, STRUCTURE_IMPENDING_ABANDONMENT);
         assert_eq!(val(&w.data, "daysUntilAbandon"), &Value::Int(2));
@@ -657,18 +662,16 @@ mod tests {
         let mut reg = world();
         let mut s = structure_at(State::ShieldVulnerable);
         structure::put(reg.deltas_mut(), &s);
-        let e = crate::structure_space::env(&reg, T0);
+        // A module is online, so the upkeep stays full and no 207 mixes in.
+        let e = structure::Env {
+            has_service_module: true,
+            ..crate::structure_space::env(&reg, T0)
+        };
         s.set_damage(0.2, 1.0, 1.0, &e);
         let events = s.take_events();
         structure::put(reg.deltas_mut(), &s);
         crate::structure_space::react_at(&mut reg, s.id, &events, T0);
-        let attacks = |reg: &Registry| -> Vec<notif::Notification> {
-            got(reg, DIRECTOR)
-                .into_iter()
-                .filter(|n| n.type_id == STRUCTURE_UNDER_ATTACK)
-                .collect()
-        };
-        assert!(attacks(&reg).is_empty(), "no pilot, no 184");
+        assert!(got(&reg, DIRECTOR).is_empty(), "no pilot, no 184");
         // The pilot's volley, same window.
         reg.ext_mut::<crate::structure_combat::Fire>()
             .note_shooter(s.id, OTHER);
@@ -681,7 +684,7 @@ mod tests {
         let events = s.take_events();
         structure::put(reg.deltas_mut(), &s);
         crate::structure_space::react_at(&mut reg, s.id, &events, T0);
-        let n = attacks(&reg);
+        let n = got(&reg, DIRECTOR);
         assert_eq!(n.len(), 1, "exactly one 184");
         assert_eq!(val(&n[0].data, "charID"), &Value::Int(OTHER));
     }

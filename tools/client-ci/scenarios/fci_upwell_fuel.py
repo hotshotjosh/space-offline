@@ -10,7 +10,7 @@ a run says otherwise; a route that does not exist fails ITS OWN check with the
 route's name in the detail, never the whole scenario.
 
 `/world fuelburn 1` and `/world freeupkeep 0` (both put back in a `finally`:
-fuelburn to the value read before, freeupkeep to 1), `/upwell spawn astrahus`,
+both to the values read before), `/upwell spawn astrahus`,
 the client's own `Dock`, `TakeControl`, then, read off the client's OWN state:
 
 1. a non-fuel item dropped into the fuel bay (flag 172) raises
@@ -1707,15 +1707,41 @@ def eoci_main(EOCI_NAME):
         hours = min(units // per, CAP_HOURS)
         return [top + hours * HOUR_TICKS, top + HOUR_TICKS + hours * HOUR_TICKS]
 
-    def notes_of(type_id):
+    seen_notes = {}     # notification ids already there before step 5
+
+    def all_notes():
         ok, notes = rcall_kw('notificationMgr', 'GetAllNotifications', (), {'fromID': 0})
-        return [n for n in list(notes if ok else []) if getattr_safe(n, 'typeID') == type_id]
+        return list(notes) if ok and notes is not None else []
+
+    def note_id(n):
+        for name in ('notificationID', 'id'):
+            v = getattr_safe(n, name)
+            if v is not None:
+                return v
+        return None
+
+    def remember_notes():
+        for n in all_notes():
+            seen_notes[note_id(n)] = True
+
+    def notes_of(type_id, structure_id):
+        """New notifications of `type_id` whose data names this structure
+        (`structureID`).  [A] the data is a dict or an object whose text carries
+        the key and the id."""
+        out = []
+        for n in all_notes():
+            if getattr_safe(n, 'typeID') != type_id or note_id(n) in seen_notes:
+                continue
+            data = text(getattr_safe(n, 'data'))
+            if 'structureID' in data and text(structure_id) in data:
+                out.append(n)
+        return out
 
     NOTE_LOW_POWER = 207
     NOTE_HIGH_POWER = 208
     NOTE_SERVICES_OFFLINE = 198
 
-    prior = {'fuelburn': None}
+    prior = {'fuelburn': None, 'freeupkeep': None}
 
     def read_world_setting(name):
         ok, reply = gm('/world')
@@ -1800,6 +1826,7 @@ def eoci_main(EOCI_NAME):
         check('one hour took exactly the client\'s own fuel use per hour', bool(burned),
               'before %s now %s per hour %s' % (text(units_before), text(fuel_units(item_id)), text(per)))
 
+        remember_notes()    # only mails raised from here on count, for this structure
         # 5. an hour the bay cannot pay: the module goes offline, 198 and 207
         left = fuel_units(item_id) or 0
         keep = max(per - 1, 0)
@@ -1817,7 +1844,7 @@ def eoci_main(EOCI_NAME):
                                 if server_services(item_id)[0] else False, timeout_ms=30000)
         check('the service is gone from the lobby', bool(gone), 'after %s ms' % text(waited))
         check('the short bay took nothing', fuel_units(item_id) == keep, text(fuel_units(item_id)))
-        mail, waited = wait_for(lambda: notes_of(NOTE_SERVICES_OFFLINE), timeout_ms=60000, step_ms=2000)
+        mail, waited = wait_for(lambda: notes_of(NOTE_SERVICES_OFFLINE, item_id), timeout_ms=60000, step_ms=2000)
         check('mail 198 arrived', bool(mail), 'after %s ms' % text(waited))
         if mail:
             check('and it names the module type (listOfServiceModuleIDs) [A: the data attribute]',
@@ -1833,9 +1860,9 @@ def eoci_main(EOCI_NAME):
         check('the client\'s own OnlineModule raised nothing', ok, text(v)[:300])
         up, waited = wait_for(lambda: godma_online_now(module), timeout_ms=30000)
         check('the module is online again', bool(up), 'after %s ms' % text(waited))
-        low = notes_of(NOTE_LOW_POWER)
-        high, waited = wait_for(lambda: notes_of(NOTE_HIGH_POWER), timeout_ms=120000, step_ms=2000)
-        check('mail 207 arrived when it went dark (freeupkeep 0)', bool(low), text(len(low)))
+        low, _w = wait_for(lambda: notes_of(NOTE_LOW_POWER, item_id), timeout_ms=60000, step_ms=2000)
+        high, waited = wait_for(lambda: notes_of(NOTE_HIGH_POWER, item_id), timeout_ms=120000, step_ms=2000)
+        check('mail 207 arrived for this structure when it went dark (freeupkeep 0)', bool(low), text(len(low or [])))
         check('mail 208 arrived when it came back', bool(high), 'after %s ms' % text(waited))
 
         no_new_tracebacks('fuel', mark)
@@ -1848,13 +1875,14 @@ def eoci_main(EOCI_NAME):
     def eoci_body():
         mark = log_mark()
         prior['fuelburn'] = read_world_setting('fuelburn')
+        prior['freeupkeep'] = read_world_setting('freeupkeep')
         gm_check('/world fuelburn 1', '/world fuelburn 1', expect=['fuelburn'])
         gm_check('/world freeupkeep 0', '/world freeupkeep 0', expect=['freeupkeep'])
         try:
             run_fuel(mark)
         finally:
             gm('/world fuelburn %s' % (prior['fuelburn'] or '0'))
-            gm('/world freeupkeep 1')
+            gm('/world freeupkeep %s' % (prior['freeupkeep'] or '1'))
 
     # -- end of the scenario body ------------------------------------------
     # PRELUDE (part 2) -- identical in every scenario.  Always writes the
