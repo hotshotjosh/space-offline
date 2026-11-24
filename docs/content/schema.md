@@ -108,8 +108,8 @@ comment exactly as shown.
 - It keeps the old `extractor` hash. On an `input` or `source` key that
   both manifests list, the old digest wins. So `up.sh` never sees a merged
   bundle as fresher than its oldest file.
-- The recipe and PI markups are authored files (`content/econ/recipe-markup.tsv`
-  and `content/econ/pi-markup.tsv`, each an `input`), not manifest records. A merge keeps the old digest of an
+- The recipe and PI markups and the PI anchor scale are authored files (`content/econ/recipe-markup.tsv`,
+  `content/econ/pi-markup.tsv` and `content/econ/pi-anchor.tsv`, each an `input`), not manifest records. A merge keeps the old digest of an
   `input` both manifests list, so a merge that rebuilds `econ` over a changed
   markup leaves the bundle looking old and `up.sh` re-extracts it; run such a
   merge with `econ,lp,salvage,explore` together (every section that derives from

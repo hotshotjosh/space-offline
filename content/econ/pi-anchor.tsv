@@ -2,7 +2,7 @@
 # writes out/content/econ/prices.tsv. The server never reads this file; edit it
 # and tools/up.sh re-extracts (the bundle's manifest records it as an `input`).
 #
-# A tier-1 PI product (a schematic whose inputs are not PI products) prices at
+# A tier-1 PI product (a schematic whose inputs are not schematic outputs) prices at
 #   scale x the client's own per-tier import-tax multiplier
 # read from the bundle (planets/pi-statics.tsv `taxmult` rows) at extract time;
 # no client number is written here. Without it the P1 goods price at their

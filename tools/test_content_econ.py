@@ -487,6 +487,21 @@ class PiAnchor(unittest.TestCase):
             self.assertIsNone(E.markup_problem(
                 E.parse_pi_anchor(fh), E.MIN_PI_ANCHOR, E.MAX_PI_ANCHOR))
 
+    def test_a_missing_pi_statics_is_a_content_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            class C:
+                @staticmethod
+                def path(rel):
+                    return os.path.join(d, rel)
+
+            with self.assertRaises(content.ContentError) as cm:
+                E.bundle_tax_mult(C())
+            self.assertIn("needs planets", str(cm.exception))
+            os.makedirs(os.path.join(d, "planets"))
+            with open(os.path.join(d, E.PI_STATICS), "w", encoding="utf-8") as fh:
+                fh.write("taxmult\t990501\t3.0\n")
+            self.assertEqual(E.bundle_tax_mult(C()), {990501: 3.0})
+
     def test_the_econ_section_depends_on_planets(self):
         self.assertIn("planets", E.DEPENDS)
 

@@ -10,12 +10,13 @@ bundle files:
     stations/operations.tsv   `stationoperations`
     econ/prices.tsv           `P_ref`, C5 §3.2, one row per priced market type
 
-It reads four authored files, `content/econ/meta-mult.tsv`,
-`content/econ/price-overrides.tsv`, `content/econ/recipe-markup.tsv` and
-`content/econ/pi-markup.tsv` (manifest `input` rows), and two bundle
-files of `types2` (CP12) at extract time: `types/market.tsv` and
-`types/materials.tsv`, and the `taxmult` rows of `planets/pi-statics.tsv`
-(the P1 anchor, #151; `content/econ/pi-anchor.tsv` is its scale). With `industry/blueprints.tsv` these replace the
+It reads five authored files, `content/econ/meta-mult.tsv`,
+`content/econ/price-overrides.tsv`, `content/econ/recipe-markup.tsv`,
+`content/econ/pi-markup.tsv` and `content/econ/pi-anchor.tsv` (manifest `input`
+rows), and three bundle files at extract time: `types/market.tsv` and
+`types/materials.tsv` of `types2` (CP12), and `planets/pi-statics.tsv` of
+`planets`, whose `taxmult` rows are the P1 anchor's multiplier (#151;
+`pi-anchor.tsv` is its scale). With `industry/blueprints.tsv` these replace the
 committed `industry/tables.rs` and `reprocess/tables.rs` (tracker §66):
 blueprints, science and invention are `blueprints.tsv`; the adjusted and
 base prices are `prices.tsv`; the per-station reprocessing terms are
@@ -742,14 +743,24 @@ def pi_anchor(ctx):
         return parse_pi_anchor(fh)
 
 
+def bundle_tax_mult(ctx):
+    """The `taxmult` map of this run's `planets/pi-statics.tsv`; a missing
+    file is a `ContentError`, never a raw `FileNotFoundError`."""
+    statics = ctx.path(PI_STATICS)
+    if not os.path.isfile(statics):
+        raise _content().ContentError(
+            "%s: missing (the econ section needs planets)" % statics)
+    with open(statics, encoding="utf-8") as fh:
+        return read_tax_mult(fh)
+
+
 def derive(ctx):
     """`{relpath: rows}`; reads `types2`'s files from this run's bundle."""
     data = gather(ctx)
     bp = blueprint_rows(data["blueprints"])
     market = read_market(ctx.path("types/market.tsv"))
     rmap = recipes(bp)
-    with open(ctx.path(PI_STATICS), encoding="utf-8") as fh:
-        tax_mult = read_tax_mult(fh)
+    tax_mult = bundle_tax_mult(ctx)
     oracle = Oracle(market, rmap, data["pi"], read_materials(ctx.path("types/materials.tsv")),
                     authored(ctx, META_MULT, parse_meta_mult),
                     authored(ctx, OVERRIDES, parse_overrides), salvage_prices(market, rmap),
@@ -776,7 +787,8 @@ def section(ctx):
         ("stations/operations.tsv", OPERATIONS_HEADER, rows["stations/operations.tsv"],
          [fb("stationoperations")]),
         ("econ/prices.tsv", PRICES_HEADER, rows["econ/prices.tsv"],
-         [BLUEPRINTS_RES, fb("schematics"), fb("types"), fb("groups"), fb("typematerials")]),
+         [BLUEPRINTS_RES, fb("schematics"), fb("types"), fb("groups"), fb("typematerials"),
+          fb("typedogma"), fb("dogmaattributes")]),
     ] + optional
 
 
