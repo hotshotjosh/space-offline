@@ -33,7 +33,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="294.0" y="13.5" width="3" height="3" class="built"/>
 <rect x="298.0" y="13.5" width="3" height="3" class="built"/>
 <rect x="302.0" y="13.5" width="3" height="3" class="built"/>
-<text x="310.0" y="18.0" class="s xs">15</text>
+<rect x="306.0" y="13.5" width="3" height="3" class="built"/>
+<text x="314.0" y="18.0" class="s xs">16</text>
 <text x="16.0" y="34.0" class="t">3.2 Client update to the 2026…</text>
 <rect x="246.0" y="29.5" width="3" height="3" class="built"/>
 <rect x="250.0" y="29.5" width="3" height="3" class="built"/>

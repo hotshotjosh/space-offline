@@ -1,6 +1,6 @@
 # Status of the reimplementation
 
-**63% proved** (232 of 371) · **95% built** (354 of 371) · 1 parked, not counted.
+**62% proved** (232 of 372) · **95% built** (355 of 372) · 1 parked, not counted.
 
 Latest client wave: **11**, 135 of 136 passed (full).
 
@@ -15,6 +15,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 ### 3.1 Prove what landed
 
 - [ ] Rig sets: a synchronizer's bonus scales with the faction modules fitted beside it: *built-unproved*, no server code: the engine takes the chain from the bundle; dogma.rs tests a_rig_set_counts_faction_modules_and_scales_the_synchronizer, a_rig_set_counter_is_passive_and_its_bonus_needs_the_rig_online; fci_rig_set (written, not yet run on 3707965: the client's gun damageMultiplier rises with the rig and with a third faction module; the client's dogma top speed against the ego ball during an Aberrant burst); [I] the chain is exact against the client, falsified by fci_rig_set or the fitting window showing another damage figure; the scenario's item names are [A]
+- [ ] A GM /giveskill all [level] raises every skill to a level (default 5) on any world, not only a --dev one: *built-unproved*, slash.rs giveskill_all: the bundle's whole skill table (the set /devskills all5 uses), never lowers a trained level, told as a bulk change (forced refresh and an empty skills-changed dict, as /givestarterskills); tests giveskill_all_puts_every_skill_at_five_on_a_normal_world, giveskill_all_takes_a_level_and_never_lowers_one, giveskill_all_with_nothing_to_raise_pushes_nothing, giveskill_all_refuses_a_bad_level; no client run yet
 - [ ] Info-window calls answered: employment history pair, pending auto-kicks, agent solar system, alpha injection time, GetWarsByOwners with a set, single-item open check: *built-unproved*, service/corp.rs, base.rs, agents.rs, inventory.rs, war.rs owner_ids_arg; fci_wire_calls written, not yet run
 - [ ] Bots enlist at a militia office: *built-unproved*, socket tests in tests/bots/fwlp.rs: a plexer (stepped and driver-spawned) flies through a gate to a militia office, docks and enlists; a bot with no office is refused (#7); not yet seen on a client
 - [ ] Militia on drone and fighter slims: *built-unproved*, facwar_mgr::slim_extras resolves a drone's or squadron's owner; the drone launch AddBalls2 carries the extras; unit tests; fci_fw_kill_lp: A (Incursus) launches a Hobgoblin; B checks its slim's warFactionID and CheckAtWarMilitia; [I] TQ sends it, from CATEGORIES_WITH_WARFACTIONID; fci_fw_kill_lp green 11-16 (A 60/60, B 32/32): B sees A's Hobgoblin slim carry A's militia and CheckAtWarMilitia is true; fighters unit-tested only
@@ -197,7 +198,7 @@ Latest client wave: **11**, 135 of 136 passed (full).
 | Combat | 31 | 11 | 0 | 0 | 0 |
 | Fitting and ships | 13 | 8 | 0 | 0 | 0 |
 | Modules | 13 | 4 | 0 | 0 | 0 |
-| Market and wallet | 24 | 10 | 0 | 0 | 0 |
+| Market and wallet | 24 | 11 | 0 | 0 | 0 |
 | Bots | 11 | 45 | 2 | 0 | 2 |
 | Industry and mining | 17 | 4 | 0 | 1 | 0 |
 | Corp and social | 18 | 1 | 2 | 0 | 0 |
@@ -389,7 +390,7 @@ Closed by default; each line says how much of the system is proved.
 
 </details>
 
-<details><summary><b>Market and wallet</b>: 24 of 34 proved, 10 open</summary>
+<details><summary><b>Market and wallet</b>: 24 of 35 proved, 11 open</summary>
 
 - [x] Market trade between two clients: *client-proved*, fci_market_trade W10
 - [x] The wallet journal's Type column names every entry type, from the content bundle's table: *client-proved*, ledger.rs EntryTypes + content_wallet.py (wallet/entry-types.tsv) with unit tests; a bundle without the file answers by the formula run alone (an empty Type cell past the run); fci_market_trade checks the Type text of two entry types: green 32/32 on 11-15
@@ -418,6 +419,7 @@ Closed by default; each line says how much of the system is proved.
 - [ ] A multi-stack sell is all or nothing on the wallet: a short fee refuses the batch with nothing placed: *built-unproved*, service/market.rs plan_sell/ensure_sell_wallet/apply_sell (single sells and settle_sell/settle_list through sell_one); tests a_multisell_short_on_its_second_fee_places_nothing, a_corp_multisell_short_on_its_second_fee_places_nothing, earlier_proceeds_pay_a_later_fee_and_a_lines_own_do_not, two_lines_of_one_type_share_a_bid_as_if_sold_one_by_one
 - [x] Certificates and ship masteries: *client-proved*, no server code: the client computes them from its own certificates.static and skillMgr2.GetSkills (certificateSvc.py); fci_char_certs; fci_char_certs green 11-07 (regress-1107s1)
 - [x] A GM giveskill, removeskill and givestarterskills make the client refresh its certificates: *client-proved*, giveskill schedules OnServerSkillsChanged with its entry and no forced refresh (the pair raced the client's pooled Reset, fci_upwell_shoot 11-15); removeskill and givestarterskills keep the forced refresh with an empty dict; tests a_giveskill_schedules_its_entry_and_no_forced_refresh, two_quick_giveskills_send_two_entries_and_no_reset, a_removeskill_and_a_starter_reset_schedule_an_empty_skills_changed, the_gm_skill_commands_change_the_map_and_tell_the_client; fci_upwell_shoot green 74/74 and fci_char_certs green 14/14 on the rerun 11-15; fci_char_certs green 11-16 (26/26; 27/27 with the skill granted back before the reset, so the reset moves the certificate): a GM grant lifts a certificate to level 1, /removeskill drops the skill from the client cache and the certificate to 0 with no handler call, /givestarterskills leaves the cache with the count the reply names
+- [ ] A GM /giveskill all [level] raises every skill to a level (default 5) on any world, not only a --dev one: *built-unproved*, slash.rs giveskill_all: the bundle's whole skill table (the set /devskills all5 uses), never lowers a trained level, told as a bulk change (forced refresh and an empty skills-changed dict, as /givestarterskills); tests giveskill_all_puts_every_skill_at_five_on_a_normal_world, giveskill_all_takes_a_level_and_never_lowers_one, giveskill_all_with_nothing_to_raise_pushes_nothing, giveskill_all_refuses_a_bad_level; no client run yet
 - [x] Paragon store (Evermarks) sells ship emblem licences: *client-proved*, tools/content_lp.py heraldry class; content/agents/emblem-prices.tsv (prices by hull group [A]); test_content_lp.py; the bundle sells every licence; fci_emblem buys from lpstore.GetOffers(1000419) and passes 28/28 and 8/8 on 11-15
 - [x] Ship emblem licences owned and shown on the hull: *client-proved*, server emblem.rs (a licence purchase grants an entitlement, gateway GetAll/Display/Clear, GetEnabledCosmetics, slim cosmeticsItems); content_lp.py writes cosmetics/ship-licences.tsv; fci_emblem ran 27/28 on 11-13, GetEnabledCosmetics the one fail (slot and type swapped), fixed; green 28/28 and 8/8 on 11-15
 - [x] Another pilot sees your emblem: *client-proved*, emblem.rs slim source re-sends the flown ship's slim on Display and Clear; fci_emblem's second client reads it; fci_emblem ran 27/28 on 11-13, the one fail fixed; green 28/28 and 8/8 on 11-15

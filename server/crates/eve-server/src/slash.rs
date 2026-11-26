@@ -89,7 +89,7 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "giveskill",
-        usage: "/giveskill <skill|typeID> [level]",
+        usage: "/giveskill <skill|typeID> [level] | /giveskill all [level]",
         run: giveskill,
     },
     Command {
@@ -681,6 +681,9 @@ fn skill_command(
     let Some(first) = args.first() else {
         return Ok(bstr(&format!("usage: /{cmd} <skill|typeID> [level]")));
     };
+    if cmd == "giveskill" && first.eq_ignore_ascii_case("all") {
+        return giveskill_all(reg, actor, &args[1..]);
+    }
     // A level is only a level if the last word parses as one, so
     // a skill name with spaces still works.
     let (name, level) = match args.last().and_then(|w| w.parse::<i64>().ok()) {
@@ -736,6 +739,53 @@ fn giveskill(
     args: &[&str],
 ) -> Result<PyValue, ServiceError> {
     skill_command(reg, "giveskill", actor, args)
+}
+
+/// `/giveskill all [level]` (#315): every skill in the bundle's table, the
+/// set `/devskills all5` uses, raised to `level` (default 5, clamped 0..5)
+/// on any world, not only a `--dev` one. A skill already trained higher keeps
+/// its level: the command never lowers one. The GM gate is the call site's,
+/// as for every slash command (`service/gm.rs`).
+fn giveskill_all(
+    reg: &mut Registry,
+    actor: i64,
+    args: &[&str],
+) -> Result<PyValue, ServiceError> {
+    let level = match args {
+        [] => 5,
+        [w] => match w.parse::<i64>() {
+            Ok(n) => n.clamp(0, 5),
+            Err(_) => return Ok(bstr("usage: /giveskill all [level 0-5]")),
+        },
+        _ => return Ok(bstr("usage: /giveskill all [level 0-5]")),
+    };
+    // Cloned out of `reg.content()`, so the skill sheet can be borrowed
+    // mutably below (as `skill_command` does).
+    let types: Vec<crate::skill::SkillType> =
+        crate::skill::all_in(reg.content()).cloned().collect();
+    let Some(s) = reg.skills_mut(actor) else {
+        return Ok(bstr("no skills for this character"));
+    };
+    let mut changed = 0;
+    for t in &types {
+        if s.get(t.type_id).is_some_and(|e| e.level >= level) {
+            continue;
+        }
+        s.grant_type(t, level);
+        changed += 1;
+    }
+    if changed > 0 {
+        reg.mark_dirty();
+        // A bulk change is told as `/givestarterskills` tells one: a forced
+        // refresh and an empty skills-changed dict, so the client refetches
+        // the whole sheet rather than taking hundreds of entries in one push.
+        reg.push(crate::skill::ForcedRefresh);
+        crate::skill_queue::tell_skills_changed(reg, actor, &[]);
+    }
+    Ok(bstr(&format!(
+        "all {} skills at level {level} or higher ({changed} changed).",
+        types.len()
+    )))
 }
 
 fn removeskill(
@@ -1102,5 +1152,72 @@ mod tests {
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].0, "OnServerSkillsChanged");
         assert_eq!(dict_len(&due[0].1[0]), 0, "{:?}", due[0]);
+    }
+
+    fn said(v: &PyValue) -> String {
+        match v {
+            PyValue::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
+            other => format!("{other:?}"),
+        }
+    }
+
+    fn level_of(reg: &mut Registry, ch: i64, type_id: i64) -> Option<i64> {
+        reg.skills_mut(ch)?.get(type_id).map(|e| e.level)
+    }
+
+    /// #315: `/giveskill all` works on a normal world (the default config
+    /// is not `--dev`), puts every skill of the table at V, and tells the
+    /// client as a bulk change.
+    #[test]
+    fn giveskill_all_puts_every_skill_at_five_on_a_normal_world() {
+        let (mut reg, ch, _) = skill_world();
+        assert!(!reg.config().dev, "the fixture world is a normal one");
+        let ids: Vec<i64> = crate::skill::all_in(reg.content()).map(|s| s.type_id).collect();
+        assert!(ids.len() > 1, "the fixture has more than one skill");
+        reg.take_pending_raw();
+        let reply = giveskill(&mut reg, Some(ch), &["all"]).unwrap();
+        for &id in &ids {
+            assert_eq!(level_of(&mut reg, ch, id), Some(5), "skill {id}");
+        }
+        assert!(said(&reply).contains("level 5"), "{}", said(&reply));
+        assert_eq!(forced_refreshes(&mut reg), 1);
+        let due = due_pushes(&mut reg);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].0, "OnServerSkillsChanged");
+    }
+
+    #[test]
+    fn giveskill_all_takes_a_level_and_never_lowers_one() {
+        let (mut reg, ch, type_id) = skill_world();
+        giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "4"]).unwrap();
+        giveskill(&mut reg, Some(ch), &["ALL", "2"]).unwrap();
+        assert_eq!(level_of(&mut reg, ch, type_id), Some(4), "a higher level is kept");
+        let other = crate::skill::all_in(reg.content())
+            .map(|s| s.type_id)
+            .find(|&id| id != type_id)
+            .expect("a second skill");
+        assert_eq!(level_of(&mut reg, ch, other), Some(2));
+    }
+
+    #[test]
+    fn giveskill_all_with_nothing_to_raise_pushes_nothing() {
+        let (mut reg, ch, _) = skill_world();
+        giveskill(&mut reg, Some(ch), &["all"]).unwrap();
+        due_pushes(&mut reg);
+        reg.take_pending_raw();
+        let reply = giveskill(&mut reg, Some(ch), &["all", "3"]).unwrap();
+        assert!(said(&reply).contains("(0 changed)"), "{}", said(&reply));
+        assert!(reg.take_pending_raw().is_empty());
+        assert!(due_pushes(&mut reg).is_empty());
+    }
+
+    #[test]
+    fn giveskill_all_refuses_a_bad_level() {
+        let (mut reg, ch, type_id) = skill_world();
+        for args in [&["all", "five"][..], &["all", "5", "x"][..]] {
+            let reply = giveskill(&mut reg, Some(ch), args).unwrap();
+            assert!(said(&reply).contains("usage: /giveskill all"), "{}", said(&reply));
+        }
+        assert_eq!(level_of(&mut reg, ch, type_id), None, "nothing was granted");
     }
 }

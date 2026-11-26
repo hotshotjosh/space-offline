@@ -169,7 +169,8 @@ text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 <rect x="322.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="326.8" y="93.5" width="3" height="3" class="built"/>
 <rect x="330.8" y="93.5" width="3" height="3" class="built"/>
-<text x="338.8" y="98.0" class="s xs">24/34</text>
+<rect x="334.8" y="93.5" width="3" height="3" class="built"/>
+<text x="342.8" y="98.0" class="s xs">24/35</text>
 <text x="16.0" y="114.0" class="t">Bots</text>
 <rect x="198.8" y="109.5" width="3" height="3" class="proved"/>
 <rect x="202.8" y="109.5" width="3" height="3" class="proved"/>
