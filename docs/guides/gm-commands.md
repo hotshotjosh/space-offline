@@ -65,7 +65,7 @@ the `usage` strings in that file; a new command adds one `COMMANDS` row there.
 | `/suicide` | `/suicide` |
 | `/cwatch` | `/cwatch [status\|clear] [characterID]` |
 
-`/giveskill all [level]` raises every skill to `level` (default 5) on any world, not only a `--dev` one, and never lowers a skill already trained higher; `/devskills all5` is the dev-world-only version (#315).
+`/giveskill all [level]` raises every skill to `level` (default 5, 1 to 5) on any world, not only a `--dev` one, and never lowers a skill already trained higher; `/devskills all5` is the dev-world-only version (#315).
 
 `/entity siege` orders the NPCs you deployed with `/entity deploy` in your system to besiege an Upwell structure in that system (`off` lifts the order); belt rats and the law never obey. It says how many are beyond 20 km of the structure's surface, which they do not notice. The owner gets one under-attack notification naming the NPC's corporation. Any GM session may use it, as it may use `deploy`.
 

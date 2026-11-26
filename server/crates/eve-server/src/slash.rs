@@ -742,22 +742,19 @@ fn giveskill(
 }
 
 /// `/giveskill all [level]` (#315): every skill in the bundle's table, the
-/// set `/devskills all5` uses, raised to `level` (default 5, clamped 0..5)
+/// set `/devskills all5` uses, raised to `level` (default 5, clamped 1..5;
+/// a 0 would add every untrained skill at level 0)
 /// on any world, not only a `--dev` one. A skill already trained higher keeps
 /// its level: the command never lowers one. The GM gate is the call site's,
 /// as for every slash command (`service/gm.rs`).
-fn giveskill_all(
-    reg: &mut Registry,
-    actor: i64,
-    args: &[&str],
-) -> Result<PyValue, ServiceError> {
+fn giveskill_all(reg: &mut Registry, actor: i64, args: &[&str]) -> Result<PyValue, ServiceError> {
     let level = match args {
         [] => 5,
         [w] => match w.parse::<i64>() {
-            Ok(n) => n.clamp(0, 5),
-            Err(_) => return Ok(bstr("usage: /giveskill all [level 0-5]")),
+            Ok(n) => n.clamp(1, 5),
+            Err(_) => return Ok(bstr("usage: /giveskill all [level 1-5]")),
         },
-        _ => return Ok(bstr("usage: /giveskill all [level 0-5]")),
+        _ => return Ok(bstr("usage: /giveskill all [level 1-5]")),
     };
     // Cloned out of `reg.content()`, so the skill sheet can be borrowed
     // mutably below (as `skill_command` does).
@@ -777,10 +774,15 @@ fn giveskill_all(
     if changed > 0 {
         reg.mark_dirty();
         // A bulk change is told as `/givestarterskills` tells one: a forced
-        // refresh and an empty skills-changed dict, so the client refetches
-        // the whole sheet rather than taking hundreds of entries in one push.
+        // refresh and an empty skills-changed dict. An empty dict assigns no
+        // entry, so the Reset race noted in `skill_command` cannot bite; the
+        // same pair is client-proved for /removeskill and /givestarterskills
+        // (fci_char_certs) [I].
         reg.push(crate::skill::ForcedRefresh);
         crate::skill_queue::tell_skills_changed(reg, actor, &[]);
+        // The forced refresh resets only the skill caches; the client's dogma
+        // takes new skill levels from the brain (brain.rs), as after a remap.
+        crate::brain::announce(reg, actor);
     }
     Ok(bstr(&format!(
         "all {} skills at level {level} or higher ({changed} changed).",
@@ -1172,7 +1174,9 @@ mod tests {
     fn giveskill_all_puts_every_skill_at_five_on_a_normal_world() {
         let (mut reg, ch, _) = skill_world();
         assert!(!reg.config().dev, "the fixture world is a normal one");
-        let ids: Vec<i64> = crate::skill::all_in(reg.content()).map(|s| s.type_id).collect();
+        let ids: Vec<i64> = crate::skill::all_in(reg.content())
+            .map(|s| s.type_id)
+            .collect();
         assert!(ids.len() > 1, "the fixture has more than one skill");
         reg.take_pending_raw();
         let reply = giveskill(&mut reg, Some(ch), &["all"]).unwrap();
@@ -1180,7 +1184,20 @@ mod tests {
             assert_eq!(level_of(&mut reg, ch, id), Some(5), "skill {id}");
         }
         assert!(said(&reply).contains("level 5"), "{}", said(&reply));
-        assert_eq!(forced_refreshes(&mut reg), 1);
+        let now: Vec<&str> = reg
+            .take_pending_raw()
+            .iter()
+            .map(|(_, p)| p.to_push().0)
+            .collect();
+        assert_eq!(
+            now.iter().filter(|n| **n == "OnSkillForcedRefresh").count(),
+            1,
+            "{now:?}"
+        );
+        assert!(
+            now.contains(&"OnServerBrainUpdated"),
+            "dogma is told: {now:?}"
+        );
         let due = due_pushes(&mut reg);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].0, "OnServerSkillsChanged");
@@ -1191,7 +1208,11 @@ mod tests {
         let (mut reg, ch, type_id) = skill_world();
         giveskill(&mut reg, Some(ch), &[&type_id.to_string(), "4"]).unwrap();
         giveskill(&mut reg, Some(ch), &["ALL", "2"]).unwrap();
-        assert_eq!(level_of(&mut reg, ch, type_id), Some(4), "a higher level is kept");
+        assert_eq!(
+            level_of(&mut reg, ch, type_id),
+            Some(4),
+            "a higher level is kept"
+        );
         let other = crate::skill::all_in(reg.content())
             .map(|s| s.type_id)
             .find(|&id| id != type_id)
@@ -1212,11 +1233,32 @@ mod tests {
     }
 
     #[test]
+    fn giveskill_all_clamps_its_level_to_one_through_five() {
+        let (mut reg, ch, type_id) = skill_world();
+        let reply = giveskill(&mut reg, Some(ch), &["all", "9"]).unwrap();
+        assert!(said(&reply).contains("level 5"), "{}", said(&reply));
+        assert_eq!(level_of(&mut reg, ch, type_id), Some(5));
+        due_pushes(&mut reg);
+        reg.take_pending_raw();
+        let reply = giveskill(&mut reg, Some(ch), &["all", "9"]).unwrap();
+        assert!(said(&reply).contains("(0 changed)"), "{}", said(&reply));
+        assert!(reg.take_pending_raw().is_empty());
+        let (mut reg, ch, type_id) = skill_world();
+        let reply = giveskill(&mut reg, Some(ch), &["all", "-1"]).unwrap();
+        assert!(said(&reply).contains("level 1"), "{}", said(&reply));
+        assert_eq!(level_of(&mut reg, ch, type_id), Some(1));
+    }
+
+    #[test]
     fn giveskill_all_refuses_a_bad_level() {
         let (mut reg, ch, type_id) = skill_world();
         for args in [&["all", "five"][..], &["all", "5", "x"][..]] {
             let reply = giveskill(&mut reg, Some(ch), args).unwrap();
-            assert!(said(&reply).contains("usage: /giveskill all"), "{}", said(&reply));
+            assert!(
+                said(&reply).contains("usage: /giveskill all"),
+                "{}",
+                said(&reply)
+            );
         }
         assert_eq!(level_of(&mut reg, ch, type_id), None, "nothing was granted");
     }
